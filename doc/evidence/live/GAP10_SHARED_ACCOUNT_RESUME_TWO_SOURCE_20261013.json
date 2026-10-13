@@ -1,0 +1,272 @@
+{
+  "version": 1,
+  "review_date": "2026-10-13",
+  "td_trading_day": "20261014",
+  "provenance": "user pasted summary.json and events.txt; no local broker connection",
+  "pasted_text_sha256": "10919957e616d8f1950f2e6e90a7cca38e1dd3087b207524f2315129466cad1a",
+  "remote_report_directory": "not included in pasted text",
+  "status": "same_day_resume_and_two_source_shared_fill_review_passed",
+  "reports": {
+    "ACCEPTED": 10,
+    "FILLED": 10
+  },
+  "order_refs": [
+    "16",
+    "17",
+    "18",
+    "19",
+    "20",
+    "21",
+    "22",
+    "23",
+    "24",
+    "25"
+  ],
+  "unique_orders": 10,
+  "filled_contract_quantity": "13",
+  "attributed_fill_callbacks": {
+    "cross-rb-hc-beta": 10,
+    "ema-rb-alpha": 1
+  },
+  "attributed_executed_quantity": {
+    "cross-rb-hc-beta": "12",
+    "ema-rb-alpha": "1"
+  },
+  "initial_owned": {
+    "cross-rb-hc-beta": {
+      "rb2701.SHFE": "1",
+      "hc2701.SHFE": "-1"
+    },
+    "ema-rb-alpha": {
+      "rb2701.SHFE": "0"
+    }
+  },
+  "final_owned": {
+    "cross-rb-hc-beta": {
+      "rb2701.SHFE": "-1",
+      "hc2701.SHFE": "1"
+    },
+    "ema-rb-alpha": {
+      "rb2701.SHFE": "-1"
+    }
+  },
+  "final_managed_gross": {
+    "hc2701.SHFE": [
+      "1",
+      "0"
+    ],
+    "rb2701.SHFE": [
+      "0",
+      "2"
+    ]
+  },
+  "source_revisions": {
+    "cross-rb-hc-beta": 12,
+    "ema-rb-alpha": 1
+  },
+  "final_active_orders": 0,
+  "external_gross_unchanged": true,
+  "duplicate_report_ids": 0,
+  "duplicate_trade_ids": 0,
+  "fills": [
+    {
+      "order_ref": "16",
+      "instrument": "hc2701.SHFE",
+      "side": "BUY",
+      "effect": "CLOSE_TODAY",
+      "quantity": "1",
+      "account_request_revision": 9,
+      "allocations": [
+        {
+          "strategy_id": "cross-rb-hc-beta",
+          "target_key": "hc2701.SHFE",
+          "quantity": "1",
+          "filled": "0",
+          "target_revision": 8,
+          "deadline_ns": null
+        }
+      ]
+    },
+    {
+      "order_ref": "17",
+      "instrument": "rb2701.SHFE",
+      "side": "SELL",
+      "effect": "CLOSE_TODAY",
+      "quantity": "1",
+      "account_request_revision": 9,
+      "allocations": [
+        {
+          "strategy_id": "cross-rb-hc-beta",
+          "target_key": "rb2701.SHFE",
+          "quantity": "1",
+          "filled": "0",
+          "target_revision": 8,
+          "deadline_ns": null
+        }
+      ]
+    },
+    {
+      "order_ref": "18",
+      "instrument": "rb2701.SHFE",
+      "side": "SELL",
+      "effect": "OPEN",
+      "quantity": "2",
+      "account_request_revision": 10,
+      "allocations": [
+        {
+          "strategy_id": "cross-rb-hc-beta",
+          "target_key": "rb2701.SHFE",
+          "quantity": "1",
+          "filled": "0",
+          "target_revision": 8,
+          "deadline_ns": null
+        },
+        {
+          "strategy_id": "ema-rb-alpha",
+          "target_key": "rb_main",
+          "quantity": "1",
+          "filled": "0",
+          "target_revision": 1,
+          "deadline_ns": null
+        }
+      ]
+    },
+    {
+      "order_ref": "19",
+      "instrument": "hc2701.SHFE",
+      "side": "BUY",
+      "effect": "OPEN",
+      "quantity": "1",
+      "account_request_revision": 10,
+      "allocations": [
+        {
+          "strategy_id": "cross-rb-hc-beta",
+          "target_key": "hc2701.SHFE",
+          "quantity": "1",
+          "filled": "0",
+          "target_revision": 8,
+          "deadline_ns": null
+        }
+      ]
+    },
+    {
+      "order_ref": "20",
+      "instrument": "hc2701.SHFE",
+      "side": "SELL",
+      "effect": "CLOSE_TODAY",
+      "quantity": "1",
+      "account_request_revision": 11,
+      "allocations": [
+        {
+          "strategy_id": "cross-rb-hc-beta",
+          "target_key": "hc2701.SHFE",
+          "quantity": "1",
+          "filled": "0",
+          "target_revision": 9,
+          "deadline_ns": null
+        }
+      ]
+    },
+    {
+      "order_ref": "21",
+      "instrument": "rb2701.SHFE",
+      "side": "BUY",
+      "effect": "CLOSE_TODAY",
+      "quantity": "2",
+      "account_request_revision": 11,
+      "allocations": [
+        {
+          "strategy_id": "cross-rb-hc-beta",
+          "target_key": "rb2701.SHFE",
+          "quantity": "2",
+          "filled": "0",
+          "target_revision": 9,
+          "deadline_ns": null
+        }
+      ]
+    },
+    {
+      "order_ref": "22",
+      "instrument": "hc2701.SHFE",
+      "side": "SELL",
+      "effect": "OPEN",
+      "quantity": "1",
+      "account_request_revision": 11,
+      "allocations": [
+        {
+          "strategy_id": "cross-rb-hc-beta",
+          "target_key": "hc2701.SHFE",
+          "quantity": "1",
+          "filled": "0",
+          "target_revision": 9,
+          "deadline_ns": null
+        }
+      ]
+    },
+    {
+      "order_ref": "23",
+      "instrument": "hc2701.SHFE",
+      "side": "BUY",
+      "effect": "CLOSE_TODAY",
+      "quantity": "1",
+      "account_request_revision": 12,
+      "allocations": [
+        {
+          "strategy_id": "cross-rb-hc-beta",
+          "target_key": "hc2701.SHFE",
+          "quantity": "1",
+          "filled": "0",
+          "target_revision": 10,
+          "deadline_ns": null
+        }
+      ]
+    },
+    {
+      "order_ref": "24",
+      "instrument": "rb2701.SHFE",
+      "side": "SELL",
+      "effect": "OPEN",
+      "quantity": "2",
+      "account_request_revision": 12,
+      "allocations": [
+        {
+          "strategy_id": "cross-rb-hc-beta",
+          "target_key": "rb2701.SHFE",
+          "quantity": "2",
+          "filled": "0",
+          "target_revision": 10,
+          "deadline_ns": null
+        }
+      ]
+    },
+    {
+      "order_ref": "25",
+      "instrument": "hc2701.SHFE",
+      "side": "BUY",
+      "effect": "OPEN",
+      "quantity": "1",
+      "account_request_revision": 12,
+      "allocations": [
+        {
+          "strategy_id": "cross-rb-hc-beta",
+          "target_key": "hc2701.SHFE",
+          "quantity": "1",
+          "filled": "0",
+          "target_revision": 10,
+          "deadline_ns": null
+        }
+      ]
+    }
+  ],
+  "remaining": [
+    "live shared partial fills/cancel/reject not observed",
+    "strategy-only restart live not observed",
+    "cross-process protocol and cross-host fencing absent",
+    "CTP+BN and real third-party multi-account acceptance separate"
+  ],
+  "limits": [
+    "summary and events reviewed; original checkpoints and startup output not supplied",
+    "no fabricated report directory or runtime SHA",
+    "account request revision differs legitimately from per-source target revision"
+  ]
+}

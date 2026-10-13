@@ -216,3 +216,45 @@ shared-account 43项通过，exit 0；本次新增检查属于完整Host/应用�
 此前无变化的live-common 116项不重复，也不与旧版本计数相加。新配置无网络检查
 通过。本机原生01/04测试依赖限制仍在，须在Linux补cross-section/entry/attribution
 及原生CTP相关组。本轮交付使用REV5清单；原始实盘日志逐笔核对另存专项证据。
+
+## 远端同日恢复与双来源共享成交反馈
+
+用户提供resume_acceptance配置的summary.json与events.txt：status=completed、
+failure=None、final_active_orders=0，账户failed/pending均false、draining为空。
+本次报告目录和运行机摘要未展示，不补造；本机未连接柜台。
+OrderRef16至25共10个订单，10条ACCEPTED、10条FILLED，累计成交13手（含开平），
+回报ID和成交ID无重复。OrderRef18的RB卖开2手冻结为横截面版本8的1手与EMA版本1
+的1手；同一真实成交分配给两个策略。横截面10次、EMA1次回调与冻结份额数一致，
+11个归属回调不能当作11笔柜台成交。
+
+从上次横截面RB+1/HC-1、EMA无仓重算，最终横截面RB-1/HC+1，EMA RB-1，
+合计RB-2/HC+1，与执行净仓、柜台总仓一致。横截面反向调整仍保留EMA归属，
+五个范围外持仓不变。来源版本横截面6续至12、EMA首次1，新OrderRef从旧15续至16，
+本文件未见旧成交重放。逐腿版本匹配本源source_revision；账户request_revision
+与策略target_revision是不同版本空间，不要求数值相同。
+
+用户日志中的同日恢复后双来源交易、共享母单全量成交分配与最终汇总核对通过。
+仍缺真实部分成交、共享母单撤单/拒单、单策略原生重建；原恢复检查点与启动日志
+未展示，不能扩大为通用故障恢复。跨进程协议、跨主机保护、BN写前/漏成交重建和
+联合端验收继续开放。结构化证据为GAP10_SHARED_ACCOUNT_RESUME_TWO_SOURCE_20261013.json，
+本次REV6清单记录文档和证据；交易运行代码不改，已通过测试不重跑。
+
+## 后续运行失败与故障诊断
+
+用户提供后续报告shared-simnow-1791903142425954554的截断摘要/异常链：
+Host.poll发现策略行情或参考资料失效，清理时Account.stop调用Service.poll因执行
+状态不明拒绝完成停机，最终status=failed、final_gross/final_active_orders均空。
+账面横截面RB-1/HC+1、EMA RB+1，执行RB净0；不能据此认定柜台总仓为零或无活动单。
+未提供完整account开头和events.txt，不能推定断线、拒单或回报冲突的具体根因。
+之前成功双来源成交证据保留，但后续故障停机/恢复尚未完成，GAP10继续开放。
+
+本次只增强诊断，不放宽恢复或执行闸门：run保留首次failure，单列shutdown_failure，
+记录清理前failure_execution_diagnostics；Host区分参考版本变化与行情/账户未就绪，
+包含strategy_id，snapshot列is_reconciled/is_armed/recovery_required/service_failed、
+report_errors、portfolio_failure及最近执行audit。不调用额外对账或自动恢复旧目标。
+
+新增回归验证原始异常不被停机异常覆盖，清理前回报冲突保留，Host快照可观察故障
+标志且不做柜台查询。报告tests/results/main-ema-acceptance-1791903750064234000：
+shared-account45项、live-common116项均通过，合计161项；diff检查通过。本机未连接
+柜台。当前先取得该失败目录完整summary/events和TD只读三查询，不删除状态文件、
+锁文件，不清除恢复标记，不直接重启报单。新诊断代码及证据用REV7清单，历史清单保留。
