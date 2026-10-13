@@ -70,11 +70,14 @@ class SharedAccountExecutionService(AccountExecutionService):
     避免柜台回调持客户端锁等待策略Runner锁。账户宿主持有独立连接租约。
     """
     def __init__(self, client, *, prices, instrument_limits, budget, checkpoint=None,
-                 clock_ns=time.time_ns, max_events=10000):
+                 clock_ns=time.time_ns, max_events=10000, instrument_scope=None):
         super().__init__(client, checkpoint=checkpoint)
         if max_events < 1 or not instrument_limits:
             raise ValueError("须声明执行合约及正数回报队列上限")
         self.prices, self.instrument_limits = prices, dict(instrument_limits)
+        if instrument_scope is not None and instrument_scope.instruments != frozenset(str(i) for i in instrument_limits):
+            raise ValueError("共享持仓范围须与执行合约一致")
+        self.instrument_scope = instrument_scope
         self.budget, self.clock_ns, self.max_events = budget, clock_ns, max_events
         self._ports = {}
         self._suspended = set()
@@ -360,6 +363,8 @@ class SharedAccountExecutionService(AccountExecutionService):
             state["shared"] = {"version": 1, "budget": self.budget.state(),
                 "routes": {sid: port.configuration() for sid, port in self._ports.items()},
                 "suspended": sorted(self._suspended), "draining": sorted(self._draining)}
+            if self.instrument_scope is not None:
+                state["shared"]["managed_instruments"] = sorted(self.instrument_scope.instruments)
         return state
 
     def validate_owned_state(self):
@@ -379,14 +384,21 @@ class SharedAccountExecutionService(AccountExecutionService):
             if port is None or key not in port.routes or quantity != totals.get((sid, key), Decimal(0)):
                 raise ValueError("共享策略仓位与真实合约归属不一致")
         for key in snapshot.account_positions:
-            if key.client_id != self.client_id or key.instrument_id not in self.instrument_limits:
+            if key.client_id != self.client_id or (self.instrument_scope is None
+                    and key.instrument_id not in self.instrument_limits):
                 raise ValueError("共享执行账本包含其他账户或合约")
+        for key, quantity in snapshot.working_quantities.items():
+            if quantity and (key.client_id != self.client_id or key.instrument_id not in self.instrument_limits):
+                raise ValueError("共享执行账本包含范围外在途委托")
 
     def restore_state(self, state):
         shared = state.get("shared", {})
         if shared.get("version") != 1 or shared.get("budget") != self.budget.state() or shared.get("routes") != {
                 sid: port.configuration() for sid, port in self._ports.items()}:
             raise ValueError("共享账户恢复策略、路由或预算不一致")
+        if shared.get("managed_instruments") != (None if self.instrument_scope is None
+                else sorted(self.instrument_scope.instruments)):
+            raise ValueError("共享账户恢复持仓范围不一致")
         suspended, draining = set(shared["suspended"]), set(shared["draining"])
         if not draining <= suspended <= self._ports.keys() or not state["sources"].keys() <= self._ports.keys():
             raise ValueError("共享账户恢复包含未知策略")

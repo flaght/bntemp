@@ -19,9 +19,11 @@ def read_config(path):
     path = Path(path).resolve()
     config = json.loads(path.read_text(encoding="utf-8"))
     allowed = {"version", "trading_day", "environment", "replay_md_trading_day", "seconds",
-        "account_state_file", "report_dir", "account", "strategies"}
+        "account_state_file", "report_dir", "account", "strategies", "position_scope"}
     if set(config) - allowed or config.get("version") != 1:
         raise ValueError("共享配置版本无效或存在未知字段")
+    if config.get("position_scope", "account") not in {"account", "strategy_instruments"}:
+        raise ValueError("position_scope须为account或strategy_instruments")
     day = config["trading_day"]
     if datetime.strptime(day, "%Y%m%d").strftime("%Y%m%d") != day:
         raise ValueError("trading_day须为YYYYMMDD")

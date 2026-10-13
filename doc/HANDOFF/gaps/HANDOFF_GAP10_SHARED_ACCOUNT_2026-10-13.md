@@ -57,7 +57,8 @@ writer lease。均为同机协作保护，不能宣称跨主机fencing或限制�
 详见[scripts/integration/shared_account/README.md](../../../scripts/integration/shared_account/README.md)。
 默认配置检查不加载SDK、不联网。显式`--connect --enable-orders --confirm-simnow`
 后才建立共享原生宿主。示例有EMA与RB/HC横截面，并在300秒停止EMA、保留另一策略继续。
-示例日期须运行前重新核对；新会话须全账户空仓、无活动订单和不存在的全部状态文件。
+示例日期须运行前重新核对；默认新会话须全账户空仓、无活动订单和不存在的全部状态文件。
+显式`position_scope=strategy_instruments`可保留范围外持仓，约束和证据见末尾补充。
 
 报告使用`completed`表示运行结束，交易验收单列。事件文件包含真实原生回报，摘要
 记录逐策略仓位、回调数量、源目标、独立停止状态及最终柜台总仓／活动订单数。
@@ -104,7 +105,7 @@ python -u -m tests.run_cross_section_acceptance --only shared-account \
 
 原生装配通过后，仍须两策略同SimNow账户实际报单／成交、按冻结来源逐笔核对、
 最终账户汇总、独立停止、拒单／部分成交和恢复报告。首次测试不要直接接管现有旧
-单策略文件或有仓账户。原配置/全新文件要求仅用于明确的新会话。
+单策略文件或管理合约内的旧持仓。原配置/全新文件要求仅用于明确的新会话。
 
 独立策略进程接入本机账户服务的协议/客户端尚未实现；当前分别运行旧demo CLI仍会
 争同一账户锁。CTP＋BN联合剩余验收、真实第三方多账户、BN写前/漏成交重建、
@@ -145,3 +146,44 @@ python -u -m scripts.integration.ctp.td_readonly --connect --timeout 30
 新增三个用例覆盖实际/预期日可见、匹配时保留replay原始MD日、组装失败报告仍保留
 实际TD日。未重跑无变化的live-common，不把不同版本用例数叠加。
 当前交付清单为`GAP10_SHARED_ACCOUNT_20261013_REV3_SHA256.txt`，旧版本证据保留。
+
+## 显式管理范围与已有持仓隔离
+
+用户提供的柜台只读结果确认TD日20261014、无活动订单，已有MO／SC／NI／I／AG
+五个非零持仓。修正配置交易日后，Linux报告`shared-simnow-1791898310294263646`
+在原全账户空仓检查退出，预检报单数0。本机没有连接或操作这些持仓。
+
+复用现有`InstrumentPositionScope`和portfolio builder，不改01／04策略或Runner。
+新增顶层显式`position_scope=strategy_instruments`；未配置或account仍要求全账户空仓。
+范围从全部策略当次执行路由的真实合约并集取得。预检先要求全账户无活动订单与
+可用资金，取得参考资料后检查范围内总仓为零；净仓为零的双向仓也不能接管。
+正式账户、Shared服务和Backend须绑定同一范围，Backend禁止范围外报单。
+
+完整PositionManager保留全账户净仓；只有管理合约可进入策略归属、在途委托与CTP
+执行账本。范围外总仓/今昨桶另存`external_positions`组件，随原RuntimeStateManager
+原子保存，恢复不能改管理范围。授权前、定期检查、停机与同日恢复核对范围外基线；
+仓位/分桶变化、范围外活动订单、查询失败立即disarm并标记账户须对账。
+在线检查允许管理合约在两次查询之间正常成交，停机/恢复仍比较完整管理总仓与今昨桶。
+不自动分配、平仓或撤销未知外部订单；冲突停机保留资源锁并报告未完成。
+
+预算继续按管理策略归属绝对量/名义金额计算；外部仓位不占本次归属预算，但资金
+仍来自完整物理账户权威查询。没有增加外部仓位估值、组合保证金或跨终端单写保证。
+范围外基线固定，不能将该模式解释为允许其他终端并行交易。报告全账户final_gross
+保留，另列管理范围、范围外基线和final_managed_gross。
+
+运行方式和只读参考资料核验见README；配置TD日20261014不能推定资料日为20261013。
+之前的预检失败不需要增加resume；已有正式共享文件则按原身份和管理范围恢复。
+
+本次集中测试报告与新证据文件、REV4清单记录以下离线覆盖：已有五类持仓及外部
+双向净零仓保存，管理成交不赋予外部仓位归属，停机/恢复不重发，默认拒绝外部旧仓，
+管理合约双向仓拒绝启动，外部总仓/今昨桶变化闭闸且原恢复文件不变，外部委托
+不自动撤销，Backend拒绝范围外合约，损坏基线拒绝且不改变对象，正常成交查询竞态，
+入口配置到所有组件的合约并集绑定。实际公共CTP Driver/Backend/Planner/归属/持久化
+运行，传输和行情/资料工厂为测试边界；SDK标识及不相关类型导出为本机替身。
+Linux原生01／04装配、参考资料及共享SimNow真实成交仍须补验，GAP10整体不关闭。
+
+当前集中报告：`tests/results/main-ema-acceptance-1791899018152793000/summary.json`，
+shared-account 42项、live-common 116项，共158项通过；不叠加以前版本计数。
+默认example配置无网络检查和`git diff --check`通过。本次源码与证据使用
+`doc/evidence/checksums/GAP10_SHARED_ACCOUNT_20261013_REV4_SHA256.txt`核验，
+历史SHA清单与首期证据不覆盖。

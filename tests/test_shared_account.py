@@ -221,6 +221,7 @@ class SharedAccountTests(unittest.TestCase):
     def native_modules(self):
         packages = {}
         for name, relative in (("bomber.framework.trader.execution.ctp", "bomber/framework/trader/execution/ctp"),
+                ("bomber.framework.trader.execution.simulation", "bomber/framework/trader/execution/simulation"),
                 ("bomber.framework.trader.runtime", "bomber/framework/trader/runtime"),
                 ("bomber.framework.market.stream", "bomber/framework/market/stream")):
             module = ModuleType(name)
@@ -249,7 +250,7 @@ class SharedAccountTests(unittest.TestCase):
             persistence=import_module("bomber.framework.trader.persistence"),
             events=import_module("bomber.framework.trader.execution.events"))
 
-    def native_account(self, path, modules):
+    def native_account(self, path, modules, *, scoped=False):
         owner = self
         self.timestamp = time.time_ns()
         self.now = self.timestamp
@@ -330,16 +331,35 @@ class SharedAccountTests(unittest.TestCase):
             self.risk.PreTradeRiskManager("account", positions, prices, instrument_limits=limits),
             account_id="demo", demo_environment_check=lambda: driver.is_simnow_session)
         backend.register_report_handler(modules.accounting.CtpExecutionAccounting(ledger, {self.instrument: 1}).on_report)
+        scope = None
+        if scoped:
+            scope = import_module("bomber.framework.trader.runtime.live.recovery").InstrumentPositionScope((self.instrument,))
+            # 使用实际portfolio builder验证范围绑定和最后一层报单限制。
+            ctp_package = sys.modules["bomber.framework.trader.execution.ctp"]
+            ctp_package.CtpExecutionAccounting = modules.accounting.CtpExecutionAccounting
+            ctp_package.CtpLimitPlanner = modules.planner.CtpLimitPlanner
+            ctp_package.CtpPositionLedger = modules.ledger.CtpPositionLedger
+            live_package = sys.modules["bomber.framework.trader.execution.live"]
+            live_package.ControlledLiveExecutionClient = modules.controlled.ControlledLiveExecutionClient
+            live_package.NautilusLiveExecutionBackend = modules.backend.NautilusLiveExecutionBackend
+            sys.modules["bomber.framework.trader.execution.simulation"].SimulationExecutionClient = import_module(
+                "bomber.framework.trader.execution.simulation.client").SimulationExecutionClient
+            execution = import_module("bomber.framework.trader.execution.builders").build_ctp_portfolio_execution(
+                driver, trading_day="20261013", price_increments={self.instrument: 1}, multipliers={self.instrument: 1},
+                instrument_limits=limits, session_check=lambda: driver.is_simnow_session, orders=True,
+                positions=positions, prices=prices, instrument_scope=scope, limit_offset_ticks=0)
+            client, backend, ledger = execution.client, execution.backend, execution.ledger
         shared = import_module("bomber.framework.trader.execution.shared")
         service = shared.SharedAccountExecutionService(client, prices=prices, instrument_limits=limits,
-            budget=shared.SharedRiskBudget(10, 100000), clock_ns=lambda: self.now)
+            budget=shared.SharedRiskBudget(10, 100000), clock_ns=lambda: self.now, instrument_scope=scope)
         ports = [service.strategy_client(sid, routes={"main": self.instrument},
             budget=shared.SharedRiskBudget(5, 50000)) for sid in ("one", "two")]
         resources = ExitStack()
         self.addCleanup(resources.close)
         execution = NS(driver=driver, client=client, ledger=ledger, positions=positions, backend=backend)
         lifecycle = modules.lifecycle.CtpSharedAccountLifecycle(execution, service, transport=transport,
-            state_file=path, identity={"id": "test-shared"}, resources=resources, expected_day="20261013")
+            state_file=path, identity={"id": "test-shared"}, resources=resources, expected_day="20261013",
+            position_scope=scope)
         self.addCleanup(client.stop)
         return lifecycle, service, transport, ports, resources
 
@@ -557,6 +577,214 @@ class SharedAccountTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             service.validate_owned_state()
 
+    def test_scoped_native_account_preserves_external_positions_across_fill_stop_and_restore(self):
+        modules = self.native_modules()
+        external = {"MO2611-C-7400.CFFEX": (0, 1), "sc2611.INE": (1, 0),
+            "ni2611.SHFE": (1, 0), "i2701.DCE": (0, 1), "ag2612.SHFE": (0, 1),
+            "cu2611.SHFE": (8, 8)}  # 超出管理预算、净仓为零的外部双向仓也必须保存。
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "account.json"
+            account, service, transport, (one, two), _ = self.native_account(path, modules, scoped=True)
+            transport.gross = dict(external)
+            account.start(resume=False)
+            service.start()
+            one.start()
+            two.start()
+            account.authorize()
+            self.submit(one)
+            transport.fill(transport.sent[0]["OrderRef"])
+            self.assertEqual(service.position_manager.position("one", "main"), 1)
+            self.assertEqual(service.position_manager.position("two", "main"), 0)
+            self.assertEqual(set(account.ledger.state().positions), {self.instrument})
+            for symbol, (long, short) in external.items():
+                instrument = fixtures.Instrument(symbol)
+                self.assertEqual(service.position_manager.account_position("account", instrument), long - short)
+                self.assertEqual(service.position_manager.unassigned_position("account", instrument), long - short)
+            self.assertTrue(all(row["instrument_id"] == str(self.instrument)
+                for row in service.position_manager.attribution.state()["owned"]))
+            one.stop()
+            two.stop()
+            account.stop()
+            self.assertEqual(account.scope_diagnostics()["final_managed_gross"], {str(self.instrument): (1, 0)})
+            self.assertEqual(account.external_gross, external)
+            restored, service2, transport2, _, _ = self.native_account(path, modules, scoped=True)
+            transport2.gross = dict(transport.gross)
+            restored.start(resume=True)
+            self.assertEqual(service2.position_manager.position("one", "main"), 1)
+            self.assertEqual(restored.external_gross, external)
+            self.assertFalse(transport2.sent)
+            restored.stop()
+
+    def test_default_account_scope_still_rejects_existing_external_position(self):
+        modules = self.native_modules()
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "account.json"
+            account, _, transport, _, _ = self.native_account(path, modules)
+            transport.gross = {"ag2612.SHFE": (0, 1)}
+            with self.assertRaisesRegex(RuntimeError, "账户已有总仓"):
+                account.start(resume=False)
+            self.assertFalse(transport.sent)
+            self.assertFalse(path.exists())
+
+    def test_scoped_new_session_rejects_managed_hedge_even_with_zero_net(self):
+        modules = self.native_modules()
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "account.json"
+            account, _, transport, _, _ = self.native_account(path, modules, scoped=True)
+            transport.gross = {str(self.instrument): (1, 1)}
+            with self.assertRaisesRegex(RuntimeError, "账户已有总仓"):
+                account.start(resume=False)
+            self.assertFalse(transport.sent)
+            self.assertFalse(path.exists())
+
+    def test_scoped_external_gross_change_with_same_net_closes_gate_without_reassigning(self):
+        modules = self.native_modules()
+        with TemporaryDirectory() as directory:
+            account, service, transport, _, _ = self.native_account(Path(directory) / "account.json", modules, scoped=True)
+            transport.gross = {"ag2612.SHFE": (1, 1)}
+            account.start(resume=False)
+            account.authorize()
+            transport.gross["ag2612.SHFE"] = (2, 2)
+            account._next_check = 0
+            with self.assertRaisesRegex(RuntimeError, "范围外持仓"):
+                account.poll()
+            self.assertFalse(account.client.is_armed)
+            self.assertTrue(service.position_manager.is_recovery_required("account"))
+            self.assertEqual(account.external_gross, {"ag2612.SHFE": (1, 1)})
+            self.assertFalse(service.position_manager.attribution.state()["owned"])
+            self.assertFalse(transport.sent)
+
+    def test_scoped_external_today_yesterday_change_blocks_restore_and_preserves_file(self):
+        modules = self.native_modules()
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "account.json"
+            account, _, transport, _, _ = self.native_account(path, modules, scoped=True)
+            transport.gross = {"ag2612.SHFE": (0, 1)}
+            account.start(resume=False)
+            account.authorize()
+            account.stop()
+            before = path.read_bytes()
+            restored, _, transport2, _, _ = self.native_account(path, modules, scoped=True)
+            transport2.gross = dict(transport.gross)
+            query = transport2.query_position_details
+            transport2.query_position_details = lambda: [{**row, "PositionDate": "2", "TodayPosition": 0}
+                                                         for row in query()]
+            with self.assertRaisesRegex(RuntimeError, "范围外持仓"):
+                restored.start(resume=True)
+            restored.abort_preparation()
+            restored.stop()
+            self.assertEqual(path.read_bytes(), before)
+            self.assertFalse(transport2.sent)
+
+    def test_scoped_backend_rejects_external_instrument_before_transport(self):
+        modules = self.native_modules()
+        with TemporaryDirectory() as directory:
+            account, _, transport, _, _ = self.native_account(Path(directory) / "account.json", modules, scoped=True)
+            account.start(resume=False)
+            account.authorize()
+            order = self.contracts.OrderIntent(strategy_id="one", backend_id="account",
+                instrument_id=fixtures.Instrument("ag2612.SHFE"), side="BUY", quantity=1)
+            with self.assertRaisesRegex(RuntimeError, "订单合约不在"):
+                account.execution.backend.submit_order(order)
+            self.assertFalse(transport.sent)
+
+    def test_scoped_external_active_order_closes_gate_and_is_not_canceled(self):
+        modules = self.native_modules()
+        with TemporaryDirectory() as directory:
+            account, _, transport, _, _ = self.native_account(Path(directory) / "account.json", modules, scoped=True)
+            account.start(resume=False)
+            account.authorize()
+            transport.active["999"] = {"InstrumentID": "ag2612", "ExchangeID": "SHFE", "Direction": "1",
+                "VolumeTotalOriginal": 1, "filled": 0}
+            account._next_check = 0
+            with self.assertRaisesRegex(RuntimeError, "范围外活动订单"):
+                account.poll()
+            self.assertFalse(account.client.is_armed)
+            self.assertFalse(transport.canceled)
+            self.assertFalse(transport.sent)
+
+    def test_scoped_checkpoint_rejects_managed_instrument_as_external_without_mutation(self):
+        modules = self.native_modules()
+        with TemporaryDirectory() as directory:
+            account, _, _, _, _ = self.native_account(Path(directory) / "account.json", modules, scoped=True)
+            before = account.snapshot_state()
+            invalid = {**before, "gross": {str(self.instrument): ["1", "0"]},
+                "buckets": {str(self.instrument): ["1", "0", "0", "0"]}}
+            with self.assertRaisesRegex(ValueError, "范围外持仓检查点"):
+                account.restore_state(invalid)
+            self.assertEqual(account.snapshot_state(), before)
+
+    def test_scoped_poll_does_not_treat_managed_fill_between_queries_as_external_conflict(self):
+        modules = self.native_modules()
+        with TemporaryDirectory() as directory:
+            account, service, transport, (one, two), _ = self.native_account(Path(directory) / "account.json", modules, scoped=True)
+            transport.gross = {"ag2612.SHFE": (0, 1)}
+            account.start(resume=False)
+            service.start()
+            one.start()
+            two.start()
+            account.authorize()
+            self.submit(one)
+            query = transport.query_position_details
+            def during_query():
+                transport.fill(transport.sent[0]["OrderRef"])
+                transport.query_position_details = query
+                return query()
+            transport.query_position_details = during_query
+            account._next_check = 0
+            account.poll()
+            self.assertTrue(account.client.is_armed)
+            self.assertEqual(service.position_manager.position("one", "main"), 1)
+            one.stop()
+            two.stop()
+            account.stop()
+
+    def test_application_binds_union_of_strategy_routes_to_all_shared_components(self):
+        modules = self.native_modules()
+        from scripts.integration.shared_account import run, factories
+        from contextlib import redirect_stdout
+        from io import StringIO
+        with TemporaryDirectory() as directory:
+            # 初始化实际builder导出；仅传输、行情/资料工厂及锁获取使用测试边界。
+            _, _, transport, _, _ = self.native_account(Path(directory) / "unused.json", modules, scoped=True)
+            transport.gross = {"ag2612.SHFE": (0, 1)}
+            package = sys.modules["bomber.framework.trader.execution.ctp"]
+            package.CtpNativeTraderDriver = modules.driver.CtpNativeTraderDriver
+            package.CtpTdApiTransport = object
+            ctp_channel = import_module("bomber.framework.trader.runtime.live.channels.ctp")
+            instruments = {"one": self.instrument, "two": fixtures.Instrument("HC.SHFE")}
+            spec = NS(tick=Decimal(1), multiplier=Decimal(1))
+            def prepare(args, context, lifecycle):
+                return NS(references=NS(instrument_id=args.instrument, spec=spec), upstream=NS())
+            def assemble(args, references, driver, upstream, *, shared_service, strategy_id):
+                port = shared_service.strategy_client(strategy_id, routes={"main": args.instrument},
+                    budget=import_module("bomber.framework.trader.execution.shared").SharedRiskBudget(2, 50000))
+                return NS(client=port, strategy=NS(strategy_id=strategy_id),
+                    runner=NS(session_ready=lambda: True), references=references)
+            entry = NS(prepare_inputs=prepare, assemble=assemble)
+            def arguments(row, config, *, resume):
+                return entry, NS(instrument=instruments[row["strategy_id"]])
+            config = SharedConfigTests().config()
+            config.update(environment="realtime", seconds=1, position_scope="strategy_instruments",
+                account_state_file=str(Path(directory) / "account.json"))
+            for row in config["strategies"]:
+                row["state_file"] = str(Path(directory) / row["state_file"])
+            diagnostics = {}
+            with patch.object(ctp_channel, "build_simnow_transport", return_value=transport), \
+                    patch.object(ctp_channel, "required", return_value="tcp://fake:30011"), \
+                    patch.object(modules.lifecycle.CtpSharedAccountLifecycle, "acquire"), \
+                    patch.object(factories, "strategy_arguments", side_effect=arguments), redirect_stdout(StringIO()):
+                host = run.build_host(config, resume=False, diagnostics=diagnostics)
+            self.addCleanup(host.resources.close)
+            self.assertEqual(diagnostics["managed_instruments"], ["HC.SHFE", "RB.SHFE"])
+            self.assertEqual(diagnostics["external_gross"], transport.gross)
+            self.assertEqual(host.service.instrument_scope, host.account.position_scope)
+            self.assertEqual(host.account.position_scope, host.account.execution.backend.instrument_scope)
+            self.assertFalse(host.service.client.is_armed)
+            self.assertFalse(transport.sent)
+            host.account.start(resume=False)
+            host.account.stop()
+
 
 class SharedConfigTests(unittest.TestCase):
     def config(self):
@@ -577,6 +805,16 @@ class SharedConfigTests(unittest.TestCase):
         config = self.read(self.config())
         self.assertTrue(Path(config["account_state_file"]).is_absolute())
         self.assertEqual(len(config["strategies"]), 2)
+
+    def test_position_scope_is_explicit_and_invalid_policies_are_rejected(self):
+        self.assertNotIn("position_scope", self.read(self.config()))
+        config = self.config()
+        config["position_scope"] = "strategy_instruments"
+        self.assertEqual(self.read(config)["position_scope"], "strategy_instruments")
+        for value in ("all_existing", "RB,HC", None):
+            config["position_scope"] = value
+            with self.assertRaisesRegex(ValueError, "position_scope"):
+                self.read(config)
 
     def test_duplicate_ids_files_and_execution_overrides_are_rejected(self):
         for mutation in (lambda c: c["strategies"][1].update(strategy_id="one"),

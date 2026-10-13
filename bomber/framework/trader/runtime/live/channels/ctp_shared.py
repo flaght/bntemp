@@ -1,6 +1,7 @@
 """共享账户CTP生命周期；一个TD、一个账户检查点、同机唯一写入锁。"""
 
 import time
+from decimal import Decimal
 
 from bomber.framework.trader.persistence import JsonStateStore, RuntimeStateManager
 from bomber.framework.trader.portfolio import TargetStore
@@ -13,15 +14,23 @@ from .ctp import account_lock, assert_flat_account, occupied_positions
 class CtpSharedAccountLifecycle:
     """不管理某个策略的行情、信号或指标；策略宿主与此控制器组合。"""
     def __init__(self, execution, service, *, transport, state_file, identity,
-                 resources, expected_day, reconcile_seconds=10, cancel_seconds=15):
+                 resources, expected_day, reconcile_seconds=10, cancel_seconds=15, position_scope=None):
         self.execution, self.service, self.transport = execution, service, transport
         self.driver, self.client, self.ledger = execution.driver, execution.client, execution.ledger
         self.resources, self.expected_day = resources, expected_day
         self.reconcile_seconds, self.cancel_seconds = reconcile_seconds, cancel_seconds
+        if position_scope != service.instrument_scope or (position_scope is not None
+                and position_scope != getattr(execution.backend, "instrument_scope", None)):
+            raise ValueError("共享账户、归属服务和报单Backend的持仓范围须一致")
+        self.position_scope = position_scope
+        self.external_gross, self.external_buckets = {}, {}
+        components = {"shared_account": service, "session_identity": SessionIdentityCheckpoint(identity)}
+        if position_scope is not None:
+            components["external_positions"] = self
         self.manager = RuntimeStateManager(JsonStateStore(state_file), TargetStore(), service.coordinator,
             execution.positions, order_machines={service.client_id: self.client.order_state_machine},
             ctp_ledgers={service.client_id: self.ledger}, ctp_drivers={service.client_id: self.driver},
-            state_components={"shared_account": service, "session_identity": SessionIdentityCheckpoint(identity)})
+            state_components=components)
         self.manager.enable_ctp_autosave(service.client_id, self.client)
         service.set_checkpoint(self.manager.save)
         self._next_check = 0
@@ -40,18 +49,19 @@ class CtpSharedAccountLifecycle:
 
     def _validate_account(self):
         self.service.validate_owned_state()
-        gross = occupied_positions(self.transport)
+        gross, buckets = self._observe_positions()
+        self._validate_external(gross, buckets)
+        managed = gross if self.position_scope is None else self.position_scope.select(gross)
         expected = {str(i): (p.long_total, p.short_total) for i, p in self.ledger.state().positions.items()
                     if p.long_total or p.short_total}
-        if gross != expected:
+        if managed != expected:
             raise RuntimeError("共享账户柜台总仓与保存CTP账本不一致")
-        buckets = position_buckets(self.transport.query_position_details(), expected)
         if not set(self.ledger.state().positions) <= set(self.service.instrument_limits):
             raise RuntimeError("共享CTP账本包含未注册合约")
         for instrument in self.service.instrument_limits:
             state = self.ledger.snapshot(instrument)
             actual = buckets.get(str(instrument))
-            if (actual.quantities if actual else (0, 0, 0, 0)) != (
+            if (actual if actual else (0, 0, 0, 0)) != (
                     state.long_today, state.long_yesterday, state.short_today, state.short_yesterday):
                 raise RuntimeError("共享账户柜台今昨仓与保存账本不一致")
             if self.execution.positions.account_position(self.service.client_id, instrument) != state.net_position:
@@ -60,6 +70,63 @@ class CtpSharedAccountLifecycle:
                 raise RuntimeError("共享账户存在未归属仓位")
         if self.driver.reconcile_active_orders().orders:
             raise RuntimeError("首期共享恢复要求柜台无活动订单；未知或漏成交须先对账")
+
+    def _observe_positions(self, *, external_only=False):
+        gross = occupied_positions(self.transport)
+        allowed = set(gross) | (set() if self.position_scope is None else self.position_scope.instruments)
+        buckets = position_buckets(self.transport.query_position_details(), allowed)
+        observed = {key: (row.quantities[0] + row.quantities[1], row.quantities[2] + row.quantities[3])
+                    for key, row in buckets.items()}
+        # 在线查询期间管理合约可正常成交；停机/恢复才比较其完整总仓。
+        if external_only:
+            observed, expected = self.position_scope.external(observed), self.position_scope.external(gross)
+        else:
+            expected = gross
+        if observed != expected:
+            raise RuntimeError("共享账户权威总仓与今昨明细不一致")
+        return gross, {key: row.quantities for key, row in buckets.items()}
+
+    def _validate_external(self, gross, buckets):
+        if self.position_scope is None:
+            return
+        if (self.position_scope.external(gross) != self.external_gross
+                or self.position_scope.external(buckets) != self.external_buckets):
+            self.client.disarm("external_position_changed")
+            self.execution.positions.mark_recovery_required(self.service.client_id)
+            raise RuntimeError("共享账户范围外持仓或今昨桶变化，保留归属并闭闸")
+        local = {str(key.instrument_id): q for key, q in self.execution.positions.snapshot().account_positions.items()
+                 if key.client_id == self.service.client_id and not self.position_scope.contains(key.instrument_id) and q}
+        expected = {key: long - short for key, (long, short) in self.external_gross.items() if long != short}
+        if local != expected:
+            self.client.disarm("external_position_conflict")
+            self.execution.positions.mark_recovery_required(self.service.client_id)
+            raise RuntimeError("共享账户范围外净仓与权威基线不一致")
+
+    def snapshot_state(self):
+        """范围外仓位只保存权威基线，不进入CTP执行账本或策略归属。"""
+        return {"version": 1, "managed_instruments": sorted(self.position_scope.instruments),
+            "gross": {key: [str(q) for q in values] for key, values in self.external_gross.items()},
+            "buckets": {key: [str(q) for q in values] for key, values in self.external_buckets.items()}}
+
+    def restore_state(self, state):
+        if state.get("version") != 1 or state.get("managed_instruments") != sorted(self.position_scope.instruments):
+            raise ValueError("范围外持仓检查点的管理合约不一致")
+        gross = {key: tuple(Decimal(q) for q in values) for key, values in state["gross"].items()}
+        buckets = {key: tuple(Decimal(q) for q in values) for key, values in state["buckets"].items()}
+        if (gross.keys() != buckets.keys() or any(self.position_scope.contains(key) for key in gross)
+                or any(len(values) != size or any(not q.is_finite() or q < 0 or q != q.to_integral_value()
+                    for q in values) for rows, size in ((gross, 2), (buckets, 4)) for values in rows.values())
+                or any(not (long or short) or (long, short) != (buckets[key][0] + buckets[key][1],
+                    buckets[key][2] + buckets[key][3]) for key, (long, short) in gross.items())):
+            raise ValueError("范围外持仓检查点的总仓或今昨桶无效")
+        self.external_gross, self.external_buckets = gross, buckets
+
+    def scope_diagnostics(self):
+        return {"policy": "account" if self.position_scope is None else "strategy_instruments",
+            "managed_instruments": None if self.position_scope is None else sorted(self.position_scope.instruments),
+            "external_gross": self.external_gross,
+            "final_managed_gross": None if self.final_gross is None else (
+                self.final_gross if self.position_scope is None else self.position_scope.select(self.final_gross))}
 
     def start(self, *, resume):
         if self._started:
@@ -84,13 +151,20 @@ class CtpSharedAccountLifecycle:
                 raise RuntimeError("首期共享恢复要求已结束订单，保留原文件并先对账")
             self._validate_account()
         else:
-            assert_flat_account(self.driver, self.transport)
+            assert_flat_account(self.driver, self.transport, position_scope=self.position_scope)
+            if self.position_scope is not None:
+                gross, buckets = self._observe_positions()
+                self.external_gross = self.position_scope.external(gross)
+                self.external_buckets = self.position_scope.external(buckets)
+                self._validate_account()
         self._ready = True
         self._next_check = time.monotonic() + self.reconcile_seconds
 
     def authorize(self):
         if not self._ready:
             raise RuntimeError("账户恢复或预检尚未完成")
+        if self.position_scope is not None:
+            self._validate_account()
         self.manager.save()
         self.client.arm_demo(self.client.DEMO_CONFIRMATION)
 
@@ -107,6 +181,17 @@ class CtpSharedAccountLifecycle:
             raise RuntimeError("共享账户断线、回报冲突或交易日变化，账户闭闸")
         if time.monotonic() >= self._next_check:
             self.client.refresh_account_state()
+            if self.position_scope is not None:
+                try:
+                    gross, buckets = self._observe_positions(external_only=True)
+                    self._validate_external(gross, buckets)
+                    if any(not self.position_scope.contains(order.instrument_id)
+                           for order in self.driver.reconcile_active_orders().orders):
+                        raise RuntimeError("共享账户出现范围外活动订单，账户闭闸")
+                except Exception:
+                    self.client.disarm("external_position_check_failed")
+                    self.execution.positions.mark_recovery_required(self.service.client_id)
+                    raise
             self._next_check = time.monotonic() + self.reconcile_seconds
 
     def stop(self):

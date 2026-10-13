@@ -32,6 +32,7 @@ def validate_td_preflight(config, driver, *, md_front, td_front, diagnostics):
     diagnostics.update(environment=config["environment"], expected_td_trading_day=config["trading_day"],
         observed_td_trading_day=driver.trading_day, md_front=md_front, td_front=td_front,
         preflight_orders_submitted=driver.submitted_orders)
+    diagnostics["position_scope_policy"] = config.get("position_scope", "account")
     print(f"共享账户TD预检: environment={diagnostics['environment']} "
           f"actual_TD={diagnostics['observed_td_trading_day']} "
           f"expected_TD={diagnostics['expected_td_trading_day']} MD={md_front} TD={td_front} "
@@ -52,6 +53,7 @@ def build_host(config, *, resume, diagnostics=None):
     from bomber.framework.trader.runtime.live.channels.ctp_shared import CtpSharedAccountLifecycle
     from bomber.framework.trader.runtime.live.shared import SharedAccountLiveHost, SharedStrategySession
     from bomber.framework.trader.runtime.live.contracts import LiveRunContext
+    from bomber.framework.trader.runtime.live.recovery import InstrumentPositionScope
     from .factories import strategy_arguments, instrument_specs, assemble_strategy_session
 
     resources = ExitStack()
@@ -78,8 +80,10 @@ def build_host(config, *, resume, diagnostics=None):
                               diagnostics=diagnostics)
         if resume:
             assert_account_ready(driver)
-        else:
+        elif config.get("position_scope", "account") == "account":
             assert_flat_account(driver, transport)
+        else:
+            assert_account_ready(driver)
         prepared, specs = [], {}
         for row in config["strategies"]:
             entry, args = strategy_arguments(row, config, resume=resume)
@@ -97,6 +101,16 @@ def build_host(config, *, resume, diagnostics=None):
                     raise ValueError("共享合约的跳价和乘数声明冲突")
                 specs[instrument] = spec
             prepared.append((row, entry, args, inputs))
+        position_scope = (InstrumentPositionScope(specs) if config.get("position_scope") == "strategy_instruments"
+                          else None)
+        if position_scope is not None:
+            from bomber.framework.trader.runtime.live.channels.ctp import occupied_positions
+            diagnostics["managed_instruments"] = sorted(position_scope.instruments)
+            diagnostics["external_gross"] = position_scope.external(occupied_positions(transport))
+            if not resume:
+                assert_flat_account(driver, transport, position_scope=position_scope)
+            print(f"共享账户管理合约: {diagnostics['managed_instruments']} "
+                  f"范围外总仓={diagnostics['external_gross']}；不产生策略归属", flush=True)
         driver.stop()  # 只读预检完成后安装唯一正式执行和写前钩子。
         budget = SharedRiskBudget(account_config["max_gross_quantity"], account_config["max_gross_notional"])
         limits = {i: RiskLimits(max_order_quantity=budget.max_gross_quantity,
@@ -108,10 +122,11 @@ def build_host(config, *, resume, diagnostics=None):
             multipliers={i: spec.multiplier for i, spec in specs.items()}, instrument_limits=limits,
             session_check=lambda: driver.is_simnow_session, orders=True,
             limit_offset_ticks=account_config["limit_offset_ticks"],
+            instrument_scope=position_scope,
             generic_close_venues=("DCE", "CZCE"), generic_close_today_first_venues=("DCE", "CZCE"))
         driver_holder["client"] = execution.client
         service = SharedAccountExecutionService(execution.client, prices=execution.prices,
-            instrument_limits=limits, budget=budget)
+            instrument_limits=limits, budget=budget, instrument_scope=position_scope)
         sessions = []
         for row, entry, args, inputs in prepared:
             session = assemble_strategy_session(entry, args, inputs, service=service,
@@ -125,9 +140,11 @@ def build_host(config, *, resume, diagnostics=None):
         identity = {"trading_day": config["trading_day"], "environment": config["environment"],
             "replay_md_trading_day": config.get("replay_md_trading_day"), "account": account_config,
             "strategies": {item.strategy_id: item.identity for item in sessions}}
+        if position_scope is not None:
+            identity["managed_instruments"] = sorted(position_scope.instruments)
         account = CtpSharedAccountLifecycle(execution, service, transport=transport,
             state_file=config["account_state_file"], identity=identity, resources=resources,
-            expected_day=config["trading_day"])
+            expected_day=config["trading_day"], position_scope=position_scope)
         host = SharedAccountLiveHost(account, service, sessions, resources=resources, resume=resume)
         return host
     except BaseException:
@@ -185,6 +202,7 @@ def main(argv=None):
                 "td_preflight": diagnostics,
                 "verification": "runtime_completed_real_fill_acceptance_separate",
                 "final_gross": host.account.final_gross if host else None,
+                "position_scope": host.account.scope_diagnostics() if host else None,
                 "final_active_orders": host.account.final_active_orders if host else None},
                 session=host, events=host.account.execution.backend.reports if host else ())
 
