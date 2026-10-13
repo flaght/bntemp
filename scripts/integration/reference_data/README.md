@@ -9,6 +9,13 @@
 `trading_hours.feather` 或对应的 manifest。DolphinDB 适配器将 `Code` 转为
 `code`；Feather 必须直接使用七个小写标准字段。
 
+DolphinDB TIME 的直接SDK读取可能显示为 `1970-01-01 HH:MM:SS`。Live及
+本只读入口使用同一个公共适配器，其SQL显式选择
+`string(start_time) as start_time`、`string(end_time) as end_time`，在服务端
+转换为时钟字符串。Feather保存时应使用时钟字符串或 `datetime.time`，
+不要保存包含1970日期的时间戳。公共解析器仍拒绝完整日期时间，不将日期
+或数值单位静默丢弃。跨午夜归属继续由 `date_anchor` 和日期偏移决定。
+
 新增入口 `trading_sessions` 沿用公共目录解析：显式文件优先，其次资料目录
 `FUT_ROLE_DATA_DIR`、`CTP_DATA_DIR/role`、`ROLE_DIR`。
 本次 `ROLE_DIR=/workspace/data/temp_bomber1/ctp/role`，因此自动选择

@@ -114,6 +114,37 @@ class SessionReadonlyTests(unittest.TestCase):
         self.assertFalse(Path(str(self.file) + ".manifest.json").exists())
         self.assertNotIn("never-export-this-secret", json.dumps(result, default=str))
 
+    def test_native_ddb_time_projection_matches_updated_clock_feather(self):
+        # Direct SDK reads of DDB TIME can produce epoch-date timestamps.
+        # Model the server's string(TIME) projection before SDK delivery.
+        class TimeSdk(FakeSdk):
+            def run(self, script):
+                returned = super().run(script)
+                for column in ("start_time", "end_time"):
+                    if f"string({column}) as {column}" in script:
+                        returned[column] = returned[column].dt.strftime("%H:%M:%S.%f")
+                return returned
+
+        raw = frame("CU").rename(columns={"code": "Code"})
+        for column in ("start_time", "end_time"):
+            raw[column] = pd.to_datetime("1970-01-01 " + raw[column])
+        self.sdk = TimeSdk(raw)
+        result = self.probe(self.session_args("--no-session-overrides"))
+        self.assertEqual(result["sessions"]["status"], "passed")
+        self.assertEqual(result["sessions"]["history_minutes"]["count"], 600)
+        night = next(row for row in result["hours_records"] if row["segment_id"] == "night_1")
+        self.assertEqual((night["start_time"], night["end_time"], night["end_day_offset"]),
+                         ("21:00:00", "00:00:00", 1))
+        for script in self.sdk.scripts:
+            self.assertIn("string(start_time) as start_time", script)
+            self.assertIn("string(end_time) as end_time", script)
+        self.assertNotIn("1970-01-01", json.dumps(result["hours_records"]))
+        # This fixture is intentionally rejected when the TIME projection is lost.
+        self.sdk = FakeSdk(raw)
+        with self.assertRaisesRegex(ValueError, "时段时间须为"):
+            self.probe(self.args())
+        self.assertTrue(self.sdk.closed)
+
     def test_windows_weekend_midnight_and_minutes_match(self):
         result = self.probe(self.session_args("--no-session-overrides"))
         sessions = result["sessions"]
