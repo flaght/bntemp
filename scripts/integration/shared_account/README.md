@@ -16,10 +16,26 @@ python -u -m scripts.integration.shared_account.run \
 路径相对于配置文件目录解析；账户文件和每个策略的信号文件必须不同。
 新会话要求全账户空仓、无活动订单和所有状态文件不存在。
 
-显式运行原生SimNow共享报单宿主：
+在项目根目录创建实际会话配置（`-n`保留已有配置，不覆盖）：
 
 ```bash
-python -u -m scripts.integration.shared_account.run --config /path/to/session.json \
+cp -n scripts/integration/shared_account/example.json scripts/integration/shared_account/session.json
+```
+
+编辑`session.json`，核对`trading_day`、各策略的`--expected-source-day`、环境及限额。
+默认示例是`realtime`；第二套回放须明确配置`replay`和`replay_md_trading_day`。
+先检查自己的配置：
+
+```bash
+python -u -m scripts.integration.shared_account.run \
+  --config scripts/integration/shared_account/session.json
+```
+
+配置核对后，显式运行原生SimNow共享报单宿主：
+
+```bash
+python -u -m scripts.integration.shared_account.run \
+  --config scripts/integration/shared_account/session.json \
   --connect --enable-orders --confirm-simnow
 ```
 

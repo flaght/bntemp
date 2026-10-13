@@ -109,3 +109,16 @@ python -u -m tests.run_cross_section_acceptance --only shared-account \
 独立策略进程接入本机账户服务的协议/客户端尚未实现；当前分别运行旧demo CLI仍会
 争同一账户锁。CTP＋BN联合剩余验收、真实第三方多账户、BN写前/漏成交重建、
 跨主机单写保护与通用跨日恢复保持原GAP10范围，未由本期实现或本机通过结果关闭。
+
+## 启动路径修正
+
+用户在Linux提供默认`example.json`配置检查通过输出；随后将说明中的占位路径
+`/path/to/session.json`原样用于报单命令，文件不存在，程序在读取配置阶段退出。
+该失败尚未连接数据库、MD或TD，不能计作柜台运行失败。
+
+README已改为项目内`cp -n example.json session.json`的完整创建、修改、检查和启动
+步骤，避免覆盖已有会话配置。CLI遇到不存在的文件现在打印实际绝对路径与修正
+方法，并以exit 2退出，不显示Python回溯；不会创建宿主或连接柜台。
+本机`SharedConfigTests`四项通过，其中新增缺文件回归验证`build_host`未被调用。
+原143项离线结果保留为此前版本证据；本次没有重跑交易核心或连接柜台。
+当前修正版本使用`GAP10_SHARED_ACCOUNT_20261013_REV2_SHA256.txt`，原清单保留历史。

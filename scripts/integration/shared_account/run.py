@@ -3,6 +3,7 @@
 import argparse
 from contextlib import ExitStack
 from pathlib import Path
+import sys
 import time
 from types import SimpleNamespace
 
@@ -121,7 +122,12 @@ def build_host(config, *, resume):
 
 def main(argv=None):
     args = parse_args(argv)
-    config = read_config(args.config)
+    try:
+        config = read_config(args.config)
+    except FileNotFoundError:
+        print(f"配置文件不存在：{args.config.resolve()}。请先复制example.json为实际会话配置，"
+              "核对交易日、资料日及限额后，再用--config指定该文件。未建立任何连接。", file=sys.stderr)
+        raise SystemExit(2) from None
     if not args.connect:
         print(f"共享配置通过：{len(config['strategies'])}个策略；未连接行情、数据库或柜台")
         return

@@ -595,6 +595,20 @@ class SharedConfigTests(unittest.TestCase):
             parse_args(["--config", "example.json", "--connect"])
         self.assertFalse(parse_args(["--config", "example.json"]).connect)
 
+    def test_missing_config_reports_path_without_starting_host(self):
+        from scripts.integration.shared_account import run
+        from contextlib import redirect_stderr
+        from io import StringIO
+        with TemporaryDirectory() as directory:
+            missing = Path(directory) / "session.json"
+            output = StringIO()
+            with patch.object(run, "build_host") as build, redirect_stderr(output), self.assertRaises(SystemExit) as raised:
+                run.main(["--config", str(missing), "--connect", "--enable-orders", "--confirm-simnow"])
+            self.assertEqual(raised.exception.code, 2)
+            self.assertIn(str(missing), output.getvalue())
+            self.assertIn("未建立任何连接", output.getvalue())
+            build.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()
