@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "date": "2026-10-14",
+  "report": "shared-simnow-1791907341703816222",
+  "input_sha256": "71275f0f0e8545a21745553b5ce5b1cd10e65f2f84c6722696a8bbbce1f5d94d",
+  "status": "fill_attribution_and_position_review_passed_runtime_health_fault_unresolved",
+  "report_count": 12,
+  "orders": 6,
+  "fills": 6,
+  "executed_contract_quantity": "7",
+  "callback_counts": {
+    "cross-cu-au-delta": 5,
+    "ema-cu-gamma": 1
+  },
+  "final_owned": {
+    "ema-cu-gamma": {
+      "cu2611.SHFE": "-1"
+    },
+    "cross-cu-au-delta": {
+      "cu2611.SHFE": "-1",
+      "au2612.SHFE": "1"
+    }
+  },
+  "final_gross": {
+    "cu2611.SHFE": [
+      "0",
+      "2"
+    ],
+    "au2612.SHFE": [
+      "1",
+      "0"
+    ]
+  },
+  "au_order_12_accepted_to_fill_seconds": 103.351599084,
+  "au_late_fill_kept_source_revision": 6,
+  "au_late_fill_does_not_prove_md_staleness": true,
+  "duplicate_report_ids": 0,
+  "duplicate_trade_ids": 0,
+  "key_orders": {
+    "15": "EMA sell CLOSE_TODAY 1 yields attributed CU short1 while peer long1 retained",
+    "16": "cross sell OPEN2 allocated only to cross reversal long1 to short1, EMA remains short1"
+  },
+  "runtime_status_from_previous_summary": "failed",
+  "remaining": [
+    "exact Tick readiness cause requires new failure_readiness diagnostics",
+    "live partial fills/cancels/rejections not present in this file"
+  ]
+}
