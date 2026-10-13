@@ -809,6 +809,23 @@ class SharedAccountTests(unittest.TestCase):
         self.assertTrue(state["recovery_required"])
         self.assertEqual(state["report_errors"], ["conflicting fill sequence"])
 
+    def test_readiness_failure_context_keeps_false_readiness_and_per_contract_ages(self):
+        self.native_modules()
+        module = import_module("bomber.framework.trader.runtime.live.health")
+        contracts = import_module("bomber.framework.trader.runtime.live.contracts")
+        identity = contracts.ChannelIdentity("market", "ctp", "cross-md")
+        result = contracts.ReadinessResult((identity,), (contracts.ReadinessIssue(identity,
+            "INSTRUMENT_UNHEALTHY", "AU", {"receive_age_seconds": 11, "max_age_seconds": 10}),))
+        self.assertFalse(result)
+        stale = {"AU": {"receive_age_seconds": 11, "max_age_seconds": 10}}
+        runner = NS(_session_check=NS(last_result=result), failure=None, stale_instruments=lambda: stale,
+            references=NS(spec="original"), fixed_spec="original")
+        context = module.readiness_failure_context(runner)
+        self.assertEqual(context["channel_readiness"]["issues"][0]["code"], "INSTRUMENT_UNHEALTHY")
+        self.assertEqual(context["stale_instruments"], stale)
+        self.assertTrue(context["reference_current"])
+        self.assertIsNone(runner.failure)
+
     def test_scoped_native_account_preserves_external_positions_across_fill_stop_and_restore(self):
         modules = self.native_modules()
         external = {"MO2611-C-7400.CFFEX": (0, 1), "sc2611.INE": (1, 0),

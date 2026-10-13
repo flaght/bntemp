@@ -133,6 +133,9 @@ class CrossSectionSessionRunner(UnifiedStrategyRunner):
         self.accept_bars = True
 
     def close_role_gate(self, reason):
+        from bomber.framework.trader.runtime.live.health import readiness_failure_context
+        if not self.failure:
+            self.failure_readiness = readiness_failure_context(self)
         self.failure = str(reason)
         self.accept_bars = False
         if self.orders and self.client is not None:

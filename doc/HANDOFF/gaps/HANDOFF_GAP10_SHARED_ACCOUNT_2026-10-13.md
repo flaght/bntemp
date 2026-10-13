@@ -311,3 +311,25 @@ live-common116项，共169项通过。新增迁移后新身份恢复/旧身份�
 保存失败回滚及仅上调总名义限额的配置约束验证通过；预算异常新增实际金额/限额
 诊断。新配置无网络检查通过，diff检查通过。本机未连接或修改远端账户，预算迁移
 仍待Linux只读执行。交付REV9清单，原配置和历史证据保留，GAP10整体仍开放。
+
+## 2026-10-14 预算迁移通过及横截面健康故障
+
+用户提供预算只读迁移报告shared-simnow-1791907272093985739：代数713→714，
+max_gross_notional200万→230万，原文件备份，orders_submitted0、authorized=false，
+status=reconciled。CU-1/AU+1及范围外持仓保持一致，账户failed/pending均false。
+随后新配置resume报告shared-simnow-1791907341703816222，EMA完成5根Bar预热并
+获得1次归属成交回调，横截面5次。最终EMA CU-1、横截面CU-1/AU+1，合计CU-2/AU+1
+与柜台总仓一致；活动单0，停机无异常，账户failed/pending/draining与回报错误均空。
+
+运行status仍failed：横截面Tick目标推进时行情或参考失效后独立暂停，EMA按480秒
+停止。该轮无预算超限；不能归因于CU/AU收盘或直接放宽10秒时效。未提供events.txt
+和故障时逐合约时效，不能登记完整CU/AU双来源验收或推定哪一通道失败。
+
+新增公共readiness_failure_context读取本地SessionReadiness.last_result和逐合约深度
+年龄/交易日/回退标记、参考条款一致性。False的就绪结果也保留全部issues，不被
+布尔过滤丢弃。Host检测故障和04 close_role_gate在故障发生时保存failure_readiness，
+报告随策略列出；不访问数据库/柜台、不改变时效阈值或故障门控，策略算法不改。
+当前先取得上述报告目录events.txt；若继续复测，原230万配置同日resume并同步诊断
+文件，保留原全部状态。后续报告据failure_readiness区分EVENT/RECEIVE/TD/版本问题。
+本机集中报告1791908261177042000，shared-account54项/live-common116项均通过，
+共170项；原生04依赖限制仍待Linux组装验证。本轮交付REV10，GAP10整体仍开放。
