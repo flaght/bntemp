@@ -24,6 +24,56 @@ from bomber.framework.dataprep.trading_hours import read_trading_hours
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
+class SourceParityMismatch(ValueError):
+    """A failed comparison with normalized per-field evidence, never a fallback."""
+    def __init__(self, message, report):
+        super().__init__(message)
+        self.report = report
+
+
+def row_differences(database_rows, file_rows, key_columns):
+    def indexed(rows):
+        return {tuple(row[column] for column in key_columns): dict(row) for row in rows}
+    database, file = indexed(database_rows), indexed(file_rows)
+    differences = []
+    for key in sorted(database.keys() | file.keys()):
+        left, right = database.get(key), file.get(key)
+        if left == right:
+            continue
+        item = dict(zip(key_columns, key))
+        if left is None or right is None:
+            item.update(difference="missing_in_dolphindb" if left is None else "missing_in_feather",
+                        dolphindb=left, feather=right)
+        else:
+            item.update(difference="changed", fields={
+                column: {"dolphindb": left.get(column), "feather": right.get(column)}
+                for column in sorted(left.keys() | right.keys()) if left.get(column) != right.get(column)})
+        differences.append(item)
+    return differences
+
+
+def mismatch_report(args, config, live, offline, started, message):
+    def evidence(rules):
+        return {"hours_sha256": rules.hours.fingerprint, "hours_rows": len(rules.hours.rows),
+                "overrides_sha256": rules.overrides.fingerprint if rules.overrides is not None else None,
+                "overrides_rows": len(rules.overrides.rows) if rules.overrides is not None else None}
+    return {"status": "failed", "failure": "source_content_mismatch", "message": message,
+            "purpose": "trading_session_source_parity_readonly", "started_ns": started,
+            "observed_ns": time.time_ns(), "product": args.product.upper(), "hours_code": args.code,
+            "database": config.database, "table": config.hours_table,
+            "file": str(args.trading_hours_file), "dolphindb": evidence(live), "feather": evidence(offline),
+            "differences": {
+                "trading_hours": row_differences(live.hours.records(), offline.hours.records(),
+                                                 ("code", "segment_id")),
+                "session_overrides": row_differences(
+                    live.overrides.rows if live.overrides is not None else (),
+                    offline.overrides.rows if offline.overrides is not None else (), ("code", "override_id"))},
+            "sessions": {"status": "not_run"},
+            "consistency_evidence": "two_equal_reads_not_transaction_snapshot",
+            "revision_evidence": "static_content_hash_not_historical_revision_asof",
+            "ctp_connected": False, "orders_submitted": 0}
+
+
 @dataclass(frozen=True)
 class RuleCapture:
     hours: TradingHoursSnapshot
@@ -171,15 +221,17 @@ def probe(args, config, *, factory=ReferenceSourceFactory, calendar_provider=Non
         live = capture(source, args.code, read_overrides=read_overrides)
         with factory.create_for(DataSourcePurpose.OFFLINE_REFERENCE, "file", paths) as file_source:
             offline = capture(file_source, args.code, read_overrides=read_overrides)
-        if live.hours.fingerprint != offline.hours.fingerprint:
-            raise ValueError("数据库与Feather时段内容不一致，不能认定同一规则版本")
-        if live.identity != offline.identity:
-            raise ValueError("数据库与Feather日期例外内容不一致")
-        sessions = (compare_sessions(live, offline, args.binding, dates, args.days, args.history_minutes)
-                    if args.days else {"status": "not_requested"})
         after = capture(source, args.code, read_overrides=read_overrides)
         if after.identity != live.identity:
             raise ValueError("核验期间数据库规则发生变化，本次结果无效，请重新读取")
+        if live.hours.fingerprint != offline.hours.fingerprint:
+            message = "数据库与Feather时段内容不一致，不能认定同一规则版本"
+            raise SourceParityMismatch(message, mismatch_report(args, config, live, offline, started, message))
+        if live.identity != offline.identity:
+            message = "数据库与Feather日期例外内容不一致"
+            raise SourceParityMismatch(message, mismatch_report(args, config, live, offline, started, message))
+        sessions = (compare_sessions(live, offline, args.binding, dates, args.days, args.history_minutes)
+                    if args.days else {"status": "not_requested"})
     result = {"status": "passed", "purpose": "trading_session_source_parity_readonly",
               "observed_ns": time.time_ns(), "started_ns": started,
               "product": args.product.upper(), "hours_code": args.code,
@@ -202,13 +254,19 @@ def main(argv=None):
     config = replace(DolphinDbReferenceConfig.from_env(database=args.database,
                      read_timeout_seconds=args.timeout), hours_table=args.trading_hours_table,
                      overrides_table=args.session_overrides_table)
-    result = probe(args, config)
+    failed = False
+    try:
+        result = probe(args, config)
+    except SourceParityMismatch as error:
+        result, failed = error.report, True
     output = json.dumps(result, ensure_ascii=False, indent=2, default=str)
     if args.report is not None:
         args.report.parent.mkdir(parents=True, exist_ok=True)
         with args.report.open("x", encoding="utf-8") as handle:
             handle.write(output + "\n")
     print(output, flush=True)
+    if failed:
+        raise SystemExit(1)
     return result
 
 

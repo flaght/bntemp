@@ -40,6 +40,13 @@ python -u -m scripts.integration.reference_data.trading_sessions \
 代码默认查询 `product` 的规则，可用 `--hours-code` 显式指定期权继承的规则键。
 没有匹配规则或 Feather 使用 `Code` 会失败，不猜测品种、不改写原文件。
 
+内容不一致时，终端和 `--report` 指定的新文件均保存 `status=failed` 的
+差异报告，进程退出码为1。`differences.trading_hours` 按
+`code/segment_id` 列出缺少的分段及变化字段，每个字段同时给出
+`dolphindb`、`feather` 的标准化值；日期例外使用 `code/override_id` 对照。
+报告包含两侧内容摘要和行数，日期窗口检查不会继续执行。先核对具体差异
+和上游规则版本，再修正来源。
+
 会话验收追加 `--calendar-id` 和可重复的 `--trading-day YYYYMMDD`，
 查询日期跨度至多31天；这些日期只限定核验范围，交易日期和覆盖范围仍由
 `calendars` 的 Provider 提供。必须同时配置 `--session-overrides-table` 与
@@ -55,7 +62,7 @@ python -u -m scripts.integration.reference_data.trading_sessions \
 数据库前后两次读取须完全一致；这是静态内容一致性证据，不是数据库事务
 快照或历史规则发布时间证据。错误直接终止，不回退文件替代数据库。
 此入口不读取行情价格、不连接CTP、不报单。真实来源对照和会话验收通过后，
-再执行柜台只读及在线 Recording；本机13项假SDK加实际Feather的通过结果
+再执行柜台只读及在线 Recording；本机16项假SDK加实际Feather的通过结果
 不能替代真实数据库或柜台验收。
 
 ## GAP-03当前入口与导出

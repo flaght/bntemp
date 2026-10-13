@@ -185,17 +185,42 @@ class SessionReadonlyTests(unittest.TestCase):
 
     def test_changed_hours_fail_and_source_is_closed(self):
         self.sdk.tables["fut_trading_session"].loc[0, "start_time"] = "09:01"
-        with self.assertRaisesRegex(ValueError, "时段内容不一致"):
+        with self.assertRaisesRegex(readonly.SourceParityMismatch, "时段内容不一致") as error:
             self.probe(self.args())
+        report = error.exception.report
+        self.assertEqual(report["status"], "failed")
+        self.assertEqual(report["differences"]["trading_hours"], [{
+            "code": "CU", "segment_id": "day_1", "difference": "changed",
+            "fields": {"start_time": {"dolphindb": "09:01:00", "feather": "09:00:00"}}}])
+        self.assertEqual(report["sessions"], {"status": "not_run"})
+        self.assertEqual(len(self.sdk.scripts), 2)
+        self.assertNotIn("never-export-this-secret", json.dumps(report, default=str))
         self.assertTrue(self.sdk.closed)
 
     def test_changed_exceptions_fail_even_when_hours_match(self):
         path = self.exception_files([dict(code="CU", override_id="night-cancel", date_basis="NIGHT_START",
             date=date(2026, 10, 9), action="CANCEL", target="NIGHT", segments="[]")])
         self.sdk.tables["session_overrides"].loc[0, "date"] = date(2026, 10, 12)
-        with self.assertRaisesRegex(ValueError, "日期例外内容不一致"):
+        with self.assertRaisesRegex(readonly.SourceParityMismatch, "日期例外内容不一致") as error:
             self.probe(self.session_args("--session-overrides-table", "session_overrides",
                                        "--session-overrides-file", str(path)))
+        difference = error.exception.report["differences"]["session_overrides"][0]
+        self.assertEqual(difference["override_id"], "night-cancel")
+        self.assertEqual(difference["fields"]["date"], {
+            "dolphindb": date(2026, 10, 12), "feather": date(2026, 10, 9)})
+        self.assertTrue(self.sdk.closed)
+
+    def test_missing_and_renamed_segment_keys_show_each_source_row(self):
+        self.sdk.tables["fut_trading_session"].loc[4, "segment_id"] = "night_tail"
+        with self.assertRaises(readonly.SourceParityMismatch) as error:
+            self.probe(self.args())
+        differences = error.exception.report["differences"]["trading_hours"]
+        self.assertEqual([(row["segment_id"], row["difference"]) for row in differences],
+                         [("night_2", "missing_in_dolphindb"), ("night_tail", "missing_in_feather")])
+        self.assertIsNone(differences[0]["dolphindb"])
+        self.assertEqual(differences[0]["feather"]["start_time"], "00:00:00")
+        self.assertIsNone(differences[1]["feather"])
+        self.assertEqual(differences[1]["dolphindb"]["start_day_offset"], 1)
         self.assertTrue(self.sdk.closed)
 
     def test_database_failure_is_not_a_file_fallback(self):
@@ -256,6 +281,29 @@ class SessionReadonlyTests(unittest.TestCase):
         self.created.clear()
         self.rejected("--report", str(report))
         self.assertEqual(report.read_bytes(), original)
+
+    def test_main_saves_failed_difference_report_and_exits_nonzero(self):
+        report = self.root / "failed.json"
+        self.sdk.tables["fut_trading_session"].loc[0, "start_time"] = "09:01"
+        real_probe = readonly.probe
+        output = io.StringIO()
+        with patch.dict("os.environ", {"DDB_HOST": "fake", "DDB_USERNAME": "user",
+                                     "DDB_PASSWORD": "never-export-this-secret"}), \
+                patch.object(readonly, "load_dotenv"), \
+                patch.object(readonly, "probe", side_effect=lambda args, config:
+                    real_probe(args, config, factory=self.factory)), \
+                redirect_stdout(output), self.assertRaises(SystemExit) as error:
+            readonly.main(["--connect", "--product", "CU", "--report", str(report)])
+        self.assertEqual(error.exception.code, 1)
+        saved = json.loads(report.read_text())
+        self.assertEqual(saved, json.loads(output.getvalue()))
+        self.assertEqual(saved["status"], "failed")
+        self.assertEqual(saved["failure"], "source_content_mismatch")
+        self.assertEqual(saved["differences"]["trading_hours"][0]["segment_id"], "day_1")
+        self.assertNotEqual(saved["dolphindb"]["hours_sha256"], saved["feather"]["hours_sha256"])
+        self.assertFalse(saved["ctp_connected"])
+        self.assertEqual(saved["orders_submitted"], 0)
+        self.assertTrue(self.sdk.closed)
 
 
 if __name__ == "__main__":
