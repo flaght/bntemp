@@ -445,6 +445,98 @@ class SharedAccountTests(unittest.TestCase):
             self.assertEqual(service2._suspended, {"one", "two"})
             restored.stop()
 
+    def test_readonly_reconciliation_repairs_finished_failed_checkpoint_without_sending(self):
+        modules = self.native_modules()
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "account.json"
+            account, service, transport, (one, two), _ = self.native_account(path, modules, scoped=True)
+            transport.gross = {"ag2612.SHFE": (0, 1)}
+            account.start(resume=False)
+            service.start()
+            one.start()
+            two.start()
+            account.authorize()
+            self.submit(one, 1)
+            transport.fill(transport.sent[0]["OrderRef"])
+            one.stop()
+            two.stop()
+            account.stop()
+            # 模拟已记录新意图但发送失败；保存failed/pending及尚待冻结状态。
+            stored = account.manager.repository.load()
+            state = stored.payload["component_states"]["shared_account"]
+            source = state["sources"]["one"]
+            source["targets"][str(self.instrument)] = "-1"
+            source["rows"][0]["quantity"] = "-1"
+            state["failed"] = state["pending"] = True
+            state["shared"]["draining"] = ["one", "two"]
+            account.manager.repository.save(stored.payload, expected_generation=stored.generation)
+            before = path.read_bytes()
+            repaired, service2, transport2, _, _ = self.native_account(path, modules, scoped=True)
+            transport2.gross = dict(transport.gross)
+            result = repaired.reconcile_checkpoint()
+            self.assertEqual(Path(result["backup_file"]).read_bytes(), before)
+            self.assertFalse(transport2.sent)
+            self.assertFalse(transport2.canceled)
+            self.assertEqual(result["orders_submitted"], 0)
+            self.assertFalse(result["authorized"])
+            self.assertFalse(result["strategies_started"])
+            saved = repaired.manager.repository.load().payload["component_states"]["shared_account"]
+            self.assertFalse(saved["failed"])
+            self.assertFalse(saved["pending"])
+            self.assertFalse(saved["shared"]["draining"])
+            self.assertEqual(saved["sources"]["one"]["revision"], source["revision"])
+            self.assertEqual(saved["sources"]["one"]["targets"][str(self.instrument)], "1")
+            self.assertEqual(saved["shared"]["suspended"], ["one", "two"])
+            normal, service3, transport3, _, _ = self.native_account(path, modules, scoped=True)
+            transport3.gross = dict(transport2.gross)
+            normal.start(resume=True)
+            self.assertFalse(transport3.sent)
+            self.assertEqual(service3.position_manager.position("one", "main"), 1)
+            normal.stop()
+
+    def test_readonly_reconciliation_rejects_gross_conflict_without_changing_file(self):
+        modules = self.native_modules()
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "account.json"
+            account, service, transport, _, _ = self.native_account(path, modules, scoped=True)
+            account.start(resume=False)
+            account.authorize()
+            account.stop()
+            stored = account.manager.repository.load()
+            state = stored.payload["component_states"]["shared_account"]
+            state["failed"] = state["pending"] = True
+            account.manager.repository.save(stored.payload, expected_generation=stored.generation)
+            before = path.read_bytes()
+            repaired, _, transport2, _, _ = self.native_account(path, modules, scoped=True)
+            transport2.gross = {str(self.instrument): (1, 1)}  # 净0但总仓不一致。
+            with self.assertRaisesRegex(RuntimeError, "总仓"):
+                repaired.reconcile_checkpoint()
+            self.assertEqual(path.read_bytes(), before)
+            self.assertFalse(transport2.sent)
+            self.assertFalse(tuple(Path(directory).glob("*.before-reconcile-*.json")))
+
+    def test_readonly_reconciliation_rejects_unknown_active_orders_without_canceling(self):
+        modules = self.native_modules()
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "account.json"
+            account, service, _, _, _ = self.native_account(path, modules)
+            account.start(resume=False)
+            account.authorize()
+            account.stop()
+            stored = account.manager.repository.load()
+            state = stored.payload["component_states"]["shared_account"]
+            state["failed"] = state["pending"] = True
+            account.manager.repository.save(stored.payload, expected_generation=stored.generation)
+            before = path.read_bytes()
+            repaired, _, transport2, _, _ = self.native_account(path, modules)
+            transport2.active["999"] = {"InstrumentID": "RB", "ExchangeID": "SHFE", "Direction": "0",
+                "VolumeTotalOriginal": 1, "filled": 0}
+            with self.assertRaises(RuntimeError):
+                repaired.reconcile_checkpoint()
+            self.assertEqual(path.read_bytes(), before)
+            self.assertFalse(transport2.canceled)
+            self.assertFalse(transport2.sent)
+
     def test_actual_runners_receive_scoped_events_and_stop_independently(self):
         modules = self.native_modules()
         service, client, ports = self.service()
@@ -923,6 +1015,17 @@ class SharedConfigTests(unittest.TestCase):
             parse_args(["--config", "example.json", "--connect"])
         self.assertFalse(parse_args(["--config", "example.json"]).connect)
 
+    def test_reconcile_only_requires_connection_resume_and_forbids_order_authorization(self):
+        from scripts.integration.shared_account.run import parse_args
+        from contextlib import redirect_stderr
+        from io import StringIO
+        valid = ["--config", "session.json", "--connect", "--resume", "--reconcile-only"]
+        self.assertTrue(parse_args(valid).reconcile_only)
+        for argv in (valid + ["--enable-orders", "--confirm-simnow"],
+                [arg for arg in valid if arg != "--resume"], [arg for arg in valid if arg != "--connect"]):
+            with redirect_stderr(StringIO()), self.assertRaises(SystemExit):
+                parse_args(argv)
+
     def test_missing_config_reports_path_without_starting_host(self):
         from scripts.integration.shared_account import run
         from contextlib import redirect_stderr
@@ -1024,6 +1127,40 @@ class SharedConfigTests(unittest.TestCase):
         self.assertEqual(reported["fields"]["failure"], "initial readiness failure")
         self.assertEqual(reported["fields"]["shutdown_failure"], "shutdown incomplete")
         self.assertEqual(reported["fields"]["failure_execution_diagnostics"]["report_errors"], ["bad sequence"])
+
+    def test_cli_reconcile_only_does_not_start_or_authorize_strategy_host(self):
+        from scripts.integration.shared_account import run
+        from contextlib import redirect_stdout
+        from io import StringIO
+        from unittest.mock import Mock
+        reported = {}
+        class Report:
+            def __init__(self, *args, **kwargs): pass
+            def begin(self): pass
+            def write(self, **kwargs): reported.update(kwargs)
+        replacements = {"dotenv": NS(load_dotenv=lambda *_: None)}
+        for name in ("bomber", "bomber.framework", "bomber.framework.trader", "bomber.framework.trader.runtime",
+                "bomber.framework.trader.runtime.live"):
+            module = ModuleType(name)
+            module.__path__ = []
+            replacements[name] = module
+        replacements["bomber.framework.trader.runtime.reports"] = NS(LiveRunReport=Report)
+        replacements["bomber.framework.trader.runtime.live.local"] = NS(strategy_state_lock=Mock())
+        account = NS(reconcile_checkpoint=Mock(return_value={"orders_submitted": 0}),
+            client=NS(stop=Mock()), driver=NS(stop=Mock()), authorize=Mock(),
+            final_gross={}, final_active_orders=0, scope_diagnostics=lambda: {}, execution=NS(backend=NS(reports=())))
+        host = NS(account=account, strategies={}, resources=ExitStack(), start=Mock(), stop=Mock(), snapshot=lambda: {})
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "session.json"
+            path.write_text(json.dumps(self.config()))
+            with patch.dict(sys.modules, replacements), patch.object(run, "build_host", return_value=host) as build, \
+                    redirect_stdout(StringIO()):
+                run.main(["--config", str(path), "--connect", "--resume", "--reconcile-only"])
+        self.assertTrue(build.call_args.kwargs["read_only"])
+        host.start.assert_not_called()
+        account.authorize.assert_not_called()
+        self.assertEqual(reported["status"], "reconciled")
+        self.assertEqual(reported["fields"]["verification"], "checkpoint_reconciled_no_strategy_no_orders")
 
 
 if __name__ == "__main__":

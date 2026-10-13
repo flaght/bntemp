@@ -19,8 +19,11 @@ def parse_args(argv=None):
     parser.add_argument("--enable-orders", action="store_true")
     parser.add_argument("--confirm-simnow", action="store_true")
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--reconcile-only", action="store_true", help="同日权威对账并修复已结束订单的检查点；不启动策略、不报单")
     args = parser.parse_args(argv)
-    if args.connect and not (args.enable_orders and args.confirm_simnow):
+    if args.reconcile_only and (not args.connect or not args.resume or args.enable_orders or args.confirm_simnow):
+        parser.error("reconcile-only须connect和resume，不接受报单授权开关")
+    if args.connect and not args.reconcile_only and not (args.enable_orders and args.confirm_simnow):
         parser.error("连接共享报单宿主须显式enable-orders和confirm-simnow")
     if not args.connect and (args.enable_orders or args.confirm_simnow or args.resume):
         parser.error("默认仅校验配置，不接受报单或恢复开关")
@@ -43,7 +46,7 @@ def validate_td_preflight(config, driver, *, md_front, td_front, diagnostics):
             f"TD={td_front}；请核对TD前置和会话环境，并用只读结果确认配置交易日")
 
 
-def build_host(config, *, resume, diagnostics=None):
+def build_host(config, *, resume, diagnostics=None, read_only=False):
     from bomber.framework.trader.execution.ctp import CtpNativeTraderDriver, CtpTdApiTransport
     from bomber.framework.trader.execution.builders import build_ctp_portfolio_execution
     from bomber.framework.trader.execution.shared import SharedAccountExecutionService, SharedRiskBudget
@@ -73,7 +76,7 @@ def build_host(config, *, resume, diagnostics=None):
             if client is not None:
                 client.mark_disconnected(reason)
         driver = CtpNativeTraderDriver(transport.client_id, transport.account_id, transport,
-            enable_simnow_orders=True, max_session_orders=account_config["max_session_orders"],
+            enable_simnow_orders=not read_only, max_session_orders=account_config["max_session_orders"],
             disconnect_handler=disconnected)
         driver.start(lambda report: None)
         validate_td_preflight(config, driver, md_front=md_front, td_front=transport.front,
@@ -174,7 +177,16 @@ def main(argv=None):
     diagnostics = {}
     failure_execution_diagnostics = None
     status, failure, shutdown_failure = "failed", None, None
+    reconciliation = None
     try:
+        if args.reconcile_only:
+            host = build_host(config, resume=True, diagnostics=diagnostics, read_only=True)
+            from bomber.framework.trader.runtime.live.local import strategy_state_lock
+            for item in host.strategies.values():
+                host.resources.enter_context(strategy_state_lock(item.state_file))
+            reconciliation = host.account.reconcile_checkpoint()
+            status = "reconciled"
+            return
         host = build_host(config, resume=args.resume, diagnostics=diagnostics)
         host.start()
         started = time.monotonic()
@@ -198,7 +210,12 @@ def main(argv=None):
     finally:
         try:
             if host is not None:
-                host.stop()
+                if args.reconcile_only:
+                    host.account.client.stop()
+                    host.account.driver.stop()
+                    host.resources.close()
+                else:
+                    host.stop()
         except Exception as error:
             status, shutdown_failure = "failed", str(error)
             if failure is None:
@@ -209,8 +226,10 @@ def main(argv=None):
             report.write(status=status, fields={**snapshot, "failure": failure,
                 "shutdown_failure": shutdown_failure,
                 "failure_execution_diagnostics": failure_execution_diagnostics,
+                "reconciliation": reconciliation,
                 "td_preflight": diagnostics,
-                "verification": "runtime_completed_real_fill_acceptance_separate",
+                "verification": ("checkpoint_reconciled_no_strategy_no_orders" if args.reconcile_only
+                    else "runtime_completed_real_fill_acceptance_separate"),
                 "final_gross": host.account.final_gross if host else None,
                 "position_scope": host.account.scope_diagnostics() if host else None,
                 "final_active_orders": host.account.final_active_orders if host else None},

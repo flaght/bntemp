@@ -86,6 +86,27 @@ python -u -m scripts.integration.reference_data.readonly \
 之前在TD日期／空仓预检失败的运行尚未建立账户检查点，不需要因此增加`--resume`。
 已有正式共享检查点则必须按原管理范围恢复，不能通过改范围或删除文件接管仓位。
 
+若故障报告及原账户文件failed/pending为true，但本地订单和Driver关联均已结束，
+可显式进行同日只读对账修复（不需要有效MD行情，但仍核对数据库参考身份）：
+
+```bash
+python -u -m scripts.integration.shared_account.run \
+  --config scripts/integration/shared_account/resume_acceptance.json \
+  --connect --resume --reconcile-only
+```
+
+该模式拒绝enable-orders/confirm-simnow，并在Driver层禁单；不启动策略和MD、不授权。
+沿用账户及策略文件锁，核对原检查点身份、同TD、无未结束订单/冻结份额、柜台总仓/
+今昨桶/归属及范围外基线、可用资金及无未知活动订单。任一不符保持闭闸，不自动撤销
+未知订单或分配外部仓位。全部通过后，先将原账户文件逐字节备份为
+`shared-account.json.before-reconcile-g原代数.json`，再使用原RuntimeStateManager保存
+暂停检查点：清除已核实的服务failed/pending，未执行贡献冻结到实际归属仓位，原信号
+版本保留，各源保持suspended，不重发旧目标。策略文件不改。
+报告status=reconciled、verification=checkpoint_reconciled_no_strategy_no_orders，
+并记录原/新generation、备份文件、orders_submitted=0、authorized=false。
+此模式仅修复已结束订单且全量账本一致的服务故障标记，不重建漏成交或处理跨日。
+修复后等RB/HC有效行情时段，按原resume命令重新预热；只读修复通过不是报单验收。
+
 `strategies`使用唯一`strategy_id`、`kind`、独立`state_file`及原入口的业务`argv`。
 宿主统一管理mode、授权、TD日、环境、会话时长和恢复，策略参数不能覆盖这些项。
 同一种策略可配置多个不同ID。`stop_after_seconds`可独立停止一个策略，其他策略继续。

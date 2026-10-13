@@ -258,3 +258,29 @@ report_errors、portfolio_failure及最近执行audit。不调用额外对账或
 shared-account45项、live-common116项均通过，合计161项；diff检查通过。本机未连接
 柜台。当前先取得该失败目录完整summary/events和TD只读三查询，不删除状态文件、
 锁文件，不清除恢复标记，不直接重启报单。新诊断代码及证据用REV7清单，历史清单保留。
+
+## 已结束订单的同日只读检查点修复
+
+用户进一步提供柜台无活动订单、RB净0/HC+1及原检查点信息：generation3021，
+saved_at_ns=1791903546244387339，failed/pending均true，所有订单终态，Driver next_ref32
+且关联为空，源版本横截面14/EMA3。本机未读取远端原文件，不能凭净仓自行清标记。
+
+新增显式--connect --resume --reconcile-only模式，不接受报单授权。复用应用工厂与
+原身份/参考条款，但不启动MD、策略或Host；原生Driver禁单。账户和策略文件锁保留。
+公共CTP生命周期先恢复/校验原检查点，拒绝本地未结束订单及冻结份额，再通过原Client
+核对未知活动单、资金、净仓；完整核对总仓/今昨桶、策略归属与外部基线。任一不一致
+不写文件、不撤未知单。全部一致后保存逐字节原文件备份，再由Shared服务冻结全部
+贡献到当前实际归属、保留信号版本和暂停状态；只写一次原RuntimeStateManager原子
+检查点，清已核实的failed/pending。未执行的旧目标不重新发送，策略文件不改。
+正常resume对未决标记的拒绝逻辑不改，没有增加普通启动的宽松恢复参数。
+
+备份命名为shared-account.json.before-reconcile-g3021.json（代数由实际原文件决定）。
+报告status=reconciled，verification=checkpoint_reconciled_no_strategy_no_orders，
+记录备份、原/新代数、orders_submitted=0、authorized=false、strategies_started=false。
+只读修复通过后仍须等待管理合约有效行情并显式resume重新预热；不支持跨日、漏成交
+重建或活动订单修复，不将本次修复替代完整GAP10故障恢复验收。
+
+本机报告tests/results/main-ema-acceptance-1791905186158608000：shared-account50项、
+live-common116项，共166项通过。新增成功修复/备份/暂停/后续恢复不重发、净零双向
+总仓冲突保持原文件、未知活动单不撤单、CLI拒绝报单授权及不启动策略用例通过。
+本机无柜台连接或实际报单。修复入口尚待Linux真实只读验收，部署用REV8清单。
