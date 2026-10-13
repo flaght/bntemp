@@ -1,0 +1,270 @@
+{
+  "recorded_date": "2026-10-13",
+  "timezone": "Asia/Shanghai",
+  "scope": "static_session_provider_and_cu_parity_not_full_history_warmup",
+  "overall_status": "partial",
+  "global_gap_closure_changed": false,
+  "remote_cu_sessions": {
+    "evidence_origin": "user_pasted_remote_output",
+    "raw_paste_sha256": "cf4188b75d3cd99042930465322e83646393070938ce648d4afd3496d299c2f6",
+    "remote_report_path": null,
+    "result": {
+      "status": "passed",
+      "purpose": "trading_session_source_parity_readonly",
+      "observed_ns": 1791889006132499499,
+      "started_ns": 1791889005562305611,
+      "product": "CU",
+      "hours_code": "CU",
+      "database": "dfs://bomber_static",
+      "table": "fut_trading_session",
+      "file": "/workspace/data/temp_bomber1/ctp/role/fut_trading_session.feather",
+      "rows": 5,
+      "hours_sha256": "f118130ee85ba40475b6a932f98c8c8bfa23739a0320e21615c5027331f2fd1c",
+      "hours_records": [
+        {
+          "code": "CU",
+          "segment_id": "day_1",
+          "date_anchor": "TRADING_DAY",
+          "start_day_offset": 0,
+          "start_time": "09:00:00",
+          "end_day_offset": 0,
+          "end_time": "10:15:00"
+        },
+        {
+          "code": "CU",
+          "segment_id": "day_2",
+          "date_anchor": "TRADING_DAY",
+          "start_day_offset": 0,
+          "start_time": "10:30:00",
+          "end_day_offset": 0,
+          "end_time": "11:30:00"
+        },
+        {
+          "code": "CU",
+          "segment_id": "day_3",
+          "date_anchor": "TRADING_DAY",
+          "start_day_offset": 0,
+          "start_time": "13:30:00",
+          "end_day_offset": 0,
+          "end_time": "15:00:00"
+        },
+        {
+          "code": "CU",
+          "segment_id": "night_1",
+          "date_anchor": "NIGHT_START",
+          "start_day_offset": 0,
+          "start_time": "21:00:00",
+          "end_day_offset": 1,
+          "end_time": "00:00:00"
+        },
+        {
+          "code": "CU",
+          "segment_id": "night_2",
+          "date_anchor": "NIGHT_START",
+          "start_day_offset": 1,
+          "start_time": "00:00:00",
+          "end_day_offset": 1,
+          "end_time": "01:00:00"
+        }
+      ],
+      "overrides": {
+        "evidence": "declared_empty",
+        "rows": null,
+        "sha256": null
+      },
+      "sessions": {
+        "status": "passed",
+        "binding": {
+          "product": "CU",
+          "hours_code": "CU",
+          "exchange": "SHFE",
+          "asset_type": "FUTURE",
+          "timezone": "Asia/Shanghai"
+        },
+        "calendar": {
+          "calendar_id": "china.sse",
+          "rules_version": "bundled-sse-2026-v1",
+          "coverage_start": "1991-01-01",
+          "coverage_end": "2026-12-31",
+          "fingerprint": "d5b325031a381dfefbec30320aca693e4bbdefa5ee17f2894c98526f47ffbb57",
+          "backend": "compiled",
+          "trading_days": 8789
+        },
+        "rules_sha256": "44be958a2d56d4f90d6b2f03fc19caee98e07f42170f9dc7c1ad2ae4f68461d5",
+        "trading_days": [
+          "2026-10-12",
+          "2026-10-13"
+        ],
+        "windows": [
+          {
+            "trading_day": "20261012",
+            "segment_id": "night_1",
+            "start": "2026-10-09T21:00:00+08:00",
+            "end": "2026-10-10T00:00:00+08:00"
+          },
+          {
+            "trading_day": "20261012",
+            "segment_id": "night_2",
+            "start": "2026-10-10T00:00:00+08:00",
+            "end": "2026-10-10T01:00:00+08:00"
+          },
+          {
+            "trading_day": "20261012",
+            "segment_id": "day_1",
+            "start": "2026-10-12T09:00:00+08:00",
+            "end": "2026-10-12T10:15:00+08:00"
+          },
+          {
+            "trading_day": "20261012",
+            "segment_id": "day_2",
+            "start": "2026-10-12T10:30:00+08:00",
+            "end": "2026-10-12T11:30:00+08:00"
+          },
+          {
+            "trading_day": "20261012",
+            "segment_id": "day_3",
+            "start": "2026-10-12T13:30:00+08:00",
+            "end": "2026-10-12T15:00:00+08:00"
+          },
+          {
+            "trading_day": "20261013",
+            "segment_id": "night_1",
+            "start": "2026-10-12T21:00:00+08:00",
+            "end": "2026-10-13T00:00:00+08:00"
+          },
+          {
+            "trading_day": "20261013",
+            "segment_id": "night_2",
+            "start": "2026-10-13T00:00:00+08:00",
+            "end": "2026-10-13T01:00:00+08:00"
+          },
+          {
+            "trading_day": "20261013",
+            "segment_id": "day_1",
+            "start": "2026-10-13T09:00:00+08:00",
+            "end": "2026-10-13T10:15:00+08:00"
+          },
+          {
+            "trading_day": "20261013",
+            "segment_id": "day_2",
+            "start": "2026-10-13T10:30:00+08:00",
+            "end": "2026-10-13T11:30:00+08:00"
+          },
+          {
+            "trading_day": "20261013",
+            "segment_id": "day_3",
+            "start": "2026-10-13T13:30:00+08:00",
+            "end": "2026-10-13T15:00:00+08:00"
+          }
+        ],
+        "history_before_ns": 1791874800000000000,
+        "history_minutes": {
+          "count": 600,
+          "first_ns": 1791773159999999999,
+          "last_ns": 1791874799999999999,
+          "sha256": "a553065865b0b0a6a03eae90c6d292b4dd4a6b43b02fadc000926980e876de02"
+        },
+        "gap_after_ns": 1791550799999999999,
+        "gap_before_ns": 1791874800000000000,
+        "gap_minutes": {
+          "count": 930,
+          "first_ns": 1791550859999999999,
+          "last_ns": 1791874799999999999,
+          "sha256": "714fc4f96902ca81377eb25232c9e83dec4d426b34f18716e3cb4d2d91952563"
+        }
+      },
+      "consistency_evidence": "two_equal_reads_not_transaction_snapshot",
+      "revision_evidence": "static_content_hash_not_historical_revision_asof",
+      "ctp_connected": false,
+      "orders_submitted": 0
+    }
+  },
+  "local_cleanup_validation": {
+    "module": "trading-hours",
+    "tests": 43,
+    "status": "passed",
+    "report_path": "tests/results/main-ema-acceptance-1791892769088907000/summary.json",
+    "summary_sha256": "7623900172699b3f77d2116717df09bc98f055392fa6132acdae7cc8bc1850f3",
+    "validation_scope": "local_no_network_no_trading_engine"
+  },
+  "remote_baseline_regressions": {
+    "origin": "user_console_outputs_in_chat",
+    "im-runtime": {
+      "tests": 9,
+      "status": "passed",
+      "revision_scope": "before_latest_demo_calendar_cleanup"
+    },
+    "history-provider": {
+      "tests": 41,
+      "status": "passed",
+      "revision_scope": "before_latest_demo_calendar_cleanup"
+    },
+    "gap03": {
+      "tests": 22,
+      "status": "passed"
+    },
+    "entry": {
+      "tests": 55,
+      "status": "passed"
+    },
+    "cleanup_revision_im_runtime": "not_yet_supplied"
+  },
+  "remote_td_readonly": {
+    "origin": "user_console_output_in_chat",
+    "trading_day": "20261012",
+    "position_instruments": 0,
+    "active_orders": 0,
+    "currencies": [
+      "CNY"
+    ],
+    "orders_submitted": 0
+  },
+  "remote_md_probe": {
+    "origin": "user_console_output_in_chat",
+    "stage": 4,
+    "status": "passed",
+    "instrument": "rb2701",
+    "trading_day": "20261012",
+    "action_day": "20261011"
+  },
+  "cu_replay_recording": {
+    "origin": "user_console_progress_in_chat",
+    "instrument": "cu2611.SHFE",
+    "td_trading_day": "20261012",
+    "required_md_trading_day": "20261012",
+    "source_day": "2026-10-09",
+    "factor": "1.484671",
+    "bar_time_basis": "receive",
+    "history_enabled": false,
+    "history_minutes": 0,
+    "observed_warmup_bars": 3,
+    "slow_period": 5,
+    "final_summary_supplied": false,
+    "status": "progress_only_not_final_acceptance"
+  },
+  "migration": {
+    "removed_demo_calendars": [
+      "shfe_cu_2026.json",
+      "cffex_im_20260921_22.json",
+      "cffex_if_20261009_13.json"
+    ],
+    "cu_night_exceptions": 7,
+    "csv": "scripts/integration/reference_data/configs/session_overrides_cu_2026.csv",
+    "feather": "tests/results/cu-session-overrides-2026.feather",
+    "live_exception_table_imported": false,
+    "remaining_history_json": [
+      "history_im_raw.json",
+      "history_im_20260922.json",
+      "history_if_20261013.json"
+    ]
+  },
+  "remaining": [
+    "unify_history_source_configuration",
+    "provide_cu_history_minutes_or_select_verified_available_source",
+    "current_revision_online_history_to_realtime_acceptance",
+    "final_cu_replay_recording_summary",
+    "deploy_live_special_date_source",
+    "real_option_series_session_data_acceptance",
+    "historical_rule_revision_asof"
+  ]
+}

@@ -1,6 +1,7 @@
 """物理账户执行服务；共享连接、目标净额及归属，不运行策略算法。"""
 
 from dataclasses import replace
+from copy import deepcopy
 from decimal import Decimal
 import threading
 
@@ -75,10 +76,13 @@ class AccountExecutionService:
             if previous is not None:
                 if request.revision < previous["revision"] or request.ts_event < previous["ts_event"]:
                     raise ValueError("账户服务拒绝旧目标或时间回退")
-                if request.revision == previous["revision"] and (targets != previous["targets"] or rows != previous["rows"]):
+                if request.revision == previous["revision"] and (targets != previous["targets"] or rows != previous["rows"]
+                        or request.deadline_ns != previous.get("deadline_ns")
+                        or request.execution_policy != previous.get("execution_policy", "DIRECT")):
                     raise ValueError("同版本策略目标不能改变")
             self._sources[request.strategy_id] = dict(revision=request.revision, ts_event=request.ts_event,
-                targets=targets, rows=rows)
+                targets=targets, rows=rows, deadline_ns=request.deadline_ns,
+                execution_policy=request.execution_policy, metadata=deepcopy(dict(request.metadata)))
             revision = self.coordinator.state().strategy_revisions.get(request.strategy_id, 0) + 1
             aggregate = self.coordinator.update(strategy_id=request.strategy_id, revision=revision,
                 ts_event=request.ts_event, targets=targets)
@@ -91,7 +95,7 @@ class AccountExecutionService:
         try:
             if self._checkpoint is not None:
                 self._checkpoint()
-            self.client.submit_targets(net)
+            self._send(net)
             if self.client.report_errors or not self.client.is_reconciled:
                 raise RuntimeError("账户执行回报失败，保留未决发送并关闭账户服务")
             with self._lock:
@@ -103,6 +107,10 @@ class AccountExecutionService:
             with self._lock:
                 self._failed = True
             raise
+
+    def _send(self, request):
+        """共享宿主可在最终规划前限定可执行合约；原分发行为保持。"""
+        self.client.submit_targets(request)
 
     def cancel_strategy(self, strategy_id):
         self.client.cancel_strategy(strategy_id)
@@ -116,7 +124,10 @@ class AccountExecutionService:
                     "known_instruments": sorted(str(k.instrument_id) for k in self.coordinator.state().known_keys),
                     "sources": {sid: {"revision": source["revision"], "ts_event": source["ts_event"],
                         "targets": {str(key.instrument_id): str(q) for key, q in source["targets"].items()},
-                        "rows": [dict(row) for row in source["rows"]]} for sid, source in self._sources.items()}}
+                        "rows": [dict(row) for row in source["rows"]],
+                        "deadline_ns": source.get("deadline_ns"),
+                        "execution_policy": source.get("execution_policy", "DIRECT"),
+                        "metadata": deepcopy(source.get("metadata", {}))} for sid, source in self._sources.items()}}
 
     def restore_state(self, state):
         from bomber.framework.market.basic.base import InstrumentId
@@ -139,12 +150,15 @@ class AccountExecutionService:
                 if totals != {str(k.instrument_id): q for k, q in targets.items()} or any(not q.is_finite() for q in totals.values()):
                     raise ValueError("账户服务恢复目标与归属不一致")
                 coordinator.update(strategy_id=sid, revision=source["revision"], ts_event=source["ts_event"], targets=targets)
-                sources[sid] = dict(revision=source["revision"], ts_event=source["ts_event"], targets=targets, rows=rows)
+                sources[sid] = dict(revision=source["revision"], ts_event=source["ts_event"], targets=targets, rows=rows,
+                    deadline_ns=source.get("deadline_ns"), execution_policy=source.get("execution_policy", "DIRECT"),
+                    metadata=deepcopy(source.get("metadata", {})))
             coordinator.restore(PortfolioCoordinatorState(revision=state["portfolio_revision"],
                 contributions={sid: source["targets"] for sid, source in sources.items()},
                 strategy_revisions=state["strategy_revisions"],
                 known_keys=frozenset(AccountTargetKey(self.client_id, InstrumentId.from_str(i)) for i in state["known_instruments"])))
-            self._sources, self.coordinator = sources, coordinator
+            self._sources = sources
+            self.coordinator.restore(coordinator.state())
             # 恢复后的账户工作订单仍须由客户端执行自己的恢复协议。
             self._pending = bool(state["pending"])
             self._failed = bool(state["failed"]) or self._pending

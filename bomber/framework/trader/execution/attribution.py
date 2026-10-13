@@ -10,6 +10,7 @@ from copy import deepcopy
 from dataclasses import replace
 from decimal import Decimal
 from uuid import uuid4
+import time
 
 from bomber.framework.market.basic.base import InstrumentId
 from bomber.framework.trader.execution.contracts import OrderSide
@@ -61,6 +62,11 @@ class PositionAttributionLedger:
                 if (not quantity.is_finite() or not filled.is_finite()
                         or quantity <= 0 or not 0 <= filled <= quantity):
                     raise AttributionError("归属订单数量无效")
+                revision, deadline = leg.get("target_revision"), leg.get("deadline_ns")
+                if revision is not None and (isinstance(revision, bool) or not isinstance(revision, int) or revision < 1):
+                    raise AttributionError("冻结目标版本无效")
+                if deadline is not None and (isinstance(deadline, bool) or not isinstance(deadline, int) or deadline < 0):
+                    raise AttributionError("冻结贡献期限无效")
                 total += quantity
             if not token or total != Decimal(order["quantity"]):
                 raise AttributionError("归属订单数量不守恒")
@@ -129,13 +135,14 @@ class PositionAttributionLedger:
         if rows is None:
             return orders  # 旧客户端直调保持显式未归属行为。
         with self.positions._lock:
-            desired, totals = {}, {}
+            desired, totals, details = {}, {}, {}
             for row in rows:
                 key = (request.client_id, row["instrument_id"], row["strategy_id"], row["target_key"])
                 quantity = Decimal(row["quantity"])
                 if key in desired or not quantity.is_finite():
                     raise AttributionError("归属目标重复或不是有限数值")
                 desired[key] = quantity
+                details[key] = row
                 totals[key[1]] = totals.get(key[1], Decimal(0)) + quantity
             targets = {str(k): Decimal(v) for k, v in request.targets.items()}
             if any(totals.get(k, Decimal(0)) != targets.get(k, Decimal(0))
@@ -147,12 +154,15 @@ class PositionAttributionLedger:
             for owner in {key[2:] for key in desired}:
                 if self.positions.position(*owner) != owned_totals.get(owner, Decimal(0)):
                     raise AttributionError("逻辑归属缺少一致的真实合约明细，须先核验迁移")
+            # 合约子集请求不撤销其他合约的归属意图；移除腿必须显式发送0。
+            scope = set(targets)
             deficits = {k: desired.get(k, Decimal(0)) - self._owned.get(k, Decimal(0))
-                for k in desired.keys() | self._owned.keys() if k[0] == request.client_id}
+                for k in desired.keys() | self._owned.keys()
+                if k[0] == request.client_id and k[1] in scope}
             reserved = {}
             for token in self._active_tokens:
                 order = self._orders[token]
-                if order["client_id"] != request.client_id:
+                if order["client_id"] != request.client_id or order["instrument_id"] not in scope:
                     continue
                 for leg, remaining in self._remaining(order):
                     key = (request.client_id, order["instrument_id"], leg["strategy_id"], leg["target_key"])
@@ -187,7 +197,11 @@ class PositionAttributionLedger:
                         continue
                     quantity = min(remaining, abs(deficits[key]))
                     if quantity:
-                        legs.append(dict(strategy_id=key[2], target_key=key[3], quantity=str(quantity), filled="0"))
+                        leg = dict(strategy_id=key[2], target_key=key[3], quantity=str(quantity), filled="0")
+                        row = details.get(key, {})
+                        if "source_revision" in row:
+                            leg.update(target_revision=row["source_revision"], deadline_ns=row.get("source_deadline_ns"))
+                        legs.append(leg)
                         deficits[key] -= direction * quantity
                         remaining -= quantity
                 if remaining:
@@ -195,12 +209,18 @@ class PositionAttributionLedger:
                 attributed.append(replace(order, metadata={**order.metadata,
                     "allocation_token": uuid4().hex, "allocation_legs": tuple(legs)}))
             # 所有订单计划验证成功后再执行内部划转；不生成虚构的成交事件或费用。
+            deadline = request.metadata.get("actual_send_deadline_ns")
+            if deadline is not None and time.time_ns() > deadline:
+                raise AttributionError("共享贡献在冻结归属／内部划转之前到期")
             for buy, sell, quantity in transfers:
                 self._adjust(buy, quantity)
                 self._adjust(sell, -quantity)
                 self._transfers.append(dict(client_id=request.client_id, instrument_id=buy[1],
                     buy_strategy=buy[2], buy_target=buy[3], sell_strategy=sell[2], sell_target=sell[3],
-                    quantity=str(quantity), ts_event=request.ts_event, revision=request.revision))
+                    quantity=str(quantity), ts_event=request.ts_event, revision=request.revision,
+                    execution_origin="internal_transfer",
+                    buy_target_revision=details.get(buy, {}).get("source_revision"),
+                    sell_target_revision=details.get(sell, {}).get("source_revision")))
             return tuple(attributed)
 
     def reserve(self, order):
@@ -302,13 +322,15 @@ class PositionAttributionLedger:
                 key = (report.backend_id, str(report.instrument_id), leg["strategy_id"], leg["target_key"])
                 self._adjust(key, order["direction"] * quantity)
                 fills.append(dict(strategy_id=leg["strategy_id"], target_key=leg["target_key"],
-                    quantity=str(quantity), cumulative_filled=leg["filled"]))
+                    quantity=str(quantity), cumulative_filled=leg["filled"],
+                    **({"target_revision": leg["target_revision"]} if "target_revision" in leg else {})))
             if update.release_delta:
                 order["released"] = True
             if not any(amount for _, amount in self._remaining(order)):
                 self._active_tokens.discard(token)
             return replace(report, metadata={**report.metadata, "allocation_token": token,
                 "allocation_owners": tuple(dict(strategy_id=leg["strategy_id"], target_key=leg["target_key"])
+                    | ({"target_revision": leg["target_revision"]} if "target_revision" in leg else {})
                     for leg in order["legs"]), "attributed_fills": tuple(fills)})
 
     @staticmethod

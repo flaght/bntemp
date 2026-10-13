@@ -66,8 +66,9 @@ class FixedRoleLiveRunner(UnifiedStrategyRunner):
     def close_role_gate(self, reason):
         self._role_change_reason = reason
         binding = self._role_binding
-        self.position_manager.mark_recovery_required(binding.client_id)
         client = self._clients[binding.client_id]
+        if not getattr(client, "shared_account", False):
+            self.position_manager.mark_recovery_required(binding.client_id)
         disarm = getattr(client, "disarm", None)
         if callable(disarm):
             disarm(reason)

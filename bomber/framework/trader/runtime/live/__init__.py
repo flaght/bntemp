@@ -7,11 +7,15 @@ from .profiles import LiveProfile, MarketTimeProfile
 
 __all__ = ["ChannelIdentity", "ChannelReadinessPort", "LiveRunContext",
            "LiveSessionControllerPort", "ReadinessIssue", "ReadinessResult",
-           "SessionReadiness", "LiveProfile", "MarketTimeProfile", "ManagedLiveRuntime", "DirectLiveRuntime"]
+           "SessionReadiness", "LiveProfile", "MarketTimeProfile", "ManagedLiveRuntime", "DirectLiveRuntime",
+           "SharedAccountLiveHost", "SharedStrategySession"]
 
 
 def __getattr__(name):
     if name in {"ManagedLiveRuntime", "DirectLiveRuntime"}:
         from . import runtime
         return getattr(runtime, name)
+    if name in {"SharedAccountLiveHost", "SharedStrategySession"}:
+        from . import shared
+        return getattr(shared, name)
     raise AttributeError(name)

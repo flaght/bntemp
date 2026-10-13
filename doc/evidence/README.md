@@ -2,6 +2,14 @@
 
 这里集中保存原 HANDOFF 目录中的 50 份 SHA256 清单与 4 份补丁、同步脚本和删除清单。任务实施与运行结果继续查[交接索引](../HANDOFF/README.md)。
 
+## 2026-10-13 CU静态交易会话与清理证据
+
+[结构化记录](live/TRADING_SESSIONS_CU_PASS_20261013.json)保留用户实际DolphinDB／Feather会话对照JSON及原粘贴内容SHA256：CU5段、10月12/13日的10个窗口、600个最近分钟时间点及930个区间分钟时间点一致。原远程报告文件名未提供，不补造。文件清理组43项的本地报告、第二套TD/MD只读和CU Replay的3/5根实时Bar进度分别记录；没有把时间点枚举写成实际行情预热，也没有把进度写成最终Recording通过。
+
+[清理交付摘要](checksums/EMA_SESSION_PROVIDER_CLEANUP_20261013_SHA256.txt)描述当轮代码／数据版本；后续并行代码改动需单独核验，旧清单不重写为新版本。三份旧日历已移除，7条停夜盘记录保存CSV及Feather，Live例外表尚未导入。三个历史行情JSON的配置统一、实际历史预热／接续、真实期权资料和历史规则as-of仍待完成，见[专项台账](../data/TRADING_SESSION_GENERALIZATION_2026-10-09.md)。
+
+[本次文档与证据摘要](checksums/TRADING_SESSION_STATUS_DOCS_20261013_SHA256.txt)只校验状态更新文件，不是运行代码部署清单；本次未重新运行行情／柜台验收。
+
 ## 2026-10-13 实时期权 Recording 目标链证据
 
 用户返回 08 的实时 CTP LAST + DolphinDB DFS Recording 完整输出：约 15 分钟正常运行、15 帧消费、11:19 的 MO2611-C-7300 空 1 手目标到达客户端，18 根过期候选被忽略。由控制台 summary 提取并调用既有报告复核函数，target_chain 检查通过，见 [精简证据](live/OPTION_VEGA_REALTIME_RECORDING_20261013.json) 和 [08 运行说明](../../demos/08_option_vega/README.md)。本次没有柜台报单、成交或线上指数超时样本；运行机原 summary 与进程退出码没有单独读取。

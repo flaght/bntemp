@@ -347,7 +347,8 @@ def prepare_inputs(args, context, lifecycle):
     return SimpleNamespace(references=references, upstream=upstream)
 
 
-def assemble(args, references, driver, upstream, *, positions=None, account_routes=()):
+def assemble(args, references, driver, upstream, *, positions=None, account_routes=(),
+             shared_service=None, strategy_id=None):
     """与run_backtest相同：执行积木→策略→绑定声明→Runner。"""
     allowed = {"CFFEX"} if args.product.upper() in {"IM", "IF"} and args.mode != "simnow" else {"SHFE", "INE"}
     if references.spec.venue not in allowed or references.spec.currency != "CNY":
@@ -375,7 +376,17 @@ def assemble(args, references, driver, upstream, *, positions=None, account_rout
     limits = RiskLimits(max_order_quantity=args.quantity, max_abs_position=args.quantity,
             max_order_notional=args.max_notional, max_abs_position_notional=args.max_notional,
             max_market_age_ns=120_000_000_000, contract_multiplier=references.spec.multiplier)
-    if model:
+    if shared_service is not None:
+        if model or account_routes or args.mode != "simnow" or not strategy_id:
+            raise ValueError("共享执行须为具备独立策略ID的SimNow装配")
+        from bomber.framework.trader.execution.builders import ExecutionComponents
+        from bomber.framework.trader.execution.shared import SharedRiskBudget
+        port = shared_service.strategy_client(strategy_id,
+            routes={MainEmaConfig(args.product, references.spec.venue, args.fast, args.slow, args.quantity).target_key: instrument},
+            budget=SharedRiskBudget(args.quantity, args.max_notional), instrument_limits={instrument: limits})
+        execution = ExecutionComponents(port, shared_service.position_manager, shared_service.prices)
+        check = SessionReadiness(market_channel, CtpExecutionChannel(driver, expected_day, require_orders=True))
+    elif model:
         execution = build_model_execution(CLIENT_ID, instrument_limits={instrument: limits}, positions=positions)
         check = SessionReadiness(market_channel, LocalExecutionChannel(CLIENT_ID, lambda: execution.client.is_reconciled))
     else:
@@ -385,7 +396,7 @@ def assemble(args, references, driver, upstream, *, positions=None, account_rout
             risk_limits=limits, session_check=check, orders=orders,
             limit_offset_ticks=args.limit_offset_ticks, positions=positions,
             account_reconciliation=execution_policy.account_reconciliation)
-    strategy = MainEmaStrategy("main-ema-simnow", references, MainEmaConfig(
+    strategy = MainEmaStrategy(strategy_id or "main-ema-simnow", references, MainEmaConfig(
         args.product, references.spec.venue, args.fast, args.slow, args.quantity), log_warmup=True)
     if account_routes:
         if not model:
@@ -422,7 +433,7 @@ def assemble(args, references, driver, upstream, *, positions=None, account_rout
         components["execution_policy"] = execution_policy
     attach = attach_execution_persistence if model else attach_ctp_persistence
     manager = attach(execution, runner, state_file=args.state_file,
-        state_components=components) if orders else None
+        state_components=components) if orders and shared_service is None else None
     runner.manager = manager
     if continuous or history_enabled:
         runner.calendar = calendar

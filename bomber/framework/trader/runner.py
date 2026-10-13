@@ -467,6 +467,11 @@ class UnifiedStrategyRunner:
             }
             if route.instrument_id not in targets:
                 return False
+            shared_continue = getattr(self._clients[route.client_id], "continue_target", None)
+            if callable(shared_continue):
+                self._last_target_retry_ns[retry_key] = as_of_ns
+                return shared_continue(strategy_id, target_key, as_of_ns,
+                                       instrument_id=route.instrument_id)
             if self._position_manager.account_position(
                 route.client_id, route.instrument_id,
             ) == targets[route.instrument_id]:
@@ -665,6 +670,8 @@ class UnifiedStrategyRunner:
             strategy_id, target_key = row["strategy_id"], row["target_key"]
             metadata = {**event.metadata, "attributed_target_key": target_key,
                 "account_event_id": event.event_id}
+            if "target_revision" in row:
+                metadata["attributed_target_revision"] = row["target_revision"]
             changes = dict(identity=replace(event.identity, strategy_id=strategy_id),
                 event_id=f"{event.event_id}:{strategy_id}:{target_key}", metadata=metadata)
             if isinstance(event, FillEvent):

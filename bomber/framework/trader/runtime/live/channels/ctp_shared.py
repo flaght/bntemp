@@ -1,0 +1,136 @@
+"""共享账户CTP生命周期；一个TD、一个账户检查点、同机唯一写入锁。"""
+
+import time
+
+from bomber.framework.trader.persistence import JsonStateStore, RuntimeStateManager
+from bomber.framework.trader.portfolio import TargetStore
+from ..recovery import SessionIdentityCheckpoint
+from ...ownership import AccountWriterIdentity, account_writer_lease
+from ...ctp_account import position_buckets
+from .ctp import account_lock, assert_flat_account, occupied_positions
+
+
+class CtpSharedAccountLifecycle:
+    """不管理某个策略的行情、信号或指标；策略宿主与此控制器组合。"""
+    def __init__(self, execution, service, *, transport, state_file, identity,
+                 resources, expected_day, reconcile_seconds=10, cancel_seconds=15):
+        self.execution, self.service, self.transport = execution, service, transport
+        self.driver, self.client, self.ledger = execution.driver, execution.client, execution.ledger
+        self.resources, self.expected_day = resources, expected_day
+        self.reconcile_seconds, self.cancel_seconds = reconcile_seconds, cancel_seconds
+        self.manager = RuntimeStateManager(JsonStateStore(state_file), TargetStore(), service.coordinator,
+            execution.positions, order_machines={service.client_id: self.client.order_state_machine},
+            ctp_ledgers={service.client_id: self.ledger}, ctp_drivers={service.client_id: self.driver},
+            state_components={"shared_account": service, "session_identity": SessionIdentityCheckpoint(identity)})
+        self.manager.enable_ctp_autosave(service.client_id, self.client)
+        service.set_checkpoint(self.manager.save)
+        self._next_check = 0
+        self._started = False
+        self._restored = False
+        self._ready = False
+        self.final_gross = self.final_active_orders = None
+
+    @staticmethod
+    def acquire(resources, transport, *, environment):
+        """同时兼容已有原生入口与Joint入口，不能绕过旧账户锁。"""
+        for namespace in ("bomber-ctp", "bomber-main-ema"):
+            resources.enter_context(account_lock(transport.account_id, namespace=namespace))
+        resources.enter_context(account_writer_lease((
+            AccountWriterIdentity("CTP", environment, f"{transport.broker_id}:{transport.account_id}"),)))
+
+    def _validate_account(self):
+        self.service.validate_owned_state()
+        gross = occupied_positions(self.transport)
+        expected = {str(i): (p.long_total, p.short_total) for i, p in self.ledger.state().positions.items()
+                    if p.long_total or p.short_total}
+        if gross != expected:
+            raise RuntimeError("共享账户柜台总仓与保存CTP账本不一致")
+        buckets = position_buckets(self.transport.query_position_details(), expected)
+        if not set(self.ledger.state().positions) <= set(self.service.instrument_limits):
+            raise RuntimeError("共享CTP账本包含未注册合约")
+        for instrument in self.service.instrument_limits:
+            state = self.ledger.snapshot(instrument)
+            actual = buckets.get(str(instrument))
+            if (actual.quantities if actual else (0, 0, 0, 0)) != (
+                    state.long_today, state.long_yesterday, state.short_today, state.short_yesterday):
+                raise RuntimeError("共享账户柜台今昨仓与保存账本不一致")
+            if self.execution.positions.account_position(self.service.client_id, instrument) != state.net_position:
+                raise RuntimeError("共享账户执行净仓与CTP账本不一致")
+            if self.execution.positions.unassigned_position(self.service.client_id, instrument):
+                raise RuntimeError("共享账户存在未归属仓位")
+        if self.driver.reconcile_active_orders().orders:
+            raise RuntimeError("首期共享恢复要求柜台无活动订单；未知或漏成交须先对账")
+
+    def start(self, *, resume):
+        if self._started:
+            return
+        if resume:
+            if self.manager.restore() is None:
+                raise RuntimeError("共享账户恢复文件不存在")
+            self._restored = True
+            if self.service._failed or self.service._pending:
+                raise RuntimeError("共享账户检查点存在未决发送，须先权威对账")
+            if self.ledger.state().trading_day != self.expected_day:
+                raise RuntimeError("首期共享账户仅支持同交易日恢复")
+            self.service.validate_owned_state()
+        elif self.manager.repository.load() is not None:
+            raise RuntimeError("共享账户新会话不能覆盖原文件")
+        self.client.start()
+        self._started = True
+        if self.driver.trading_day != self.expected_day:
+            raise RuntimeError("共享账户TD交易日不符")
+        if resume:
+            if any(not state.status.is_terminal for state in self.client.order_state_machine.states()):
+                raise RuntimeError("首期共享恢复要求已结束订单，保留原文件并先对账")
+            self._validate_account()
+        else:
+            assert_flat_account(self.driver, self.transport)
+        self._ready = True
+        self._next_check = time.monotonic() + self.reconcile_seconds
+
+    def authorize(self):
+        if not self._ready:
+            raise RuntimeError("账户恢复或预检尚未完成")
+        self.manager.save()
+        self.client.arm_demo(self.client.DEMO_CONFIRMATION)
+
+    def abort_preparation(self):
+        """装配/策略恢复失败时禁止清理过程覆盖原账户文件。"""
+        self._ready = False
+        self.service._checkpoint = None
+
+    def poll(self):
+        if (not self._ready or not self.client.is_reconciled or self.client.report_errors
+                or not self.driver.is_simnow_session or self.driver.trading_day != self.expected_day
+                or self.execution.positions.is_recovery_required(self.service.client_id)
+                or getattr(self.client, "portfolio_failure", None)):
+            raise RuntimeError("共享账户断线、回报冲突或交易日变化，账户闭闸")
+        if time.monotonic() >= self._next_check:
+            self.client.refresh_account_state()
+            self._next_check = time.monotonic() + self.reconcile_seconds
+
+    def stop(self):
+        if not self._started:
+            self.driver.stop()
+            return
+        self.client.disarm("shared_host_stop")
+        if not self._ready:
+            # 恢复失败不能保存、撤销未知订单或覆盖原文件。
+            self.client.stop()
+            self.driver.stop()
+            self._started = False
+            return
+        self.client.set_risk_mode("HALTED", cancel_active_orders=True)
+        deadline = time.monotonic() + self.cancel_seconds
+        while self.driver.reconcile_active_orders().orders:
+            if time.monotonic() > deadline:
+                raise RuntimeError("共享账户停机撤单未确认，账户锁保留")
+            time.sleep(0.2)
+        self.service.poll()
+        self._validate_account()
+        self.manager.save()
+        self.final_gross = occupied_positions(self.transport)
+        self.final_active_orders = len(self.driver.reconcile_active_orders().orders)
+        self.client.stop()
+        self.driver.stop()
+        self._started = False

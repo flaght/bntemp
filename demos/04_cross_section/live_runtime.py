@@ -136,7 +136,8 @@ class CrossSectionSessionRunner(UnifiedStrategyRunner):
         self.failure = str(reason)
         self.accept_bars = False
         if self.orders and self.client is not None:
-            self.position_manager.mark_recovery_required(self.client.client_id)
+            if not getattr(self.client, "shared_account", False):
+                self.position_manager.mark_recovery_required(self.client.client_id)
             self.client.disarm("cross_section_failed")
         raise RuntimeError(reason)
 
@@ -270,7 +271,7 @@ class CrossSectionLifecycle(ResumeLifecycle, CtpSessionLifecycle):
             "portfolio_failure": getattr(session.client, "portfolio_failure", None) if session else None}
 
 
-def assemble(args, references, driver, upstream, *, account_routes=()):
+def assemble(args, references, driver, upstream, *, account_routes=(), shared_service=None, strategy_id=None):
     references.validate()
     references.assert_expected(args.expected_instruments, getattr(args, "expected_source_symbols", None))
     model = args.mode == "model"
@@ -280,7 +281,8 @@ def assemble(args, references, driver, upstream, *, account_routes=()):
     replay_day = getattr(args, "replay_md_trading_day", None)
     policy = CtpLiveProfile(environment, replay_day)
     expected_day = references.trading_day.strftime("%Y%m%d")
-    positions = PositionManager()
+    positions = shared_service.position_manager if shared_service is not None else PositionManager()
+    client_id = shared_service.client_id if shared_service is not None else CLIENT_ID
     market_channel = CtpMarketChannel(upstream, expected_day, profile=policy)
     client_holder = {}
     execution_channel = (LocalExecutionChannel(CLIENT_ID, lambda: bool(client_holder.get("client") and client_holder["client"].is_reconciled))
@@ -305,7 +307,16 @@ def assemble(args, references, driver, upstream, *, account_routes=()):
         max_abs_position=args.max_quantity, max_order_notional=args.max_notional,
         max_abs_position_notional=args.max_notional, max_market_age_ns=120_000_000_000,
         contract_multiplier=specs[p].multiplier) for p in args.products}
-    if model:
+    if shared_service is not None:
+        if model or account_routes or args.mode != "simnow" or not strategy_id:
+            raise ValueError("共享执行须为具备独立策略ID的SimNow装配")
+        from bomber.framework.trader.execution.builders import ExecutionComponents
+        from bomber.framework.trader.execution.shared import SharedRiskBudget
+        port = shared_service.strategy_client(strategy_id, routes={str(i): i for i in ids.values()},
+            budget=SharedRiskBudget(args.max_quantity * len(ids), args.max_notional * len(ids)),
+            instrument_limits=limits)
+        execution = ExecutionComponents(port, positions, shared_service.prices)
+    elif model:
         execution = build_model_execution(CLIENT_ID, instrument_limits=limits, positions=positions)
     else:
         execution = build_ctp_portfolio_execution(driver, trading_day=expected_day,
@@ -323,7 +334,7 @@ def assemble(args, references, driver, upstream, *, account_routes=()):
         from bomber.framework.trader.execution.builders import build_fanout_execution
         execution = build_fanout_execution(execution, account_routes)
         client_holder["client"] = execution.client
-    strategy = MainCrossSectionMomentumStrategy(CLIENT_ID, products=args.products, roles=references,
+    strategy = MainCrossSectionMomentumStrategy(strategy_id or CLIENT_ID, products=args.products, roles=references,
         instruments={str(ids[p].symbol).lower(): ids[p] for p in args.products},
         multipliers={ids[p]: specs[p].multiplier for p in args.products},
         lookback=args.lookback, rebalance_interval=args.rebalance_interval,
@@ -341,11 +352,11 @@ def assemble(args, references, driver, upstream, *, account_routes=()):
         feed.register_instrument(references.instrument_meta(p))
     bindings = StrategyBindings(
         data=tuple(DataBinding(str(i), "ctp-bars", i, DataType.BAR, "1-MINUTE") for i in ids.values()),
-        execution=tuple(ExecutionRoute(str(i), CLIENT_ID, i) for i in ids.values()))
+        execution=tuple(ExecutionRoute(str(i), client_id, i) for i in ids.values()))
     assemble_strategy(runner, strategy, feeds={"ctp-bars": feed}, execution=execution, bindings=bindings)
     components = {"execution_policy": execution_policy} if execution_policy != ExecutionPolicy() else {}
     attach = attach_execution_persistence if model else attach_ctp_persistence
-    manager = attach(execution, runner, state_file=args.state_file, state_components=components) if orders else None
+    manager = attach(execution, runner, state_file=args.state_file, state_components=components) if orders and shared_service is None else None
     runner.manager = manager
     return SimpleNamespace(runner=runner, strategy=strategy, client=execution.client,
         execution=execution, ledger=execution.ledger, manager=manager, driver=driver,

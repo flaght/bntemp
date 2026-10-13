@@ -4,6 +4,8 @@
 
 ## 1. 评估口径
 
+2026-10-13会话增量：静态七字段DolphinDB／Feather Provider和统一SessionCalendar已经实现；CU真实5段规则、10月12/13日的窗口与600/930个分钟时间点对照通过。3份demo日历JSON移除、7条停夜盘数据迁移，本地清理组43项通过。历史源3份JSON尚未统一，CU分钟源用户确认没有，当前Replay只有实时Bar预热进度。专项及GAP04保持部分完成，详见[会话台账](../data/TRADING_SESSION_GENERALIZATION_2026-10-09.md)与[证据](../evidence/live/TRADING_SESSIONS_CU_PASS_20261013.json)。后文原日期段落保留其当时范围，不将旧“尚未实施”当作当前结论。
+
 评估范围为 `bomber/` 和 `demos/`。以 [ARCHITECTURE_FIXED.md](../architecture/ARCHITECTURE_FIXED.md) 为主要目标基线，结合 [ARCHITECTURE.md](../architecture/ARCHITECTURE.md)、[STRATEGY_ARCHITECTURE.md](../architecture/STRATEGY_ARCHITECTURE.md) 及当前源码判断实现边界。
 
 总体结论：主要分层、统一策略模板、目标组合、模拟 Backend、基础风控和回报状态机已经建立；完整生产链路尚未落地。不能将基础回测、假柜台测试或单个受限 Demo 通过，等同于整体设计验收完成。
@@ -128,6 +130,8 @@ GAP-03 数据源边界已按用户澄清确定并验收关闭，运行前仍按�
 **实施/验收更新（PF0911—0916）**：统一[历史Provider/工厂/服务](../../bomber/framework/dataprep/history/service.py)、文件/数据库回退、显式缺失策略、逐日固定合约因子及EMA/实时缓冲已接入。真实CFFEX分钟读取、239根allow预热、指标文件精确恢复及实际Python停机重启后数据库回补/末根接续通过；history-adjustment32、正式IM假柜台6项及所选兼容回归通过。正式IM入口当前仅Recording，实际在线接续、CFFEX报单及生产完整恢复待验；MongoDB仅占位。用户确认当前DolphinDB只有CFFEX原始分钟，IM/IF无夜盘，周一20261012新session继续在线Recording，不以CU夜盘代替。13:00缺口和main/因子偏差暂缓。详见[周一交接](../HANDOFF/history/HANDOFF_DOLPHINDB_INTRADAY_MONDAY_2026-10-12.md)，GAP04不整体关闭。
 
 **代码依据**：[live_roles.py](../../bomber/framework/trader/live_roles.py) 检查完整新Bar与会话健康；[history.py](../../demos/01_main_ema/history.py) 与 [continuous.py](../../demos/01_main_ema/continuous.py) 处理预热/回补/实时缓冲及检查点接续；[market_health.py](../../bomber/framework/trader/market_health.py) 提供健康及恢复闸门。行情网络恢复仍不能单独证明历史窗口和账户/订单恢复完整。
+
+**2026-10-13当前边界**：会话Provider核心与真实CU时间点枚举已通过，不表示读取了对应行情价格。CU Replay实测`history_enabled=False/history_minutes=0`，EMA逐根等待接收时间Bar，尚无最终summary；不能登记为数据库历史预热或正式接续完成。下一步统一历史源及因子来源配置，将固定日期IM/IF样例移入测试资料，先确认可用分钟源，再按本次实际会话做历史加载／实时衔接。CU7条停夜盘例外远程表尚未部署；当前清理版本IM Runtime远程复验也待提供。
 
 **影响**：指标自行等待预热与系统热加载是不同能力。网络恢复、新鲜事件到达或人工确认，不能单独证明历史与实时交界无缺口。
 

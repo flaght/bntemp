@@ -3,6 +3,7 @@
 from .policy import AccountReconciliationMode, StrategyPositionSource, ExecutionPolicy
 from .fanout import AccountExecutionRoute, TargetFanoutClient
 from .account import AccountExecutionService
+from .shared import SharedAccountExecutionService, SharedStrategyExecutionClient, SharedRiskBudget
 from .model import ReferencePriceExecutionBackend
 
 from bomber.framework.trader.execution.contracts import (
@@ -91,6 +92,7 @@ from bomber.framework.trader.execution.simulation import (
 __all__ = [
     "AccountReconciliationMode", "StrategyPositionSource", "ExecutionPolicy",
     "AccountExecutionRoute", "TargetFanoutClient", "AccountExecutionService", "ReferencePriceExecutionBackend",
+    "SharedAccountExecutionService", "SharedStrategyExecutionClient", "SharedRiskBudget",
     "AmbiguousOrderSubmission",
     "ActiveOrder",
     "ActiveOrderSnapshot",

@@ -182,6 +182,9 @@ class BackendExecutionClient:
                 raise RuntimeError("账户尚未完成权威仓位对账，拒绝下单")
             if request.client_id != self.client_id:
                 raise ValueError("ExecutionRequest客户端不匹配")
+            deadline = request.metadata.get("actual_send_deadline_ns")
+            if deadline is not None and time.time_ns() > deadline:
+                raise RuntimeError("共享账户贡献已到期，拒绝规划")
             orders = tuple(self.planner.plan(request))
             health_reduce_only = (
                 request.metadata.get("market_health_mode")
@@ -204,6 +207,8 @@ class BackendExecutionClient:
             self._strategy_ids.add(request.strategy_id)
             orders = self.position_manager.attribution.prepare(request, orders)
             for order in orders:
+                if deadline is not None and time.time_ns() > deadline:
+                    raise RuntimeError("共享账户贡献在发送前到期")
                 self.position_manager.attribution.reserve(order)
                 signed = order.quantity if order.side is OrderSide.BUY else -order.quantity
                 self.position_manager.adjust_working_quantity(

@@ -4,6 +4,8 @@
 
 整理日期：2026-10-10，Asia/Shanghai。原有 16 份专题文档、37 份交接文档和 54 份校验及补丁材料已分类迁移。新旧路径见 [迁移说明](MIGRATION_2026-10-10.md)。
 
+2026-10-13会话专项更新：**静态会话核心、CU真实DolphinDB／Feather对照及旧日历清理已完成；完整专项仍未关闭**。历史源配置尚未统一，CU分钟源缺失，当前Replay只有实时Bar预热进度；正式历史预热／接续及期权／规则版本仍待验收。最新状态见[专项台账](data/TRADING_SESSION_GENERALIZATION_2026-10-09.md)，实际输出见[结构化证据](evidence/live/TRADING_SESSIONS_CU_PASS_20261013.json)。
+
 ## 从哪里开始阅读
 
 | 需要了解什么 | 首选入口 | 阅读说明 |
@@ -51,8 +53,8 @@
 | [DATAHUB_MINIMAL_CORE](data/DATAHUB_MINIMAL_CORE.md) | 参考研究数据最小查询核、时间可见性和分阶段验收 |
 | [BASIC_METADATA_ALIGNMENT](data/BASIC_METADATA_ALIGNMENT.md) | 期货期权基础条款在 datahub、dataprep、trader 各层的结构与接口对齐 |
 | [FUTURES_OPTIONS_DATA_CONTRACT_ANALYSIS](data/FUTURES_OPTIONS_DATA_CONTRACT_ANALYSIS_2026-10-09.md) | 数据需求及格式草案，区分会话通用化与完整数据适配范围 |
-| [TRADING_SESSION_GENERALIZATION](data/TRADING_SESSION_GENERALIZATION_2026-10-09.md) | 会话通用化专项的需求、接口与验收稿，与下一份讨论同一专项 |
-| [HANDOFF_TRADING_SESSIONS_GENERALIZATION](data/HANDOFF_TRADING_SESSIONS_GENERALIZATION_2026-10-09.md) | 同专项的字段与资料交接稿，补充四类数据字段、例外优先级及资料清单；与专题稿同目录保存 |
+| [TRADING_SESSION_GENERALIZATION](data/TRADING_SESSION_GENERALIZATION_2026-10-09.md) | 当前主台账：静态核心／CU真实对照／旧日历清理完成；历史配置、实际预热接续、期权与规则版本待完成 |
+| [HANDOFF_TRADING_SESSIONS_GENERALIZATION](data/HANDOFF_TRADING_SESSIONS_GENERALIZATION_2026-10-09.md) | 同专项交接：实际七字段数据、迁移证据和后续条件；完整目标契约与首期实现分别标记 |
 
 ## 策略与公共输入设计
 

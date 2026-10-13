@@ -389,6 +389,9 @@ class CtpNativeTraderDriver:
         try:
             if self._before_send is not None:
                 self._before_send(client_id, order)
+            deadline = order.metadata.get("actual_send_deadline_ns")
+            if deadline is not None and time.time_ns() > deadline:
+                raise RuntimeError("共享账户贡献在写前保存后到期，拒绝柜台发送")
             self._submitted_orders += 1
             self.transport.send_order(fields)
         except Exception as error:
@@ -414,7 +417,8 @@ class CtpNativeTraderDriver:
         if not self._enable_test_orders:
             raise RuntimeError("原生CTP Driver默认禁单；本阶段只读")
         for order_ref, (_, order) in tuple(self._orders.items()):
-            if order.strategy_id == strategy_id:
+            if order.strategy_id == strategy_id or any(
+                    leg["strategy_id"] == strategy_id for leg in order.metadata.get("allocation_legs", ())):
                 self.transport.cancel_order(order_ref)
 
     def on_disconnect(self, reason: int) -> None:

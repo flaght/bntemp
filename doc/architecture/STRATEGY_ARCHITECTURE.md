@@ -1,5 +1,7 @@
 # 统一策略框架：架构、模块职责与完成情况
 
+> 2026-10-13会话通用化增量：`calendars.SessionCalendar`、DolphinDB／Feather静态七字段来源、显式会话绑定和日期例外接口已接入；Runtime及历史窗口共享算法。CU实际5段时段、10个窗口和600/930个分钟时间点对照通过，3份旧demo日历JSON移除，7条停夜盘数据迁移。本地清理组43项通过，清理版IM Runtime远程复验待提供。历史源3份JSON尚未统一、CU分钟资料缺失、Replay只见实时预热进度；真实期权资料、规则版本as-of及完整历史接续仍待验。详见[专项台账](../data/TRADING_SESSION_GENERALIZATION_2026-10-09.md)。
+
 > 2026-10-12增量：03跨期Live已实现固定交易日双腿Recording/Model/受控SimNow、
 > 同分钟缓冲与同日归属成交恢复，复用现有公共积木；Linux live离线组22项OK
 > （0.330秒、报告passed），selection此前通过。CU真实Recording复验passed，

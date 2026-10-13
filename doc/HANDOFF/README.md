@@ -1,5 +1,7 @@
 # Bomber 交接记录分类索引
 
+2026-10-13会话专项：[静态Provider／CU真实两源对照及旧日历清理](../data/TRADING_SESSION_GENERALIZATION_2026-10-09.md)已完成；历史源配置统一、可用CU分钟源和正式历史接续仍待完成。当前Replay为实时Bar预热进度，未取得最终summary；详见[证据](../evidence/live/TRADING_SESSIONS_CU_PASS_20261013.json)。
+
 最新Live反馈：[01/04模型运行与04恢复验收通过（2026-10-11）](live/HANDOFF_MODEL_REPLAY_2026-10-11.md)。01恢复、双策略同时运行及第三方真实成交待验收。
 
 策略独立执行：[多账户装配（2026-10-11）](live/HANDOFF_STRATEGY_EXECUTION_2026-10-11.md)。
