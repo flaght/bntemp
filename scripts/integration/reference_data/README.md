@@ -67,6 +67,14 @@ python -u -m scripts.integration.reference_data.trading_sessions \
 
 ## GAP-03当前入口与导出
 
+旧demo日历清理：CU的7条停夜盘例外迁移至
+`configs/session_overrides_cu_2026.csv`，标准字段与源解析器一致。使用
+`python -m scripts.integration.reference_data.session_overrides_export --input <CSV路径> --output <新Feather路径>`
+可生成配套本地数据。Live例外表仍须在实际部署中导入并配置；本工具只写指定的新本地文件。
+原CU/IM/IF日历JSON已退役，新的会话参数及保留的历史行情JSON用途见
+[01说明](../../../demos/01_main_ema/README.md)。下文旧版本的验收和摘要记录保留其原始路径，
+不作为当前启动配置或当前版本的文件清单。
+
 readonly新增必填`--expected-source-day`，检查声明来源日、来源年龄、成功观测及真实发布时间。下文旧命令保留历史记录，执行时补充当前已核对的来源日。当前在线默认DolphinDB，文件须显式测试标志。GAP-03已于2026-10-09关闭：远程专项22项及所选回归通过，真实CU参考只读→导出→纯本地校验一致，源日2026-10-08、主力cu2611、累计因子1.484671，报告目录gap03-cu-night-20261012.ykM52c。证据及观测后可见性限制见 [专项交接](../../../doc/HANDOFF/gaps/HANDOFF_GAP03_2026-10-09.md)。新日约18点入库后的夜盘资料检查仍按当次交易日执行，不将本项关闭等同于夜盘交易全链路通过。
 
 已有 `examples/opts2/kline_task.py:export_day` 的Feather导出及上游 `code/bomber/bomber/examples/bomber_adapter/tools/sync_data.py` 的Parquet导出继续负责行情文件，本轮只补参考审计包。核对当前TD及来源日后示例（日期随会话更新）：

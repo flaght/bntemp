@@ -1,5 +1,7 @@
 # PF2026101036 REV3：持续模式依赖与Replay聚合同步
 
+2026-10-13迁移说明：本文旧版本引用的demo日历JSON已退役；历史命令和摘要保留原貌，仅用于追溯。当前启动使用交易日历／时段／日期例外Provider，CU停夜盘数据已迁移；配置与同步步骤见[01当前说明](../../../demos/01_main_ema/README.md)。
+
 用户远程出现两项失败：
 
 - `continuous`导入`demos.01_main_ema.checkpoint`失败，未进入测试。

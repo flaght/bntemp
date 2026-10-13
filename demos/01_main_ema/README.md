@@ -1,27 +1,45 @@
 # 单品种主力 EMA 回测
 
-### IF 主力在线历史预热与日志（2026-10-13）
+### 会话 Provider 与旧日历清理（2026-10-13）
 
-日历实现修正：公共`SessionCalendar`不再按CU/IM/IF选择类或内置时段。`schema_version=1`日历显式声明`session_segments`，每段包含开始/结束时间、跨午夜的`end_day_offset`及`same_day/next_trading_day`归属；日期使用完整`trading_days`，或显式`weekdays`配合`holidays`。`no_night`取消对应锚点日期的下一交易日时段，`overrides`完整替换某个交易日期的时段（空列表表示取消）。新增品种只需配置其身份、日期和时段。旧CopperSessions/IndexSessions仅为同一类的兼容导入名；旧外部JSON缺少schema_version/session_segments会明确失败，不能自动猜测。项目内CU/IM/IF三份日历已迁移。Live装配、持续监督和检查点恢复检查统一使用load_sessions并核对配置品种；市场身份及已验收交易能力限制仍独立保留。
+Live 的会话资料现在由 DolphinDB 时段表、`calendars` 日期 Provider 和独立日期例外组成。实际时段源为 `dfs://bomber_static/fut_trading_session`，文件源为资料目录中的 `fut_trading_session.feather`；DolphinDB 边界处理 `Code → code` 并用 `string(start_time/end_time)` 返回时钟值。正式历史预热、持续运行及恢复预检使用同一服务，默认不读取日历 JSON。品种与时段键、日历标识的绑定仍须明确配置。
 
-这次实现限于文件配置日历：不宣称已完成通用化专项的DolphinDB会话Provider、历史规则修订as-of或期权绑定继承；ImDayWindow指定日探针仍是既有样本工具。JSON及文件摘要只作为静态检查，六项通用日历用例及相关回归待远程执行。
+三个旧 demo 日历 JSON 已移除。IM/IF 单元测试改用自建内存快照，JSON 兼容测试自建临时输入。集中验收入口已清理旧文件摘要引用，公共 `--trading-calendar` 保留为外部旧配置的显式兼容入口。
+
+原 CU 日历的日期集合已与 `china.sse` Provider 对照一致。原有 **7 条节前停夜盘例外**完整迁移至 [标准例外 CSV](../../scripts/integration/reference_data/configs/session_overrides_cu_2026.csv)，适用的原配置范围为2025-12-31至2026-12-31。它是原资料迁移，不代表本次重新核验交易所公告，也不证明其它品种或年份的例外完整性。`NIGHT_START/CANCEL/NIGHT` 会同时取消午夜前后两段；普通日盘保持。
+
+本地使用时将标准CSV导出为新的Feather文件，不需要 manifest：
+
+```bash
+python -u -m scripts.integration.reference_data.session_overrides_export \
+  --input scripts/integration/reference_data/configs/session_overrides_cu_2026.csv \
+  --output tests/results/cu-session-overrides-2026.feather
+```
+
+回测使用时段Feather和例外Feather配套读取。Live 部署将这些标准记录导入实际例外表，源字段 `code` 对应 DolphinDB 的 `Code`，`date` 应为 DATE；然后配置 `--session-overrides-table` 或 `DDB_SESSION_OVERRIDES_TABLE`。本次文件清理没有连接数据库或创建远程例外表。Live 会话参数为 `--calendar-id china.sse --trading-hours-database dfs://bomber_static --trading-hours-table fut_trading_session`，再指定实际例外表。已知有停夜盘规则的范围不能声明 `--no-session-overrides`；明确核对的无例外局部验收范围仍可使用该声明。
+
+2026-10-13 用户远程 CU 时段对照已通过：5个分段、10月12/13日的10个实际窗口、最近600个分钟时间点及930个区间分钟时间点在DolphinDB与Feather两侧一致；周五夜盘和周六凌晨归属10月12日。该验收使用明确的无例外声明；分钟枚举不等于读取了600根历史行情。第二套replay Recording使用接收时间Bar实时预热，目前没有CU历史分钟源配置。
+
+### IF 主力历史预热样例
 
 IF已接入CFFEX单次realtime Recording观察，省略`--expected-instrument`时采用当前参考适配器解析的main真实合约；可显式传入该参数核对合约。主力/因子覆盖规则沿用现有实现，未在本次修正。IF不接受SimNow报单、持续模式或单次交易恢复；Model仍不装配历史参数。
 
 原入口已有运行期`EMA分钟进度/策略目标`，但历史加载只有允许不足时打印。现增加`EMA预热配置`、`历史预热/回补开始`、`完成`和`失败`日志，包含请求根数、实际来源、缺失及不可用来源、EMA初始化状态/数值、有效根数和耗时。未启用历史时，记录每根有效实时Bar的最低预热进度及完成；回测默认不打印。没有缺口的逐分钟历史检查不打印。
 
-本次新增IF日历及历史配置供**2026-10-13日盘**使用，历史分钟复用已声明的`dfs://min_bar/cffex_1min`，因子读取`dfs://bomber_daily`。配置声明10月12日分钟使用10月9日因子、10月13日分钟使用10月12日因子；这些是请求口径，不代表本次数据库已经核验到这些行。当前主力必须在历史窗口的各因子来源日具有唯一匹配因子，否则拒绝；不拼接跨主力连续行情。不同交易日运行应更新日历覆盖、历史因子来源映射和命令日期。
+保留的三个 `history_*.json` 配置行情库、字段及历史复权口径，交易时段表不能替代它们。`history_im_raw.json` 是原始分钟源配置；另外两份是限定日期的验收样例，不能原样用于新的会话日期，也不能作为CU行情配置。
+
+以下IF历史配置供**2026-10-13日盘样例**使用，历史分钟复用已声明的`dfs://min_bar/cffex_1min`，因子读取`dfs://bomber_daily`。配置声明10月12日分钟使用10月9日因子、10月13日分钟使用10月12日因子；这些是请求口径，不代表本次数据库已经核验到这些行。当前主力必须在历史窗口的各因子来源日具有唯一匹配因子，否则拒绝；不拼接跨主力连续行情。不同交易日运行应更新历史因子来源映射和命令日期，交易日期覆盖由Provider提供。
 
 同步本次文件后，先在已安装Bomber依赖的远程pro根目录执行离线验证（`im-runtime`现含3项IF增量，合计9项）：
 
 ```bash
 export PYTHONPATH=.
-sha256sum -c doc/evidence/checksums/EMA_SESSION_CONFIG_20261013_SHA256.txt &&
+sha256sum -c doc/evidence/checksums/EMA_SESSION_PROVIDER_CLEANUP_20261013_SHA256.txt &&
 python -u -m tests.run_main_ema_acceptance \
-  --only sessions --only im-runtime --only history-provider --only entry --only continuous
+  --only trading-hours --only im-runtime
 ```
 
-通过后，在同一环境、项目根目录和有效日盘窗口执行完整启动命令；`.env`中的CTP/DDB连接配置须已准备：
+通过后，在同一环境、项目根目录和有效日盘窗口执行样例命令；`.env`中的CTP/DDB连接配置须已准备，并先确认时段表有IF完整分段、本次查询范围没有日期例外。下面的日期与行情配置是保留的历史样例：
 
 ```bash
 export PYTHONPATH=.
@@ -31,7 +49,9 @@ python -u -m demos.01_main_ema.run_live \
   --reference-source dolphindb --reference-database dfs://bomber_daily \
   --factor-date-basis source --factor-availability observed-on-read \
   --expected-trading-day 20261013 --expected-source-day 20261012 \
-  --trading-calendar demos/01_main_ema/cffex_if_20261009_13.json \
+  --calendar-id china.cffex \
+  --trading-hours-database dfs://bomber_static --trading-hours-table fut_trading_session \
+  --no-session-overrides \
   --history-db dolphindb \
   --history-config demos/01_main_ema/history_if_20261013.json \
   --history-minutes 240 --history-stage recovery --history-missing-policy fail \
@@ -40,7 +60,7 @@ python -u -m demos.01_main_ema.run_live \
 
 该命令先读取IF当前主力参考资料，MD/TD健康就绪后从DolphinDB加载最近240根完整交易分钟，历史仅推进EMA；缓冲实时Bar并接续新分钟后生成Recording目标。缺分钟默认拒绝；只在明确接受实际缺口时改成`--history-missing-policy allow`。`--history-stage recovery`明确采用数据库阶段，不传history-file。正常应看到`history_enabled=True`以及完成日志的实际`sources`含`dolphindb`；不能只凭backend配置名称判断已读到数据库。随后summary的history/history_audit保存实际来源和覆盖。Recording不发送柜台订单，但仍连接MD/TD并执行账户预检。
 
-IF交易时段沿用股指日历09:30–11:30、13:00–15:00，依据[中金所沪深300合约交易细则](https://www.cffex.com.cn/u/cms/www/202003/27165450o6vr.pdf)；本次日期覆盖参照[中金所2026休市通知原文转载](https://ebs.publicnow.com/view/ADDFFE5578158AB71CC79990697606A0CA2A0458)。启动必须先取得健康MD/TD，不支持在长时间无行情的休市期间预先完成历史加载。本次仅静态检查，未在本机执行Python/测试、连接库或柜台；IF新增用例及真实在线接续待远程验证，旧IM通过结果不覆盖本次IF改动。
+IF实际时段从部署的时段表读取，日期从 `china.cffex` Provider 获取。启动必须先取得健康MD/TD。历史预热启用须有实际分钟源配置，源缺失时拒绝；CU的时段对照结果不代表IF行情已读取成功。源码历史预热和接续的假柜台验收与真实在线验收分别记录。
 
 全新EMA策略的成交验收使用空仓SimNow账户和新状态文件，不传接管参数。策略初始持仓0，预热后按真实EMA方向生成目标，成交回报更新策略归属。账户非空会拒绝空仓启动，不自动归给EMA。PF0907固定目标方案已撤回，相关文件和参数已删除。同步、回归及空仓命令见 [PF2026100908交接](../../doc/HANDOFF/live/HANDOFF_FRESH_EMA_2026-10-09.md)。
 

@@ -3,22 +3,20 @@ from contextlib import redirect_stderr
 from datetime import datetime
 from decimal import Decimal
 from io import StringIO
-from pathlib import Path
 from types import SimpleNamespace
 import json
 import unittest
 
 import pandas as pd
 
-from bomber.framework.trader.runtime.trading_sessions import IndexSessions, load_sessions, SHANGHAI
+from bomber.framework.calendars import SessionCalendar
+from bomber.framework.trader.runtime.trading_sessions import SHANGHAI
 from tests import run_main_ema_live as live_fixture
 from tests.session_fixtures import index_sessions
 
 ManualMd, BASE, MINUTE = live_fixture.ManualMd, live_fixture.BASE, live_fixture.MINUTE
 live, refs = live_fixture.live, live_fixture.refs
 
-ROOT = Path(__file__).resolve().parents[1]
-CALENDAR = ROOT / "demos/01_main_ema/cffex_im_20260921_22.json"
 OPEN = BASE + 30 * MINUTE
 
 
@@ -61,26 +59,17 @@ class ImRuntimeTests(unittest.TestCase):
             "adjusted_close": str(Decimal("7760") * factor)}) for index in range(2)))
         return SimpleNamespace(**values)
 
-    def if_calendar(self, fixture):
-        path = fixture.root / "if-calendar.json"
-        data = json.loads(CALENDAR.read_text())
-        data["product"] = "IF"
-        path.write_text(json.dumps(data))
-        return path
-
     def test_if_calendar_and_cli_use_main_without_fixed_contract(self):
-        fixture, _ = self.fixture("IF")
-        calendar_path = self.if_calendar(fixture)
-        calendar = load_sessions(calendar_path, "IF")
+        calendar = index_sessions("IF")
         self.assertEqual(calendar.product, "IF")
         self.assertEqual(calendar.previous_trading_day("20260922"), "20260921")
         self.assertEqual(len(calendar.last_minutes(OPEN, 240)), 240)
         self.assertIsNone(calendar.window(datetime(2026, 9, 22, 12, tzinfo=SHANGHAI)))
-        with self.assertRaises(ValueError): load_sessions(CALENDAR, "IF")
         with self.assertRaises(RuntimeError): calendar.last_minutes(OPEN, 241)
         base = ["--connect", "--product", "IF", "--expected-source-day", "20260921",
-            "--history-minutes", "240", "--trading-calendar", str(calendar_path)]
+            "--history-minutes", "240", "--calendar-id", "china.cffex", "--no-session-overrides"]
         args = live.parse_args(base)
+        self.assertIsNone(args.trading_calendar)
         self.assertIsNone(args.expected_instrument)
         self.assertEqual(args.mode, "recording")
         with redirect_stderr(StringIO()), self.assertRaises(SystemExit):
@@ -132,8 +121,8 @@ class ImRuntimeTests(unittest.TestCase):
         self.assertEqual(transport._api.sent, [])
 
     def test_calendar_factory_im_sessions_lunch_and_previous_day(self):
-        calendar = load_sessions(CALENDAR, "IM")
-        self.assertIsInstance(calendar, IndexSessions)
+        calendar = index_sessions("IM")
+        self.assertIsInstance(calendar, SessionCalendar)
         def moment(value): return datetime.fromisoformat("2026-09-22T" + value).replace(tzinfo=SHANGHAI)
         self.assertIsNone(calendar.window(moment("09:29:59")))
         self.assertIsNotNone(calendar.window(moment("09:30:00")))
@@ -147,7 +136,7 @@ class ImRuntimeTests(unittest.TestCase):
         self.assertEqual(calendar.last_minutes(OPEN, 1)[0], previous_close)
 
     def test_calendar_unknown_day_and_insufficient_coverage_fail(self):
-        calendar = IndexSessions(CALENDAR)
+        calendar = index_sessions("IM")
         with self.assertRaises(RuntimeError):
             calendar.window(datetime(2026, 9, 23, 9, 30, tzinfo=SHANGHAI))
         with self.assertRaises(RuntimeError): calendar.last_minutes(OPEN, 241)

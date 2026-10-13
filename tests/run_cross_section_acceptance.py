@@ -199,7 +199,7 @@ SOURCES = (
     "tests/test_live_common.py",
     "demos/01_main_ema/continuous.py",
     "demos/01_main_ema/checkpoint.py",
-    "demos/01_main_ema/shfe_cu_2026.json",
+    "scripts/integration/reference_data/configs/session_overrides_cu_2026.csv",
     "bomber/framework/trader/runtime/trading_sessions.py",
     "tests/test_main_ema_continuous.py",
     "bomber/framework/market/basic/base.py",
