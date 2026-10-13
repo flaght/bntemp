@@ -6,6 +6,7 @@ import time
 
 from bomber.framework.trader.persistence import JsonStateStore
 from .local import strategy_state_lock
+from .health import readiness_failure_context
 
 
 @dataclass
@@ -135,8 +136,10 @@ class SharedAccountLiveHost:
                 current = getattr(session.runner, "reference_is_current", None)
                 valid_reference = current() if callable(current) else session.references.spec == session.runner.fixed_spec
                 if not valid_reference:
+                    session.runner.failure_readiness = readiness_failure_context(session.runner)
                     raise RuntimeError(f"策略参考合约或条款变化: strategy_id={item.strategy_id}")
                 if not session.runner.session_ready():
+                    session.runner.failure_readiness = readiness_failure_context(session.runner)
                     raise RuntimeError(f"策略行情或账户未就绪: strategy_id={item.strategy_id}")
                 item.save(self.service)
             except Exception as error:
@@ -205,5 +208,6 @@ class SharedAccountLiveHost:
                 for (sid, key), q in positions.strategy_positions.items()],
             "execution_positions": {str(key.instrument_id): str(q) for key, q in positions.account_positions.items()},
             "strategies": {sid: {"active": item.active, "failure": item.failure,
+                "failure_readiness": getattr(item.session.runner, "failure_readiness", None),
                 "fills_received": getattr(item.session.strategy, "fills_received", 0),
                 "state_file": str(item.state_file)} for sid, item in self.strategies.items()}}

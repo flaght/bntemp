@@ -7,6 +7,26 @@ from .contracts import ReadinessIssue, ReadinessResult
 from .profiles import MarketTimeProfile
 
 
+def readiness_failure_context(runner):
+    """只采集本地健康检查与时效记录，不查询数据库或柜台、不改变闸门。"""
+    result = getattr(getattr(runner, "_session_check", None), "last_result", None)
+    context = {"observed_at_ns": time.time_ns(),
+        "channel_readiness": result.as_dict() if result is not None else None,
+        "runner_failure": getattr(runner, "failure", None)}
+    try:
+        stale = getattr(runner, "stale_instruments", None)
+        context["stale_instruments"] = stale() if callable(stale) else {}
+    except Exception as error:
+        context["stale_check_error"] = str(error)
+    try:
+        current = getattr(runner, "reference_is_current", None)
+        context["reference_current"] = (current() if callable(current) else
+            runner.references.spec == runner.fixed_spec)
+    except Exception as error:
+        context["reference_check_error"] = str(error)
+    return context
+
+
 def validate_instrument_max_age(seconds):
     if not math.isfinite(seconds) or not 0 < seconds <= 120:
         raise ValueError("instrument-max-age-seconds须为(0,120]内有限数")

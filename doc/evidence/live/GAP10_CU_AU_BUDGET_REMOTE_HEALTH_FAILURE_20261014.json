@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "date": "2026-10-14",
+  "provenance": "user pasted budget migration and resume logs; local broker not connected",
+  "source_sha256": {
+    "migration": "a40a96da2378bf5c7a447781969b6153e3c39aa1bbc0eb2125b5ead00e72d4ef",
+    "resume": "2b6d72f104cd945c73187a09de8465e834ad765271e60e97d66d0033f5062e0a"
+  },
+  "migration": {
+    "report": "shared-simnow-1791907272093985739",
+    "status": "reconciled",
+    "previous_generation": 713,
+    "saved_generation": 714,
+    "previous_limit": "2000000",
+    "saved_limit": "2300000",
+    "orders_submitted": 0
+  },
+  "resume": {
+    "report": "shared-simnow-1791907341703816222",
+    "status": "failed",
+    "reason": "cross-section Tick readiness/reference fault",
+    "account_failed": false,
+    "account_pending": false,
+    "shutdown_failure": null,
+    "final_active_orders": 0,
+    "strategy_owned": {
+      "ema-cu-gamma": {
+        "cu2611.SHFE": "-1"
+      },
+      "cross-cu-au-delta": {
+        "cu2611.SHFE": "-1",
+        "au2612.SHFE": "1"
+      }
+    },
+    "final_gross": {
+      "cu2611.SHFE": [
+        "0",
+        "2"
+      ],
+      "au2612.SHFE": [
+        "1",
+        "0"
+      ]
+    },
+    "callbacks": {
+      "ema-cu-gamma": 1,
+      "cross-cu-au-delta": 5
+    },
+    "events_not_supplied": true
+  },
+  "diagnostic_change": "capture local channel readiness issues and per-contract ages at fault; no thresholds changed",
+  "offline_report": "tests/results/main-ema-acceptance-1791908261177042000/summary.json",
+  "offline_counts": {
+    "shared-account": 54,
+    "live-common": 116
+  },
+  "root_cause_not_yet_identified": true
+}
