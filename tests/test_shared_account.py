@@ -163,7 +163,7 @@ class SharedAccountTests(unittest.TestCase):
         service, client, (one, two) = self.service(quantity=3)
         self.submit(one, 2)
         before = service.snapshot_state()
-        with self.assertRaises(ValueError):
+        with self.assertRaisesRegex(ValueError, "gross_quantity=4.*max_gross_quantity=3.*gross_notional=12000"):
             self.submit(two, -2)
         self.assertEqual(service.snapshot_state(), before)
         with self.assertRaises(ValueError):
@@ -514,6 +514,72 @@ class SharedAccountTests(unittest.TestCase):
             self.assertEqual(path.read_bytes(), before)
             self.assertFalse(transport2.sent)
             self.assertFalse(tuple(Path(directory).glob("*.before-reconcile-*.json")))
+
+    def test_readonly_budget_migration_preserves_ownership_and_requires_new_resume_identity(self):
+        modules = self.native_modules()
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "account.json"
+            account, service, transport, (one, two), _ = self.native_account(path, modules, scoped=True)
+            old_account = {"client_id": "account", "max_gross_quantity": "10", "max_gross_notional": "100000"}
+            new_account = {**old_account, "max_gross_notional": "120000"}
+            account.manager.state_components["session_identity"].identity["account"] = old_account
+            account.start(resume=False)
+            service.start()
+            one.start()
+            two.start()
+            account.authorize()
+            self.submit(one)
+            transport.fill(transport.sent[0]["OrderRef"])
+            one.stop()
+            two.stop()
+            account.stop()
+            before = path.read_bytes()
+            repaired, service2, transport2, _, _ = self.native_account(path, modules, scoped=True)
+            repaired.manager.state_components["session_identity"].identity["account"] = dict(old_account)
+            transport2.gross = dict(transport.gross)
+            result = repaired.reconcile_checkpoint(new_account_config=new_account)
+            self.assertEqual(Path(result["backup_file"]).read_bytes(), before)
+            self.assertFalse(transport2.sent)
+            self.assertEqual(result["previous_budget"]["max_gross_notional"], "100000")
+            self.assertEqual(result["saved_budget"]["max_gross_notional"], "120000")
+            self.assertEqual(service2.position_manager.position("one", "main"), 1)
+            saved = repaired.manager.repository.load().payload["component_states"]
+            self.assertEqual(saved["session_identity"]["identity"]["account"], new_account)
+            original, _, _, _, _ = self.native_account(path, modules, scoped=True)
+            original.manager.state_components["session_identity"].identity["account"] = dict(old_account)
+            with self.assertRaises(ValueError):
+                original.start(resume=True)
+            normal, service3, transport3, _, _ = self.native_account(path, modules, scoped=True)
+            service3.budget = type(service3.budget)(10, 120000)
+            normal.manager.state_components["session_identity"].identity["account"] = dict(new_account)
+            transport3.gross = dict(transport.gross)
+            normal.start(resume=True)
+            self.assertFalse(transport3.sent)
+            self.assertEqual(service3.position_manager.position("one", "main"), 1)
+            normal.stop()
+
+    def test_readonly_budget_migration_save_failure_rolls_back_budget_identity_and_file(self):
+        modules = self.native_modules()
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "account.json"
+            old_account = {"client_id": "account", "max_gross_quantity": "10", "max_gross_notional": "100000"}
+            new_account = {**old_account, "max_gross_notional": "120000"}
+            account, _, _, _, _ = self.native_account(path, modules, scoped=True)
+            account.manager.state_components["session_identity"].identity["account"] = dict(old_account)
+            account.start(resume=False)
+            account.authorize()
+            account.stop()
+            before = path.read_bytes()
+            repaired, service, transport, _, _ = self.native_account(path, modules, scoped=True)
+            repaired.manager.state_components["session_identity"].identity["account"] = dict(old_account)
+            with patch.object(repaired.manager, "save", side_effect=OSError("disk failure")):
+                with self.assertRaisesRegex(OSError, "disk failure"):
+                    repaired.reconcile_checkpoint(new_account_config=new_account)
+            self.assertEqual(path.read_bytes(), before)
+            self.assertEqual(service.budget.max_gross_notional, 100000)
+            self.assertEqual(repaired.manager.state_components["session_identity"].identity["account"], old_account)
+            self.assertFalse(transport.sent)
+            self.assertEqual(len(tuple(Path(directory).glob("*.before-reconcile-*.json"))), 1)
 
     def test_readonly_reconciliation_rejects_unknown_active_orders_without_canceling(self):
         modules = self.native_modules()
@@ -1025,6 +1091,27 @@ class SharedConfigTests(unittest.TestCase):
                 [arg for arg in valid if arg != "--resume"], [arg for arg in valid if arg != "--connect"]):
             with redirect_stderr(StringIO()), self.assertRaises(SystemExit):
                 parse_args(argv)
+
+    def test_budget_migration_only_allows_account_notional_increase(self):
+        from copy import deepcopy
+        from scripts.integration.shared_account.config import validate_budget_increase
+        original = self.read(self.config())
+        updated = deepcopy(original)
+        updated["account"]["max_gross_notional"] = "120000"
+        self.assertEqual(validate_budget_increase(original, updated), updated["account"])
+        for mutate in (lambda c: c["account"].update(max_gross_notional="90000"),
+                lambda c: c["account"].update(max_gross_quantity="5"),
+                lambda c: c["strategies"][0]["argv"].extend(("--max-notional", "120000")),
+                lambda c: c.update(account_state_file="another.json")):
+            candidate = deepcopy(updated)
+            mutate(candidate)
+            with self.assertRaises(ValueError):
+                validate_budget_increase(original, candidate)
+        from scripts.integration.shared_account.run import parse_args
+        from contextlib import redirect_stderr
+        from io import StringIO
+        with redirect_stderr(StringIO()), self.assertRaises(SystemExit):
+            parse_args(["--config", "old.json", "--budget-config", "new.json"])
 
     def test_missing_config_reports_path_without_starting_host(self):
         from scripts.integration.shared_account import run

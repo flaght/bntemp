@@ -5,6 +5,7 @@ from decimal import Decimal
 import json
 import math
 import re
+from copy import deepcopy
 from pathlib import Path
 
 
@@ -81,3 +82,13 @@ def read_config(path):
         account_state_file=str((path.parent / config["account_state_file"]).resolve()),
         report_dir=str((path.parent / config.get("report_dir", "results")).resolve()))
     return config
+
+
+def validate_budget_increase(original, updated):
+    """显式迁移只允许账户总名义限额上调，其他身份/路径/参数必须相同。"""
+    candidate = deepcopy(updated)
+    candidate["account"]["max_gross_notional"] = original["account"]["max_gross_notional"]
+    if candidate != original or Decimal(str(updated["account"]["max_gross_notional"])) <= Decimal(
+            str(original["account"]["max_gross_notional"])):
+        raise ValueError("预算迁移仅允许上调账户max_gross_notional，其他配置须保持一致")
+    return dict(updated["account"])

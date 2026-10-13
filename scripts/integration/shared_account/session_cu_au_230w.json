@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "trading_day": "20261014",
+  "environment": "realtime",
+  "position_scope": "strategy_instruments",
+  "seconds": 600,
+  "account_state_file": "results/shared-account-cu-au.json",
+  "report_dir": "results",
+  "account": {
+    "client_id": "shared-simnow-cu-au",
+    "max_gross_quantity": "4",
+    "max_gross_notional": "2300000",
+    "max_session_orders": 20,
+    "limit_offset_ticks": 1
+  },
+  "strategies": [
+    {
+      "strategy_id": "ema-cu-gamma",
+      "kind": "main_ema",
+      "state_file": "results/ema-cu-gamma.json",
+      "stop_after_seconds": 480,
+      "argv": ["--product", "CU", "--expected-source-day", "20261013", "--fast", "3", "--slow", "5", "--quantity", "1", "--max-notional", "2000000", "--factor-date-basis", "source", "--factor-availability", "observed-on-read"]
+    },
+    {
+      "strategy_id": "cross-cu-au-delta",
+      "kind": "cross_section",
+      "state_file": "results/cross-cu-au-delta.json",
+      "argv": ["--products", "CU,AU", "--expected-source-day", "20261013", "--lookback", "3", "--rebalance-interval", "1", "--group-fraction", "0.5", "--target-notional", "2000000", "--target-quantity-cap", "1", "--max-quantity", "1", "--max-notional", "2000000", "--factor-date-basis", "source", "--factor-availability", "observed-on-read"]
+    }
+  ]
+}
