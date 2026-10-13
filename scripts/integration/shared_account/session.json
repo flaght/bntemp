@@ -19,13 +19,13 @@
       "kind": "main_ema",
       "state_file": "results/ema-rb-alpha.json",
       "stop_after_seconds": 300,
-      "argv": ["--product", "RB", "--expected-source-day", "20261012", "--fast", "3", "--slow", "5", "--quantity", "1", "--max-notional", "100000"]
+      "argv": ["--product", "RB", "--expected-source-day", "20261013", "--fast", "3", "--slow", "5", "--quantity", "1", "--max-notional", "100000", "--factor-date-basis", "source", "--factor-availability", "observed-on-read"]
     },
     {
       "strategy_id": "cross-rb-hc-beta",
       "kind": "cross_section",
       "state_file": "results/cross-rb-hc-beta.json",
-      "argv": ["--products", "RB,HC", "--expected-source-day", "20261012", "--lookback", "3", "--rebalance-interval", "1", "--group-fraction", "0.5", "--target-notional", "100000", "--target-quantity-cap", "1", "--max-quantity", "1", "--max-notional", "100000"]
+      "argv": ["--products", "RB,HC", "--expected-source-day", "20261013", "--lookback", "3", "--rebalance-interval", "1", "--group-fraction", "0.5", "--target-notional", "100000", "--target-quantity-cap", "1", "--max-quantity", "1", "--max-notional", "100000", "--factor-date-basis", "source", "--factor-availability", "observed-on-read"]
     }
   ]
 }
