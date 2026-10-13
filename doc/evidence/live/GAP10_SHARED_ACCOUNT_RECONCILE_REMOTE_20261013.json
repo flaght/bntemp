@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "review_date": "2026-10-13",
+  "provenance": "user pasted remote read-only reconciliation output",
+  "pasted_text_sha256": "87aa4d03d71c090fe472f24336b2366954c671b139f77863e110d5ab8ab2fc63",
+  "remote_report": "shared-simnow-1791905355939548901",
+  "td_trading_day": "20261014",
+  "status": "reconciled",
+  "previous_generation": 3021,
+  "saved_generation": 3022,
+  "backup_file": "shared-account.json.before-reconcile-g3021.json",
+  "orders_submitted": 0,
+  "authorized": false,
+  "strategies_started": false,
+  "failed": false,
+  "pending": false,
+  "draining": [],
+  "source_versions": {
+    "cross-rb-hc-beta": 14,
+    "ema-rb-alpha": 3
+  },
+  "owned_positions": {
+    "cross-rb-hc-beta": {
+      "rb2701.SHFE": "-1",
+      "hc2701.SHFE": "1"
+    },
+    "ema-rb-alpha": {
+      "rb2701.SHFE": "1"
+    }
+  },
+  "managed_physical_gross": {
+    "hc2701.SHFE": [
+      "1",
+      "0"
+    ]
+  },
+  "final_active_orders": 0,
+  "notes": [
+    "RB strategy ownership +1 and -1 offsets; broker gross has no RB position",
+    "source targets frozen at actual ownership; no replay of unsuccessful SHORT intent",
+    "is_reconciled false in final diagnostics follows client.stop; audit recorded RECONCILED then DISARMED",
+    "changing instruments is a new route/identity and cannot use this checkpoint as resume",
+    "original strategy and account files preserved; full GAP10 not closed"
+  ]
+}
