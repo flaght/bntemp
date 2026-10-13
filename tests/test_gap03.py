@@ -52,11 +52,15 @@ class Gap03Tests(unittest.TestCase):
             clock_ns=lambda: self.now, **kwargs)
 
     def test_purpose_matrix_rejects_before_constructing_or_connecting(self):
-        local = (Purpose.OFFLINE_REFERENCE, Purpose.OFFLINE_MARKET_HISTORY, Purpose.FILE_REFERENCE_TEST)
-        for purpose in Purpose:
-            if purpose in (Purpose.LIVE_MARKET_HISTORY, Purpose.LIVE_RECOVERY):
-                continue  # 历史用途新矩阵由history-provider组覆盖。
-            backend = "file" if purpose in local else "dolphindb"
+        # 参考资料工厂只验收参考资料用途；历史和特征用途由各自Provider测试覆盖。
+        reference_backends = {
+            Purpose.OFFLINE_REFERENCE: "file",
+            Purpose.OFFLINE_MARKET_HISTORY: "file",
+            Purpose.FILE_REFERENCE_TEST: "file",
+            Purpose.LIVE_REFERENCE: "dolphindb",
+            Purpose.EXPORT: "dolphindb",
+        }
+        for purpose, backend in reference_backends.items():
             wrong = "dolphindb" if backend == "file" else "file"
             with self.subTest(purpose=purpose), patch.object(ReferenceSourceFactory, "create") as create:
                 with self.assertRaisesRegex(ValueError, "禁止静默回退"):
