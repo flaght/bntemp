@@ -527,6 +527,67 @@ class SharedAccountTests(unittest.TestCase):
             self.assertEqual(service.position_manager.position("one", "main"), 0)
             host.stop()
 
+    def test_full_host_resume_after_one_strategy_stopped_without_signal_preserves_peer_book(self):
+        modules = self.native_modules()
+        contracts = import_module("bomber.framework.trader.contracts")
+        class Observer(modules.template.StrategyTemplate):
+            pass
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            def build(*, resume, gross=None):
+                account, service, transport, ports, resources = self.native_account(root / "account.json", modules, scoped=True)
+                transport.gross = dict(gross or {"ag2612.SHFE": (0, 1)})
+                rows = []
+                for port in ports:
+                    runner = modules.runner.UnifiedStrategyRunner("live", position_manager=service.position_manager)
+                    runner.add_execution_client(port)
+                    strategy = Observer(port.strategy_id)
+                    runner.add_strategy(strategy, data_bindings=(), execution_routes=(
+                        contracts.ExecutionRoute("main", service.client_id, self.instrument),))
+                    runner.failure, runner.fixed_spec, runner.accept_bars = None, "fixed", False
+                    runner.session_ready = lambda port=port: port.is_reconciled
+                    runner.begin_bars = lambda runner=runner: setattr(runner, "accept_bars", True)
+                    rows.append(modules.runtime.SharedStrategySession(NS(runner=runner, strategy=strategy,
+                        client=port, references=NS(spec="fixed", refresh=lambda: None)),
+                        root / (port.strategy_id + ".json"), {"id": port.strategy_id, "routes": port.configuration()}))
+                return modules.runtime.SharedAccountLiveHost(account, service, rows, resources=resources, resume=resume), transport
+            first, transport = build(resume=False)
+            first.start()
+            first.stop_strategy("one", reason="configured_stop")
+            first.strategies["two"].session.strategy.set_target("main", 2, self.now)
+            transport.fill(transport.sent[0]["OrderRef"])
+            first.poll()
+            first.stop()
+            restarted, transport2 = build(resume=True, gross=transport.gross)
+            restarted.start()
+            restarted.poll()
+            service = restarted.service
+            self.assertFalse(transport2.sent)  # 恢复旧目标不发单。
+            self.assertNotIn("one", service.snapshot_state()["sources"])
+            self.assertEqual(service.position_manager.position("two", "main"), 2)
+            self.assertEqual(service.position_manager.position("one", "main"), 0)
+            self.assertEqual(service.position_manager.account_position("account", fixtures.Instrument("ag2612.SHFE")), -1)
+            self.assertEqual(restarted.strategies["two"].session.strategy._revision, 1)
+            self.now += 1
+            restarted.strategies["one"].session.strategy.set_target("main", 1, self.now)
+            transport2.fill(transport2.sent[0]["OrderRef"])
+            restarted.poll()
+            self.assertEqual(service.position_manager.position("one", "main"), 1)
+            self.assertEqual(service.position_manager.position("two", "main"), 2)
+            self.assertEqual(service.snapshot_state()["sources"]["two"]["revision"], 1)
+            self.assertEqual(service.position_manager.account_position("account", self.instrument), 3)
+            restarted.stop_strategy("one")
+            restarted.poll()
+            self.now += 1
+            restarted.strategies["two"].session.strategy.set_target("main", 1, self.now)
+            transport2.fill(transport2.sent[1]["OrderRef"])
+            restarted.poll()
+            self.assertEqual(service.snapshot_state()["sources"]["two"]["revision"], 2)
+            self.assertEqual(service.position_manager.position("one", "main"), 1)
+            self.assertEqual(service.position_manager.position("two", "main"), 1)
+            self.assertEqual(transport2.starts, 1)
+            restarted.stop()
+
     def test_restored_route_corruption_is_rejected_before_state_mutation(self):
         service, client, (one, two) = self.service()
         self.submit(one)
@@ -784,6 +845,22 @@ class SharedAccountTests(unittest.TestCase):
             self.assertFalse(transport.sent)
             host.account.start(resume=False)
             host.account.stop()
+            # 运行调度不属于策略/账户恢复身份；改变argv仍改变身份。
+            original_identity = host.account.manager.state_components["session_identity"].snapshot_state()
+            original_strategy_identity = {sid: row.identity for sid, row in host.strategies.items()}
+            config["seconds"] = 600
+            config["strategies"][0]["stop_after_seconds"] = 480
+            with patch.object(ctp_channel, "build_simnow_transport", return_value=transport), \
+                    patch.object(ctp_channel, "required", return_value="tcp://fake:30011"), \
+                    patch.object(modules.lifecycle.CtpSharedAccountLifecycle, "acquire"), \
+                    patch.object(factories, "strategy_arguments", side_effect=arguments), redirect_stdout(StringIO()):
+                resumed = run.build_host(config, resume=True, diagnostics={})
+            self.addCleanup(resumed.resources.close)
+            self.assertEqual(resumed.account.manager.state_components["session_identity"].snapshot_state(), original_identity)
+            self.assertEqual({sid: row.identity for sid, row in resumed.strategies.items()}, original_strategy_identity)
+            resumed.account.start(resume=True)
+            self.assertFalse(transport.sent)
+            resumed.account.stop()
 
 
 class SharedConfigTests(unittest.TestCase):

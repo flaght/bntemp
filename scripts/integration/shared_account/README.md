@@ -104,6 +104,32 @@ python -u -m scripts.integration.reference_data.readonly \
 指标独立重新预热，旧目标不会自动重发。模型文件、旧单策略原生文件不能直接接管。
 未决发送、未知／漏成交、活动订单断点与跨日恢复保持闭闸，须先权威对账。
 
+同日恢复验收可使用`resume_acceptance.json`。它与当前`session.json`使用同一账户
+文件、策略文件、策略参数、路由及风控，仅将EMA独立停止时间从300秒延至480秒，
+总时长仍600秒，使slow=5的实时预热有机会完成。`seconds`与`stop_after_seconds`
+属于宿主调度，未写入账户/策略恢复身份，允许改变；策略`argv`、TD日、环境、
+参考条款、账户预算及路由仍按原身份严格核对。该结论有入口和完整Host恢复回归，
+不靠修改持久化文件绕过身份检查。
+
+已取得20261014当日原会话检查点、原资料与合约仍一致且全账户无活动订单时，
+在Linux有效行情时段执行（会允许SimNow报单）：
+
+```bash
+python -u -m scripts.integration.shared_account.run \
+  --config scripts/integration/shared_account/resume_acceptance.json \
+  --connect --enable-orders --confirm-simnow --resume
+```
+
+此文件用于恢复已有会话；不能去掉resume作为有仓新会话使用。保留原状态文件及
+历史报告；不要删除文件或通过改TD日实现跨日恢复。本次运行继续遵守原20笔会话
+订单上限与预算，不为取得测试成交自动扩大限额，也不强制策略产生信号。
+若EMA完成预热后仍未提交目标，双来源实际交易验收保持未完成，不能用运行时长替代。
+
+验收先比较恢复开始时的源版本与仓位：原横截面来源版本6、RB+1/HC-1应被保留，
+EMA无旧贡献；重新预热前不重放旧订单。新目标出现后版本必须递增，归属仍按各自
+策略记录。480秒停止EMA后横截面应继续运行；最终比较两策略归属合计、管理总仓、
+五个范围外持仓及活动订单。保存本次summary.json和events.txt供逐笔核对。
+
 公共宿主提供`stop_strategy`及`restart_strategy`。应用工厂重建本策略Session后，
 后者只恢复该策略的信号消费版本，复用原端口和TD，不恢复或替换其他策略账本。
 账户完整状态只写账户文件；策略文件记录身份和版本，指标恢复政策为`rewarm`。
