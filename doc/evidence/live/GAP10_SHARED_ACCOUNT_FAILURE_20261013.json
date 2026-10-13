@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "review_date": "2026-10-13",
+  "td_trading_day": "20261014",
+  "user_report": "shared-simnow-1791903142425954554",
+  "status": "failed_cause_requires_full_events_and_authoritative_query",
+  "input_is_truncated": true,
+  "primary_failure": "策略行情或参考资料失效",
+  "shutdown_failure": "共享账户执行状态不明，保持闭闸 / 共享宿主停机未完成，资源锁保留",
+  "final_gross": null,
+  "final_active_orders": null,
+  "next_action": "retain state; obtain exact report summary/events and TD readonly; no automatic order resume",
+  "diagnostic_change": "retain original failure plus shutdown failure and pre-shutdown execution gate snapshot",
+  "local_offline_report": "tests/results/main-ema-acceptance-1791903750064234000/summary.json",
+  "local_counts": {
+    "shared-account": 45,
+    "live-common": 116
+  },
+  "local_real_orders": 0
+}

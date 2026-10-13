@@ -172,7 +172,8 @@ def main(argv=None):
     report.begin()
     host = None
     diagnostics = {}
-    status, failure = "failed", None
+    failure_execution_diagnostics = None
+    status, failure, shutdown_failure = "failed", None, None
     try:
         host = build_host(config, resume=args.resume, diagnostics=diagnostics)
         host.start()
@@ -188,17 +189,26 @@ def main(argv=None):
                                  for item in host.strategies.values()) else "completed"
     except BaseException as error:
         failure = str(error)
+        if host is not None:
+            try:
+                failure_execution_diagnostics = host.snapshot().get("execution_diagnostics")
+            except Exception as snapshot_error:
+                failure_execution_diagnostics = {"snapshot_error": str(snapshot_error)}
         raise
     finally:
         try:
             if host is not None:
                 host.stop()
         except Exception as error:
-            status, failure = "failed", str(error)
+            status, shutdown_failure = "failed", str(error)
+            if failure is None:
+                failure = shutdown_failure
             raise
         finally:
             snapshot = host.snapshot() if host is not None else {}
             report.write(status=status, fields={**snapshot, "failure": failure,
+                "shutdown_failure": shutdown_failure,
+                "failure_execution_diagnostics": failure_execution_diagnostics,
                 "td_preflight": diagnostics,
                 "verification": "runtime_completed_real_fill_acceptance_separate",
                 "final_gross": host.account.final_gross if host else None,

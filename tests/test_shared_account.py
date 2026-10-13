@@ -638,6 +638,19 @@ class SharedAccountTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             service.validate_owned_state()
 
+    def test_host_snapshot_exposes_execution_gate_conflict_without_reconciling(self):
+        modules = self.native_modules()
+        service, client, _ = self.service()
+        service._failed = True
+        client._report_errors.append(RuntimeError("conflicting fill sequence"))
+        service.position_manager.mark_recovery_required(service.client_id)
+        host = object.__new__(modules.runtime.SharedAccountLiveHost)
+        host.service, host.strategies = service, {}
+        state = host.snapshot()["execution_diagnostics"]
+        self.assertTrue(state["service_failed"])
+        self.assertTrue(state["recovery_required"])
+        self.assertEqual(state["report_errors"], ["conflicting fill sequence"])
+
     def test_scoped_native_account_preserves_external_positions_across_fill_stop_and_restore(self):
         modules = self.native_modules()
         external = {"MO2611-C-7400.CFFEX": (0, 1), "sc2611.INE": (1, 0),
@@ -978,6 +991,39 @@ class SharedConfigTests(unittest.TestCase):
         self.assertEqual(reported["status"], "failed")
         self.assertIsNone(reported["session"])
         self.assertEqual(reported["fields"]["td_preflight"]["observed_td_trading_day"], "20261014")
+
+    def test_shutdown_failure_preserves_primary_failure_and_pre_shutdown_gate(self):
+        from scripts.integration.shared_account import run
+        from contextlib import redirect_stdout
+        from io import StringIO
+        reported = {}
+        class Report:
+            def __init__(self, *args, **kwargs): pass
+            def begin(self): pass
+            def write(self, **kwargs): reported.update(kwargs)
+        replacements = {"dotenv": NS(load_dotenv=lambda *_: None)}
+        for name in ("bomber", "bomber.framework", "bomber.framework.trader", "bomber.framework.trader.runtime"):
+            module = ModuleType(name)
+            module.__path__ = []
+            replacements[name] = module
+        replacements["bomber.framework.trader.runtime.reports"] = NS(LiveRunReport=Report)
+        class Host:
+            strategies = {}
+            account = NS(final_gross=None, final_active_orders=None, scope_diagnostics=lambda: {},
+                execution=NS(backend=NS(reports=())))
+            def start(self): raise RuntimeError("initial readiness failure")
+            def stop(self): raise RuntimeError("shutdown incomplete")
+            def snapshot(self): return {"execution_diagnostics": {"report_errors": ["bad sequence"]}}
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "session.json"
+            path.write_text(json.dumps(self.config()))
+            with patch.dict(sys.modules, replacements), patch.object(run, "build_host", return_value=Host()), \
+                    redirect_stdout(StringIO()), self.assertRaisesRegex(RuntimeError, "shutdown incomplete"):
+                run.main(["--config", str(path), "--connect", "--enable-orders", "--confirm-simnow"])
+        self.assertEqual(reported["status"], "failed")
+        self.assertEqual(reported["fields"]["failure"], "initial readiness failure")
+        self.assertEqual(reported["fields"]["shutdown_failure"], "shutdown incomplete")
+        self.assertEqual(reported["fields"]["failure_execution_diagnostics"]["report_errors"], ["bad sequence"])
 
 
 if __name__ == "__main__":

@@ -134,8 +134,10 @@ class SharedAccountLiveHost:
                 session.references.refresh()
                 current = getattr(session.runner, "reference_is_current", None)
                 valid_reference = current() if callable(current) else session.references.spec == session.runner.fixed_spec
-                if not valid_reference or not session.runner.session_ready():
-                    raise RuntimeError("策略行情或参考资料失效")
+                if not valid_reference:
+                    raise RuntimeError(f"策略参考合约或条款变化: strategy_id={item.strategy_id}")
+                if not session.runner.session_ready():
+                    raise RuntimeError(f"策略行情或账户未就绪: strategy_id={item.strategy_id}")
                 item.save(self.service)
             except Exception as error:
                 if self.service.client.report_errors or self.service._failed:
@@ -189,7 +191,16 @@ class SharedAccountLiveHost:
 
     def snapshot(self):
         positions = self.service.position_manager.snapshot()
+        client = self.service.client
         return {"account": self.service.snapshot_state(),
+            "execution_diagnostics": {"is_reconciled": client.is_reconciled,
+                "is_armed": getattr(client, "is_armed", None),
+                "recovery_required": self.service.position_manager.is_recovery_required(self.service.client_id),
+                "service_failed": self.service._failed,
+                "report_errors": [str(error) for error in client.report_errors],
+                "portfolio_failure": getattr(client, "portfolio_failure", None),
+                "audit": [{"action": row.action, "detail": row.detail, "ts_ns": row.ts_ns}
+                    for row in getattr(client, "audit_records", ())[-20:]]},
             "strategy_positions": [{"strategy_id": sid, "target_key": key, "quantity": str(q)}
                 for (sid, key), q in positions.strategy_positions.items()],
             "execution_positions": {str(key.instrument_id): str(q) for key, q in positions.account_positions.items()},
