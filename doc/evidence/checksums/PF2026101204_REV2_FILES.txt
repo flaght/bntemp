@@ -1,0 +1,13 @@
+bomber/framework/trader/runtime/live/readiness.py
+bomber/framework/dataprep/live_options.py
+bomber/framework/trader/runtime/live/channels/ctp_recovery.py
+demos/08_option_vega/recovery.py
+demos/08_option_vega/run_live.py
+demos/08_option_vega/live_runtime.py
+demos/08_option_vega/acceptance.py
+tests/test_live_readiness.py
+tests/test_option_vega_live.py
+tests/test_option_vega_assembly.py
+tests/test_option_recording_acceptance.py
+tests/run_cross_section_acceptance.py
+tests/run_feature_datahub.py

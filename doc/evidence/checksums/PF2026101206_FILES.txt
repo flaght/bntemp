@@ -1,0 +1,7 @@
+demos/08_option_vega/execution_audit.py
+demos/08_option_vega/live_runtime.py
+demos/08_option_vega/run_live.py
+tests/test_option_execution_audit.py
+tests/run_option_vega_offline.py
+tests/run_cross_section_acceptance.py
+tests/run_feature_datahub.py

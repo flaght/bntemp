@@ -1,0 +1,239 @@
+{
+  "evidence_date": "2026-10-13",
+  "timezone": "Asia/Shanghai",
+  "provenance": {
+    "kind": "user_reported_summary_fields",
+    "inputs": [
+      "initial truncated shutdown output",
+      "follow-up JSON field extraction from remote summary.json"
+    ],
+    "remote_original_summary_read_locally": false,
+    "remote_state_file_read_locally": false,
+    "new_local_live_session_started": false,
+    "worker_exit_code": null
+  },
+  "remote_report": "tests/results/gap08-realtime-simnow/option-vega-simnow-1791869412309900311/summary.json",
+  "remote_state_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/tests/results/gap08-realtime-simnow/state-1791869411336135873.json",
+  "reported_fields": {
+    "status": "passed",
+    "failure": null,
+    "execution_origin": "ctp_native",
+    "bar_time_basis": "source_event",
+    "valuation_day": "20261013",
+    "trading_day": "20261013",
+    "observed_td_trading_day": "20261013",
+    "observed_md_trading_day": "20261013",
+    "orders_submitted": 1,
+    "fills_received": 1,
+    "entry_audit": [
+      {
+        "signal_ns": 1791869760000000000,
+        "request_ns": 1791869781208577576,
+        "date": "2026-10-13",
+        "slot": "13:36",
+        "outcome": "TARGET",
+        "candidate_count": 14,
+        "targets": {
+          "MO2611-C-7400": "-1"
+        },
+        "future_bindings": {
+          "MO2611-C-7400": "IM2611"
+        }
+      }
+    ],
+    "position_differences": null,
+    "final_managed_gross": {
+      "MO2611-C-7400.CFFEX": [
+        "0",
+        "1"
+      ]
+    },
+    "final_active_orders": 0,
+    "cleanup_errors": [],
+    "strategy_positions_nonzero": {
+      "MO2611-C-7400": "-1"
+    },
+    "execution_positions_nonzero": {
+      "MO2611-C-7400": "-1"
+    },
+    "account_positions_nonzero": {
+      "MO2611-C-7400.CFFEX": "-1"
+    },
+    "skipped_index_frames": 0,
+    "session_readiness": {
+      "ready": true,
+      "issues": []
+    },
+    "external_gross": {
+      "ag2612.SHFE": [
+        "0",
+        "1"
+      ],
+      "sc2611.INE": [
+        "1",
+        "0"
+      ],
+      "ni2611.SHFE": [
+        "1",
+        "0"
+      ],
+      "i2701.DCE": [
+        "0",
+        "1"
+      ]
+    }
+  },
+  "review_scope": "realtime_option_entry_fill_attribution_position_consistency_and_shutdown",
+  "confirmed": [
+    "runtime report passed without failure",
+    "one native order and one attributed fill reported",
+    "strategy/execution/account net positions agree at short one MO2611-C-7400",
+    "shutdown managed gross is long zero / short one",
+    "no active orders or cleanup errors reported",
+    "external gross agrees with prior read-only account result"
+  ],
+  "pending": [
+    "fill price and exchange order/trade identifiers",
+    "original persisted state readback",
+    "actual close fill",
+    "nonzero futures hedge fill",
+    "independent full report read and worker exit code",
+    "restored generation and post-restore strategy/execution net positions",
+    "continued healthy operation to close",
+    "controlled manual and scheduled stop in an actual recovered session"
+  ],
+  "position_retained_on_stop": true,
+  "resume_followup": {
+    "provenance": "user_supplied_truncated_shutdown_output_and_traceback",
+    "remote_report_directory": "tests/results/gap08-realtime-simnow-resume/option-vega-simnow-1791871421727321406",
+    "status": "failed",
+    "resume_ready": true,
+    "orders_submitted": 0,
+    "skipped_index_frames": 0,
+    "failure_kind": "required_instrument_raw_depth_event_age_exceeded",
+    "instrument": "MO2611-C-7400.CFFEX",
+    "event_age_seconds": 30.172288059,
+    "receive_age_seconds": 28.905667247,
+    "max_age_seconds": 30.0,
+    "trading_day": "20261013",
+    "timestamp_regressed": false,
+    "final_managed_gross": {
+      "MO2611-C-7400.CFFEX": [
+        "0",
+        "1"
+      ]
+    },
+    "final_active_orders": 0,
+    "cleanup_errors": [],
+    "conclusion": "Resume startup completed; continued healthy operation failed on held-instrument raw-depth event freshness. Shutdown retained position and left no active orders.",
+    "unresolved": "The excerpt does not identify why valid raw depth observations for this contract stopped updating."
+  },
+  "resume_source_health_followup": {
+    "provenance": "user_supplied_truncated_console_summary_and_traceback",
+    "attachment_id": "339ccdef-fdc2-4a92-915e-ad5a104c1d03",
+    "attachment_sha256": "5997255a1ce1d5078738f4eda3fc2680d2d1383e842cbf7c33a128d1772c3234",
+    "remote_report_directory": "tests/results/gap08-realtime-simnow-resume/option-vega-simnow-1791872194341594164",
+    "status": "failed",
+    "resume_ready": true,
+    "orders_submitted": 0,
+    "skipped_index_frames": 0,
+    "session_readiness": {
+      "ready": false,
+      "issues": [
+        {
+          "domain": "market",
+          "channel": "ctp",
+          "source_id": "CTP_LIVE_SOURCE",
+          "code": "STREAM_UNHEALTHY",
+          "detail": "MarketHealthReason.STALE",
+          "context": {}
+        }
+      ]
+    },
+    "final_managed_gross": {
+      "MO2611-C-7400.CFFEX": [
+        "0",
+        "1"
+      ]
+    },
+    "final_active_orders": 0,
+    "cleanup_errors": [],
+    "latest_index_event_time": "2026-10-13T14:21:00+08:00",
+    "index_query_failure": null,
+    "configured_instrument_max_age_seconds": null,
+    "default_feed_stale_after_seconds_in_current_source": 30.0,
+    "limits": "Full source health timestamps, actual per-instrument threshold, conversion errors, CPU and queue metrics were not provided; subscription volume is not established as the cause."
+  },
+  "single_contract_raw_probe": {
+    "provenance": "user_supplied_full_raw_probe_console_output",
+    "symbol": "MO2611-C-7400",
+    "md_front": "tcp://182.254.243.31:30011",
+    "login_and_subscription": "passed",
+    "trading_day": "20261013",
+    "action_day": "20261013",
+    "first_receipt_log_time_shanghai": "2026-10-13T14:46:28.379+08:00",
+    "first_source_time_shanghai": "2026-10-13T14:46:26.500+08:00",
+    "sample_end_log_time_shanghai": "2026-10-13T14:48:28.379+08:00",
+    "last_source_time_shanghai": "2026-10-13T14:48:24.500+08:00",
+    "sample_seconds": 120.0,
+    "ticks": 75,
+    "max_receive_gap_seconds": 9.097,
+    "trailing_silence_seconds": 2.843,
+    "connects_td": false,
+    "orders": false,
+    "conclusion": "No 30-second raw receipt gap observed in this single-contract window. Does not identify cause of earlier full-session source staleness.",
+    "full_chain_raw_probe": "reported_at_closing_auction_not_comparable_continuous_phase"
+  },
+  "full_chain_raw_probe": {
+    "provenance": "user_supplied_full_raw_probe_console_output",
+    "connects_td": false,
+    "orders": false,
+    "first_receipt_log_time_shanghai": "2026-10-13T14:57:09.479+08:00",
+    "sample_end_log_time_shanghai": "2026-10-13T14:59:10.402+08:00",
+    "sample_seconds": 120.0,
+    "subscriptions": {
+      "requested": 105,
+      "accepted": 105,
+      "rejected": {},
+      "missing": []
+    },
+    "streams": {
+      "ALL": {
+        "ticks": 884,
+        "max_receive_gap_seconds": 1.959,
+        "trailing_silence_seconds": 0.454,
+        "last_source_instrument": "IM2611",
+        "last_source_time_shanghai": "2026-10-13T14:59:08.000+08:00"
+      },
+      "MO2611-C-7400": {
+        "ticks": 1,
+        "max_receive_gap_seconds": 120.0,
+        "trailing_silence_seconds": 120.0,
+        "last_source_time_shanghai": "2026-10-13T14:56:58.500+08:00"
+      },
+      "IM2611": {
+        "ticks": 192,
+        "max_receive_gap_seconds": 3.053,
+        "trailing_silence_seconds": 0.454,
+        "last_source_time_shanghai": "2026-10-13T14:59:08.000+08:00"
+      }
+    },
+    "observed_conclusion": "Global raw flow and bound future continued updating; held option had only initial snapshot.",
+    "transaction_phase": {
+      "option": "closing_auction_14:57_to_15:00",
+      "future": "continuous_trading_until_15:00",
+      "option_rule_source": "https://www.cffex.com.cn/u/cms/www/202207/1820311129r5.pdf",
+      "option_rule_article": 17,
+      "future_rule_source": "https://www.cffex.com.cn/u/cms/www/202207/182020307zry.pdf",
+      "future_rule_article": 11
+    },
+    "interpretation": "Option silence is consistent with phase transition, but exact SimNow publication behavior is not established by trading hours alone.",
+    "load_comparison_valid": false,
+    "limits": [
+      "Single-contract window 14:46-14:48 and full-chain window 14:57-14:59 were different option transaction phases.",
+      "Earlier 14:10 held-instrument and 14:21 global-source failures remain unexplained by closing auction.",
+      "Stage 4 OK confirms login, subscription and first raw tick, not whole-window held-contract continuity."
+    ],
+    "corrective_action": "Both interval probes now require the window and full preparation budget to fit option continuous trading before 14:57. No runtime health thresholds or trading logic changed."
+  }
+}

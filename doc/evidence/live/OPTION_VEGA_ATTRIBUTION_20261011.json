@@ -1,0 +1,23 @@
+{
+  "evidence_source": "user_remote_console_excerpt",
+  "platform": "remote_linux",
+  "scope": "offline_attribution_regression",
+  "requested_command": "python -u -m tests.run_cross_section_acceptance --only live-common --only attribution --only assembly",
+  "actual_command_visible_in_excerpt": false,
+  "visible_modules": [
+    {
+      "module": "attribution",
+      "tests": 19,
+      "test_seconds": 0.017,
+      "exit_code": 0,
+      "module_seconds": 1.081,
+      "result": "OK"
+    }
+  ],
+  "explicitly_visible_test": "test_strategy_working_quantity_tracks_its_frozen_share_only",
+  "selected_modules_summary": "passed",
+  "not_expanded_in_excerpt": ["live-common", "assembly"],
+  "report_directory": null,
+  "market_and_execution": "offline_fixtures",
+  "actual_market_or_counter_acceptance": false
+}

@@ -1,0 +1,28 @@
+{
+  "format_version": 1,
+  "datasets": [
+    {
+      "schema": {
+        "dataset_id": "example.bar_return.minute",
+        "schema_version": 1,
+        "computation_version": "float64-bar-body-return-v1",
+        "frequency": {"period_ns": 60000000000, "timezone": "Asia/Shanghai"},
+        "alignment": "EXACT",
+        "max_source_age_ns": 90000000000,
+        "fields": [
+          {"name": "return_1m", "kind": "float", "minimum": "-1", "exclusive_minimum": true}
+        ]
+      },
+      "source": {
+        "backend": "dolphindb-raw",
+        "database": "dfs://min_bar",
+        "table": "index_1min",
+        "key_column": "Code",
+        "partition_date": "date",
+        "event_time": {"column": "minTime", "date_column": "date", "timezone": "Asia/Shanghai", "label": "end"},
+        "availability": "observed",
+        "payload_columns": {"return_1m": "pct_change"}
+      }
+    }
+  ]
+}

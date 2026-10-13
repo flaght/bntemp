@@ -1,0 +1,38 @@
+{
+  "date": "2026-10-12",
+  "source": "user_pasted_remote_probe_logs",
+  "stage": 4,
+  "front": "tcp://182.254.243.31:30011",
+  "environment": "simnow_realtime",
+  "production_mode": true,
+  "probes": [
+    {
+      "symbol": "IM2610",
+      "connected": true,
+      "login": true,
+      "subscribed": true,
+      "raw_depth_received": true,
+      "trading_day": "20261012",
+      "action_day": "20261012",
+      "source_time": "14:11:00.500",
+      "last_price": "7023.0",
+      "result": "CTP raw market data OK"
+    },
+    {
+      "symbol": "MO2610-C-8000",
+      "connected": true,
+      "login": true,
+      "subscribed": true,
+      "raw_depth_received": true,
+      "trading_day": "20261012",
+      "action_day": "20261012",
+      "source_time": "14:13:29.000",
+      "last_price": "0.8",
+      "result": "CTP raw market data OK"
+    }
+  ],
+  "td_connected": false,
+  "scope": "Current raw MD login/subscription/delivery verified for these two contracts; not a formal Feed, minute-frame or Recording acceptance.",
+  "prior_startup_failure_preserved": "OPTION_RECORDING_STARTUP_FAILURE_20261012.json",
+  "next": "Formal CFFEX Feed probe; then user-run realtime Recording with an explicitly shifted entry slot or next-day default 13:58."
+}

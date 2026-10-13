@@ -1,0 +1,3 @@
+dataset_id,schema_version,key,ts_event,available_ns,source_ns,revision,source,quality_flags,payload.close
+index.price,1,000852,60000000000,60200000000,60000000000,0,synthetic.index,0,6400.1250
+index.price,1,000852,120000000000,120200000000,120000000000,0,synthetic.index,0,6401.2500

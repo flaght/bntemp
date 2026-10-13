@@ -1,0 +1,37 @@
+{
+  "evidence_source": "user_remote_console_excerpt",
+  "platform": "remote_linux",
+  "scope": "offline_tests",
+  "command": "python -u -m tests.run_cross_section_acceptance --only option-vega --only option-vega-live",
+  "modules": [
+    {
+      "module": "option-vega",
+      "tests": 33,
+      "test_seconds": 0.185,
+      "exit_code": 0,
+      "module_seconds": 0.829,
+      "result": "OK"
+    },
+    {
+      "module": "option-vega-live",
+      "tests": 10,
+      "test_seconds": 0.200,
+      "exit_code": 0,
+      "module_seconds": 1.298,
+      "result": "OK"
+    }
+  ],
+  "total_tests": 43,
+  "status": "passed",
+  "sdk_entity_shim_entry_used": false,
+  "market_and_execution": "offline_fixtures",
+  "fixture_valuation_day": "20260813",
+  "report_directory": null,
+  "pending": [
+    "remote_live_common_attribution_assembly_regression",
+    "full_native_historical_backtest",
+    "actual_dolphindb_index_stream",
+    "actual_ctp_options_market_data",
+    "actual_cffex_order_fill_close_and_shutdown"
+  ]
+}

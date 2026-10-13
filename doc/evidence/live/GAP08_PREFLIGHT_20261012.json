@@ -1,0 +1,36 @@
+{
+  "evidence_source": "user_remote_console_excerpt",
+  "platform": "remote_linux",
+  "status": "preflight_unresolved",
+  "runs": [
+    {
+      "command": "python -u -m tests.run_feature_datahub",
+      "report_directory": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/tests/results/feature-datahub-1791766398059187229",
+      "observed_output": "initial report line only; returned to shell without test output",
+      "exit_code": null,
+      "test_count": null,
+      "summary_json_contents": null,
+      "remote_market_frames_sha256": null,
+      "result": "no test result observed"
+    },
+    {
+      "command": "python -u -m tests.run_cross_section_acceptance --only option-vega",
+      "report_directory": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/tests/results/cross-section-acceptance-1791766405556505229",
+      "module": "option-vega",
+      "tests": 33,
+      "test_seconds": 0.169,
+      "exit_code": 0,
+      "module_seconds": 0.79,
+      "result": "OK"
+    }
+  ],
+  "local_diagnosis": "REV2 catches deployment preflight exceptions, saves deployment_error to summary.json, but omits terminal error output. Exact remote exception remains unknown without the report.",
+  "rev3_changes": [
+    "print preflight error type, message and summary path before returning 2",
+    "three isolated entry regression tests for missing manifest, malformed manifest and missing expected source",
+    "default matching REV3 deployment manifest"
+  ],
+  "production_or_strategy_logic_changed": false,
+  "local_python_tests_or_compilation_run": false,
+  "gap08_closed": false
+}

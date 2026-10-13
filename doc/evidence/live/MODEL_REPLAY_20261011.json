@@ -1,0 +1,495 @@
+{
+  "schema_version": 1,
+  "recorded_on": "2026-10-11",
+  "timezone": "Asia/Shanghai",
+  "evidence_kind": "user_provided_remote_output",
+  "scope": "live_ctp_md_with_reference_price_model_execution",
+  "verified_cases": [
+    "01_model",
+    "04_model",
+    "04_model_resume"
+  ],
+  "pending_cases": [
+    "01_model_resume",
+    "01_04_concurrent_live_model",
+    "third_party_multi_account_real_fills"
+  ],
+  "notes": [
+    "Amounts represented as decimal strings; summaries parsed without executing pasted text.",
+    "No physical TD execution or live account fills are proved by these model runs.",
+    "Resume command excerpt is incomplete; continuity is evidenced by original state path, revision 7, previous positions and first new target at frame 4.",
+    "observed_md_trading_day remains null in the supplied summaries; deployment of the report correction is not verified."
+  ],
+  "runs": [
+    {
+      "case": "01_model",
+      "source_attachment_id": "0e30fe6b-44a5-43b1-8824-3f27216343a7",
+      "source_text_sha256": "5c7ba2a417a16292bc53516ab5ca2b40974336e6cccfeba024812adca1668b46",
+      "report_directory": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/demos/01_main_ema/results/model-1791673733149458028",
+      "report_started_at_shanghai": "2026-10-11T07:08:53.149458+08:00",
+      "summary": {
+        "mode": "model",
+        "product": "RB",
+        "state_file": "demos/01_main_ema/results/model-ema-20261010-230845.json",
+        "simnow_environment": "replay",
+        "replay_md_trading_day": "20261009",
+        "bars_used": 9,
+        "last_target": "-1",
+        "strategy_position": "-1",
+        "execution_positions": {
+          "rb2701.SHFE": "-1"
+        },
+        "account_position": null,
+        "session_readiness": {
+          "ready": true,
+          "sources": [
+            {
+              "domain": "market",
+              "channel": "ctp",
+              "source_id": "CTP_LIVE_SOURCE"
+            },
+            {
+              "domain": "execution",
+              "channel": "model",
+              "source_id": "main-ema-simnow"
+            }
+          ],
+          "issues": []
+        },
+        "cleanup_errors": [],
+        "final_gross": null,
+        "final_active_orders": null,
+        "resume_state_preserved": false,
+        "model_reports": 2,
+        "strategy_position_source": "model",
+        "account_reconciliation": "off",
+        "execution_origin": "model",
+        "model": "reference-price",
+        "trading_day": "20261009",
+        "observed_td_trading_day": null,
+        "observed_md_trading_day": null,
+        "resume_ready": true,
+        "account_dispatch": {},
+        "status": "passed"
+      },
+      "model_fills": [
+        {
+          "instrument_id": "rb2701.SHFE",
+          "side": "SELL",
+          "quantity": "1",
+          "position_effect": "OPEN",
+          "current_before_plan": "0",
+          "target": "-1",
+          "request_revision": "1",
+          "synchronized_frame": null,
+          "execution_origin": "model",
+          "trade_id": "model-0222e9101d524197953888c662fc6696:trade"
+        }
+      ]
+    },
+    {
+      "case": "04_model",
+      "source_attachment_id": "970f1c99-ad7a-4b64-a0bc-d3eb45f2d18b",
+      "source_text_sha256": "b649ceb738a316034a9372975e74b7f28497d94ab6bd7106b9de2f633f797282",
+      "report_directory": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/demos/04_cross_section/results/cross-section-model-1791706100508175757",
+      "report_started_at_shanghai": "2026-10-11T16:08:20.508176+08:00",
+      "summary": {
+        "mode": "model",
+        "products": [
+          "AU",
+          "AG",
+          "SC"
+        ],
+        "state_file": "demos/04_cross_section/results/model-cross-section-20261011-080812.json",
+        "simnow_environment": "replay",
+        "replay_md_trading_day": "20261009",
+        "synchronized_frames": 9,
+        "rebalances": 6,
+        "last_frame_ns": 1791706679999999999,
+        "last_targets": {
+          "au2612.SHFE": "0",
+          "ag2612.SHFE": "1",
+          "sc2611.INE": "-1"
+        },
+        "scores": {
+          "AU": "-0.0010565007813703695551691502",
+          "AG": "-0.0006118286879673691366417403",
+          "SC": "-0.0010976948408342480790340285"
+        },
+        "long_products": [
+          "AG"
+        ],
+        "short_products": [
+          "SC"
+        ],
+        "order_updates_received": 24,
+        "fills_received": 12,
+        "last_order_status": "FILLED",
+        "fill_positions": {
+          "au2612.SHFE": "0",
+          "ag2612.SHFE": "1",
+          "sc2611.INE": "-1"
+        },
+        "strategy_positions": {
+          "sc2611.INE": "-1",
+          "ag2612.SHFE": "1",
+          "au2612.SHFE": "0"
+        },
+        "account_positions": null,
+        "execution_positions": {
+          "sc2611.INE": "-1",
+          "ag2612.SHFE": "1",
+          "au2612.SHFE": "0"
+        },
+        "unassigned_positions": {
+          "sc2611.INE": "0",
+          "ag2612.SHFE": "0",
+          "au2612.SHFE": "0"
+        },
+        "session_readiness": {
+          "ready": true,
+          "sources": [
+            {
+              "domain": "market",
+              "channel": "ctp",
+              "source_id": "CTP_LIVE_SOURCE"
+            },
+            {
+              "domain": "execution",
+              "channel": "model",
+              "source_id": "cross-section-simnow"
+            }
+          ],
+          "issues": []
+        },
+        "cleanup_errors": [],
+        "final_gross": null,
+        "final_active_orders": null,
+        "resume_state_preserved": false,
+        "model_reports": 24,
+        "strategy_position_source": "model",
+        "account_reconciliation": "off",
+        "execution_origin": "model",
+        "model": "reference-price",
+        "trading_day": "20261009",
+        "observed_td_trading_day": null,
+        "observed_md_trading_day": null,
+        "resume_ready": true,
+        "account_dispatch": {},
+        "status": "passed"
+      },
+      "model_fills": [
+        {
+          "instrument_id": "ag2612.SHFE",
+          "side": "BUY",
+          "quantity": "1",
+          "position_effect": "OPEN",
+          "current_before_plan": "0",
+          "target": "1",
+          "request_revision": "1",
+          "synchronized_frame": "4",
+          "execution_origin": "model",
+          "trade_id": "model-911d2f791ffb4d6fa6ff6ca193ba355f:trade"
+        },
+        {
+          "instrument_id": "sc2611.INE",
+          "side": "SELL",
+          "quantity": "1",
+          "position_effect": "OPEN",
+          "current_before_plan": "0",
+          "target": "-1",
+          "request_revision": "1",
+          "synchronized_frame": "4",
+          "execution_origin": "model",
+          "trade_id": "model-c57433cecfb54b478892d7cb620683c2:trade"
+        },
+        {
+          "instrument_id": "au2612.SHFE",
+          "side": "BUY",
+          "quantity": "1",
+          "position_effect": "OPEN",
+          "current_before_plan": "0",
+          "target": "1",
+          "request_revision": "2",
+          "synchronized_frame": "5",
+          "execution_origin": "model",
+          "trade_id": "model-9469ceed66714a8ca0a34fefc306e7d9:trade"
+        },
+        {
+          "instrument_id": "ag2612.SHFE",
+          "side": "SELL",
+          "quantity": "1",
+          "position_effect": "CLOSE",
+          "current_before_plan": "1",
+          "target": "0",
+          "request_revision": "2",
+          "synchronized_frame": "5",
+          "execution_origin": "model",
+          "trade_id": "model-28405da285744843be6d1154235763d1:trade"
+        },
+        {
+          "instrument_id": "au2612.SHFE",
+          "side": "SELL",
+          "quantity": "1",
+          "position_effect": "CLOSE",
+          "current_before_plan": "1",
+          "target": "0",
+          "request_revision": "3",
+          "synchronized_frame": "6",
+          "execution_origin": "model",
+          "trade_id": "model-0670c46b1bb64107a7c20fd8902c8687:trade"
+        },
+        {
+          "instrument_id": "sc2611.INE",
+          "side": "BUY",
+          "quantity": "1",
+          "position_effect": "CLOSE",
+          "current_before_plan": "-1",
+          "target": "1",
+          "request_revision": "3",
+          "synchronized_frame": "6",
+          "execution_origin": "model",
+          "trade_id": "model-9616cd4c73364a439258d11db87d09a5:trade"
+        },
+        {
+          "instrument_id": "sc2611.INE",
+          "side": "BUY",
+          "quantity": "1",
+          "position_effect": "OPEN",
+          "current_before_plan": "-1",
+          "target": "1",
+          "request_revision": "3",
+          "synchronized_frame": "6",
+          "execution_origin": "model",
+          "trade_id": "model-29368d245e6a451f88702373bcf3afbd:trade"
+        },
+        {
+          "instrument_id": "ag2612.SHFE",
+          "side": "SELL",
+          "quantity": "1",
+          "position_effect": "OPEN",
+          "current_before_plan": "0",
+          "target": "-1",
+          "request_revision": "3",
+          "synchronized_frame": "6",
+          "execution_origin": "model",
+          "trade_id": "model-dbce840ac774474882a8c15514d08a66:trade"
+        },
+        {
+          "instrument_id": "sc2611.INE",
+          "side": "SELL",
+          "quantity": "1",
+          "position_effect": "CLOSE",
+          "current_before_plan": "1",
+          "target": "-1",
+          "request_revision": "6",
+          "synchronized_frame": "9",
+          "execution_origin": "model",
+          "trade_id": "model-3fcfb9be593541e1b9a03b2e7ccde767:trade"
+        },
+        {
+          "instrument_id": "sc2611.INE",
+          "side": "SELL",
+          "quantity": "1",
+          "position_effect": "OPEN",
+          "current_before_plan": "1",
+          "target": "-1",
+          "request_revision": "6",
+          "synchronized_frame": "9",
+          "execution_origin": "model",
+          "trade_id": "model-f8d5c48f5a364296ad05cde35960cbc3:trade"
+        },
+        {
+          "instrument_id": "ag2612.SHFE",
+          "side": "BUY",
+          "quantity": "1",
+          "position_effect": "CLOSE",
+          "current_before_plan": "-1",
+          "target": "1",
+          "request_revision": "6",
+          "synchronized_frame": "9",
+          "execution_origin": "model",
+          "trade_id": "model-0b83d55579b54a67b2b2be2af28ba9f4:trade"
+        },
+        {
+          "instrument_id": "ag2612.SHFE",
+          "side": "BUY",
+          "quantity": "1",
+          "position_effect": "OPEN",
+          "current_before_plan": "-1",
+          "target": "1",
+          "request_revision": "6",
+          "synchronized_frame": "9",
+          "execution_origin": "model",
+          "trade_id": "model-3f12a9e1a9914e9d9cb7b820269fe81a:trade"
+        }
+      ]
+    },
+    {
+      "case": "04_model_resume",
+      "source_attachment_id": "2a158eb2-7626-467c-a850-91f761bcbeeb",
+      "source_text_sha256": "8a99b5ae2c93360b53edd7478c3747976e75b9880b5a78bf9e92d374439203b7",
+      "report_directory": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/demos/04_cross_section/results/cross-section-model-1791707067358178583",
+      "report_started_at_shanghai": "2026-10-11T16:24:27.358179+08:00",
+      "summary": {
+        "mode": "model",
+        "products": [
+          "AU",
+          "AG",
+          "SC"
+        ],
+        "state_file": "demos/04_cross_section/results/model-cross-section-20261011-080812.json",
+        "simnow_environment": "replay",
+        "replay_md_trading_day": "20261009",
+        "synchronized_frames": 9,
+        "rebalances": 6,
+        "last_frame_ns": 1791707639999999999,
+        "last_targets": {
+          "au2612.SHFE": "0",
+          "ag2612.SHFE": "-1",
+          "sc2611.INE": "1"
+        },
+        "scores": {
+          "AU": "-0.0007264722069345074298293891",
+          "AG": "-0.0012220788919818046031638265",
+          "SC": "0.001915446709536188261048023"
+        },
+        "long_products": [
+          "SC"
+        ],
+        "short_products": [
+          "AG"
+        ],
+        "order_updates_received": 12,
+        "fills_received": 6,
+        "last_order_status": "FILLED",
+        "fill_positions": {
+          "au2612.SHFE": "0",
+          "ag2612.SHFE": "-1",
+          "sc2611.INE": "1"
+        },
+        "strategy_positions": {
+          "sc2611.INE": "1",
+          "au2612.SHFE": "0",
+          "ag2612.SHFE": "-1"
+        },
+        "account_positions": null,
+        "execution_positions": {
+          "sc2611.INE": "1",
+          "au2612.SHFE": "0",
+          "ag2612.SHFE": "-1"
+        },
+        "unassigned_positions": {
+          "sc2611.INE": "0",
+          "au2612.SHFE": "0",
+          "ag2612.SHFE": "0"
+        },
+        "session_readiness": {
+          "ready": true,
+          "sources": [
+            {
+              "domain": "market",
+              "channel": "ctp",
+              "source_id": "CTP_LIVE_SOURCE"
+            },
+            {
+              "domain": "execution",
+              "channel": "model",
+              "source_id": "cross-section-simnow"
+            }
+          ],
+          "issues": []
+        },
+        "cleanup_errors": [],
+        "final_gross": null,
+        "final_active_orders": null,
+        "resume_state_preserved": false,
+        "model_reports": 12,
+        "strategy_position_source": "model",
+        "account_reconciliation": "off",
+        "execution_origin": "model",
+        "model": "reference-price",
+        "trading_day": "20261009",
+        "observed_td_trading_day": null,
+        "observed_md_trading_day": null,
+        "resume_ready": true,
+        "account_dispatch": {},
+        "status": "passed"
+      },
+      "model_fills": [
+        {
+          "instrument_id": "ag2612.SHFE",
+          "side": "SELL",
+          "quantity": "1",
+          "position_effect": "CLOSE",
+          "current_before_plan": "1",
+          "target": "0",
+          "request_revision": "7",
+          "synchronized_frame": "4",
+          "execution_origin": "model",
+          "trade_id": "model-9c519d94d3af411ca9210649f46a7f05:trade"
+        },
+        {
+          "instrument_id": "sc2611.INE",
+          "side": "BUY",
+          "quantity": "1",
+          "position_effect": "CLOSE",
+          "current_before_plan": "-1",
+          "target": "1",
+          "request_revision": "7",
+          "synchronized_frame": "4",
+          "execution_origin": "model",
+          "trade_id": "model-ae717e5bbfbd4413936e0df6fb179018:trade"
+        },
+        {
+          "instrument_id": "sc2611.INE",
+          "side": "BUY",
+          "quantity": "1",
+          "position_effect": "OPEN",
+          "current_before_plan": "-1",
+          "target": "1",
+          "request_revision": "7",
+          "synchronized_frame": "4",
+          "execution_origin": "model",
+          "trade_id": "model-92741712f1764f1dbb16b21e28de6636:trade"
+        },
+        {
+          "instrument_id": "au2612.SHFE",
+          "side": "SELL",
+          "quantity": "1",
+          "position_effect": "OPEN",
+          "current_before_plan": "0",
+          "target": "-1",
+          "request_revision": "7",
+          "synchronized_frame": "4",
+          "execution_origin": "model",
+          "trade_id": "model-3e421438acfd4bfba01c8b6b8f0fa75c:trade"
+        },
+        {
+          "instrument_id": "ag2612.SHFE",
+          "side": "SELL",
+          "quantity": "1",
+          "position_effect": "OPEN",
+          "current_before_plan": "0",
+          "target": "-1",
+          "request_revision": "10",
+          "synchronized_frame": "7",
+          "execution_origin": "model",
+          "trade_id": "model-1fb87a059f774f84b5e176b9e8e7ba45:trade"
+        },
+        {
+          "instrument_id": "au2612.SHFE",
+          "side": "BUY",
+          "quantity": "1",
+          "position_effect": "CLOSE",
+          "current_before_plan": "-1",
+          "target": "0",
+          "request_revision": "10",
+          "synchronized_frame": "7",
+          "execution_origin": "model",
+          "trade_id": "model-f01c0330dd91401ca88593557d9fb1ed:trade"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "change_id": "PF2026101204",
+  "date": "2026-10-12",
+  "source": "user_pasted_remote_log",
+  "attachment": "/Users/kerry/.codex/attachments/92b4520f-9fa7-4231-990b-42673835bea7/已粘贴的文本.txt",
+  "command": "python -u -m scripts.integration.options.recording --trading-day 20261012 --seconds 4200 --report-dir tests/results/gap08-recording",
+  "runtime_report": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/tests/results/gap08-recording/acceptance-1791784052690222401/runtime/option-vega-recording-1791784053642795713/summary.json",
+  "acceptance_report": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/tests/results/gap08-recording/acceptance-1791784052690222401/recording-acceptance.json",
+  "status": "failed",
+  "failure": "期权参考资料观测过期",
+  "frames": 0,
+  "entry_decisions": 0,
+  "submissions": 0,
+  "recorded_requests": [],
+  "calendar_backend": "compiled",
+  "calendar_id": "china.cffex",
+  "calendar_trading_days": 59,
+  "feature_cached_records": 168,
+  "feature_last_query_ns": "1791784084282268801",
+  "feature_emitted_versions": {},
+  "feature_failure": null,
+  "ctp_market_issues": [
+    "WAITING_FOR_FIRST_EVENT",
+    "MD_TRADING_DAY_MISMATCH actual=None expected=20261012",
+    "RECEIVE_MISSING"
+  ],
+  "cleanup_errors": [
+    "期权参考资料观测过期"
+  ],
+  "orders_submitted_field": "missing_due_to_snapshot_exception",
+  "fills_received": 0,
+  "worker_exit_code": 1,
+  "conclusion": "Startup reference TTL expired while MD had no first event. Index query worked; no pending CTP minute existed to project index Bars. Shutdown diagnostics and acceptance wording were misleading; no evidence of TD orders or fills.",
+  "actual_recording_passed": false,
+  "md_front_login_subscription_verified": false,
+  "fix_version": "PF2026101204_REV2"
+}

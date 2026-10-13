@@ -1,0 +1,33 @@
+{
+  "change_id": "PF2026101202",
+  "date": "2026-10-12",
+  "status": "source_delivered_remote_validation_pending",
+  "source": {
+    "database_default": "dfs://min_bar",
+    "table_confirmed": "index_1min",
+    "minute_label_confirmed_by_user": "end",
+    "columns_confirmed_by_user": ["minTime", "date", "Code", "open", "high", "low", "close", "prev_close", "volume", "turnover", "pct_change", "updateTime"],
+    "actual_coldefs_received": false,
+    "actual_000852_samples_received": false,
+    "updateTime_is_publication_time_confirmed": false,
+    "default_availability": "observed_query_completion"
+  },
+  "local_execution": {
+    "python": "not_run",
+    "tests": "not_run",
+    "compile": "not_run",
+    "database_connection": "not_run",
+    "static_source_review_and_sha256": "performed"
+  },
+  "new_test_methods_static_count": {
+    "raw_index_provider": 17,
+    "query_feed": 8,
+    "option_vega_assembly_added": 2,
+    "common_resume_added": 1
+  },
+  "validation_pending": ["feature-datahub all groups", "index-query-live", "option-vega", "option-vega-live", "live-common", "real index Schema", "real selected-range read and file roundtrip", "08 real Recording minute consumption"],
+  "remote_document_directory_required": false,
+  "gap08_complete": false,
+  "prior_evidence": "GAP08_FRAME_DEPLOYMENT_20261012.json",
+  "handoff": "doc/HANDOFF/gaps/HANDOFF_GAP08_INDEX_DOLPHINDB_2026-10-12.md"
+}

@@ -1,0 +1,20 @@
+{
+  "change_id": "PF2026101206",
+  "date": "2026-10-12",
+  "source": "local_tests",
+  "public_framework_changed": false,
+  "native_binding_changed": false,
+  "strategy_algorithm_changed": false,
+  "pricing_changed": false,
+  "groups": [
+    {"name": "framework_assembly_with_sdk_entities_shim", "tests": 53, "result": "OK"},
+    {"name": "option_audit_report_deployment_regression", "tests": 54, "result": "OK"},
+    {"name": "public_live_common", "tests": 120, "result": "OK"}
+  ],
+  "counts_overlap": true,
+  "tests_cover": ["same order delegated once", "send exceptions propagated without retry", "actual limit recorded", "missing/stale quote does not claim crossing", "native driver and report delegation"],
+  "network_or_td_orders": false,
+  "remote_current_version_passed": false,
+  "native_fill_verified": false,
+  "manifest": "doc/evidence/checksums/PF2026101206_SHA256.txt"
+}

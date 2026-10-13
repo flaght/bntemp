@@ -1,0 +1,35 @@
+{
+  "change_id": "PF2026101204_REV2",
+  "date": "2026-10-12",
+  "source": "local_tests",
+  "platform": "macOS arm64 CPython3.12.14",
+  "groups": [
+    {
+      "name": "affected_reference_acceptance_wait_recovery",
+      "tests": 57,
+      "result": "OK"
+    },
+    {
+      "name": "framework_assembly_with_sdk_entities_shim",
+      "tests": 42,
+      "result": "OK",
+      "database": "fixture"
+    },
+    {
+      "name": "public_live_common",
+      "tests": 116,
+      "result": "OK"
+    },
+    {
+      "name": "deployment_entry",
+      "tests": 9,
+      "result": "OK"
+    }
+  ],
+  "counts_overlap": true,
+  "network_or_td_orders": false,
+  "remote_current_version_tests_passed": false,
+  "actual_recording_passed": false,
+  "manifest": "doc/evidence/checksums/PF2026101204_REV2_SHA256.txt",
+  "remaining": "User-run raw CTP MD probe and remote rerun; MD absence is not solved by refreshing reference data."
+}

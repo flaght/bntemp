@@ -1,0 +1,32 @@
+{
+  "evidence_source": "user_remote_console_excerpt",
+  "platform": "remote_linux",
+  "environment": "uv-nautilus",
+  "scope": "offline_live_group",
+  "expected_delivery_baseline": "PF2026101209_REV3",
+  "baseline_verified_from_excerpt": false,
+  "command_in_excerpt": null,
+  "entry_sha256_in_excerpt": null,
+  "modules": [
+    {
+      "module": "tests.test_calendar_spread_live",
+      "tests": 22,
+      "test_seconds": 0.330,
+      "result": "OK",
+      "exit_code_in_excerpt": null
+    }
+  ],
+  "status": "passed",
+  "report_directory": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/tests/results/calendar-spread-acceptance-1791817491340659580",
+  "market_and_execution": "offline_fixtures_with_injected_fake_td_api",
+  "actual_counter_fills_evidence": false,
+  "previous_selection_result": "calendar selection and signal: OK",
+  "entry_group_result_in_excerpt": null,
+  "pending": [
+    "actual_dolphindb_role_and_basic_reference_read",
+    "actual_ctp_pair_market_data_and_recording",
+    "online_model_and_same_file_resume",
+    "simnow_orders_fills_and_shutdown",
+    "cross_day_automatic_roll_not_implemented"
+  ]
+}

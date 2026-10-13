@@ -1,0 +1,31 @@
+{
+  "evidence_source": "user_pasted_remote_runtime_report",
+  "scope": "actual_cu_realtime_recording",
+  "status": "failed",
+  "mode": "recording",
+  "product": "CU",
+  "expected_trading_day": "20261013",
+  "observed_md_trading_day": "20261013",
+  "observed_td_trading_day_in_recording": null,
+  "reference_source_day": "20261012",
+  "instruments": {"secondary": "cu2612.SHFE", "far": "cu2701.SHFE"},
+  "reference_ready": true,
+  "reference_fingerprint": "93430042aea0cbb40595b0b3a3f54c88681369a7b5855f0778b46f06c023ce2a",
+  "adjustment_factors_used": false,
+  "complete_frames": 0,
+  "submissions": 0,
+  "fills_received": 0,
+  "worker_exit_code": 1,
+  "instrument_max_age_seconds": 10,
+  "instrument_health_failures": {
+    "cu2701.SHFE": {"event_age_seconds": 10.033407117, "receive_age_seconds": 9.004604016},
+    "cu2612.SHFE": {"event_age_seconds": 10.033407117, "receive_age_seconds": 9.005893448}
+  },
+  "model_started": false,
+  "simnow_started": false,
+  "cleanup_errors": [],
+  "runtime_summary": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/tests/results/calendar-spread-online/cu-1791818256256683782/recording/runtime/calendar-spread-recording-1791818263387350940/summary.json",
+  "controller_summary": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/tests/results/calendar-spread-online/cu-1791818256256683782/summary.json",
+  "conclusion": "role_reference_and_initial_md_observed_but_both_depth_event_ages_exceeded_configured_limit_before_first_complete_frame",
+  "not_established": ["cause_of_md_update_gap", "continued_raw_md_update_rate", "minute_trade_tick_activity", "recording_pass", "model_pass", "simnow_fills"]
+}

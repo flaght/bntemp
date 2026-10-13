@@ -1,0 +1,25 @@
+--- demos/01_main_ema/strategy.py
++++ demos/01_main_ema/strategy.py
+@@ -2,7 +2,6 @@
+ 
+ from __future__ import annotations
+ 
+-import pdb
+ from dataclasses import dataclass
+ from decimal import Decimal
+ from typing import Protocol
+@@ -63,7 +62,14 @@
+         # 仅在有效主力 Bar 更新后推进，旧主力同时间行情不抢占信号时钟。
+         self.last_processed_ns = -1
+         self.last_main: str | None = None
++        # 成交回调读取已入账的策略归属；供回测和在线运行报告核对。
++        self.fills_received = 0
++        self.last_fill_position: Decimal | None = None
+ 
++    def on_fill(self, event) -> None:
++        self.fills_received += 1
++        self.last_fill_position = self.position(self.config.target_key)
++
+     def on_bar(self, data_key: str, bar: Bar) -> None:
+         del data_key
+         timestamp = int(bar.ts_event)

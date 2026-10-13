@@ -1,0 +1,43 @@
+{
+  "evidence_source": "user_remote_console_excerpt",
+  "platform": "remote_linux",
+  "python": "/workspace/worker/env/uv-nautilus/bin/python",
+  "project": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro",
+  "status": "partial_failed",
+  "runs": [
+    {
+      "command": "python -u -m tests.run_feature_datahub",
+      "report_directory": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/tests/results/feature-datahub-1791766037046523451",
+      "module": "features",
+      "tests": 35,
+      "test_seconds": 0.465,
+      "failures": 1,
+      "errors": 0,
+      "result": "FAILED",
+      "failure": "test_legacy_market_buffer_rejects_expired_not_yet_flushed_row: buffer.add returned True; expected False",
+      "loaded_paths_observed": [
+        "bomber/framework/datahub/features/__init__.py",
+        "bomber/framework/dataprep/features/__init__.py",
+        "tests/test_feature_datahub.py"
+      ],
+      "remote_market_frames_path": null,
+      "remote_market_frames_sha256": null,
+      "remaining_groups": "legacy and legacy-d0 not executed after features failure"
+    },
+    {
+      "command": "python -u -m tests.run_cross_section_acceptance --only option-vega",
+      "report_directory": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/tests/results/cross-section-acceptance-1791766042560530874",
+      "module": "option-vega",
+      "tests": 33,
+      "test_seconds": 0.165,
+      "exit_code": 0,
+      "module_seconds": 0.813,
+      "result": "OK"
+    }
+  ],
+  "local_market_frames_expected_sha256": "984d7a11ec0352b12013513962542601881b3a0ec9a51053b1d0366f52e14d75",
+  "diagnosis": "Local delivery contains the rejection. Remote deployment/import mismatch is suspected, not confirmed without remote module path and SHA256.",
+  "next": "REV2 checks tested source hashes and logs market.frames path/SHA256. Synchronize mismatch files, then rerun features and unexecuted legacy groups. If market/frames.py changes remotely, rerun affected option-vega group.",
+  "actual_database_or_counterparty_connection": false,
+  "gap08_closed": false
+}

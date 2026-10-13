@@ -1,0 +1,13 @@
+{
+  "evidence_source": "user_remote_console_excerpt",
+  "date": "2026-10-13",
+  "scope": "offline_live_tests",
+  "command": "python -u -m tests.run_calendar_spread_acceptance --only live",
+  "tests": 27,
+  "test_seconds": 0.803,
+  "result": "OK",
+  "status": "passed",
+  "report_directory": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/tests/results/calendar-spread-acceptance-1791869615627255753",
+  "actual_network_or_counter_fills_evidence": false,
+  "pending": ["online_changed_target_cancellation", "complete_latest_targets_before_shutdown", "close_yesterday", "cross_day_automatic_roll"]
+}

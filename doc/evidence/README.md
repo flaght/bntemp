@@ -1,0 +1,108 @@
+# Bomber 校验清单与历史证据索引
+
+这里集中保存原 HANDOFF 目录中的 50 份 SHA256 清单与 4 份补丁、同步脚本和删除清单。任务实施与运行结果继续查[交接索引](../HANDOFF/README.md)。
+
+## 2026-10-13 实时期权 Recording 目标链证据
+
+用户返回 08 的实时 CTP LAST + DolphinDB DFS Recording 完整输出：约 15 分钟正常运行、15 帧消费、11:19 的 MO2611-C-7300 空 1 手目标到达客户端，18 根过期候选被忽略。由控制台 summary 提取并调用既有报告复核函数，target_chain 检查通过，见 [精简证据](live/OPTION_VEGA_REALTIME_RECORDING_20261013.json) 和 [08 运行说明](../../demos/08_option_vega/README.md)。本次没有柜台报单、成交或线上指数超时样本；运行机原 summary 与进程退出码没有单独读取。
+
+同日用户补充实时 SimNow 原报告字段：13:36 选约 MO2611-C-7400 空 1 手，1 次报单、1 次归属成交，策略/执行/柜台净仓一致，status=passed、停机活动订单 0、清理无错误。见 [实时 SimNow 开仓证据](live/OPTION_VEGA_REALTIME_SIMNOW_FILL_20261013.json)。成交价格与柜台单号未提供，原状态读回、重启恢复、实际平仓及非零期货对冲成交仍待核验。
+
+后续同日恢复 resume_ready=true，但该持仓合约原始深度事件年龄 30.172 秒超过配置的 30 秒，运行 failed、报单 0，停机仍保留空 1 手、活动订单 0、清理无错误。该片段确认恢复启动完成，持续运行至收盘与主动/定时正常停止尚未通过，单独记录于上述证据的 resume_followup，不覆盖原开仓通过结论。
+
+原始行情对比又得到两个不同阶段样本：14:46—14:48 单合约 75 条、最大间隔 9.097 秒；14:57—14:59 全链 105 个全部订阅成功，整体 884 条、最大间隔 1.959 秒，IM2611 持续更新，而持仓期权仅 1 条。后者已进入期权收盘集合竞价，不能直接据此归因订阅数量；交易阶段规则、观测事实与推断分别记在上述证据及 [08 说明](../../demos/08_option_vega/README.md)。诊断命令已修正，下午采样须在 14:57 前完成；连续阶段的恢复超时问题仍未定位。
+
+## 2026-10-11模型运行与恢复证据
+
+同日08期权Vega源码新增，使用独立清单
+[PF2026101102_SHA256.txt](checksums/PF2026101102_SHA256.txt)。145项策略/公共回归
+及SDK实体替身下的08装配与归属回归通过；原生回测、行情流和柜台交易待验，见
+[08交接](../HANDOFF/live/HANDOFF_OPTION_VEGA_2026-10-11.md)。
+
+用户随后反馈远程两组43项离线测试通过，记录于
+[OPTION_VEGA_OFFLINE_20261011.json](live/OPTION_VEGA_OFFLINE_20261011.json)。
+10项装配使用目标环境SDK实体，行情/执行仍为夹具；本次公共组及实际行情/交易
+待验。代码保持PF2026101102，文档和证据更新后的完整摘要为
+[PF2026101102_REV2_SHA256.txt](checksums/PF2026101102_REV2_SHA256.txt)，
+远程代码部署继续使用原`PF2026101102_RUNTIME_SHA256.txt`。
+
+后续[归属回归证据](live/OPTION_VEGA_ATTRIBUTION_20261011.json)记录attribution19项
+OK和集中入口所选组通过摘要，含新增自身冻结份额用例；live-common/assembly
+明细未在该摘录展开，不补造计数。当前含文档的完整清单为
+[PF2026101102_REV3_SHA256.txt](checksums/PF2026101102_REV3_SHA256.txt)，运行代码不改。
+
+[MODEL_REPLAY_20261011.json](live/MODEL_REPLAY_20261011.json)保存用户远程输出的
+01模型运行、04模型运行、04同文件恢复的最终摘要和逐笔模型成交，并记录原粘贴
+文本SHA256、报告目录与北京时间。三项均passed；04恢复接续版本6→7，第4帧才
+执行新目标，旧仓位保留，目标/归属/执行账本一致。所有回报为model来源，
+不能作为物理柜台或第三方多账户成交证明。
+
+本轮只更新文档/证据，代码保持PF2026101101 REV2；
+[PF2026101101_REV3_SHA256.txt](checksums/PF2026101101_REV3_SHA256.txt)是当前完整
+01/04当轮清单，包含当时代码基线与文档/证据。旧清单保留历史哈希，不重写为当前版本。
+01恢复、双策略同时运行和第三方真实成交仍待验收，详见
+[模型验收交接](../HANDOFF/live/HANDOFF_MODEL_REPLAY_2026-10-11.md)。
+
+## 整理后的校验规则
+
+2026-10-10 分类迁移更新了清单中的文档路径，并对改动过的 Markdown 重算摘要。运行代码的历史摘要保留原值；因此早期清单仍描述各自的历史代码版本，不能要求所有早期清单同时匹配当前源码。文档摘要重算只说明文档文件字节变化，不构成新的运行验收证据。
+
+原始清单、整理前文档和原有外部文档引用已完整保存在[迁移前备份](archives/DOCUMENTS_BEFORE_2026-10-10.tar.gz)。按正文关系进一步调整分类前的材料见[内容复核前备份](archives/DOCUMENTS_BEFORE_CONTENT_REVIEW_2026-10-10.tar.gz)。新旧路径见[迁移记录](../MIGRATION_2026-10-10.md)。[本次文档整理清单](checksums/DOCUMENTATION_20261010_SHA256.txt)校验整理后的文档、路径对照、历史清单及原始材料。
+
+所有 SHA256 清单的文件路径均相对于 pro 项目根目录。例如在项目根目录校验本次文档整理结果：
+
+```bash
+sha256sum -c doc/evidence/checksums/DOCUMENTATION_20261010_SHA256.txt
+```
+
+## 原有同步与证据清单
+
+| 清单组 | 对应任务 | 文件 |
+| --- | --- | --- |
+| GAP03 | 参考来源、时效、时钟修正与关闭记录 | [GAP03_CLOCK_FIX_SHA256_2026-10-09.txt](checksums/GAP03_CLOCK_FIX_SHA256_2026-10-09.txt)； [GAP03_CLOSURE_SHA256_2026-10-09.txt](checksums/GAP03_CLOSURE_SHA256_2026-10-09.txt)； [GAP03_SHA256_2026-10-09.txt](checksums/GAP03_SHA256_2026-10-09.txt) |
+| ONLINE_PARAMETERS | 在线参数记录 | [ONLINE_PARAMETERS_20261010_SHA256.txt](checksums/ONLINE_PARAMETERS_20261010_SHA256.txt) |
+| PF2026100902 | 策略归属仓位闭环 | [PF2026100902_SHA256.txt](checksums/PF2026100902_SHA256.txt) |
+| PF2026100903 | 统一订单回调 | [PF2026100903_SHA256.txt](checksums/PF2026100903_SHA256.txt) |
+| PF2026100904 | 执行闸门诊断 | [PF2026100904_SHA256.txt](checksums/PF2026100904_SHA256.txt) |
+| PF2026100905 | CTP 与 Binance 联合会话 | [PF2026100905_SHA256.txt](checksums/PF2026100905_SHA256.txt) |
+| PF2026100906 | 资金查询并发 | [PF2026100906_SHA256.txt](checksums/PF2026100906_SHA256.txt) |
+| PF2026100907 | 已撤回的固定目标方案 | [PF2026100907_SHA256.txt](checksums/PF2026100907_SHA256.txt) |
+| PF2026100908 | 全新 EMA 空仓验收 | [PF2026100908_SHA256.txt](checksums/PF2026100908_SHA256.txt) |
+| PF2026100910 | CU EMA 持续运行 | [PF2026100910_SHA256.txt](checksums/PF2026100910_SHA256.txt) |
+| PF2026100911 | 历史 Provider 与启动恢复 | [PF2026100911_SHA256.txt](checksums/PF2026100911_SHA256.txt) |
+| PF2026100912 | 固定 IM Schema 与只读读取 | [PF2026100912_SHA256.txt](checksums/PF2026100912_SHA256.txt) |
+| PF2026100913 | 历史因子与 EMA 预热 | [PF2026100913_SHA256.txt](checksums/PF2026100913_SHA256.txt) |
+| PF2026100914 | 指标文件恢复 | [PF2026100914_SHA256.txt](checksums/PF2026100914_SHA256.txt) |
+| PF2026100915 | 独立进程停机重启 | [PF2026100915_SHA256.txt](checksums/PF2026100915_SHA256.txt) |
+| PF2026100916 | 正式 IM Recording | [PF2026100916_SHA256.txt](checksums/PF2026100916_SHA256.txt) |
+| PF2026100917 | 盘中回补接续计划 | [PF2026100917_SHA256.txt](checksums/PF2026100917_SHA256.txt) |
+| PF2026100918 | SimNow 只读观察记录 | [PF2026100918_SHA256.txt](checksums/PF2026100918_SHA256.txt) |
+| PF2026100919 | CU 交易总结与策略接手 | [PF2026100919_SHA256.txt](checksums/PF2026100919_SHA256.txt) |
+| PF2026100920 | 04 横截面实时装配 | [PF2026100920_EVIDENCE_SHA256.txt](checksums/PF2026100920_EVIDENCE_SHA256.txt)； [PF2026100920_REV2_SHA256.txt](checksums/PF2026100920_REV2_SHA256.txt)； [PF2026100920_SHA256.txt](checksums/PF2026100920_SHA256.txt) |
+| PF2026100921 | 04 预期合约参数 | [PF2026100921_EVIDENCE_SHA256.txt](checksums/PF2026100921_EVIDENCE_SHA256.txt)； [PF2026100921_SHA256.txt](checksums/PF2026100921_SHA256.txt) |
+| PF2026100922 | 逐合约行情新鲜度 | [PF2026100922_SHA256.txt](checksums/PF2026100922_SHA256.txt) |
+| PF2026100923 | 延迟成交 Bar 时效 | [PF2026100923_SHA256.txt](checksums/PF2026100923_SHA256.txt) |
+| PF2026100924 | 部署清单与预检 | [PF2026100924_EVIDENCE_SHA256.txt](checksums/PF2026100924_EVIDENCE_SHA256.txt)； [PF2026100924_SHA256.txt](checksums/PF2026100924_SHA256.txt) |
+| PF2026100925 | 逐合约深度时效参数 | [PF2026100925_SHA256.txt](checksums/PF2026100925_SHA256.txt) |
+| PF2026100926 | 参考刷新移出行情回调 | [PF2026100926_EVIDENCE_SHA256.txt](checksums/PF2026100926_EVIDENCE_SHA256.txt)； [PF2026100926_SHA256.txt](checksums/PF2026100926_SHA256.txt) |
+| PF2026101027 | 目标手数上限 | [PF2026101027_SHA256.txt](checksums/PF2026101027_SHA256.txt) |
+| PF2026101028 | 多路实时 Bar 按分钟汇合 | [PF2026101028_EVIDENCE_SHA256.txt](checksums/PF2026101028_EVIDENCE_SHA256.txt)； [PF2026101028_SHA256.txt](checksums/PF2026101028_SHA256.txt) |
+| PF2026101029 | 固定组合目标续执行 | [PF2026101029_EVIDENCE_SHA256.txt](checksums/PF2026101029_EVIDENCE_SHA256.txt)； [PF2026101029_SHA256.txt](checksums/PF2026101029_SHA256.txt) |
+| PF2026101030 | 同日组合恢复与执行时间 | [PF2026101030_SHA256.txt](checksums/PF2026101030_SHA256.txt) |
+| PF2026101031 | 恢复夹具断线闭闸 | [PF2026101031_EVIDENCE_SHA256.txt](checksums/PF2026101031_EVIDENCE_SHA256.txt)； [PF2026101031_SHA256.txt](checksums/PF2026101031_SHA256.txt) |
+| PF2026101032 | 恢复预热与公共状态过渡 | [PF2026101032_EVIDENCE_SHA256.txt](checksums/PF2026101032_EVIDENCE_SHA256.txt)； [PF2026101032_SHA256.txt](checksums/PF2026101032_SHA256.txt) |
+| PF2026101033 | 公共 Live 机制 | [PF2026101033_SHA256.txt](checksums/PF2026101033_SHA256.txt) |
+| PF2026101034 | 时钟夹具修正 | [PF2026101034_SHA256.txt](checksums/PF2026101034_SHA256.txt) |
+| PF2026101035 | Live 渠道分层 | [PF2026101035_EVIDENCE_SHA256.txt](checksums/PF2026101035_EVIDENCE_SHA256.txt)； [PF2026101035_SHA256.txt](checksums/PF2026101035_SHA256.txt) |
+| PF2026101036 | 策略持仓接管、恢复及 REV2/REV3 修正 | [PF2026101036_REV2_SHA256.txt](checksums/PF2026101036_REV2_SHA256.txt)； [PF2026101036_REV3_SHA256.txt](checksums/PF2026101036_REV3_SHA256.txt)； [PF2026101036_SHA256.txt](checksums/PF2026101036_SHA256.txt) |
+
+## 历史补丁与同步材料
+
+| 文件 | 用途 |
+| --- | --- |
+| [PF2026100902_MAIN_EMA.patch](patches/PF2026100902_MAIN_EMA.patch) | PF0902 主力 EMA 历史补丁 |
+| [PF2026100902_SYNC_ASSEMBLY.py](patches/PF2026100902_SYNC_ASSEMBLY.py) | PF0902 装配同步脚本，保留源码 |
+| [PF2026100903_HISTORICAL.patch](patches/PF2026100903_HISTORICAL.patch) | PF0903 历史回调补丁 |
+| [PF2026100908_DELETE_FILES.txt](patches/PF2026100908_DELETE_FILES.txt) | PF0908 撤回固定目标方案时的删除清单 |
+
+补丁、同步脚本和删除清单的原始字节保持不变。它们描述当时的交付操作，使用前须按对应版本核对；本次整理未执行脚本、应用补丁或删除业务源码。

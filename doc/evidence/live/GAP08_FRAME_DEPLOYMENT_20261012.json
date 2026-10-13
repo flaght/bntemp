@@ -1,0 +1,27 @@
+{
+  "evidence_source": "user_remote_console_excerpt_and_local_shell_sha256_comparison",
+  "platform": "remote_linux",
+  "command": "python -u -m tests.run_feature_datahub",
+  "report_directory": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/tests/results/feature-datahub-1791769392213338494",
+  "status": "preflight_failed_confirmed_old_frame_source",
+  "mismatched_files": [
+    {
+      "path": "bomber/framework/market/frames.py",
+      "expected": "984d7a11ec0352b12013513962542601881b3a0ec9a51053b1d0366f52e14d75",
+      "actual": "86c5d2f6670d716df068285ccf8999d7079080dce6426d38c9f713cad5d2b4d3"
+    }
+  ],
+  "local_proof": {
+    "current_source_sha256": "984d7a11ec0352b12013513962542601881b3a0ec9a51053b1d0366f52e14d75",
+    "sha256_without_lines_74_to_77": "86c5d2f6670d716df068285ccf8999d7079080dce6426d38c9f713cad5d2b4d3",
+    "removed_branch": "elif received_ns > self.pending[valuation_ns][0]: increment late_count and return False",
+    "method": "sed 74,77d piped to shasum; original source file not changed"
+  },
+  "remaining_code_files": "No other mismatch listed by the REV4 preflight.",
+  "exit_code": null,
+  "test_results_this_run": null,
+  "production_code_changes_this_turn": false,
+  "local_python_tests_or_compilation_run": false,
+  "next": "Synchronize only bomber/framework/market/frames.py; rerun GAP08 acceptance and affected option-vega group because the remote runtime component changes.",
+  "gap08_closed": false
+}

@@ -1,0 +1,14 @@
+{
+  "date": "2026-10-12",
+  "source": "user_returned_td_readonly_output",
+  "front": "tcp://182.254.243.31:40001",
+  "trading_day": "20261009",
+  "net_instruments": 0,
+  "account_revision": 1,
+  "currencies": ["CNY"],
+  "orders_revision": 1,
+  "active_orders": 0,
+  "login_settlement_and_queries_verified": true,
+  "orders_sent_by_probe": false,
+  "native_strategy_execution_verified": false
+}

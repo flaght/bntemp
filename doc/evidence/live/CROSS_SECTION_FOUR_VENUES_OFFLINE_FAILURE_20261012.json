@@ -1,0 +1,21 @@
+{
+  "version": "PF2026101208",
+  "evidence_source": "user_supplied_remote_output",
+  "module": "cross-section",
+  "status": "failed",
+  "tests_run": 76,
+  "errors": 1,
+  "test_seconds": 0.799,
+  "module_seconds": 2.052,
+  "exit_code": 1,
+  "failed_test": "test_four_venue_checkpoint_and_authoritative_aggregate_recovery",
+  "error": "RuntimeError: 策略尚未绑定运行上下文: cross-section-simnow",
+  "cause": "The new test called strategy.position after runner.stop unbound the strategy context.",
+  "fix_version": "PF2026101208_REV2",
+  "fix": "Assert the bound strategy positions before stop, then verify restored strategy ownership using runner.position_manager.position after manager.restore. Preserve the real stop/restore and ledger/revision checks.",
+  "production_code_changed": false,
+  "local_python_or_tests_run": false,
+  "fix_remote_verification": "pending",
+  "other_requested_groups": "not confirmed by this excerpt",
+  "live_trading_verification": "pending"
+}

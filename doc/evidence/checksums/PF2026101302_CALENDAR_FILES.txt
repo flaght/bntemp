@@ -1,0 +1,11 @@
+demos/03_calendar_spread/live_references.py
+demos/03_calendar_spread/recovery.py
+tests/test_calendar_spread_live.py
+tests/run_calendar_spread_acceptance.py
+demos/03_calendar_spread/README.md
+doc/HANDOFF/live/HANDOFF_CALENDAR_SPREAD_2026-10-12.md
+doc/HANDOFF/coordination/HANDOFF_PARALLEL_BACKTEST_LIVE_2026-10-07.md
+doc/HANDOFF/README.md
+doc/architecture/STRATEGY_ARCHITECTURE.md
+doc/evidence/live/CALENDAR_SPREAD_SIMNOW_SNAPSHOT_FAILURE_20261013.json
+bomber/framework/trader/runtime/trading_sessions.py

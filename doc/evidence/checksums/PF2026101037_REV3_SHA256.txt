@@ -1,0 +1,2 @@
+64beb0e78a917fa519f41729e4414fd2d9988abe4c31baa2dcffb284a5ac1064  tests/test_cross_section_live.py
+0268a6e32eb1abcd1fe4acdfed4990a64e84782754bbe8590b8815a6045f95a1  doc/HANDOFF/live/HANDOFF_CTP_POSITION_SCOPE_REV3_2026-10-10.md

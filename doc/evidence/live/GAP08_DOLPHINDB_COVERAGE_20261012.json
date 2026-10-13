@@ -1,0 +1,80 @@
+{
+  "change_id": "PF2026101203_REV2",
+  "date": "2026-10-12",
+  "source": "user_screenshot_and_followup_confirmation",
+  "screenshot": "/var/folders/s1/rp8b6xbd6pj9gplqqvdcc62c0000gn/T/codex-clipboard-c71c8b53-1ff7-4900-8055-01df46df7b98.png",
+  "database": "dfs://min_bar",
+  "table": "index_1min",
+  "key": "000852",
+  "business_date": "2026-08-11",
+  "visible_query": "select top 5 date, minTime, Code, volume, turnover from loadTable(\"dfs://min_bar\", \"index_1min\") where Code = \"000852\", date = 2026.08.11 order by minTime;",
+  "visible_rows": [
+    {
+      "date": "2026.08.11",
+      "minTime": "11:25:00.000",
+      "Code": "000852",
+      "volume": "164242280",
+      "turnover": "337794589316.7"
+    },
+    {
+      "date": "2026.08.11",
+      "minTime": "11:26:00.000",
+      "Code": "000852",
+      "volume": "164749198",
+      "turnover": "338877178710.7"
+    },
+    {
+      "date": "2026.08.11",
+      "minTime": "11:27:00.000",
+      "Code": "000852",
+      "volume": "165286452",
+      "turnover": "339996628409.4"
+    },
+    {
+      "date": "2026.08.11",
+      "minTime": "11:28:00.000",
+      "Code": "000852",
+      "volume": "165753832",
+      "turnover": "340998225897.8"
+    },
+    {
+      "date": "2026.08.11",
+      "minTime": "11:29:00.000",
+      "Code": "000852",
+      "volume": "166175141",
+      "turnover": "341954439858.1"
+    }
+  ],
+  "aggregate_result_visible": false,
+  "day_total_rows": null,
+  "day_last_minute": null,
+  "earliest_source_minute_for_date": "11:25:00.000",
+  "coverage_conclusion": "The visible ordered raw-table query begins at 11:25. Previous normalized request 09:31-11:27 returning exactly 11:25/11:26/11:27 is consistent with raw source coverage and inclusive end filtering. No timestamp-filter anomaly is evidenced; no need to patch or rerun this read.",
+  "source_intraday_continuous_update": "confirmed by user: 持续更新当天行情",
+  "volume_turnover_semantics": "All five visible values increase; likely cumulative remains an inference, units and actual cumulative/reset definition are not confirmed. Raw values remain unchanged.",
+  "availability": "observed; user confirmed updateTime is last-write/update timestamp",
+  "already_passed": [
+    "9 offline groups, 252 tests and D0",
+    "real DolphinDB schema/sample",
+    "3-row normalized read and exact standard CSV roundtrip"
+  ],
+  "next_acceptance": {
+    "mode": "08 Recording, existing real calendar/session setup",
+    "index_source": "dolphindb-dfs",
+    "index_dataset": "index.minute",
+    "index_poll_seconds": 0.2,
+    "index_query_timeout_seconds": 2,
+    "frame_wait_seconds_initial": 5,
+    "checks": [
+      "same business minute across index/future/options",
+      "actual observation/receipt and deadline",
+      "timeout skips old decision without retroactive target",
+      "source/cache health and recovery readiness",
+      "index has data binding only"
+    ]
+  },
+  "live_recording_passed": false,
+  "source_or_config_changed_this_update": false,
+  "local_python_tests_compile_database": "not_run",
+  "gap08_complete": false
+}

@@ -1,0 +1,4 @@
+abd1fd378163c7222caa0bf7beae7f93d1d76fff6acd6aa591b821ec503100dd  bomber/framework/dataprep/live_references.py
+b2b7911cbbf6be8bf2fec240d8ba9ca58a96592c6177762f303dd37a5dc5519c  tests/test_gap03.py
+f7abfa2aa35ba1eea0839b684550d945a84fc765e4c99e3bbbcad1ffb8ec1179  doc/audits/ARCHITECTURE_GAPS_2026-10-09.md
+9456e0eca534adb754f9d5356cac69d2fa7247106f5dcae51eb99fdee3f61568  doc/HANDOFF/gaps/HANDOFF_GAP03_2026-10-09.md

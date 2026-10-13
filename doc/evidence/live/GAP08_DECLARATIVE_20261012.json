@@ -1,0 +1,18 @@
+{
+  "change_id": "PF2026101203",
+  "date": "2026-10-12",
+  "status": "source_and_configuration_delivered_remote_validation_pending",
+  "extension_contract": "Ordinary precomputed features require Schema and source mapping declarations, not feature-specific Python providers or payload classes",
+  "generic_components": ["dataset_from_definition", "FeatureBundle", "DolphinDbRawFeatureProvider", "FeatureQueryCache", "FeatureQueryBarFeed", "FeatureQueryChannel"],
+  "configuration_examples": ["index.minute", "basis.five_minute", "volatility.minute"],
+  "retired_sources": ["bomber/framework/datahub/features/index.py", "bomber/framework/dataprep/features/index.py", "bomber/framework/market/stream/dolphin/index.py", "bomber/framework/trader/runtime/live/channels/index.py"],
+  "static_method_counts": {"feature_definitions": 10, "raw_index_scenario": 17, "bar_query_scenarios": 9, "acceptance_entry": 6, "option_vega_assembly": 12},
+  "local_python_tests_compile_database": "not_run",
+  "static_source_json_and_sha256": "reviewed",
+  "actual_index_coldefs_and_samples_received": false,
+  "remote_document_directory_required": false,
+  "runtime_json_configuration_required": true,
+  "gap08_complete": false,
+  "previous_delivery_evidence": "GAP08_INDEX_DOLPHINDB_20261012.json",
+  "handoff": "doc/HANDOFF/gaps/HANDOFF_GAP08_DECLARATIVE_2026-10-12.md"
+}

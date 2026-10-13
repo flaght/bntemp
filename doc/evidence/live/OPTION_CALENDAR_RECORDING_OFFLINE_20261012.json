@@ -1,0 +1,38 @@
+{
+  "change_id": "PF2026101204",
+  "date": "2026-10-12",
+  "source": "local_execution",
+  "python": "CPython 3.12.14 macOS arm64",
+  "network_or_td_orders": false,
+  "groups": [
+    {
+      "command": "python -u -m unittest tests.test_trading_calendar tests.test_calendars_compiled tests.test_option_recording_acceptance tests.test_demo_option_vega tests.test_option_vega_live",
+      "tests": 49,
+      "result": "OK",
+      "actual_compiled_calendar": true
+    },
+    {
+      "command": "python -u -m tests.run_option_vega_offline",
+      "tests": 40,
+      "result": "OK",
+      "sdk_entities": "shim",
+      "actual_framework_runner_risk_attribution_persistence": true,
+      "database": "fixture"
+    },
+    {
+      "command": "python -u -m unittest tests.test_feature_acceptance_entry",
+      "tests": 9,
+      "result": "OK"
+    }
+  ],
+  "total_tests_passed": 98,
+  "cli_help_checks": [
+    "08 run_live",
+    "Recording acceptance",
+    "Calendar export"
+  ],
+  "remote_current_version_tests_passed": false,
+  "actual_recording_passed": false,
+  "remaining_external_evidence": "User-run remote Recording runtime summary and recording-acceptance.json; no SSH authorized.",
+  "runtime_sources_manifest": "doc/evidence/checksums/PF2026101204_SHA256.txt"
+}

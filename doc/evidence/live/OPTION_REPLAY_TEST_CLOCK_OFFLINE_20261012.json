@@ -1,0 +1,21 @@
+{
+  "change_id": "PF2026101205",
+  "date": "2026-10-12",
+  "source": "local_tests",
+  "scope": "engineering_chain",
+  "public_framework_changed": false,
+  "strategy_algorithm_changed": false,
+  "groups": [
+    {"name": "framework_assembly_with_sdk_entities_shim", "tests": 49, "result": "OK", "database": "fixture"},
+    {"name": "option_strategy_reference_report", "tests": 41, "result": "OK"},
+    {"name": "public_live_common", "tests": 120, "result": "OK"},
+    {"name": "deployment_entry", "tests": 9, "result": "OK"}
+  ],
+  "counts_overlap": true,
+  "fixture_verified": ["shared minute offset", "raw Bar and receipt preserved", "source and mapped cross-day rejection", "historical index same mapped minute", "Recording target", "Model owned fill"],
+  "network_or_td_orders": false,
+  "remote_current_version_tests_passed": false,
+  "actual_recording_passed": false,
+  "historical_strategy_validity_verified": false,
+  "manifest": "doc/evidence/checksums/PF2026101205_SHA256.txt"
+}

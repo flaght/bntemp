@@ -1,0 +1,37 @@
+--- tests/run_unified_historical_runtime.py
++++ tests/run_unified_historical_runtime.py
+@@ -410,17 +410,20 @@
+         super().__init__(strategy_id, references, config)
+         source = Path(_ema.__file__).resolve()
+         digest = hashlib.sha256(source.read_bytes()).hexdigest()
+-        missing = [name for name in ("fills_received", "last_fill_position") if not hasattr(self, name)]
++        missing = [name for name in ("fills_received", "last_fill_position",
++            "order_updates_received", "last_order_update", "last_order_position") if not hasattr(self, name)]
+         print(f"I3策略部署核对：路径={source} SHA256={digest}", flush=True)
+-        if missing or _ema.MainEmaStrategy.on_fill is StrategyTemplate.on_fill:
++        if (missing or _ema.MainEmaStrategy.on_fill is StrategyTemplate.on_fill
++                or _ema.MainEmaStrategy.on_order is StrategyTemplate.on_order):
+             raise RuntimeError(
+-                f"当前MainEmaStrategy缺少GAP-01成交回调接口：字段={missing}；"
++                f"当前MainEmaStrategy缺少GAP-01订单／成交回调接口：字段={missing}；"
+                 f"请同步demos/01_main_ema/strategy.py并核对加载路径与摘要：{source} SHA256={digest}",
+             )
+         self.order_events = []
+         self.fill_observations: list[tuple[object, Decimal, Decimal, Decimal]] = []
+ 
+-    def on_order_update(self, event) -> None:
++    def on_order(self, event) -> None:
++        super().on_order(event)
+         self.order_events.append(event)
+ 
+     def on_fill(self, event) -> None:
+@@ -497,6 +500,9 @@
+         assert strategy.fills_received == len(strategy.fill_observations)
+         assert len(strategy.fill_observations) == len(fills)
+         assert len(strategy.order_events) >= len(strategy.fill_observations)
++        assert strategy.order_updates_received == len(strategy.order_events)
++        assert strategy.last_order_update == strategy.order_events[-1]
++        assert strategy.last_order_position == strategy.position("position")
+         signed_fills = sum(
+             (
+                 event.quantity if event.side.value == "BUY" else -event.quantity

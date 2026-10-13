@@ -1,0 +1,23 @@
+{
+  "evidence_source": "user_remote_console_excerpt_and_deployment_clarification",
+  "platform": "remote_linux",
+  "report_directory": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/tests/results/feature-datahub-1791769029414797030",
+  "command": "python -u -m tests.run_feature_datahub",
+  "status": "preflight_failed_missing_document_manifest",
+  "error_type": "FileNotFoundError",
+  "missing_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/doc/evidence/checksums/PF2026101201_REV3_SHA256.txt",
+  "user_clarification": "Documentation is not uploaded to the remote service.",
+  "exit_code": null,
+  "test_results": null,
+  "rev4_changes": [
+    "default source hashes embedded in tests/run_feature_datahub.py; no runtime doc directory dependency",
+    "retain explicit optional --manifest override",
+    "record entry hash separately to avoid embedded self-reference",
+    "add two entry tests for successful code-only deployment and rejection of mixed code"
+  ],
+  "entry_test_methods": 5,
+  "feature_test_methods": 35,
+  "production_logic_changed": false,
+  "local_python_tests_or_compilation_run": false,
+  "gap08_closed": false
+}

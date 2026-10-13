@@ -1,0 +1,4 @@
+dataset_id,schema_version,key,ts_event,available_ns,source_ns,revision,source,quality_flags,payload.score
+minute.signal,1,IM,60000000000,60200000000,60000000000,0,synthetic.minute,0,0.25
+minute.signal,1,IM,60000000000,120200000000,60000000000,1,synthetic.minute,0,0.30
+minute.signal,1,IM,120000000000,120200000000,120000000000,0,synthetic.minute,0,-0.10

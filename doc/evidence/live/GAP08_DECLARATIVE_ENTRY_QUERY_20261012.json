@@ -1,0 +1,44 @@
+{
+  "change_id": "PF2026101203_REV2",
+  "date": "2026-10-12",
+  "source": "user_pasted_remote_log",
+  "remote_python": "/workspace/worker/env/uv-nautilus/bin/python",
+  "remote_project": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro",
+  "results": [
+    {
+      "command": "python -u -m tests.run_feature_datahub --only entry",
+      "report_directory": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/tests/results/feature-datahub-1791776662886287950",
+      "group": "entry",
+      "tests_run": 9,
+      "test_seconds": 0.008,
+      "result": "OK",
+      "runner_success_message_received": true,
+      "shell_exit_code": null,
+      "reported_loaded_sha256": {
+        "bomber/framework/datahub/features/__init__.py": "dc6c00b797e2b71025dcf4cc7b0a995f631dbcf6bff27d5e969a033d187b095c",
+        "bomber/framework/dataprep/features/__init__.py": "23fc8b3ea3719e09ff1316eb129b03e4212f33a119979efbc89d3e69a5573dee",
+        "bomber/framework/market/frames.py": "984d7a11ec0352b12013513962542601881b3a0ec9a51053b1d0366f52e14d75",
+        "tests/test_feature_datahub.py": "06ea20c4810696711aa16560dbf0fcea7102a23c729d1aea391f60d7f6f1b63a"
+      }
+    },
+    {
+      "command": "python -u -m tests.run_cross_section_acceptance --only feature-query-live",
+      "report_directory": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/tests/results/cross-section-acceptance-1791776669360771462",
+      "module": "feature-query-live",
+      "tests_run": 9,
+      "test_seconds": 0.052,
+      "result": "OK",
+      "module_exit_code": 0,
+      "module_seconds": 1.17,
+      "runner_success_message_received": true
+    }
+  ],
+  "conclusion": "The selected deployment/entry and generic query/Bar/DFS CLI offline groups passed; the previously observed old CLI mismatch is resolved for this scope.",
+  "remaining_offline_groups": ["features", "definitions", "index", "legacy", "option-vega", "option-vega-live", "live-common"],
+  "real_database_schema_rows_query_export_verified": false,
+  "real_strategy_recording_verified": false,
+  "gap08_complete": false,
+  "source_or_config_changed_this_update": false,
+  "local_python_tests_compile_database": "not_run",
+  "previous_failure_evidence_preserved": "GAP08_DECLARATIVE_DEPLOYMENT_20261012.json"
+}

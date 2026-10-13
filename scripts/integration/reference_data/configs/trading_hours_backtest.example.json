@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "product": "IM",
+  "calendar": {
+    "backend": "native",
+    "calendar_id": "china.cffex",
+    "start": "2026-01-01",
+    "end": "2026-12-31"
+  },
+  "binding": {
+    "hours_code": "IM",
+    "timezone": "Asia/Shanghai",
+    "exchange": "CFFEX",
+    "asset_type": "FUTURE"
+  },
+  "hours": {
+    "backend": "file",
+    "path": "trading_hours.feather"
+  },
+  "overrides": []
+}

@@ -1,0 +1,96 @@
+{
+  "change_id": "PF2026101203_REV2",
+  "date": "2026-10-12",
+  "source": "user_pasted_remote_log",
+  "attachment": "/Users/kerry/.codex/attachments/abdda971-1ec6-4d9d-8cda-852337e2fd1e/已粘贴的文本.txt",
+  "remote_python": "/workspace/worker/env/uv-nautilus/bin/python",
+  "remote_project": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro",
+  "new_results": [
+    {
+      "command": "python -u -m tests.run_feature_datahub --only features --only definitions --only index --only legacy",
+      "report_directory": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/tests/results/feature-datahub-1791777070789295266",
+      "groups": [
+        {
+          "group": "features",
+          "tests_run": 35,
+          "test_seconds": 0.527,
+          "result": "OK"
+        },
+        {
+          "group": "definitions",
+          "tests_run": 10,
+          "test_seconds": 0.043,
+          "result": "OK"
+        },
+        {
+          "group": "index",
+          "tests_run": 17,
+          "test_seconds": 0.156,
+          "result": "OK"
+        },
+        {
+          "group": "legacy",
+          "tests_run": 14,
+          "test_seconds": 0.397,
+          "result": "OK"
+        }
+      ],
+      "d0_result": "passed",
+      "runner_success_message_received": true,
+      "shell_exit_code": null
+    },
+    {
+      "command": "python -u -m tests.run_cross_section_acceptance --only option-vega --only option-vega-live --only live-common",
+      "report_directory": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/tests/results/cross-section-acceptance-1791777092792985540",
+      "modules": [
+        {
+          "module": "option-vega",
+          "tests_run": 33,
+          "test_seconds": 0.167,
+          "result": "OK",
+          "module_exit_code": 0,
+          "module_seconds": 0.802
+        },
+        {
+          "module": "option-vega-live",
+          "tests_run": 12,
+          "test_seconds": 0.196,
+          "result": "OK",
+          "module_exit_code": 0,
+          "module_seconds": 1.322
+        },
+        {
+          "module": "live-common",
+          "tests_run": 113,
+          "test_seconds": 0.751,
+          "result": "OK",
+          "module_exit_code": 0,
+          "module_seconds": 0.864
+        }
+      ],
+      "runner_success_message_received": true,
+      "shell_exit_code": null
+    }
+  ],
+  "previous_passed_groups": {
+    "evidence": "GAP08_DECLARATIVE_ENTRY_QUERY_20261012.json",
+    "entry": 9,
+    "feature-query-live": 9
+  },
+  "new_tests_passed": 234,
+  "cumulative_tests_passed": 252,
+  "cumulative_offline_groups_passed": 9,
+  "d0_passed": true,
+  "generic_offline_acceptance": "passed",
+  "real_database_schema_rows_query_export_verified": false,
+  "real_mongodb_verified": false,
+  "real_strategy_recording_verified": false,
+  "gap08_complete": false,
+  "next_step": "Inspect real DolphinDB index_1min schema and 000852 samples; then verify bounded reads, standard-file roundtrip and live minute alignment/deadline behavior.",
+  "source_or_config_changed_this_update": false,
+  "local_python_tests_compile_database": "not_run",
+  "historical_evidence_preserved": [
+    "GAP08_DECLARATIVE_DEPLOYMENT_20261012.json",
+    "GAP08_DECLARATIVE_ENTRY_QUERY_20261012.json"
+  ]
+}

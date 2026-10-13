@@ -1,0 +1,16 @@
+{
+  "evidence_source": "user_remote_console_excerpt",
+  "date": "2026-10-13",
+  "scope": "offline_stage_controller_tests",
+  "module": "tests.test_calendar_spread_online_acceptance",
+  "tests": 10,
+  "test_seconds": 0.012,
+  "result": "OK",
+  "status": "passed",
+  "command_in_excerpt": null,
+  "exit_code_in_excerpt": null,
+  "report_directory_in_excerpt": null,
+  "live_25_test_group_result_in_excerpt": null,
+  "actual_network_or_counter_fills_evidence": false,
+  "pending": ["live_group_25_tests_result_confirmation", "online_model_resume_and_fills", "simnow_orders_fills_and_shutdown"]
+}

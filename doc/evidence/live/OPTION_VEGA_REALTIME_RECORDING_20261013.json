@@ -1,0 +1,278 @@
+{
+  "evidence_date": "2026-10-13",
+  "timezone": "Asia/Shanghai",
+  "provenance": {
+    "kind": "user_supplied_console_output",
+    "attachment_id": "ba2d6bcd-2974-46d3-8434-16ddb16ce7d3",
+    "sha256": "54fd9aef252997fa06c3f91cae7e89b378760066ec1f6d1187e6be08773675e2",
+    "extraction": "AST literal parsing; only Decimal(string) calls converted to strings; no execution of pasted code",
+    "remote_original_summary_read": false,
+    "remote_worker_exit_code": null
+  },
+  "remote_report_directory": "tests/results/gap08-realtime-recording/option-vega-recording-1791861210699461223",
+  "console_start": "2026-10-13T11:13:31.505+08:00",
+  "console_disconnect": "2026-10-13T11:28:32.100+08:00",
+  "observed_elapsed_seconds": 900.595,
+  "summary": {
+    "status": "passed",
+    "failure": null,
+    "mode": "recording",
+    "simnow_environment": "realtime",
+    "market_source": "ctp",
+    "index_source": "dolphindb-dfs",
+    "bar_time_basis": "source_event",
+    "valuation_day": "20261013",
+    "trading_day": "20261013",
+    "observed_md_trading_day": "20261013",
+    "option_slot": "11:19",
+    "frames": 15,
+    "entry_decisions": 1,
+    "submissions": 1,
+    "entry_audit": [
+      {
+        "signal_ns": 1791861540000000000,
+        "request_ns": 1791861561767385613,
+        "date": "2026-10-13",
+        "slot": "11:19",
+        "outcome": "TARGET",
+        "candidate_count": 6,
+        "targets": {
+          "MO2611-C-7300": "-1"
+        },
+        "future_bindings": {
+          "MO2611-C-7300": "IM2611"
+        }
+      }
+    ],
+    "ignored_stale_candidate_bars": 18,
+    "late_bar_count": 253,
+    "skipped_index_frames": 0,
+    "orders_submitted": 0,
+    "fills_received": 0,
+    "cleanup_errors": [],
+    "session_readiness": {
+      "ready": true,
+      "sources": [
+        {
+          "domain": "market",
+          "channel": "ctp",
+          "source_id": "CTP_LIVE_SOURCE"
+        },
+        {
+          "domain": "market",
+          "channel": "dolphindb-raw",
+          "source_id": "vega-index-dfs"
+        },
+        {
+          "domain": "execution",
+          "channel": "recording",
+          "source_id": "option-vega-live"
+        }
+      ],
+      "issues": []
+    }
+  },
+  "nonzero_recorded_requests": [
+    {
+      "revision": 1,
+      "ts_event": 1791861561767385613,
+      "signal_ns": 1791861540000000000,
+      "targets": {
+        "MO2611-C-7300.CFFEX": "-1"
+      }
+    }
+  ],
+  "selected_frame": {
+    "valuation_ns": 1791861540000000000,
+    "request_ns": 1791861561767385613,
+    "deadline_ns": 1791861561764403908,
+    "status": "CONSUMED",
+    "observations": {
+      "000852": {
+        "source_id": "index-bars",
+        "source_ns": 1791861540000000000,
+        "received_ns": 1791861554121244051
+      },
+      "MO2611-C-7300": {
+        "source_id": "market-bars",
+        "source_ns": 1791861539999999999,
+        "received_ns": 1791861542239607042
+      },
+      "IM2611": {
+        "source_id": "market-bars",
+        "source_ns": 1791861539999999999,
+        "received_ns": 1791861542347806508
+      }
+    },
+    "observations_scope": "only index, selected option and bound future retained"
+  },
+  "frames": [
+    {
+      "valuation_time": "2026-10-13T11:14:00.000+08:00",
+      "status": "CONSUMED",
+      "deadline_time": "2026-10-13T11:14:21.418+08:00",
+      "index_received_time": "2026-10-13T11:14:14.233+08:00"
+    },
+    {
+      "valuation_time": "2026-10-13T11:15:00.000+08:00",
+      "status": "CONSUMED",
+      "deadline_time": "2026-10-13T11:15:21.459+08:00",
+      "index_received_time": "2026-10-13T11:15:14.495+08:00"
+    },
+    {
+      "valuation_time": "2026-10-13T11:16:00.000+08:00",
+      "status": "CONSUMED",
+      "deadline_time": "2026-10-13T11:16:22.023+08:00",
+      "index_received_time": "2026-10-13T11:16:14.198+08:00"
+    },
+    {
+      "valuation_time": "2026-10-13T11:17:00.000+08:00",
+      "status": "CONSUMED",
+      "deadline_time": "2026-10-13T11:17:22.872+08:00",
+      "index_received_time": "2026-10-13T11:17:14.251+08:00"
+    },
+    {
+      "valuation_time": "2026-10-13T11:18:00.000+08:00",
+      "status": "CONSUMED",
+      "deadline_time": "2026-10-13T11:18:21.112+08:00",
+      "index_received_time": "2026-10-13T11:18:14.130+08:00"
+    },
+    {
+      "valuation_time": "2026-10-13T11:19:00.000+08:00",
+      "status": "CONSUMED",
+      "deadline_time": "2026-10-13T11:19:21.764+08:00",
+      "index_received_time": "2026-10-13T11:19:14.121+08:00"
+    },
+    {
+      "valuation_time": "2026-10-13T11:20:00.000+08:00",
+      "status": "CONSUMED",
+      "deadline_time": "2026-10-13T11:20:21.090+08:00",
+      "index_received_time": "2026-10-13T11:20:14.096+08:00"
+    },
+    {
+      "valuation_time": "2026-10-13T11:21:00.000+08:00",
+      "status": "CONSUMED",
+      "deadline_time": "2026-10-13T11:21:21.500+08:00",
+      "index_received_time": "2026-10-13T11:21:14.298+08:00"
+    },
+    {
+      "valuation_time": "2026-10-13T11:22:00.000+08:00",
+      "status": "CONSUMED",
+      "deadline_time": "2026-10-13T11:22:22.047+08:00",
+      "index_received_time": "2026-10-13T11:22:14.260+08:00"
+    },
+    {
+      "valuation_time": "2026-10-13T11:23:00.000+08:00",
+      "status": "CONSUMED",
+      "deadline_time": "2026-10-13T11:23:26.282+08:00",
+      "index_received_time": "2026-10-13T11:23:14.297+08:00"
+    },
+    {
+      "valuation_time": "2026-10-13T11:24:00.000+08:00",
+      "status": "CONSUMED",
+      "deadline_time": "2026-10-13T11:24:25.713+08:00",
+      "index_received_time": "2026-10-13T11:24:14.199+08:00"
+    },
+    {
+      "valuation_time": "2026-10-13T11:25:00.000+08:00",
+      "status": "CONSUMED",
+      "deadline_time": "2026-10-13T11:25:24.304+08:00",
+      "index_received_time": "2026-10-13T11:25:14.268+08:00"
+    },
+    {
+      "valuation_time": "2026-10-13T11:26:00.000+08:00",
+      "status": "CONSUMED",
+      "deadline_time": "2026-10-13T11:26:21.084+08:00",
+      "index_received_time": "2026-10-13T11:26:14.389+08:00"
+    },
+    {
+      "valuation_time": "2026-10-13T11:27:00.000+08:00",
+      "status": "CONSUMED",
+      "deadline_time": "2026-10-13T11:27:23.916+08:00",
+      "index_received_time": "2026-10-13T11:27:14.136+08:00"
+    },
+    {
+      "valuation_time": "2026-10-13T11:28:00.000+08:00",
+      "status": "CONSUMED",
+      "deadline_time": "2026-10-13T11:28:21.220+08:00",
+      "index_received_time": "2026-10-13T11:28:14.166+08:00"
+    }
+  ],
+  "stale_candidates": {
+    "count": 18,
+    "age_seconds_min": 308.461959855,
+    "age_seconds_max": 523.828336434,
+    "all_ignored_and_not_required": true,
+    "selected_legs_ignored": false,
+    "example": {
+      "key": "MO2612-C-8800",
+      "source_id": "market-bars",
+      "source_ns": 1791861359999999999,
+      "valuation_ns": 1791861360000000000,
+      "received_ns": 1791861689682290683,
+      "age_seconds": 329.682290683,
+      "max_age_seconds": 300.0,
+      "required": false,
+      "action": "IGNORED_CANDIDATE",
+      "reason": "STALE_BAR"
+    }
+  },
+  "report_review": {
+    "status": "passed",
+    "scope": "target_chain",
+    "trading_day": "20261013",
+    "option_slot": "11:19",
+    "errors": [],
+    "target_chain_verified": true,
+    "entry_audit": [
+      {
+        "signal_ns": 1791861540000000000,
+        "request_ns": 1791861561767385613,
+        "date": "2026-10-13",
+        "slot": "11:19",
+        "outcome": "TARGET",
+        "candidate_count": 6,
+        "targets": {
+          "MO2611-C-7300": "-1"
+        },
+        "future_bindings": {
+          "MO2611-C-7300": "IM2611"
+        }
+      }
+    ],
+    "runtime_failure": null,
+    "session_readiness": {
+      "ready": true,
+      "sources": [
+        {
+          "domain": "market",
+          "channel": "ctp",
+          "source_id": "CTP_LIVE_SOURCE"
+        },
+        {
+          "domain": "market",
+          "channel": "dolphindb-raw",
+          "source_id": "vega-index-dfs"
+        },
+        {
+          "domain": "execution",
+          "channel": "recording",
+          "source_id": "option-vega-live"
+        }
+      ],
+      "issues": []
+    },
+    "index_query_verified": true,
+    "index_bar_delivery_verified": true,
+    "frames": 15,
+    "skipped_index_frames": 0,
+    "timeout_seen_online": false,
+    "timeout_note": "无线上超时样本时，超时拒绝仅由离线测试覆盖"
+  },
+  "limits": [
+    "No new live session was started locally.",
+    "Original remote summary file and process exit code were not independently read.",
+    "No online skipped-index timeout sample; timeout rejection remains covered by offline tests.",
+    "Recording confirms targets, not exchange orders, fills, held-position recovery or nonzero futures hedge fills."
+  ]
+}

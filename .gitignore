@@ -218,3 +218,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+*.c
+*.o
+.build-deps/
+.validation/
+3rd/
+__bak/

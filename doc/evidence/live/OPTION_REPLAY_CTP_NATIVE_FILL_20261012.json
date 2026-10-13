@@ -1,0 +1,45 @@
+{
+  "date": "2026-10-12",
+  "scope": "engineering_chain",
+  "market_environment": "ctp_replay",
+  "source": "user_returned_remote_log_and_JsonStateStore_load",
+  "log_attachment": "f218b026-a42c-40b4-adb0-93c4800eff74",
+  "runtime_status": "passed",
+  "frames": 10,
+  "orders_submitted": 1,
+  "fills_received": 1,
+  "instrument": "MO2610-C-7300.CFFEX",
+  "side": "SELL",
+  "position_effect": "OPEN",
+  "quantity": "1",
+  "limit_price": "37.2",
+  "fill_price": "37.4",
+  "venue_order_id": "12681",
+  "strategy_net": "-1",
+  "execution_net": "-1",
+  "account_net": "-1",
+  "final_gross": {
+    "MO2610-C-7300.CFFEX": [
+      "0",
+      "1"
+    ]
+  },
+  "final_active_orders": 0,
+  "cleanup_errors": [],
+  "state_file": "demos/08_option_vega/results/replay-ctp-20261012-114149.json",
+  "state_readback": {
+    "generation": 15,
+    "checksum_validated": true,
+    "strategy_positions": [
+      {
+        "strategy_id": "option-vega-live",
+        "target_key": "MO2610-C-7300.CFFEX",
+        "quantity": "-1"
+      }
+    ]
+  },
+  "restart_restore_verified": false,
+  "nonzero_future_hedge_fill_verified": false,
+  "realtime_nonmapped_verified": false,
+  "report_directory": "tests/results/gap08-replay-ctp/option-vega-simnow-1791805313136956634"
+}
