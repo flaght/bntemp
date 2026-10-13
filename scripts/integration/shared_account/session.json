@@ -2,6 +2,7 @@
   "version": 1,
   "trading_day": "20261014",
   "environment": "realtime",
+  "position_scope": "strategy_instruments",
   "seconds": 600,
   "account_state_file": "results/shared-account.json",
   "report_dir": "results",
