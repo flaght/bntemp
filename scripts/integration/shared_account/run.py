@@ -7,7 +7,7 @@ import sys
 import time
 from types import SimpleNamespace
 
-from .config import read_config
+from .config import read_config, validate_budget_increase
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
@@ -20,7 +20,10 @@ def parse_args(argv=None):
     parser.add_argument("--confirm-simnow", action="store_true")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--reconcile-only", action="store_true", help="同日权威对账并修复已结束订单的检查点；不启动策略、不报单")
+    parser.add_argument("--budget-config", type=Path, help="只读迁移至仅上调账户总名义限额的新配置")
     args = parser.parse_args(argv)
+    if args.budget_config is not None and not args.reconcile_only:
+        parser.error("budget-config仅用于reconcile-only")
     if args.reconcile_only and (not args.connect or not args.resume or args.enable_orders or args.confirm_simnow):
         parser.error("reconcile-only须connect和resume，不接受报单授权开关")
     if args.connect and not args.reconcile_only and not (args.enable_orders and args.confirm_simnow):
@@ -159,8 +162,11 @@ def build_host(config, *, resume, diagnostics=None, read_only=False):
 
 def main(argv=None):
     args = parse_args(argv)
+    new_account_config = None
     try:
         config = read_config(args.config)
+        if args.budget_config is not None:
+            new_account_config = validate_budget_increase(config, read_config(args.budget_config))
     except FileNotFoundError:
         print(f"配置文件不存在：{args.config.resolve()}。请先复制example.json为实际会话配置，"
               "核对交易日、资料日及限额后，再用--config指定该文件。未建立任何连接。", file=sys.stderr)
@@ -184,7 +190,8 @@ def main(argv=None):
             from bomber.framework.trader.runtime.live.local import strategy_state_lock
             for item in host.strategies.values():
                 host.resources.enter_context(strategy_state_lock(item.state_file))
-            reconciliation = host.account.reconcile_checkpoint()
+            reconciliation = (host.account.reconcile_checkpoint(new_account_config=new_account_config)
+                if new_account_config is not None else host.account.reconcile_checkpoint())
             status = "reconciled"
             return
         host = build_host(config, resume=args.resume, diagnostics=diagnostics)

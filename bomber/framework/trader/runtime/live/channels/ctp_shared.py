@@ -2,6 +2,7 @@
 
 import time
 import os
+from copy import deepcopy
 from decimal import Decimal
 
 from bomber.framework.trader.persistence import JsonStateStore, RuntimeStateManager
@@ -169,7 +170,7 @@ class CtpSharedAccountLifecycle:
         self.manager.save()
         self.client.arm_demo(self.client.DEMO_CONFIRMATION)
 
-    def reconcile_checkpoint(self):
+    def reconcile_checkpoint(self, *, new_account_config=None):
         """显式无报单修复：完整同日权威对账、备份原文件后保存暂停检查点。"""
         if self._started or self.service._leases:
             raise RuntimeError("检查点只读修复须在宿主和策略启动前执行")
@@ -182,6 +183,19 @@ class CtpSharedAccountLifecycle:
             raise RuntimeError("检查点包含未结束订单/冻结份额，拒绝自动修复")
         self.service.validate_owned_state()
         original_checkpoint = self.service.snapshot_state()
+        original_budget = self.service.budget
+        session_identity = self.manager.state_components["session_identity"]
+        original_identity = deepcopy(session_identity.identity)
+        new_budget = None
+        if new_account_config is not None:
+            from bomber.framework.trader.execution.shared import SharedRiskBudget
+            expected_account = dict(new_account_config)
+            expected_account["max_gross_notional"] = original_identity["account"]["max_gross_notional"]
+            if expected_account != original_identity["account"]:
+                raise ValueError("只读预算迁移不得改变其他账户身份或限额")
+            new_budget = SharedRiskBudget(original_budget.max_gross_quantity, new_account_config["max_gross_notional"])
+            if new_budget.max_gross_notional <= original_budget.max_gross_notional:
+                raise ValueError("只读预算迁移须显式上调总名义限额")
         backup = self.manager.repository.path.with_name(
             self.manager.repository.path.name + f".before-reconcile-g{restored.generation}.json")
         try:
@@ -208,8 +222,13 @@ class CtpSharedAccountLifecycle:
                 self.service.reconcile_finished_checkpoint()
                 self._validate_account()
                 final_gross = occupied_positions(self.transport)
+                if new_budget is not None:
+                    self.service.budget = new_budget
+                    session_identity.identity["account"] = deepcopy(new_account_config)
                 saved = self.manager.save()
             except Exception:
+                self.service.budget = original_budget
+                session_identity.identity = original_identity
                 self.service.restore_state(original_checkpoint)
                 raise
             finally:
@@ -218,7 +237,8 @@ class CtpSharedAccountLifecycle:
             self.final_active_orders = 0
             return {"backup_file": str(backup), "previous_generation": restored.generation,
                 "saved_generation": saved.generation, "orders_submitted": self.driver.submitted_orders,
-                "authorized": self.client.is_armed, "strategies_started": False}
+                "authorized": self.client.is_armed, "strategies_started": False,
+                "previous_budget": original_budget.state(), "saved_budget": self.service.budget.state()}
         finally:
             self.client.stop()
             self.driver.stop()

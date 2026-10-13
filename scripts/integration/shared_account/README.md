@@ -107,6 +107,35 @@ python -u -m scripts.integration.shared_account.run \
 此模式仅修复已结束订单且全量账本一致的服务故障标记，不重建漏成交或处理跨日。
 修复后等RB/HC有效行情时段，按原resume命令重新预热；只读修复通过不是报单验收。
 
+CU／AU例子使用新策略ema-cu-gamma/cross-cu-au-delta及独立状态文件，原配置为
+session_cu_au.json。用户已授权上调账户总名义限额；日志成交价CU最高110670、AU
+最高900.26及乘数5/1000，对两策略各CU1手、横截面AU1手，名义合计2006960元，
+超原200万元。session_cu_au_230w.json仅将账户max_gross_notional上调为2300000，
+手数、策略argv、单合约限额、身份和状态路径不变。价格会变化，该上限不是放行保证。
+
+已有CU/AU仓位时，不能改配置后直接resume。先用旧配置与显式新预算配置做只读
+迁移（要求同TD、原身份、所有订单/冻结份额已结束和全账户对账一致，不报单）：
+
+```bash
+python -u -m scripts.integration.shared_account.run \
+  --config scripts/integration/shared_account/session_cu_au.json \
+  --connect --resume --reconcile-only \
+  --budget-config scripts/integration/shared_account/session_cu_au_230w.json
+```
+
+只允许上调账户总名义限额；改路径、策略参数、路由、其他预算或下调均拒绝。
+核验并备份后，同一检查点原子更新账户预算和会话身份，归属及信号版本保留，贡献
+暂停/冻结不重放；报告记录previous_budget和saved_budget。保存失败恢复内存旧预算/
+身份，原文件和备份保留。之后只用新配置恢复，旧预算配置不再匹配保存身份。
+
+迁移报告status=reconciled且orders_submitted=0后，在有效行情期间执行：
+
+```bash
+python -u -m scripts.integration.shared_account.run \
+  --config scripts/integration/shared_account/session_cu_au_230w.json \
+  --connect --enable-orders --confirm-simnow --resume
+```
+
 `strategies`使用唯一`strategy_id`、`kind`、独立`state_file`及原入口的业务`argv`。
 宿主统一管理mode、授权、TD日、环境、会话时长和恢复，策略参数不能覆盖这些项。
 同一种策略可配置多个不同ID。`stop_after_seconds`可独立停止一个策略，其他策略继续。

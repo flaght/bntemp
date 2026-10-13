@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "date": "2026-10-13",
+  "status": "offline_passed_remote_budget_migration_pending",
+  "user_authorization": "允许上调，先计算所需额度",
+  "observed_fill_high_prices": {
+    "cu2611.SHFE": "110670.0",
+    "au2612.SHFE": "900.26"
+  },
+  "multipliers": {
+    "CU": "5",
+    "AU": "1000"
+  },
+  "calculation": "2*110670*5+900.26*1000",
+  "required_observed_notional": "2006960",
+  "previous_account_limit": "2000000",
+  "new_account_limit": "2300000",
+  "strategy_contract_quantity_cap": "1",
+  "unchanged": [
+    "strategy argv and IDs",
+    "per-strategy notional limits",
+    "account quantity and order count limits",
+    "state paths and ownership"
+  ],
+  "config": "scripts/integration/shared_account/session_cu_au_230w.json",
+  "offline_report": "tests/results/main-ema-acceptance-1791907106968052000/summary.json",
+  "counts": {
+    "shared-account": 53,
+    "live-common": 116
+  },
+  "remote_excerpt": {
+    "status": "failed",
+    "ema_fills": 0,
+    "cross_fills": 10,
+    "final_managed_gross": {
+      "cu2611.SHFE": [
+        "0",
+        "1"
+      ],
+      "au2612.SHFE": [
+        "1",
+        "0"
+      ]
+    },
+    "final_active_orders": 0,
+    "complete_account_flags_not_supplied": true
+  },
+  "migration": "original identity restore, full readonly reconcile, backup, atomic budget+identity save; no strategy start or orders",
+  "future_price_guarantee": false,
+  "local_real_orders": 0
+}
