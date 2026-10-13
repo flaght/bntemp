@@ -2,6 +2,55 @@
 
 本目录核验参考资料读取和字段契约，不连接 CTP MD／TD，也不报单。公共实现位于 [dataprep sources](../../../bomber/framework/dataprep/sources/README.md)，入口加载项目 .env、接收参数并展示结果。
 
+## 通用交易时段真实来源对照（2026-10-13）
+
+实际静态库为 `dfs://bomber_static`，时段表为 `fut_trading_session`，
+文件为资料目录中的 `fut_trading_session.feather`。文件名可以自定义，不要求
+`trading_hours.feather` 或对应的 manifest。DolphinDB 适配器将 `Code` 转为
+`code`；Feather 必须直接使用七个小写标准字段。
+
+新增入口 `trading_sessions` 沿用公共目录解析：显式文件优先，其次资料目录
+`FUT_ROLE_DATA_DIR`、`CTP_DATA_DIR/role`、`ROLE_DIR`。
+本次 `ROLE_DIR=/workspace/data/temp_bomber1/ctp/role`，因此自动选择
+`/workspace/data/temp_bomber1/ctp/role/fut_trading_session.feather`。
+`KLINE_DIR` 不参与规则读取。入口自动加载项目 `.env`，使用已有 DDB 凭据。
+
+同步新入口、`tests/test_session_readonly.py`、集中验收入口和本说明后，在远程
+pro 根目录执行新增入口的离线回归，再对照真实库与实际 Feather：
+
+```bash
+export PYTHONPATH=.
+python -u -m tests.run_main_ema_acceptance --only session-readonly
+python -u -m scripts.integration.reference_data.trading_sessions \
+  --connect --product CU \
+  --database dfs://bomber_static --trading-hours-table fut_trading_session \
+  --report "tests/results/session-cu-$(date +%Y%m%d-%H%M%S).json"
+```
+
+默认仅验证指定规则键的时段内容。通过时 `status=passed`、`rows` 非零，
+报告给出标准化七字段记录和 `hours_sha256`；`sessions.status=not_requested`、
+`overrides.evidence=not_checked` 明确表示尚未验收日期例外及实际会话。
+代码默认查询 `product` 的规则，可用 `--hours-code` 显式指定期权继承的规则键。
+没有匹配规则或 Feather 使用 `Code` 会失败，不猜测品种、不改写原文件。
+
+会话验收追加 `--calendar-id` 和可重复的 `--trading-day YYYYMMDD`，
+查询日期跨度至多31天；这些日期只限定核验范围，交易日期和覆盖范围仍由
+`calendars` 的 Provider 提供。必须同时配置 `--session-overrides-table` 与
+`--session-overrides-file` 来对照真实例外资料，或在明确确认无例外后使用
+`--no-session-overrides`。不能将未提供的例外资料解释为空。期货的例外表
+和文件格式见 [会话接口](../../../bomber/framework/calendars/README.md)。
+
+会话检查比较规则身份、各查询交易日的完整窗口、最近完整历史分钟以及
+跨会话缺口分钟；报告保留自然日期、所属交易日、区间端点、分钟数量及
+纳秒列表摘要。历史窗口默认600分钟，可由 `--history-minutes` 调整，
+不依赖固定240分钟假设。报告路径须为新文件，不覆盖旧证据。
+
+数据库前后两次读取须完全一致；这是静态内容一致性证据，不是数据库事务
+快照或历史规则发布时间证据。错误直接终止，不回退文件替代数据库。
+此入口不读取行情价格、不连接CTP、不报单。真实来源对照和会话验收通过后，
+再执行柜台只读及在线 Recording；本机13项假SDK加实际Feather的通过结果
+不能替代真实数据库或柜台验收。
+
 ## GAP-03当前入口与导出
 
 readonly新增必填`--expected-source-day`，检查声明来源日、来源年龄、成功观测及真实发布时间。下文旧命令保留历史记录，执行时补充当前已核对的来源日。当前在线默认DolphinDB，文件须显式测试标志。GAP-03已于2026-10-09关闭：远程专项22项及所选回归通过，真实CU参考只读→导出→纯本地校验一致，源日2026-10-08、主力cu2611、累计因子1.484671，报告目录gap03-cu-night-20261012.ykM52c。证据及观测后可见性限制见 [专项交接](../../../doc/HANDOFF/gaps/HANDOFF_GAP03_2026-10-09.md)。新日约18点入库后的夜盘资料检查仍按当次交易日执行，不将本项关闭等同于夜盘交易全链路通过。
