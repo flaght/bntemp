@@ -15,7 +15,8 @@ import pandas as pd
 from bomber.framework.dataprep.history import *
 from bomber.framework.dataprep.sources import DolphinDbReferenceConfig, DataSourcePurpose
 from bomber.framework.dataprep.sources.policy import validate_source
-from bomber.framework.trader.runtime.trading_sessions import CopperSessions, SHANGHAI
+from bomber.framework.trader.runtime.trading_sessions import SHANGHAI
+from tests.session_fixtures import commodity_sessions, declared_day_sessions
 
 ROOT = Path(__file__).resolve().parents[1]
 MINUTE = 60_000_000_000
@@ -26,18 +27,6 @@ INSTRUMENT = "cu2611.SHFE"
 
 def bar(stamp, price="100"):
     return HistoryBar(INSTRUMENT, stamp, adjusted_close=Decimal(price))
-
-
-def write_day_session_fixture(path, product, day):
-    """Own the short session exercised by the test; no deployed product-hours assumptions."""
-    path.write_text(json.dumps({
-        "schema_version": 1, "product": product, "timezone": "Asia/Shanghai",
-        "start": day.isoformat(), "end": day.isoformat(),
-        "trading_days": [day.isoformat()],
-        "session_segments": [
-            {"start": "09:00", "end": "09:05", "trading_day_rule": "same_day"}],
-    }))
-    return path
 
 
 class MemoryProvider(HistoryProvider):
@@ -63,7 +52,7 @@ class HistoryTests(unittest.TestCase):
             _providers = dict(HistoryProviderFactory._providers, dolphindb=MemoryProvider, mongodb=MemoryProvider)
         self.factory = Factory
         self.config = {"bars": tuple(bar(t) for t in STAMPS)}
-        self.calendar = CopperSessions(ROOT / "demos/01_main_ema/shfe_cu_2026.json")
+        self.calendar = commodity_sessions("CU")
 
     def write_file(self, stamps):
         self.file.write_text("\n".join(json.dumps({"instrument_id": INSTRUMENT,
@@ -315,7 +304,8 @@ class HistoryTests(unittest.TestCase):
         from io import StringIO
         from contextlib import redirect_stderr
         live = import_module("demos.01_main_ema.run_live")
-        base = ["--connect", "--product", "CU", "--expected-source-day", "20261009"]
+        base = ["--connect", "--product", "CU", "--expected-source-day", "20261009",
+                "--calendar-id", "china.sse", "--no-session-overrides"]
         args = live.parse_args([*base, "--history-minutes", "240", "--history-missing-policy", "allow"])
         self.assertEqual(args.history_minutes, 240)
         self.assertEqual(args.history_missing_policy, "allow")
@@ -368,13 +358,12 @@ class HistoryTests(unittest.TestCase):
         path = fixture.root / "warm.jsonl"
         path.write_text(json.dumps({"instrument_id": str(references.instrument_id),
             "ts_event": BASE + MINUTE - 1, "adjusted_close": "6200"}))
-        calendar_path = write_day_session_fixture(fixture.root / "rb-calendar.json", "RB",
-                                                   references.trading_day)
+        calendar = declared_day_sessions("RB", references.trading_day)
         args = SimpleNamespace(mode="recording", product="RB", fast=2, slow=3, quantity=Decimal(1),
             limit_offset_ticks=1, max_notional=Decimal(50000), state_file=None, history_minutes=2,
             history_config=None, history_db="dolphindb", history_file=path, history_missing_policy="fail",
             history_stage="preopen", reference_timeout=15,
-            trading_calendar=calendar_path)
+            trading_calendar=None, _session_calendar=calendar)
         transport, driver, _ = fixture.transport_driver()
         driver.start(lambda report: None)
         session = live.assemble(args, references, driver, ManualMd())

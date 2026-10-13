@@ -83,6 +83,7 @@ class SessionCalendar:
         raw = Path(path).read_bytes()
         data = json.loads(raw)
         self.schema_version = data.get("schema_version")
+        self.requires_rules_checkpoint = self.schema_version == 2
         if data.get("schema_version") == 1:
             self._service = _legacy_service(data, path, raw, product)
         elif data.get("schema_version") == 2:

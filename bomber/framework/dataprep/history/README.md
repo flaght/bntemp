@@ -43,3 +43,7 @@ IM指定交易日使用ImDayWindow枚举两个交易时段共240分钟；不是�
 分钟枚举已委托同一服务；通用服务不限制为 IM 单日 240 分钟。
 数据字段与文件／DolphinDB 装配见 [calendars 说明](../../calendars/README.md)。
 
+正式 EMA 入口默认直接消费 Provider 与原生日历；`--trading-calendar` 不再默认
+指向 CU JSON，仅作为显式兼容参数。时段规则选择 `--calendar-id` 和时段来源，
+日期例外选择例外源表或明确的无例外声明。测试里的日期通过内存快照固定。
+

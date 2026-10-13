@@ -20,9 +20,16 @@
 及 Live／回测装配见 [calendars 说明](../../calendars/README.md)。它按 products
 读取完整静态分段组，不套用日表的日期筛选或逐行历史发布版本导出。
 
+正式会话入口现在通过 `session_inputs.SessionInputs/load_session_inputs` 直接装配：
+时段和 `session_overrides` 例外来自同一配置后端，交易日期由 CalendarProvider
+提供，不需要日历 JSON 或手工填写交易日期。例外标准列为
+`code,override_id,date_basis,date,action,target,segments`，DolphinDB 仍只在返回
+时映射 `Code→code`；表名须显式配置 `DDB_SESSION_OVERRIDES_TABLE`。
+已核验没有例外的范围可以显式声明 no_overrides；资料缺失或查询失败不解释为空。
+
 | 组件 | 职责 |
 | --- | --- |
-| ReferenceDataSource | open、read、close，以及四种资料查询入口 |
+| ReferenceDataSource | open、read、close，以及基础条款、角色、因子、时段和例外查询入口 |
 | ReferenceSourceFactory | create、register；不同后端采用独立配置 |
 | DolphinDbReferenceSource | 官方 SDK 会话和限定范围的 DFS 只读查询 |
 | FileReferenceSource | 委托 read_feather，再进入共同字段标准化 |

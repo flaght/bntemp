@@ -36,6 +36,11 @@ def normalize_frame(frame, dataset, query, *, source):
         snapshot = parse_trading_hours(frame, source=source)
         rows = tuple(row for row in snapshot.records() if row["code"] in query.products)
         return ReferenceBatch(dataset, rows, HOURS_COLUMNS, source)
+    if dataset is ReferenceDataset.SESSION_OVERRIDES:
+        validate_hours_query(query)
+        from bomber.framework.calendars.overrides import normalize_overrides, OVERRIDE_COLUMNS
+        rows = tuple(row for row in normalize_overrides(frame) if row["code"] in query.products)
+        return ReferenceBatch(dataset, rows, OVERRIDE_COLUMNS, source)
     frame = frame.copy()
     for old, new in FIELD_ALIASES[dataset].items():
         if old not in frame:
@@ -101,12 +106,12 @@ def normalize_frame(frame, dataset, query, *, source):
 def validate_hours_query(query):
     if (not query.products or query.symbols or query.start_date is not None
             or query.end_date is not None or query.active_on is not None):
-        raise ValueError("trading_hours按products查询静态规则，不接受合约或日期筛选")
+        raise ValueError("会话规则按products查询，不接受合约或来源日期筛选")
 
 
 def normalize_dolphindb_frame(frame, dataset, query, *, source):
     """DolphinDB's legacy names are mapped here; files must use lowercase code."""
-    if ReferenceDataset(dataset) is ReferenceDataset.TRADING_HOURS:
+    if ReferenceDataset(dataset) in {ReferenceDataset.TRADING_HOURS, ReferenceDataset.SESSION_OVERRIDES}:
         if not hasattr(frame, "columns") or not frame.columns.is_unique:
             raise ValueError("数据源须返回列名唯一的DataFrame")
         if "Code" in frame:

@@ -106,12 +106,11 @@ class Gap03Tests(unittest.TestCase):
 
     def test_continuous_cli_defers_source_day_to_each_session_calendar(self):
         live = import_module("demos.01_main_ema.run_live")
-        calendar = Path(self.directory.name) / "calendar.json"
-        calendar.write_text("{}")
         args = live.parse_args(["--connect", "--product", "CU", "--mode", "simnow", "--run-forever",
             "--enable-orders", "--confirm-simnow", "--state-file", str(self.path),
-            "--trading-calendar", str(calendar)])
+            "--calendar-id", "china.sse", "--no-session-overrides"])
         self.assertEqual(args.reference_source, "dolphindb")
+        self.assertIsNone(args.trading_calendar)
         self.assertIsNone(args.expected_source_day)
         with self.assertRaisesRegex(ValueError, "先由会话日历"):
             live.prepare_inputs(args, SimpleNamespace(trading_day="20261009"), None)

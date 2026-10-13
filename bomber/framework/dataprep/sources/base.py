@@ -18,6 +18,7 @@ class ReferenceDataset(str, Enum):
     ADJUSTMENT_FACTORS = "adjustment_factors"
     CONTRACT_STRUCTURE = "contract_structure"
     TRADING_HOURS = "trading_hours"
+    SESSION_OVERRIDES = "session_overrides"
 
 
 class ReferenceSourceError(RuntimeError):
@@ -105,3 +106,6 @@ class ReferenceDataSource(ABC):
 
     def trading_hours(self, query):
         return self.read(ReferenceDataset.TRADING_HOURS, query)
+
+    def session_overrides(self, query):
+        return self.read(ReferenceDataset.SESSION_OVERRIDES, query)

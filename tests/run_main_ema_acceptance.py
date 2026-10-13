@@ -12,7 +12,8 @@ import time
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CASES = {
     "sessions": ("tests.test_session_calendar",),
-    "trading-hours": ("unittest", "tests.test_trading_hours", "tests.test_trading_calendar", "tests.test_calendars_compiled"),
+    "trading-hours": ("unittest", "tests.test_trading_hours", "tests.test_session_inputs",
+                      "tests.test_trading_calendar", "tests.test_calendars_compiled"),
     "execution-composition": ("tests.test_execution_composition",),
     "ema-recovery": ("tests.test_main_ema_recovery",),
     "live-common": ("unittest", "tests.test_live_common", "tests.test_live_channels", "tests.test_live_recovery", "tests.test_execution_composition"),
@@ -47,11 +48,15 @@ CASES = {
 }
 SOURCES = (
     "bomber/framework/calendars/hours.py",
+    "bomber/framework/calendars/overrides.py",
     "bomber/framework/calendars/sessions.py",
     "bomber/framework/calendars/trading.py",
     "bomber/framework/calendars/__init__.py",
     "bomber/framework/dataprep/trading_hours.py",
+    "bomber/framework/dataprep/session_inputs.py",
+    "tests/session_fixtures.py",
     "tests/test_trading_hours.py",
+    "tests/test_session_inputs.py",
     "tests/test_trading_calendar.py",
     "tests/test_calendars_compiled.py",
     "bomber/framework/trader/execution/policy.py",
@@ -177,6 +182,7 @@ def check_reference_deployment():
         ("bomber.framework.dataprep.live_references", ("LiveFuturesReferences",)),
         ("bomber.framework.dataprep.reference_freshness", ("ReferenceFreshnessPolicy",)),
         ("bomber.framework.dataprep.sources.factory", ("ReferenceSourceFactory.create_for",)),
+        ("bomber.framework.dataprep.session_inputs", ("SessionInputs", "load_session_inputs", "add_session_arguments")),
         ("bomber.framework.dataprep.sources.artifacts", ("ExportedReferenceSource", "export_reference_bundle")),
         ("tests.test_gap03", ("Gap03Tests.test_purpose_matrix_rejects_before_constructing_or_connecting",
             "Gap03Tests.test_roundtrip_preserves_types_scope_versions_and_online_snapshot",)),

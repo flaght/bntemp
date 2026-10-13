@@ -55,8 +55,13 @@ def check(args):
     if before.tzinfo is None:
         raise ValueError("--before须携带时区，例如2026-10-09T14:00:00+08:00")
     before_ns = int(before.timestamp() * 1_000_000_000)
-    calendar = load_sessions(args.trading_calendar, config["product"])
-    if getattr(calendar, "schema_version", 1) == 2:
+    if args.trading_calendar is not None:
+        calendar = load_sessions(args.trading_calendar, config["product"])
+    else:
+        from bomber.framework.dataprep.session_inputs import load_session_inputs, session_inputs_from_args
+        calendar = load_session_inputs(session_inputs_from_args(args, product=config["product"],
+                                                                 exchange=config["venue"]))
+    if calendar.requires_rules_checkpoint:
         from bomber.framework.calendars import SessionRulesCheckpoint
         if "session_rules" not in components:
             raise ValueError("原检查点缺少标准时段快照身份，须先明确迁移")
@@ -103,8 +108,8 @@ def main():
     parser.add_argument("--history-stage", choices=("preopen", "recovery"), default="recovery")
     parser.add_argument("--history-missing-policy", choices=("fail", "allow"), default="fail")
     parser.add_argument("--reference-timeout", type=int, default=15)
-    parser.add_argument("--trading-calendar", type=Path,
-        default=Path(__file__).with_name("shfe_cu_2026.json"))
+    from bomber.framework.dataprep.session_inputs import add_session_arguments
+    add_session_arguments(parser)
     args = parser.parse_args()
     try:
         from dotenv import load_dotenv

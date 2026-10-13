@@ -12,7 +12,8 @@ import unittest
 
 from bomber.framework.trader import TargetStore, PortfolioCoordinator, PositionManager
 from bomber.framework.trader.persistence import JsonStateStore, RuntimeStateManager, StatePersistenceError
-from bomber.framework.trader.runtime.trading_sessions import CopperSessions, SHANGHAI
+from bomber.framework.trader.runtime.trading_sessions import SHANGHAI
+from tests.session_fixtures import commodity_sessions
 from bomber.framework.trader.execution.ctp.native_driver import CtpNativeTraderDriver, CtpDriverCheckpoint
 from tests.run_p4_ctp_recovery import RecoveryTransport, _active
 
@@ -34,7 +35,7 @@ def make_checkpoint():
 
 class ContinuousTests(unittest.TestCase):
     def setUp(self):
-        self.calendar = CopperSessions(ROOT / "demos/01_main_ema/shfe_cu_2026.json")
+        self.calendar = commodity_sessions("CU")
         self.temp = TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
@@ -245,7 +246,7 @@ class ContinuousTests(unittest.TestCase):
                 return False
             def wait(self, seconds):
                 moments[0] = datetime(2026, 10, 9, 10, 30, tzinfo=SHANGHAI)
-        args = SimpleNamespace(product="CU", trading_calendar=ROOT / "demos/01_main_ema/shfe_cu_2026.json",
+        args = SimpleNamespace(product="CU", trading_calendar=None, _session_calendar=self.calendar,
             state_file=state, max_session_orders=4)
         factory = Mock(return_value=SimpleNamespace(run=lambda: {"status": "failed"}))
         live = import_module("demos.01_main_ema.run_live")
@@ -255,6 +256,7 @@ class ContinuousTests(unittest.TestCase):
                 continuous.run_continuous(args, factory, clock=lambda: moments[0], stop_event=Stop())
         self.assertEqual(factory.call_count, 1)
         worker = factory.call_args.args[0]
+        self.assertIs(worker._session_calendar, self.calendar)
         self.assertEqual(worker.expected_trading_day, "20261009")
         self.assertEqual(worker.expected_source_day, "20261008")
         self.assertFalse(worker.resume)

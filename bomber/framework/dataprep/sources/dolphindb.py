@@ -25,6 +25,7 @@ class DolphinDbReferenceConfig:
     max_rows: int = 100_000
     enable_ssl: bool = False
     hours_table: str = "trading_hours"
+    overrides_table: str | None = None
 
     def __post_init__(self):
         if not self.host.strip() or not self.username or not self.password:
@@ -36,6 +37,8 @@ class DolphinDbReferenceConfig:
         for table in (self.futures_table, self.options_table, self.factors_table, self.structure_table, self.hours_table):
             if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", table) is None:
                 raise ValueError("参考表名必须是普通标识符")
+        if self.overrides_table is not None and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", self.overrides_table) is None:
+            raise ValueError("例外表名必须是普通标识符")
         if type(self.read_timeout_seconds) is not int or not 1 <= self.read_timeout_seconds <= 120:
             raise ValueError("数据库读取超时须为1至120秒整数")
         if type(self.max_rows) is not int or self.max_rows < 1:
@@ -56,6 +59,7 @@ class DolphinDbReferenceConfig:
             factors_table=os.getenv("DDB_FACTOR_TABLE", "fut_adjustment_factors"),
             structure_table=os.getenv("DDB_CONTRACT_TABLE", "fut_contract"),
             hours_table=os.getenv("DDB_TRADING_HOURS_TABLE", "trading_hours"),
+            overrides_table=os.getenv("DDB_SESSION_OVERRIDES_TABLE") or None,
             read_timeout_seconds=read_timeout_seconds,
             enable_ssl=os.getenv("DDB_ENABLE_SSL", "false").lower() in {"1", "true", "yes"})
 
@@ -109,6 +113,10 @@ class DolphinDbReferenceSource(ReferenceDataSource):
                     raise ReferenceSourceError("DolphinDB 会话关闭失败") from None
 
     def _table(self, dataset):
+        if dataset is ReferenceDataset.SESSION_OVERRIDES:
+            if self.config.overrides_table is None:
+                raise ValueError("尚未配置session_overrides来源表")
+            return self.config.overrides_table
         return {
             ReferenceDataset.FUTURES_BASIC: self.config.futures_table,
             ReferenceDataset.OPTIONS_BASIC: self.config.options_table,
@@ -119,7 +127,7 @@ class DolphinDbReferenceSource(ReferenceDataSource):
 
     def _script(self, dataset, query):
         # 所有可进入脚本的名称、代码及日期已受限校验，不接受任意SQL片段。
-        if dataset is ReferenceDataset.TRADING_HOURS:
+        if dataset in {ReferenceDataset.TRADING_HOURS, ReferenceDataset.SESSION_OVERRIDES}:
             validate_hours_query(query)
         conditions = []
         if query.start_date:
@@ -127,7 +135,8 @@ class DolphinDbReferenceSource(ReferenceDataSource):
         if query.end_date:
             conditions.append("date <= " + query.end_date.strftime("%Y.%m.%d"))
         if query.products and dataset is not ReferenceDataset.OPTIONS_BASIC:
-            field = "Code" if dataset in {ReferenceDataset.CONTRACT_STRUCTURE, ReferenceDataset.TRADING_HOURS} else "contractObject"
+            field = "Code" if dataset in {ReferenceDataset.CONTRACT_STRUCTURE, ReferenceDataset.TRADING_HOURS,
+                                         ReferenceDataset.SESSION_OVERRIDES} else "contractObject"
             values = ",".join('"' + p + '"' for p in query.products)
             conditions.append(f"upper({field}) in [{values}]")
         if query.symbols:

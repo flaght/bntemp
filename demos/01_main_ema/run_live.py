@@ -56,13 +56,22 @@ def session_source_purpose(args):
             else DataSourcePurpose.LIVE_REFERENCE)
 
 
-def runtime_sessions(args):
+def runtime_sessions(args, *, exchange=""):
     """The continuous supervisor and its worker consume the same frozen rules snapshot."""
     existing = getattr(args, "_session_calendar", None)
     if existing is not None:
+        if existing.product != args.product.upper():
+            raise ValueError("注入的会话快照品种与策略不一致")
+        if exchange and existing.binding.exchange and exchange != existing.binding.exchange:
+            raise ValueError("会话快照交易所与真实合约不一致")
         return existing
-    from bomber.framework.trader.runtime.trading_sessions import load_sessions
-    return load_sessions(args.trading_calendar, args.product, purpose=session_source_purpose(args))
+    legacy = getattr(args, "trading_calendar", None)
+    if legacy is not None:
+        from bomber.framework.trader.runtime.trading_sessions import load_sessions
+        return load_sessions(legacy, args.product, purpose=session_source_purpose(args))
+    from bomber.framework.dataprep.session_inputs import load_session_inputs, session_inputs_from_args
+    return load_session_inputs(session_inputs_from_args(args, exchange=exchange),
+                               purpose=session_source_purpose(args))
 
 
 class MainEmaSessionLifecycle(CtpResumeLifecycle, CtpSessionLifecycle):
@@ -131,8 +140,8 @@ def parse_args(argv=None):
     parser.add_argument("--history-file", type=Path, help="盘前优先本地JSONL；无文件或不足则数据库补齐")
     parser.add_argument("--history-stage", choices=("auto", "preopen", "recovery"), default="auto")
     parser.add_argument("--history-missing-policy", choices=("fail", "allow"), default="fail")
-    parser.add_argument("--trading-calendar", type=Path,
-                        default=Path(__file__).with_name("shfe_cu_2026.json"))
+    from bomber.framework.dataprep.session_inputs import add_session_arguments
+    add_session_arguments(parser)
     parser.add_argument("--query-timeout", type=float, default=15)
     parser.add_argument("--max-notional", type=Decimal, default=Decimal(50000))
     parser.add_argument("--limit-offset-ticks", type=int, default=1)
@@ -252,8 +261,8 @@ def parse_args(argv=None):
                 or args.adopt_existing_position or args.expected_position is not None
                 or args.expected_trading_day or args.expected_source_day):
             parser.error("持续模式须为realtime SimNow CU/dolphindb，不使用接管或固定TD/来源日；日期由会话权威核对")
-        if args.quantity != 1 or not args.trading_calendar.is_file():
-            parser.error("首期持续模式限定一手目标且须提供有效交易日历")
+        if args.quantity != 1:
+            parser.error("首期持续模式限定一手目标")
         if args.resume and not args.state_file.is_file():
             parser.error("--resume要求已有检查点")
     elif args.resume_report or args.recovery_bars:
@@ -271,10 +280,10 @@ def parse_args(argv=None):
         parser.error("历史数据库Provider未注册")
     if args.history_config and not args.history_config.is_file():
         parser.error("历史Provider配置文件不存在")
-    if args.history_minutes or args.history_config or args.history_file:
-        from bomber.framework.trader.runtime.trading_sessions import validate_sessions
+    if args.run_forever or args.history_minutes or args.history_config or args.history_file:
+        from bomber.framework.dataprep.session_inputs import validate_session_arguments
         try:
-            validate_sessions(args.trading_calendar, args.product, purpose=session_source_purpose(args))
+            validate_session_arguments(args, purpose=session_source_purpose(args))
         except (ValueError, KeyError, OSError) as error:
             parser.error(f"历史会话日历无效：{error}")
     if args.recovery_bars and (args.history_minutes or args.history_config or args.history_file):
@@ -405,8 +414,8 @@ def assemble(args, references, driver, upstream, *, positions=None, account_rout
     assemble_strategy(runner, strategy, feeds={"ctp-bars": feed}, execution=execution, bindings=bindings)
     components = ({"ema": EmaCheckpoint(strategy, instrument)} if continuous or history_enabled else
                   {"live_session": SessionIdentityCheckpoint(recovery_identity(args, references, policy))})
-    calendar = runtime_sessions(args) if continuous or history_enabled else None
-    if calendar is not None and getattr(calendar, "schema_version", 1) == 2:
+    calendar = runtime_sessions(args, exchange=references.spec.venue) if continuous or history_enabled else None
+    if calendar is not None and calendar.requires_rules_checkpoint:
         from bomber.framework.calendars import SessionRulesCheckpoint
         components["session_rules"] = SessionRulesCheckpoint(calendar)
     if execution_policy.snapshot_state() != execution_policy.__class__().snapshot_state():

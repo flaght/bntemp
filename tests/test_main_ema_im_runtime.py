@@ -12,6 +12,7 @@ import pandas as pd
 
 from bomber.framework.trader.runtime.trading_sessions import IndexSessions, load_sessions, SHANGHAI
 from tests import run_main_ema_live as live_fixture
+from tests.session_fixtures import index_sessions
 
 ManualMd, BASE, MINUTE = live_fixture.ManualMd, live_fixture.BASE, live_fixture.MINUTE
 live, refs = live_fixture.live, live_fixture.refs
@@ -49,8 +50,9 @@ class ImRuntimeTests(unittest.TestCase):
             fast=1, slow=2, quantity=Decimal(1), limit_offset_ticks=1,
             max_notional=Decimal(2000000), state_file=None, history_minutes=2,
             history_config=None, history_db="dolphindb", history_file=path, history_missing_policy="fail",
-            history_stage="preopen", reference_timeout=15, trading_calendar=CALENDAR)
+            history_stage="preopen", reference_timeout=15, trading_calendar=None)
         values.update(changes)
+        values["_session_calendar"] = index_sessions(values["product"])
         if values["product"] == "IF" and "max_notional" not in changes:
             values["max_notional"] = Decimal(3000000)
         factor = Decimal("1.456591")
@@ -92,8 +94,7 @@ class ImRuntimeTests(unittest.TestCase):
         fixture, references = self.fixture("IF")
         transport, driver, _ = fixture.transport_driver()
         driver.start(lambda report: None)
-        args = self.args(fixture, product="IF", expected_instrument=None,
-            trading_calendar=self.if_calendar(fixture))
+        args = self.args(fixture, product="IF", expected_instrument=None)
         session = live.assemble(args, references, driver, ManualMd())
         fixture.addCleanup(session.runner.stop)
         controller = live.MainEmaSessionLifecycle(transport, md_front="tcp://fake:1234", orders=False)
@@ -118,8 +119,7 @@ class ImRuntimeTests(unittest.TestCase):
         fixture, references = self.fixture("IF")
         transport, driver, _ = fixture.transport_driver()
         driver.start(lambda report: None)
-        args = self.args(fixture, product="IF", expected_instrument=None, history_minutes=3,
-            trading_calendar=self.if_calendar(fixture))
+        args = self.args(fixture, product="IF", expected_instrument=None, history_minutes=3)
         session = live.assemble(args, references, driver, ManualMd())
         fixture.addCleanup(session.runner.stop)
         controller = live.MainEmaSessionLifecycle(transport, md_front="tcp://fake:1234", orders=False)
@@ -159,8 +159,9 @@ class ImRuntimeTests(unittest.TestCase):
         with redirect_stderr(StringIO()), self.assertRaises(SystemExit):
             live.parse_args([*base, "--expected-instrument", "IM2610.CFFEX", "--history-minutes", "240"])
         args = live.parse_args([*base, "--expected-instrument", "IM2610.CFFEX", "--history-minutes", "240",
-            "--trading-calendar", str(CALENDAR)])
+            "--calendar-id", "china.cffex", "--no-session-overrides"])
         self.assertEqual(args.mode, "recording")
+        self.assertIsNone(args.trading_calendar)
 
     def test_formal_recording_lifecycle_preloads_history_then_records_only_new_minute(self):
         fixture, references = self.fixture()

@@ -57,7 +57,7 @@ class CalendarSnapshot:
 
 
 class CalendarProvider(Protocol):
-    def snapshot(self, start: date, end: date) -> CalendarSnapshot: ...
+    def snapshot(self, start: date | None = None, end: date | None = None) -> CalendarSnapshot: ...
 
 
 class NativeCalendarProvider:
@@ -67,7 +67,11 @@ class NativeCalendarProvider:
         if self.calendar_id not in {"china.cffex", "china.sse"}:
             raise ValueError("当前有明确维护范围的日历为china.cffex、china.sse")
 
-    def snapshot(self, start=RULES_START, end=RULES_END):
+    def snapshot(self, start=None, end=None):
+        start = RULES_START if start is None else start
+        end = RULES_END if end is None else end
+        if type(start) is not date or type(end) is not date:
+            raise ValueError("日历查询边界须为date或None")
         if start > end or start < RULES_START or end > RULES_END:
             raise ValueError(f"编译日历覆盖不足: {start}..{end}; 已维护{RULES_START}..{RULES_END}")
         try:
@@ -104,7 +108,7 @@ class ExportedCalendarProvider:
     def __init__(self, path):
         self.path = Path(path)
 
-    def snapshot(self, start, end):
+    def snapshot(self, start=None, end=None):
         metadata = json.loads(Path(str(self.path) + ".manifest.json").read_text())
         if metadata.get("format_version") != 1 or metadata.get("sha256") != hashlib.sha256(self.path.read_bytes()).hexdigest():
             raise ValueError("日历导出版本或文件摘要不符")
@@ -122,5 +126,9 @@ class ExportedCalendarProvider:
             tuple(day for day, row in zip(expected, rows) if row["is_trading_day"] == "1"), "file")
         if snapshot.fingerprint != metadata["fingerprint"] or len(snapshot.days) != metadata["trading_days"]:
             raise ValueError("日历快照身份或内容不符")
-        snapshot.require_range(start, end)
+        requested_start = first if start is None else start
+        requested_end = last if end is None else end
+        if type(requested_start) is not date or type(requested_end) is not date:
+            raise ValueError("日历查询边界须为date或None")
+        snapshot.require_range(requested_start, requested_end)
         return snapshot

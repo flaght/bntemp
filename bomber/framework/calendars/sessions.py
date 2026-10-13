@@ -80,6 +80,7 @@ class TradingWindow:
 
 class SessionCalendar:
     """Expand only requested natural-date anchors; all consumers share the same minute buckets."""
+    requires_rules_checkpoint = True
     def __init__(self, hours: TradingHoursSnapshot, calendar: CalendarSnapshot,
                  binding: SessionBinding, *, overrides=(), max_minutes=10000):
         if not isinstance(hours, TradingHoursSnapshot) or not isinstance(calendar, CalendarSnapshot):

@@ -181,76 +181,139 @@ conflicting applicable rules or overlapping intervals fail rather than depend
 on read order. The caller declares the complete exception set for the range.
 Neither weekdays nor the next trading date alone prove that a night opens.
 
-## Runtime configuration and compatibility
+## Direct Provider assembly (default)
 
-The existing `load_sessions(path, product)` also accepts an assembly JSON with
-`schema_version=2`. It is application configuration, not a manifest attached to
-`trading_hours.feather`. A Live example is:
+Formal EMA history/continuous startup and recovery precheck no longer choose a
+CU JSON file by default. They read reusable hours through the configured source
+and obtain dates directly from `CalendarProvider.snapshot()`. Calling the native
+provider without dates uses its maintained coverage; calling an exported provider
+without dates uses the coverage in that date export. Backtest task dates remain
+query parameters, not a second list of trading dates.
 
-```json
-{
-  "schema_version": 2,
-  "product": "IM",
-  "calendar": {
-    "backend": "native", "calendar_id": "china.cffex",
-    "start": "2026-01-01", "end": "2026-12-31"
-  },
-  "binding": {
-    "hours_code": "IM", "timezone": "Asia/Shanghai",
-    "exchange": "CFFEX", "asset_type": "FUTURE"
-  },
-  "hours": {
-    "backend": "dolphindb", "table": "trading_hours"
-  },
-  "overrides": []
-}
+```python
+from bomber.framework.dataprep.session_inputs import SessionInputs, load_session_inputs
+
+# Local backtest: standard lowercase fields, no hours or calendar JSON.
+inputs = SessionInputs(
+    product="ZN", calendar_id="china.sse", exchange="SHFE",
+    backend="file", hours_file="data/trading_hours.feather",
+    overrides_file="data/session_overrides.feather",
+)
+sessions = load_session_inputs(inputs)
+
+# Live: database/environment configuration, same calendar and rule parser.
+live_inputs = SessionInputs(
+    product="ZN", calendar_id="china.sse", exchange="SHFE",
+    hours_table="trading_hours", overrides_table="trading_session_overrides",
+)
+live_sessions = load_session_inputs(live_inputs)
 ```
 
-For a backtest, replace `hours` with
-`{"backend":"file","path":"trading_hours.feather"}`; paths are relative to the
-assembly file. The date calendar can also use
-`{"backend":"file","calendar_id":"...","path":"calendar.csv","start":"...","end":"..."}`
-with the existing verified calendar export. This pins the same date rules locally.
-An explicit `overrides: []` declares no exceptions for the configured range;
-populate it when night cancellations or special hours apply. For example:
+The commodity example explicitly selects the supported `china.sse` date rules;
+it does not register an automatic SHFE/SSE alias. Set the actual source locations,
+calendar binding and authoritative exceptions for the deployment. Native coverage
+currently ends in 2026; requests beyond maintained dates fail.
 
-```json
-{
-  "date_basis": "NIGHT_START", "date": "2026-09-30",
-  "action": "CANCEL", "target": "NIGHT"
-}
+For a dataset whose scope has been checked and has no exceptions, replace
+`overrides_file`/`overrides_table` with `no_overrides=True`. Missing exception
+configuration, failed queries and truncated results are not treated as empty.
+An explicitly read empty exception table is a known empty set.
+
+Callers that already own an open source may use
+`build_session_calendar(source, binding, calendar_provider, overrides=...)`.
+This accepts a native or exported date Provider and does not require a JSON path,
+start/end declaration or manual trading-day list. A provided empty tuple declares
+no exceptions; `None` means unknown and is rejected. The source's open/close
+lifecycle remains caller-owned.
+
+## Special-date source format
+
+The new `session_overrides` dataset is read from DolphinDB or Feather. Its seven
+standard fields are:
+
+```text
+code, override_id, date_basis, date, action, target, segments
 ```
 
-Use `--trading-calendar /path/to/session.json` for the EMA Live/history and
-continuous entry points. CLI validation of v2 configuration does not query the
-database or read connection credentials. Actual loading occurs at runtime and
-closes the reference connection after obtaining a frozen snapshot. Formal Live
-v2 hours use DolphinDB; local source testing requires the existing
-`--allow-file-reference-test` flag. Existing channel/product execution restrictions
-still apply; a new hours row does not expand order authorization.
+`code` is the explicit hours-rule key. DolphinDB source `Code` is mapped to `code`;
+files already use lowercase names. `override_id` must be unique within a code.
+`date` is a DATE or ISO date, and `date_basis` is `TRADING_DAY` or `NIGHT_START`.
+`action` is `CANCEL`/`REPLACE`; `target` is `DAY`, `NIGHT`, `ALL` or a segment ID.
+For a cancellation, `segments` is NULL or `[]`. For a replacement it holds a list
+of the six segment fields (the hours schema without `code`). Source storage may
+use a JSON **text cell** for this list or an Arrow list of objects; this is payload
+inside the table, not a separate JSON calendar file. A full empty replacement
+explicitly closes the selected group.
 
-Editable assembly examples are checked in at
-`scripts/integration/reference_data/configs/trading_hours_live.example.json` and
-`trading_hours_backtest.example.json`. They use the already supported CFFEX/IM
-binding as an illustration; configure the actual code, calendar, exception set,
-database/table or Feather path before use. These are application configuration
-files and do not accompany or validate the hours file as a manifest would.
+Example cancellation row:
 
-The continuous supervisor passes the same session snapshot to each worker. New
-v2 EMA persisted states include a `session_rules` fingerprint component; changing
-hours, calendar coverage/rules, bindings or exceptions rejects resume until an
-explicit migration is designed. The recovery precheck verifies the same identity.
-Old v1 session JSON remains supported as a thin value/configuration adapter;
-its window and minute algorithms now delegate to the public service.
-`ImDayWindow` remains a single-day IM probe adapter using the same service;
-`SessionHistoryWindow` exposes the generic service for new historical consumers.
+```text
+code=ZN
+ override_id=holiday-night
+ date_basis=NIGHT_START
+ date=2026-09-30
+ action=CANCEL
+ target=NIGHT
+ segments=[]
+```
 
-Independent offline verification:
+This is a format illustration; the deployed records must be checked against the
+actual exchange/series rules. No table is automatically created or populated.
+Set the source table through `--session-overrides-table` or
+`DDB_SESSION_OVERRIDES_TABLE`; no undeclared table is guessed. In a backtest pass
+`overrides_file` to `SessionInputs`. Replacements and cancellations contribute to
+the session fingerprint. Only records in the date Provider's covered range are
+selected. Historical publication/revision selection remains outside these static
+snapshot readers.
+
+## EMA runtime arguments and explicit legacy compatibility
+
+Use the following session arguments when history windows or continuous supervision
+are enabled:
+
+```text
+--calendar-id               or BOMBER_CALENDAR_ID
+--hours-code                optional explicit sharing/inheritance key
+--session-timezone          default Asia/Shanghai
+--trading-hours-database     optional; otherwise reference database configuration
+--trading-hours-table        optional; otherwise DDB_TRADING_HOURS_TABLE
+--session-overrides-table    or DDB_SESSION_OVERRIDES_TABLE
+--no-session-overrides      explicit known-empty alternative to an exception source
+```
+
+Formal Live hours and exceptions use DolphinDB. For file-source testing, use the
+existing `--reference-source file --allow-file-reference-test` authorization and
+pass `--trading-hours-file` and `--session-overrides-file` (or the known-empty flag).
+Backtest libraries use local file inputs directly. CLI validation is local and
+does not read credentials or create an SDK connection. Source loading occurs
+only when the runtime needs a calendar.
+
+`--trading-calendar /path/to/old.json` is retained as an **explicit** v1/v2
+compatibility entry. Its parser remains versioned; it cannot be mixed with direct
+Provider flags. The JSON examples in
+`scripts/integration/reference_data/configs/` illustrate that compatibility path,
+not the default assembly. Existing legacy files and checkpoints do not have their
+rule identities silently rewritten.
+
+The continuous supervisor passes one frozen snapshot to its workers. Direct
+Provider and v2 states include `session_rules`; changes to hours, date rules or
+coverage, bindings or exceptions reject resume until an explicit migration is
+provided. The recovery precheck uses the same source assembly and identity check.
+Old v1 config uses the shared algorithm through the compatibility adapter.
+Existing channel/product order restrictions remain unchanged by session loading.
+
+Historical consumers use `SessionHistoryWindow` (the public service).
+`ImDayWindow` remains a single-day probe adapter. Integration tests use in-memory
+session snapshots from `tests/session_fixtures.py`; fixed dates there belong to
+the test fixture, not the application's default data source.
+
+Independent verification:
 
 ```bash
-python -m unittest tests.test_trading_hours tests.test_trading_calendar \
-  tests.test_calendars_compiled -v
+python -m unittest tests.test_trading_hours tests.test_session_inputs \
+  tests.test_trading_calendar tests.test_calendars_compiled -v
+python -m tests.run_main_ema_acceptance --only trading-hours
 ```
 
-The trading-hours tests use a fake DolphinDB session plus real Feather round trips;
-they do not establish a connection to a deployed database or order gateway.
+The tests use fake DolphinDB sessions plus real Feather round trips. They do not
+connect to a deployed database or order gateway.

@@ -70,7 +70,7 @@ def _available(row):
 
 
 def _business_key(dataset, row):
-    if dataset is ReferenceDataset.TRADING_HOURS:
+    if dataset in {ReferenceDataset.TRADING_HOURS, ReferenceDataset.SESSION_OVERRIDES}:
         raise ValueError("trading_hours使用完整静态快照/Feather，不支持逐行参考版本导出")
     if dataset in {ReferenceDataset.FUTURES_BASIC, ReferenceDataset.OPTIONS_BASIC}:
         return (row["symbol"],)
