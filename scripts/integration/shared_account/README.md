@@ -39,6 +39,18 @@ python -u -m scripts.integration.shared_account.run \
   --connect --enable-orders --confirm-simnow
 ```
 
+遇到`TD交易日与共享配置不一致`时，先取得当次TD只读结果：
+
+```bash
+python -u -m scripts.integration.ctp.td_readonly --connect --timeout 30
+```
+
+核对输出的`trading_day`与TD前置。共享入口现在在日期检查之前打印实际TD日、
+预期TD日、环境及MD/TD前置，组装失败时也将这些值保存在报告`td_preflight`中。
+日历自然日不能替代柜台交易日。只读结果若来自回放环境，须核对整组MD/TD前置，
+配置`replay`及独立的原始`replay_md_trading_day`；资料日仍按该TD日的实际资料核对。
+不要仅修改一个日期而保留错误的实时／回放语义。
+
 `strategies`使用唯一`strategy_id`、`kind`、独立`state_file`及原入口的业务`argv`。
 宿主统一管理mode、授权、TD日、环境、会话时长和恢复，策略参数不能覆盖这些项。
 同一种策略可配置多个不同ID。`stop_after_seconds`可独立停止一个策略，其他策略继续。

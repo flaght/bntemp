@@ -122,3 +122,26 @@ README已改为项目内`cp -n example.json session.json`的完整创建、修�
 本机`SharedConfigTests`四项通过，其中新增缺文件回归验证`build_host`未被调用。
 原143项离线结果保留为此前版本证据；本次没有重跑交易核心或连接柜台。
 当前修正版本使用`GAP10_SHARED_ACCOUNT_20261013_REV2_SHA256.txt`，原清单保留历史。
+
+## TD交易日预检诊断修正
+
+用户连续提供两次Linux启动输出，报告为`shared-simnow-1791896943523363972`和
+`shared-simnow-1791897246899904837`。配置TD日均为20261013、environment为realtime，
+两次在TD登录后的日期检查处因不一致退出；尚未进入参考资料准备、策略装配或报单。
+旧输出未包含柜台实际交易日，不能猜测为次日，也不能推定所用前置属于哪套环境。
+`lshw/dmidecode`缺失提示未使这两次流程停在登录前，当前异常是日期校验。
+
+共享入口现在先打印并保留实际TD日、预期TD日、环境、MD/TD前置和预检报单数，
+再执行原日期校验。失败报告即使没有Host也保存`td_preflight`。不自动改日期、
+不跳过检查、不改变MD原始交易日或参考资料日语义。排查使用既有只读入口：
+
+```bash
+python -u -m scripts.integration.ctp.td_readonly --connect --timeout 30
+```
+
+核对`CTP连接配置`与`CTP只读结果`两行之后再选择一致的配置／前置。
+本机shared-account 31项通过，exit 0；报告为
+`tests/results/main-ema-acceptance-1791897478995121000/summary.json`。
+新增三个用例覆盖实际/预期日可见、匹配时保留replay原始MD日、组装失败报告仍保留
+实际TD日。未重跑无变化的live-common，不把不同版本用例数叠加。
+当前交付清单为`GAP10_SHARED_ACCOUNT_20261013_REV3_SHA256.txt`，旧版本证据保留。

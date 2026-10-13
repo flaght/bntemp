@@ -27,7 +27,22 @@ def parse_args(argv=None):
     return args
 
 
-def build_host(config, *, resume):
+def validate_td_preflight(config, driver, *, md_front, td_front, diagnostics):
+    """先保留TD实际返回值，再校验；组装失败也能写入报告，不猜测交易日。"""
+    diagnostics.update(environment=config["environment"], expected_td_trading_day=config["trading_day"],
+        observed_td_trading_day=driver.trading_day, md_front=md_front, td_front=td_front,
+        preflight_orders_submitted=driver.submitted_orders)
+    print(f"共享账户TD预检: environment={diagnostics['environment']} "
+          f"actual_TD={diagnostics['observed_td_trading_day']} "
+          f"expected_TD={diagnostics['expected_td_trading_day']} MD={md_front} TD={td_front} "
+          f"submitted_orders={diagnostics['preflight_orders_submitted']}", flush=True)
+    if diagnostics["observed_td_trading_day"] != diagnostics["expected_td_trading_day"]:
+        raise RuntimeError(f"TD交易日与共享配置不一致: actual={diagnostics['observed_td_trading_day']} "
+            f"expected={diagnostics['expected_td_trading_day']} environment={diagnostics['environment']} "
+            f"TD={td_front}；请核对TD前置和会话环境，并用只读结果确认配置交易日")
+
+
+def build_host(config, *, resume, diagnostics=None):
     from bomber.framework.trader.execution.ctp import CtpNativeTraderDriver, CtpTdApiTransport
     from bomber.framework.trader.execution.builders import build_ctp_portfolio_execution
     from bomber.framework.trader.execution.shared import SharedAccountExecutionService, SharedRiskBudget
@@ -40,13 +55,15 @@ def build_host(config, *, resume):
     from .factories import strategy_arguments, instrument_specs, assemble_strategy_session
 
     resources = ExitStack()
+    diagnostics = {} if diagnostics is None else diagnostics
     driver = host = None
     try:
         account_config = config["account"]
         transport = build_simnow_transport(CtpTdApiTransport, client_id=account_config["client_id"],
             flow_path=f"/tmp/{account_config['client_id']}-td", timeout_seconds=15)
+        md_front = required("CTP_MD_ADDRESS")
         if config["environment"] == "replay":
-            validate_replay_environment(required("CTP_MD_ADDRESS"), transport.front, transport.production_mode)
+            validate_replay_environment(md_front, transport.front, transport.production_mode)
         CtpSharedAccountLifecycle.acquire(resources, transport, environment="simnow")
         driver_holder = {}
         def disconnected(reason):
@@ -57,8 +74,8 @@ def build_host(config, *, resume):
             enable_simnow_orders=True, max_session_orders=account_config["max_session_orders"],
             disconnect_handler=disconnected)
         driver.start(lambda report: None)
-        if driver.trading_day != config["trading_day"]:
-            raise RuntimeError("TD交易日与共享配置不一致")
+        validate_td_preflight(config, driver, md_front=md_front, td_front=transport.front,
+                              diagnostics=diagnostics)
         if resume:
             assert_account_ready(driver)
         else:
@@ -67,7 +84,7 @@ def build_host(config, *, resume):
         for row in config["strategies"]:
             entry, args = strategy_arguments(row, config, resume=resume)
             context = LiveRunContext(driver.trading_day, resources)
-            lifecycle = SimpleNamespace(transport=transport, md_front=required("CTP_MD_ADDRESS"))
+            lifecycle = SimpleNamespace(transport=transport, md_front=md_front)
             # 每个MD拥有独立flow目录；同策略类型也可以多实例。
             inputs = entry.prepare_inputs(args, context, lifecycle)
             upstream_config = getattr(inputs.upstream, "config", None)
@@ -137,9 +154,10 @@ def main(argv=None):
     report = LiveRunReport(config["report_dir"], prefix="shared-simnow", metadata={"config": config})
     report.begin()
     host = None
+    diagnostics = {}
     status, failure = "failed", None
     try:
-        host = build_host(config, resume=args.resume)
+        host = build_host(config, resume=args.resume, diagnostics=diagnostics)
         host.start()
         started = time.monotonic()
         until = started + config["seconds"]
@@ -164,6 +182,7 @@ def main(argv=None):
         finally:
             snapshot = host.snapshot() if host is not None else {}
             report.write(status=status, fields={**snapshot, "failure": failure,
+                "td_preflight": diagnostics,
                 "verification": "runtime_completed_real_fill_acceptance_separate",
                 "final_gross": host.account.final_gross if host else None,
                 "final_active_orders": host.account.final_active_orders if host else None},

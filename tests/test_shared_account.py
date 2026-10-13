@@ -609,6 +609,61 @@ class SharedConfigTests(unittest.TestCase):
             self.assertIn("未建立任何连接", output.getvalue())
             build.assert_not_called()
 
+    def test_td_mismatch_exposes_actual_day_and_retains_diagnostics(self):
+        from scripts.integration.shared_account.run import validate_td_preflight
+        from contextlib import redirect_stdout
+        from io import StringIO
+        config, driver, diagnostics = self.config(), NS(trading_day="20261014", submitted_orders=0), {}
+        config["environment"] = "realtime"
+        output = StringIO()
+        with redirect_stdout(output), self.assertRaisesRegex(RuntimeError, "actual=20261014 expected=20261013"):
+            validate_td_preflight(config, driver, md_front="tcp://fake:30011", td_front="tcp://fake:30001",
+                                  diagnostics=diagnostics)
+        self.assertEqual(diagnostics["observed_td_trading_day"], "20261014")
+        self.assertEqual(diagnostics["preflight_orders_submitted"], 0)
+        self.assertIn("actual_TD=20261014", output.getvalue())
+        self.assertEqual(config["trading_day"], "20261013")
+
+    def test_matching_td_day_keeps_original_replay_time_semantics(self):
+        from scripts.integration.shared_account.run import validate_td_preflight
+        from contextlib import redirect_stdout
+        from io import StringIO
+        config = {**self.config(), "environment": "replay", "replay_md_trading_day": "20260930"}
+        diagnostics = {}
+        with redirect_stdout(StringIO()):
+            validate_td_preflight(config, NS(trading_day="20261013", submitted_orders=0),
+                md_front="tcp://fake:40011", td_front="tcp://fake:40001", diagnostics=diagnostics)
+        self.assertEqual(diagnostics["observed_td_trading_day"], "20261013")
+        self.assertEqual(config["replay_md_trading_day"], "20260930")
+
+    def test_build_failure_still_reports_td_preflight_without_host(self):
+        from scripts.integration.shared_account import run
+        from contextlib import redirect_stdout
+        from io import StringIO
+        reported = {}
+        class Report:
+            def __init__(self, *args, **kwargs): pass
+            def begin(self): pass
+            def write(self, **kwargs): reported.update(kwargs)
+        replacements = {"dotenv": NS(load_dotenv=lambda *_: None)}
+        for name in ("bomber", "bomber.framework", "bomber.framework.trader", "bomber.framework.trader.runtime"):
+            module = ModuleType(name)
+            module.__path__ = []
+            replacements[name] = module
+        replacements["bomber.framework.trader.runtime.reports"] = NS(LiveRunReport=Report)
+        def fail(config, *, resume, diagnostics):
+            run.validate_td_preflight(config, NS(trading_day="20261014", submitted_orders=0),
+                md_front="tcp://fake:30011", td_front="tcp://fake:30001", diagnostics=diagnostics)
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "session.json"
+            path.write_text(json.dumps({**self.config(), "environment": "realtime"}))
+            with patch.dict(sys.modules, replacements), patch.object(run, "build_host", side_effect=fail), \
+                    redirect_stdout(StringIO()), self.assertRaisesRegex(RuntimeError, "actual=20261014"):
+                run.main(["--config", str(path), "--connect", "--enable-orders", "--confirm-simnow"])
+        self.assertEqual(reported["status"], "failed")
+        self.assertIsNone(reported["session"])
+        self.assertEqual(reported["fields"]["td_preflight"]["observed_td_trading_day"], "20261014")
+
 
 if __name__ == "__main__":
     unittest.main()
