@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "date": "2026-10-13",
+  "status": "offline_passed_remote_readonly_reconciliation_pending",
+  "report": "tests/results/main-ema-acceptance-1791905186158608000/summary.json",
+  "report_sha256": "163974ea7705792108b6f26002385d058a1c66c103bd1677bdb9c573585b0f06",
+  "counts": {
+    "shared-account": 50,
+    "live-common": 116
+  },
+  "remote_user_checkpoint": {
+    "generation": 3021,
+    "saved_at_ns": 1791903546244387339,
+    "failed": true,
+    "pending": true,
+    "local_nonterminal_orders": 0,
+    "driver_orders": 0,
+    "next_ref": 32,
+    "source_revisions": {
+      "cross-rb-hc-beta": 14,
+      "ema-rb-alpha": 3
+    }
+  },
+  "command_mode": "--connect --resume --reconcile-only",
+  "guarantees": [
+    "no strategy or MD start; driver orders disabled",
+    "same account/route/budget/TD identity",
+    "finished orders and allocations only",
+    "authoritative full gross/buckets/ownership/external baseline and funds/orders validation",
+    "backup original checkpoint before save",
+    "preserve source revisions and ownership; suspend/freeze unused goals",
+    "ordinary resume still rejects pending flags"
+  ],
+  "local_live_orders": 0,
+  "scope_exclusions": [
+    "cross-day",
+    "unknown/missing fills reconstruction",
+    "active order reconciliation",
+    "automatic trading resume"
+  ]
+}

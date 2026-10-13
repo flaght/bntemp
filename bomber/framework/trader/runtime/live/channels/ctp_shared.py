@@ -1,6 +1,7 @@
 """共享账户CTP生命周期；一个TD、一个账户检查点、同机唯一写入锁。"""
 
 import time
+import os
 from decimal import Decimal
 
 from bomber.framework.trader.persistence import JsonStateStore, RuntimeStateManager
@@ -167,6 +168,60 @@ class CtpSharedAccountLifecycle:
             self._validate_account()
         self.manager.save()
         self.client.arm_demo(self.client.DEMO_CONFIRMATION)
+
+    def reconcile_checkpoint(self):
+        """显式无报单修复：完整同日权威对账、备份原文件后保存暂停检查点。"""
+        if self._started or self.service._leases:
+            raise RuntimeError("检查点只读修复须在宿主和策略启动前执行")
+        restored = self.manager.restore()
+        if restored is None:
+            raise RuntimeError("共享账户修复文件不存在")
+        if self.ledger.state().trading_day != self.expected_day:
+            raise RuntimeError("只读检查点修复仅支持同交易日")
+        if self.service._active_instruments():
+            raise RuntimeError("检查点包含未结束订单/冻结份额，拒绝自动修复")
+        self.service.validate_owned_state()
+        original_checkpoint = self.service.snapshot_state()
+        backup = self.manager.repository.path.with_name(
+            self.manager.repository.path.name + f".before-reconcile-g{restored.generation}.json")
+        try:
+            self.client.start()  # 原恢复链校验未知活动订单、账户资金和净仓。
+            if self.driver.trading_day != self.expected_day:
+                raise RuntimeError("只读修复TD交易日不符")
+            self._validate_account()  # 总仓、今昨桶、归属、外部基线、活动订单。
+            current = self.manager.repository.load()
+            if current is None or current.generation != restored.generation:
+                raise RuntimeError("权威查询期间检查点发生变化，拒绝修复")
+            original_bytes = self.manager.repository.path.read_bytes()
+            if backup.exists():
+                if backup.read_bytes() != original_bytes:
+                    raise RuntimeError("同代修复备份内容不一致")
+            else:
+                with backup.open("xb") as output:
+                    output.write(original_bytes)
+                    output.flush()
+                    os.fsync(output.fileno())
+            # 只写一次最终检查点；冻结过程中不触发中间版本自动保存。
+            checkpoint = self.service._checkpoint
+            self.service._checkpoint = None
+            try:
+                self.service.reconcile_finished_checkpoint()
+                self._validate_account()
+                final_gross = occupied_positions(self.transport)
+                saved = self.manager.save()
+            except Exception:
+                self.service.restore_state(original_checkpoint)
+                raise
+            finally:
+                self.service._checkpoint = checkpoint
+            self.final_gross = final_gross
+            self.final_active_orders = 0
+            return {"backup_file": str(backup), "previous_generation": restored.generation,
+                "saved_generation": saved.generation, "orders_submitted": self.driver.submitted_orders,
+                "authorized": self.client.is_armed, "strategies_started": False}
+        finally:
+            self.client.stop()
+            self.driver.stop()
 
     def abort_preparation(self):
         """装配/策略恢复失败时禁止清理过程覆盖原账户文件。"""

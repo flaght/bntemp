@@ -321,6 +321,20 @@ class SharedAccountExecutionService(AccountExecutionService):
                 self._failed = True
                 raise
 
+    def reconcile_finished_checkpoint(self):
+        """权威账户校验后由生命周期调用；只冻结贡献，不授权或重发目标。"""
+        with self._dispatch_lock:
+            if (self._leases or self.client.is_armed or not self.client.is_reconciled
+                    or self.client.report_errors or self._active_instruments()
+                    or self.position_manager.is_recovery_required(self.client_id)):
+                raise RuntimeError("只读修复要求未授权、已对账且不存在未结束订单或冻结份额")
+            self.validate_owned_state()
+            self._failed = self._pending = False
+            self._suspended.update(self._ports)
+            self._draining.update(self._ports)
+            # 全部订单/冻结份额已结束，poll只将贡献冻结在当前归属量。
+            self.poll()
+
     def _route_event(self, event):
         try:
             self._route_owned_event(event)
