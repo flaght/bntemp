@@ -132,7 +132,9 @@ class SharedAccountExecutionService(AccountExecutionService):
                 raise RuntimeError("共享执行预算缺少当前有效参考价")
             notional += amount * reference.price * limits.contract_multiplier
         if quantity > budget.max_gross_quantity or notional > budget.max_gross_notional:
-            raise ValueError("策略或账户归属总量／名义金额超过预算")
+            raise ValueError(f"策略或账户归属总量／名义金额超过预算: gross_quantity={quantity} "
+                f"max_gross_quantity={budget.max_gross_quantity} gross_notional={notional} "
+                f"max_gross_notional={budget.max_gross_notional}")
 
     def submit_targets(self, request):
         with self._dispatch_lock:
