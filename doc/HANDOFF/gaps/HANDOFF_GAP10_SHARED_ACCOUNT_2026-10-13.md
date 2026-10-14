@@ -495,3 +495,34 @@ is_simnow_session，此属性还要求_enable_simnow_orders，默认禁单的只
 GAP10_MOTHER_READONLY_IDENTITY_FIX_20261014.json，交付REV16。Linux同步后
 先重跑受控组，再用原connect只读命令取得真实盘口/合约计划，不启用submit，
 不修改原账户状态或预算。本轮没有连接柜台，真实撤单待验，GAP10整体仍开放。
+
+## 2026-10-14 真实零成交母单撤单与部分成交专项入口（REV17）
+
+用户提供shared-mother-probe-1791959032663749879停机摘要及原生events.txt，
+同一cu2612.SHFE两手母单ACCEPTED后，由非提交者mother-probe-one停止，随后
+CANCELED，冻结双来源各1手、token及deadline一致，peer仍活动。发单1张、成交0、
+最终活动单0、原检查点哈希不变、正常停机。零成交共享母单撤单阶段通过，逐笔
+证据GAP10_SHARED_MOTHER_CANCEL_SIMNOW_20261014.json。它不覆盖真实部分成交、
+拒单或撤单后peer实际重规划成交，GAP10整体保持开放。
+
+应用入口增加--cancel-after partial及--partial-wait-seconds（默认30秒、1至60秒）。
+只读预检可用--passive-ticks 0取得本方买一/卖一计划，仍禁止跨对手价；提交必须
+显式指定本次instrument/limit-price及原双授权。两来源各1手、最多一张2手母单，
+复用原共享端口、Runner、冻结归属与持久化，不启动原策略或修改原检查点。
+受理后等待真实PARTIALLY_FILLED才停止非提交者撤余单，继续周期账户权威查询和
+行情健康检查。已批准限价在等待期间不要求持续被动，仍检查行情时效/日/边界/预算。
+
+partial_cancel_acceptance独立判定：同单部分成交在停止请求前、随后原生CANCELED、
+peer活动及本轮正常结束才passed；无成交超时或抢先全成交为not_exercised；仅在
+超时撤单期间才迟到的部分成交不能登记该项通过。Native CANCELED的filled_quantity
+为0是状态回报，不撤回先前成交，必须结合PARTIALLY_FILLED和最终归属/柜台总仓。
+新增仓位保留在独立测试account.json，不自动平仓；unexpected_fill沿用原字段，
+本模式下表示测试合约发生过成交，不能单独用该旗标判断专项通过或失败。出现成交
+后先核对原会话范围外基线，不删除新账本或直接恢复原会话。
+
+最终集中报告tests/results/main-ema-acceptance-1791959866540020000，共享64、
+母单15、公共116，共195项通过。新增回归覆盖部分成交触发、零成交超时、抢先全
+成交、超时撤单迟到成交、行情故障正常撤单，以及原受理模式边界。传输/SDK类型
+仍为替身，本机没有连接柜台；详细证据GAP10_PARTIAL_CANCEL_PROBE_OFFLINE_20261014.json。
+REV17交付后Linux先校验文件、跑母单组，再进行partial只读预检取得新盘口计划；
+不能复用旧110470价格或将离线通过当成真实部分成交验收。

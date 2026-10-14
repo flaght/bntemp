@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "date": "2026-10-14",
+  "status": "real_simnow_shared_mother_zero_fill_cancel_passed",
+  "evidence_origin": "user_pasted_submission_summary_and_native_events",
+  "report": "shared-mother-probe-1791959032663749879",
+  "summary_input_sha256": "c63474ded6b60ef7fae33792cc524c223f93dfdace1b7e534c62300c170a12bb",
+  "orders_submitted": 1,
+  "instrument": "cu2612.SHFE",
+  "side": "BUY",
+  "quantity": "2",
+  "limit_price": "110470",
+  "position_effect": "OPEN",
+  "client_order_id": "CTP-9999-097561-20261014-2",
+  "venue_order_id": "459403",
+  "allocation_token": "162b44cc14a14314b8c99c9ebe98a29b",
+  "submitting_strategy": "mother-probe-two",
+  "stopped_non_submitting_owner": "mother-probe-one",
+  "frozen_legs_in_both_reports": [
+    {
+      "strategy_id": "mother-probe-one",
+      "target_key": "main",
+      "quantity": "1",
+      "filled": "0",
+      "target_revision": 1,
+      "deadline_ns": 1791959068705696243
+    },
+    {
+      "strategy_id": "mother-probe-two",
+      "target_key": "main",
+      "quantity": "1",
+      "filled": "0",
+      "target_revision": 1,
+      "deadline_ns": 1791959068734862454
+    }
+  ],
+  "actual_send_deadline_ns": 1791959068705696243,
+  "events": [
+    {
+      "type": "ACCEPTED",
+      "sequence": 1,
+      "report_id": "CTP-9999-097561-20261014-2:1",
+      "ts_event": 1791959039139903675,
+      "filled_quantity": "0"
+    },
+    {
+      "type": "CANCELED",
+      "sequence": 2,
+      "report_id": "CTP-9999-097561-20261014-2:2",
+      "ts_event": 1791959039180721503,
+      "filled_quantity": "0"
+    }
+  ],
+  "stop_requested_at_ns": 1791959039142798400,
+  "owner_stopped_at_ns": 1791959039264109001,
+  "cancel_after_request_ms": 37.923103,
+  "peer_state_after_owner_cancel_from_summary": {
+    "strategy_id": "mother-probe-two",
+    "active": true,
+    "source_revision": 1,
+    "target_quantity": "1"
+  },
+  "peer_followup_orders_or_fills": 0,
+  "protected_state_unchanged_from_summary": true,
+  "protected_hashes_from_summary": {
+    "shared-account-cu-au.json": "a008f531725dc1cd52baf061abedabbb59e2cc3e0f8037cc2400947e6f579df8",
+    "shared-account.json": "f18816b79a820fbe9a3bdfeea0776f7dc3ea53c463bbc58c0224060236d17b6f"
+  },
+  "unexpected_fill": false,
+  "final_active_orders": 0,
+  "runtime_status": "completed",
+  "remaining": [
+    "real partial-fill then shared cancellation",
+    "real rejection and fail-closed recovery",
+    "post-cancel peer replan/live fills not exercised by this one-order probe",
+    "other existing GAP10 cross-process/cross-host/BN/multi-account scope"
+  ],
+  "gap10_closed": false
+}

@@ -293,3 +293,27 @@ peer_state_after_owner_cancel和unexpected_fill。正式交易状态持久化仍
 通过；真实部分成交和拒单按实际回报分别判断。
 本机/远端受控装配回归可单独运行`python -u -m tests.run_main_ema_acceptance --only shared-mother-probe`；
 该组传输为替身，不能代替此入口在Linux上的只读和SimNow实际验收。
+
+零成交共享母单撤单已有真实回报后，部分成交专项使用同一入口：
+
+```bash
+python -u -m scripts.integration.shared_account.mother_probe \
+  --connect --trading-day 20261014 --product CU \
+  --cancel-after partial --partial-wait-seconds 30 --passive-ticks 0
+```
+
+这仍是只读预检，不发单。partial模式允许限价位于本方买一/卖一，仍禁止跨对手价，
+仍校验价位网格、涨跌停、行情时效、总名义预算、原检查点及空仓测试合约。盘口
+一档数量会出现在计划book_volume，但不保证部分成交。提交时使用新计划明确指定
+instrument/limit-price并保留上述partial参数，加submit及confirm-simnow；不增加
+母单2手和每源1手，不拆单，不发第二张，不自动平仓。
+受理后最多等待30秒（可1至60秒），沿用账户周期权威查询和行情健康检查。观察到
+同母单PARTIALLY_FILLED且仍有剩余量才停止非提交者，按原冻结归属撤余单。超时
+也撤剩余单，但partial_cancel_acceptance为not_exercised；全成交抢先撤单也不
+登记该项通过。只有部分成交原生回报发生在停止请求前、随后取得CANCELED、另一
+来源保持活动且本轮正常结束才为passed。挂单期间不再要求已批准的价格持续被动，
+价格触及限价属于正常成交过程；仍门控行情日/时效/边界和预算，健康故障正常停机。
+Native CANCELED回报filled_quantity为0并不撤回此前成交：它是状态回报，须结合
+PARTIALLY_FILLED、最终归属/CTP账本/柜台总仓核对，不能据此把实际仓位清零。
+新增成交须保留本测试目录account.json及events.txt；先核对新增测试仓位及原会话
+范围外基线，再决定处置，不能删除状态或直接继续原会话。GAP10整体仍开放。

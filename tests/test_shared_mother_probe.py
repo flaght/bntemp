@@ -10,6 +10,7 @@ from tempfile import TemporaryDirectory
 import time
 from types import SimpleNamespace as NS
 import unittest
+from unittest.mock import patch
 
 from scripts.integration.shared_account import mother_probe as probe
 from tests import test_shared_account as fixtures
@@ -38,6 +39,7 @@ class ProbePreflightTests(unittest.TestCase):
         for extra in (("--submit",), ("--connect", "--submit", "--confirm-simnow"),
                       ("--max-notional", "NaN"), ("--max-notional", "2300001"),
                       ("--limit-price", "abc"),
+                      ("--passive-ticks", "0"), ("--partial-wait-seconds", "0"),
                       ("--instrument", "cu2612.DCE"), ("--timeout", "0")):
             with redirect_stderr(StringIO()), self.assertRaises(SystemExit):
                 self.args(*extra)
@@ -83,6 +85,15 @@ class ProbePreflightTests(unittest.TestCase):
             vars(observation).update(change)
             with self.assertRaises(RuntimeError):
                 probe.price_plan(raw, observation, self.args(), self.spec())
+
+    def test_partial_mode_allows_own_best_price_but_does_not_cross_spread(self):
+        args = self.args("--cancel-after", "partial", "--passive-ticks", "0")
+        self.assertEqual(probe.price_plan(*self.quote(), args, self.spec())["limit_price"], "111000")
+        args.limit_price = Decimal("111010")
+        with self.assertRaises(RuntimeError):
+            probe.price_plan(*self.quote(), args, self.spec())
+        # 挂单期间行情穿过原限价不能阻止撤单；仍检查时间、边界和预算。
+        probe.price_plan(*self.quote(), args, self.spec(), enforce_passive=False)
         for bad in (None, "NaN", "1.7976931348623157e308"):
             raw, observation = self.quote()
             raw["BidPrice1"] = bad
@@ -95,6 +106,84 @@ class ProbeNativeTests(unittest.TestCase):
     native_modules = fixtures.SharedAccountTests.native_modules
     native_account = fixtures.SharedAccountTests.native_account
     callback_host = fixtures.SharedAccountTests.callback_host
+
+    def partial_case(self, cleanup):
+        directory = cleanup.enter_context(TemporaryDirectory())
+        host, transport, rows = self.callback_host(Path(directory))
+        cleanup.callback(host.stop)
+        host.probe_side = "BUY"
+        return host, transport, rows
+
+    def test_wait_partial_then_cancel_keeps_real_native_frozen_attribution(self):
+        with ExitStack() as cleanup:
+            host, transport, rows = self.partial_case(cleanup)
+            def partial(_seconds):
+                transport.fill(transport.sent[0]["OrderRef"], 1)
+            with patch.object(probe.time, "sleep", side_effect=partial):
+                result = probe.exercise(host, self.instrument, Decimal(2990), lambda: None,
+                    timeout=1, cancel_after="partial", partial_wait_seconds=1)
+            events = tuple(host.account.execution.backend.reports)
+            self.assertEqual(probe.partial_cancel_result(result, events, "completed")["status"], "passed")
+            self.assertEqual(result.wait_outcome, "partial_observed")
+            self.assertEqual(len(transport.sent), 1)
+            self.assertEqual((host.service.position_manager.position("one", "main"),
+                              host.service.position_manager.position("two", "main")), (1, 0))
+            self.assertTrue(rows[1].active)
+            self.assertEqual(rows[0].session.client.event_diagnostics()["fills_delivered"], 1)
+            self.assertEqual(probe.partial_cancel_result(result, events, "failed")["status"], "failed")
+
+    def test_partial_wait_timeout_cancels_but_does_not_pass_partial_acceptance(self):
+        with ExitStack() as cleanup:
+            host, transport, rows = self.partial_case(cleanup)
+            result = probe.exercise(host, self.instrument, Decimal(2990), lambda: None,
+                timeout=1, cancel_after="partial", partial_wait_seconds=0)
+            self.assertEqual(result.wait_outcome, "partial_wait_timeout")
+            self.assertEqual(len(transport.canceled), 1)
+            self.assertEqual(result.result(host, runtime_status="completed")["status"], "passed")
+            self.assertEqual(probe.partial_cancel_result(result,
+                host.account.execution.backend.reports, "completed")["status"], "not_exercised")
+            self.assertFalse(rows[0].session.strategy.fills)
+
+    def test_full_fill_before_partial_cancel_is_not_exercised_and_both_books_preserved(self):
+        with ExitStack() as cleanup:
+            host, transport, rows = self.partial_case(cleanup)
+            with patch.object(probe.time, "sleep", side_effect=lambda seconds:
+                              transport.fill(transport.sent[0]["OrderRef"])):
+                result = probe.exercise(host, self.instrument, Decimal(2990), lambda: None,
+                    timeout=1, cancel_after="partial", partial_wait_seconds=1)
+            self.assertEqual(result.wait_outcome, "filled_before_cancel")
+            self.assertEqual(probe.partial_cancel_result(result,
+                host.account.execution.backend.reports, "completed")["status"], "not_exercised")
+            self.assertFalse(transport.canceled)
+            self.assertEqual((host.service.position_manager.position("one", "main"),
+                              host.service.position_manager.position("two", "main")), (1, 1))
+
+    def test_partial_only_during_timeout_cancel_does_not_prove_partial_trigger(self):
+        with ExitStack() as cleanup:
+            host, transport, rows = self.partial_case(cleanup)
+            original_cancel = transport.cancel_order
+            def late(ref):
+                transport.fill(ref, 1)
+                original_cancel(ref)
+            transport.cancel_order = late
+            result = probe.exercise(host, self.instrument, Decimal(2990), lambda: None,
+                timeout=1, cancel_after="partial", partial_wait_seconds=0)
+            self.assertEqual(probe.partial_cancel_result(result,
+                host.account.execution.backend.reports, "completed")["status"], "not_exercised")
+            self.assertEqual(host.service.position_manager.position("one", "main"), 1)
+
+    def test_market_failure_during_partial_wait_still_cleans_up_live_mother(self):
+        with ExitStack() as cleanup:
+            host, transport, rows = self.partial_case(cleanup)
+            def stale():
+                raise RuntimeError("market stale")
+            with self.assertRaisesRegex(RuntimeError, "market stale"):
+                probe.exercise(host, self.instrument, Decimal(2990), lambda: None,
+                    timeout=1, cancel_after="partial", partial_wait_seconds=1, observe_health=stale)
+            host.stop()  # 实际入口finally同样走原宿主停机，不能遗留挂单。
+            self.assertEqual(len(transport.sent), 1)
+            self.assertEqual(len(transport.canceled), 1)
+            self.assertEqual(host.account.final_active_orders, 0)
 
     def test_readonly_authenticated_td_passes_identity_check_without_enabling_orders(self):
         with TemporaryDirectory() as directory:

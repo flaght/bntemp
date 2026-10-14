@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "date": "2026-10-14",
+  "status": "passed",
+  "verification": "controlled_transport_offline",
+  "network_connected": false,
+  "real_broker_orders_submitted": 0,
+  "report": "tests/results/main-ema-acceptance-1791959866540020000",
+  "test_counts": {
+    "shared_account": 64,
+    "shared_mother_probe": 15,
+    "live_common": 116,
+    "total": 195
+  },
+  "modules": [
+    {
+      "module": "shared-account",
+      "exit_code": 0,
+      "seconds": 2.042
+    },
+    {
+      "module": "shared-mother-probe",
+      "exit_code": 0,
+      "seconds": 0.584
+    },
+    {
+      "module": "live-common",
+      "exit_code": 0,
+      "seconds": 0.585
+    }
+  ],
+  "implementation_scope": "application mother_probe and its tests; existing shared account, Runner, native Driver and persistence reused",
+  "partial_mode": {
+    "cancel_after": "partial",
+    "partial_wait_seconds_default": 30,
+    "maximum_mother_orders": 1,
+    "mother_quantity": 2,
+    "per_source_quantity": 1,
+    "cross_opposite_quote_allowed": false,
+    "automatic_liquidation": false
+  },
+  "verified_cases": [
+    "partial fill before owner stop followed by cancellation with frozen ownership and peer active",
+    "zero-fill wait timeout cancels but partial acceptance not exercised",
+    "full fill before cancellation not exercised",
+    "partial arriving only during timeout cancellation not exercised",
+    "market-health failure retains normal host cleanup",
+    "existing accepted-mode cancellation and readonly identity guards"
+  ],
+  "grading": "Same mother PARTIALLY_FILLED precedes stop request, CANCELED follows, peer active and runtime healthy; CANCELED filled_quantity=0 is a status report, not a rollback of earlier fills",
+  "sources": {
+    "scripts/integration/shared_account/mother_probe.py": "7a9bde43c7b947b6ea452003c5a3c1bf8035287491b18b1bf11de8ad160c14b9",
+    "tests/test_shared_mother_probe.py": "fdf2f1eaf8a525e04427807cacd3a07228956cd3eea68318efeb79aa8a3b41f0",
+    "bomber/framework/trader/execution/shared.py": "5eb77062ba7479bb61cf5ff06f9d8384258744130b270921d3440424394222ef",
+    "bomber/framework/trader/execution/ctp/native_driver.py": "eeb517d3f0ac84be009eed7b555aae62661bd782ca24c5aaafe9af197b33e170"
+  },
+  "live_acceptance_remaining": [
+    "real partial-fill then shared cancellation",
+    "real rejection and fail-closed recovery",
+    "post-cancel peer replan not exercised by this one-order probe"
+  ],
+  "gap10_closed": false
+}
