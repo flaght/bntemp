@@ -478,3 +478,20 @@ tests/results/main-ema-acceptance-1791958560895722000，64+8+116共188项通过�
 详细证据GAP10_CONTROLLED_MOTHER_PROBE_OFFLINE_20261014.json。交付REV15，
 下一步Linux先只读预检取得具体合约/限价，再提供明确提交命令；原状态不得删除。
 本机未连接或操作柜台，GAP10整体保持开放。
+
+## 2026-10-14 受控入口只读身份检查修复（REV16）
+
+Linux新组八项通过，但只读预检shared-mother-probe-1791958758853479920误拒。
+实际/预期TD同为20261014，报单0，原文件unchanged。根因为新入口使用原
+is_simnow_session，此属性还要求_enable_simnow_orders，默认禁单的只读模式
+必然false。新增Driver.is_simnow_authenticated仅校验连接及broker/investor登录
+身份；原is_simnow_session仍等价于enable_simnow_orders且身份成立，原发单门控
+不放宽。入口只读验证新身份/TD，提交另要求原发单会话条件。摘要分别保留身份
+及提交会话旗标，避免混为交易日不符。
+
+新增真实Driver/替身传输回归：禁单登录身份通过、提交仍拒绝、TD错误及断开后
+拒绝、发单数0。最终集中报告tests/results/main-ema-acceptance-1791958839136309000
+中共享64/受控母单9/公共116，共189项通过，仍非SDK联网验收。证据
+GAP10_MOTHER_READONLY_IDENTITY_FIX_20261014.json，交付REV16。Linux同步后
+先重跑受控组，再用原connect只读命令取得真实盘口/合约计划，不启用submit，
+不修改原账户状态或预算。本轮没有连接柜台，真实撤单待验，GAP10整体仍开放。
