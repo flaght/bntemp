@@ -1,0 +1,96 @@
+{
+  "date": "2026-10-14",
+  "timezone": "Asia/Shanghai",
+  "source": "user_returned_recording_console",
+  "attachment_sha256": "844c4158e42d394c835bbd0b82e0e4ceb159840aed23b280a5d6665e5302d114",
+  "remote_report": "tests/results/gap08-dolphin-recording/option-vega-recording-1791955286811276398/summary.json",
+  "command": "bash doc/evidence/commands/OPTION_VEGA_DOLPHIN_RECORDING.sh 20261014 13:22 stream_cffex_1min end cumulative",
+  "observed": {
+    "status": "failed",
+    "failure": "单合约行情时间倒退: 000852",
+    "frames": 0,
+    "entry_audit": [],
+    "orders_submitted": 0,
+    "fills_received": 0,
+    "cleanup_errors": [],
+    "market_stream": {
+      "source_id": "vega-market",
+      "received_bars": 90,
+      "conversion_errors": 0,
+      "last_conversion_error": null
+    },
+    "timeline": [
+      {
+        "wall_time": "13:21:27.617",
+        "event": "market_stream_connected_and_session_ready"
+      },
+      {
+        "wall_time": "13:22:01.760",
+        "event": "index_minute_missing",
+        "minute": "13:22"
+      },
+      {
+        "wall_time": "13:22:14.306",
+        "event": "index_minute_projected",
+        "minute": "13:22",
+        "event_ns": 1791955320000000000,
+        "received_ns": 1791955334305793168
+      },
+      {
+        "wall_time": "13:22:18.819",
+        "event": "older_index_publish_rejected",
+        "minute": "13:21",
+        "pending_minutes": [
+          1791955320000000000,
+          1791955260000000000
+        ],
+        "lookup_available_ns": 1791955287586191206,
+        "lookup_received_ns": 1791955287596785192
+      }
+    ],
+    "exception_path": [
+      "OptionSessionRunner.poll_features",
+      "FeatureQueryBarFeed.poll",
+      "MarketDataFeed._emit_bar",
+      "OptionSessionRunner.publish"
+    ]
+  },
+  "diagnosis": {
+    "observed": "较新指数已投影后又尝试发布较旧指数，触发Runner倒退检查",
+    "inference": "不同市场合约交错送达分钟，跨轮询新增旧待处理帧；原Feed单次poll已排序，缺少跨poll的投影进度限制",
+    "not_proven": "本报告未表明DolphinDB网络或查询超时，未确认产生13:21待处理帧的具体市场合约"
+  },
+  "fix": {
+    "release": "OPTION_DOLPHIN_PUSH_20261014_REV5",
+    "code": "bomber/framework/market/stream/feature_query.py",
+    "policy": "Bar投影保持向前；更旧新请求审计OLDER_THAN_PROJECTED，不发布、不刷新观测、不借用新指数。旧帧缺指数按原期限跳过。",
+    "hard_checks_retained": [
+      "runner_timestamp_regression",
+      "source_age",
+      "future_timestamp",
+      "frame_receipt_deadline",
+      "exact_feature_alignment"
+    ],
+    "logging": "指数DFS查询或投影失败"
+  },
+  "local_validation": {
+    "scope": "SDK实体替身、数据库传输夹具下的实际公共组件，不连接DolphinDB/CTP、不报单",
+    "main_tests": 81,
+    "related_tests": 111,
+    "entry_tests": 9,
+    "status": "passed",
+    "added_cases": [
+      "同轮询乱序请求按时间投影",
+      "已投影新分钟后新增旧请求",
+      "缺失旧指数在新投影后到达不回填",
+      "真实Runner旧帧跳过/新帧Recording TARGET/指数观测不回退/直接倒退仍拒绝"
+    ]
+  },
+  "online_acceptance": {
+    "market_standard_conversion_observed": true,
+    "complete_recording_passed": false,
+    "rev5_remote_retest": "pending",
+    "trading_passed": false,
+    "broker_state_modified": false
+  }
+}

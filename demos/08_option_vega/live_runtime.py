@@ -100,7 +100,7 @@ class OptionSessionRunner(UnifiedStrategyRunner):
                 try:
                     feed.poll(pending)
                 except Exception:
-                    logger.exception("指数DFS查询失败: key=%s pending_minutes=%s", feed.key, pending)
+                    logger.exception("指数DFS查询或投影失败: key=%s pending_minutes=%s", feed.key, pending)
                     raise
                 for event, row in feed.manifest.get("minute_lookups", {}).items():
                     token = (feed.source_id, event)

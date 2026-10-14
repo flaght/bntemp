@@ -137,7 +137,7 @@ class AssemblyTests(unittest.TestCase):
         with self.assertLogs("OptionMarketInputs", level="ERROR") as logs:
             with self.assertRaisesRegex(RuntimeError, "fixture query timeout"):
                 session.runner.poll_features()
-        self.assertIn("指数DFS查询失败", logs.output[0])
+        self.assertIn("指数DFS查询或投影失败", logs.output[0])
 
     def build(self, *, resume=False, mode="model", config=None, dfs_index=False, test_clock=False):
         service = ReferenceService()
@@ -227,6 +227,43 @@ class AssemblyTests(unittest.TestCase):
         description = import_module("demos.08_option_vega.run_live").describe(s)
         self.assertEqual(description["recorded_requests"][0]["signal_ns"], s.strategy.entry_audit[0]["signal_ns"])
         self.assertTrue(all(str(i) != "000852.XSHG" for i in s.client.requests[0].targets))
+
+    def test_late_old_market_minute_after_index_projection_skips_old_frame_and_records_target(self):
+        s, lifecycle = self.build(mode="recording", dfs_index=True)
+        stamp = ns("2026-08-13 13:58")
+        self.now = stamp + 1_000_000_000
+        self.start(s, lifecycle)
+        from tests.test_dolphindb_index_features import row
+        s.runner.feature_query_feeds[0].cache.provider.transport._session.rows.append(
+            row(event=stamp-MINUTE_NS, published=stamp-MINUTE_NS+100))
+        self.bars(s, "2026-08-13 13:58", omit=("000852", "IM2609"), flush=False)
+        s.runner.poll_features()
+        self.assertEqual(s.runner.observations["000852"][0], stamp)
+        index_observation = s.runner.observations["000852"]
+        # Another contract's older minute first arrives after the newer index.
+        self.now = stamp + 1_500_000_000
+        self.bars(s, "2026-08-13 13:57", omit=("000852", "MO2609-C-6600"), flush=False)
+        s.runner.poll_features()
+        self.assertEqual(s.runner.feature_query_feeds[0].manifest["minute_lookups"][str(stamp-MINUTE_NS)]["status"],
+            "OLDER_THAN_PROJECTED")
+        self.assertIsNone(s.runner.failure)
+        self.assertTrue(s.runner.accept_bars)
+        self.assertEqual(s.runner.observations["000852"], index_observation)
+        self.bars(s, "2026-08-13 13:58", omit=("000852", "MO2609-C-6600"), flush=False)
+        self.now = stamp + 4_000_000_000
+        s.runner.flush_frames()
+        self.assertEqual([(f["valuation_ns"], f["status"]) for f in s.runner.frame_audit],
+            [(stamp-MINUTE_NS, "SKIPPED_INDEX"), (stamp, "CONSUMED")])
+        self.assertEqual(len(s.client.requests), 1)
+        self.assertEqual(s.strategy.entry_audit[0]["outcome"], "TARGET")
+        self.assertEqual(s.runner.skipped_feature_frames, 1)
+        self.assertEqual(s.strategy.fills_received, 0)
+        # Direct source regression remains a hard error, outside lookup scheduling.
+        identity = s.feeds["index"].get_instrument_meta(InstrumentId.from_str("000852.XSHG"))
+        with self.assertRaisesRegex(ValueError, "单合约行情时间倒退"):
+            s.runner.publish("index", make_bar(instrument_id=InstrumentId.from_str("000852.XSHG"),
+                open=6400,high=6400,low=6400,close=6400,volume=1,
+                ts_event=stamp-MINUTE_NS,ts_init=self.now,meta=identity))
 
     def test_mapped_replay_reaches_recording_target_and_model_owned_fill(self):
         from datetime import datetime

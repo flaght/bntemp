@@ -34,6 +34,7 @@ class FeatureQueryBarFeed(MarketDataFeed):
             raise ValueError("Bar投影频率须与特征Schema一致") from None
         self.requirement = FeatureRequirement("value", cache.dataset_id, cache.schema_version, key, alignment=Alignment.EXACT)
         self._emitted, self._lock = {}, RLock()
+        self._latest_projected_ns = -1
         self._lookups = {}
 
     def _on_subscription_added(self, request):
@@ -61,6 +62,7 @@ class FeatureQueryBarFeed(MarketDataFeed):
         with self._lock:
             return {**self.cache.manifest, "emitted_versions": {str(event): r.revision
                 for event, r in self._emitted.items()},
+                "latest_projected_ns": None if self._latest_projected_ns < 0 else self._latest_projected_ns,
                 "minute_lookups": {str(event): dict(value) for event, value in self._lookups.items()}}
 
     def poll(self, requested_ends, *, force=False):
@@ -79,6 +81,14 @@ class FeatureQueryBarFeed(MarketDataFeed):
                     self._lookups[event] = diagnostic
                     for old in sorted(self._lookups)[:-32]:
                         del self._lookups[old]
+                    # 不同市场合约可先后创建新、旧分钟帧。查询历史仍保留在
+                    # 缓存，但Bar流只向前投影；旧帧缺指数按原期限跳过，不能
+                    # 回填或借用已投影的较新指数，也不刷新必需行情观测。
+                    if event < self._latest_projected_ns:
+                        diagnostic.update(status="OLDER_THAN_PROJECTED",
+                            latest_projected_ns=self._latest_projected_ns,
+                            detail="请求分钟早于已投影分钟；不回放旧指数，旧帧按原期限处理")
+                        continue
                     try:
                         record = self.hub.feature_snapshot((self.requirement,), FeatureQuery(event, now)).latest("value")
                     except FeatureUnavailable as error:
@@ -107,6 +117,7 @@ class FeatureQueryBarFeed(MarketDataFeed):
                     if matched:
                         diagnostic["status"] = "PROJECTED"
                         self._emitted[event] = record
+                        self._latest_projected_ns = event
                         delivered.append(event)
                     else:
                         diagnostic["status"] = "NOT_SUBSCRIBED"

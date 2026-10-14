@@ -452,11 +452,12 @@ python -u -m scripts.integration.options.dolphin_stream_probe --streams market -
 
 该样本支持 `cumulative`：IM 增量 47，MO 增量 1；MO turnover 增量 7200，恰好为 72 元 × 100 乘数 × 1 手。minTime 在 SDK 中为 `datetime64[ms]`、显示 `1970-01-01T11:28:00.000`，日期列为 `datetime64[D]` 的 2026-10-14；转换器取前者时分秒与后者日期拼接，不使用 1970 作为估值日。新增真实 NumPy 类型样本回归已验证日期、OHLC、实际接收时间及 47/1 的量差分，77 项主回归通过；未改变运行模块。源码/入口摘要需按后续补充交付同步测试版本。
 
-分钟标记后约 1—3 秒的接收时序与结束标签一致，本轮 Recording 工程验收采用 `end`；该标签是基于样本的推断，发布程序完整分钟定义尚未独立核对。当前宜用已确认市场推送 + 原 DFS 指数验证目标链，午间不启动持续运行测试。10 月 14 日下午可在 13:00 左右执行现有命令，13:06 选约、运行 900 秒：
+分钟标记后约 1—3 秒的接收时序与结束标签一致，本轮 Recording 工程验收采用 `end`；该标签是基于样本的推断，发布程序完整分钟定义尚未独立核对。当前宜用已确认市场推送 + 原 DFS 指数验证目标链，午间不启动持续运行测试。10 月 14 日下午同步 REV5 后，可自动选择北京时间约六分钟后的业务分钟，运行 900 秒；开始时应距收盘至少 15 分钟：
 
 ```bash
+SLOT=$(python -c 'from datetime import datetime,timedelta; from zoneinfo import ZoneInfo; print((datetime.now(ZoneInfo("Asia/Shanghai"))+timedelta(minutes=6)).strftime("%H:%M"))')
 bash doc/evidence/commands/OPTION_VEGA_DOLPHIN_RECORDING.sh \
-  20261014 13:06 stream_cffex_1min end cumulative
+  20261014 "$SLOT" stream_cffex_1min end cumulative
 ```
 
 若启动已晚于该时点，应另选能留出 ready-timeout+65 秒准备余量且被 900 秒覆盖的未来业务分钟。该 Recording 不连接 CTP MD/TD、不报单、不恢复旧仓位；原市场与指数都必须送达选约同一分钟，源时效及 20 秒接收期限仍校验。返回市场 stream 转换诊断、OptionMarketInputs、entry_audit、frame_audit 与停机结果，再由报告复核确认标准 Bar/目标链；原始推送成功不能替代这些检查。
@@ -484,7 +485,13 @@ Bar 的 ts_init 使用客户端实际接收时间，updateTime 不冒充本机�
 
 切换行情来源会改变持久化 sources/labels/volume_mode 身份，旧 CTP 会话文件不能直接用此路径 `--resume`。昨日真实 MO 空 1 手的原文件及柜台仓位须保留，Recording 不接管或改变它；后续真实交易恢复需另行处理跨日及来源迁移，不能新建空状态绕过已有持仓。分钟输入没有实时买一/卖一，原生限价仍按分钟参考价及跳价计算，order_submission_audit 的 quote/crosses_observed_quote 可以为空，不能把 Bar 接入或目标记录当成实际成交。
 
-本地 72 项 SDK 实体替身下的实际公共组件回归通过，含 11 项分钟推送专项：字段顺序变化/缺列/非法 DFS 名、累计量及零量、冻结快照时效、起点标签、必需腿过期，以及真实 Feed 分派 → 帧 → Recording 非零目标全链（仅 SDK 传输为夹具）；另有 11 项报告复核回归通过，含新来源和原 CTP 报告。用户报告已更新远端代码并提供上述两张共享表名；本轮没有独立连接运行机或读取远端源码，时间标签、成交量语义及实时推送数据仍待核对，线上接收与交易验收不登记为通过。
+当前本地 81 项 SDK 实体替身下的实际公共组件回归及 111 项相关回归通过，包含 16 项分钟推送专项和 11 项报告复核。实际市场接收证据已返回，累计量以连续分钟样本核对，end 标签仍由到达时序推断；标准 Bar/完整选约目标和交易验收须分别核对。本地没有连接运行机或读取远端源码。
+
+**2026-10-14 13:22 Recording 失败及 REV5 修正**：用户报告 [失败证据](../../doc/evidence/live/OPTION_VEGA_DOLPHIN_OLD_MINUTE_20261014.json) 显示市场分钟流已转换 90 根 Bar，conversion_errors=0；13:22 指数于 13:22:14.306 成功投影。13:22:18.819 待处理集合又包含 13:21，查询 Feed 尝试发布旧指数，Runner 的单合约倒退检查关闭会话。frames=0、entry_audit=[]、orders_submitted=0，不能登记为完整 Recording 通过。异常发生在投影后的发布回调，旧日志“指数DFS查询失败”不能据此证明数据库网络或查询失败。
+
+不同市场合约可交错送达业务分钟，使待处理集合跨轮询新增旧分钟；原 Feed 已在每次 poll 内排序，但无法保证多次 poll 之间仍向前。REV5 的公共 `FeatureQueryBarFeed` 记录 `latest_projected_ns`：晚于或等于既有流进度的未投影分钟按原精确查询处理；早于已投影分钟的新请求记为 `OLDER_THAN_PROJECTED`，不再发布，不刷新指数行情观测。查询缓存仍保留历史资料，旧帧缺指数则按原接收期限记 `SKIPPED_INDEX`；不会将较新指数放入旧帧，也不会补做旧选约。没有关闭 Runner 的倒退检查、未来时间/年龄检查或帧期限检查。
+
+summary 的 `feature_queries[].minute_lookups` 会记录该状态及 `latest_projected_ns`，`OptionMarketInputs` 同时输出“指数分钟不可用”。真正查询或投影异常改为“指数DFS查询或投影失败”，仍传播并停机。新增回归覆盖跨轮询旧请求、旧指数后补、同轮询排序，以及实际 Runner/帧/Recording：旧帧跳过后新帧仍生成 TARGET，直接倒退发布仍拒绝。同步 [REV5 包](../../doc/evidence/archives/OPTION_VEGA_DOLPHIN_PUSH_20261014_REV5.tar.gz) 和配套摘要/验收入口后，选择留有启动余量的未来分钟重新运行原 Recording 命令；无须调整帧等待来掩盖本次异常。服务器复测未返回前，整体目标链仍标记待验。
 
 ### 3.7 Replay 与工程时间映射
 
@@ -624,7 +631,7 @@ SimNow 的 strict 将柜台仓位与执行账本核对，不一致闭闸；obser
 | 层次 | 当前范围 / 数量 | 代码位置 |
 | --- | --- | --- |
 | DFS 查询缓存 | 从估值日上海时间 00:00 开始，到当前墙钟已经结束的分钟，上限为该估值日末尾；启动时和后续轮询均在这个业务区间读取。只缓存源表已有数据，不按缺口造 Bar | `run_live.py:prepare_inputs` 设置 `FeatureQueryCache.start_ns/end_ns`；公共 `dataprep/features/query.py:FeatureQueryCache.poll` 计算本次结束分钟 |
-| 向策略补入指数 | Runner 把当前尚未封闭的市场分钟集合 `frames.pending` 传给查询 Feed；对每个请求分钟，精确查找同一分钟指数，找到后投递一根对应 Bar。不把启动前的缓存历史逐根灌入策略 | `live_runtime.py:OptionSessionRunner.poll_features`；公共 `market/stream/feature_query.py:FeatureQueryBarFeed.poll` |
+| 向策略补入指数 | Runner 把当前尚未封闭的市场分钟集合 `frames.pending` 传给查询 Feed；按业务时间精确查找同一分钟指数并向前投影。跨轮询后出现的更旧请求记 OLDER_THAN_PROJECTED，旧帧按原期限跳过；不回放缓存历史，不借用新指数，不刷新旧请求的行情观测 | `live_runtime.py:OptionSessionRunner.poll_features`；公共 `market/stream/feature_query.py:FeatureQueryBarFeed.poll` |
 | 缺指数等待 | 从该分钟首条行情实际接收起等待 `frame-wait-seconds`；到期仍缺指数则跳过该分钟整次决策，封闭后不补做历史决策 | `market/frames.py:MinuteFrameBuffer`；`live_runtime.py:flush_frames` |
 
 例如 09:35 市场 Bar 创建了待决策分钟，查询缓存可能已包含当天 09:31—09:35 多条指数；策略这次只接收请求的 09:35 指数 Bar。只有 09:34 指数时不会替代 09:35，09:35 超期后即使查到也不追溯选约。
