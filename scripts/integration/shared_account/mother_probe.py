@@ -106,10 +106,26 @@ def select_spec(specs, args, gross, protected):
 
 
 def price_plan(raw, observation, args, spec, *, enforce_passive=True):
-    if (observation.trading_day != args.trading_day or observation.timestamp_regressed
-            or not 0 <= time.monotonic_ns() - observation.received_monotonic_ns <= 3_000_000_000
-            or not 0 <= time.time_ns() - observation.ts_event <= 10_000_000_000):
-        raise RuntimeError("测试行情交易日、时间或接收时效不符")
+    receive_age_ns = time.monotonic_ns() - observation.received_monotonic_ns
+    event_age_ns = time.time_ns() - observation.ts_event
+    issues = []
+    if observation.trading_day != args.trading_day:
+        issues.append("trading_day_mismatch")
+    if observation.timestamp_regressed:
+        issues.append("timestamp_regressed")
+    if not 0 <= receive_age_ns <= 3_000_000_000:
+        issues.append("receive_age_out_of_range")
+    if not 0 <= event_age_ns <= 10_000_000_000:
+        issues.append("event_age_out_of_range")
+    if issues:
+        raise RuntimeError("测试行情交易日、时间或接收时效不符: " + json.dumps({
+            "issues": issues, "expected_trading_day": args.trading_day,
+            "observed_trading_day": observation.trading_day,
+            "timestamp_regressed": observation.timestamp_regressed,
+            "receive_age_ns": receive_age_ns, "max_receive_age_ns": 3_000_000_000,
+            "event_age_ns": event_age_ns, "max_event_age_ns": 10_000_000_000,
+            "quote_ts_event": observation.ts_event,
+        }, ensure_ascii=False, sort_keys=True))
     try:
         values = {name: Decimal(str(raw.get(name))) for name in
                   ("BidPrice1", "AskPrice1", "LastPrice", "LowerLimitPrice", "UpperLimitPrice")}

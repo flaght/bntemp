@@ -2,7 +2,7 @@
 from contextlib import redirect_stdout
 from copy import deepcopy
 from dataclasses import replace
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from importlib import import_module
 from io import StringIO
@@ -14,6 +14,7 @@ import time
 from types import SimpleNamespace as NS
 import unittest
 from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
 from bomber.framework.market.basic.base import InstrumentId,InstrumentMeta
 from bomber.framework.trader.contracts import TargetPortfolio
@@ -34,7 +35,9 @@ class Transport:
     is_test_transport=True
     account_id=investor_id="fixture"
     broker_id="9999"
-    front="tcp://fixture:1"
+    client_id=CLIENT
+    production_mode=True
+    front="tcp://182.254.243.31:30001"
     def __init__(self,day):
         self.day=day;self.revision=0;self.sent=[];self.canceled=[];self.bucket="1"
     def connect(self,*handlers):return CtpTraderSession("9999","fixture",self.day,7)
@@ -189,6 +192,85 @@ class MigrationTests(unittest.TestCase):
         code,report=self.run_main(digest="0"*64)
         self.assertEqual(code,1);self.assertIn("摘要",report["failure"])
         self.assertFalse(self.output.exists());self.assertEqual(self.source.read_bytes(),self.before)
+
+    def test_prepared_state_restores_native_session_and_fresh_frame_without_reopening(self):
+        from contextlib import ExitStack
+        from bomber.framework.trader.runtime.live.contracts import LiveRunContext
+        from bomber.framework.market.basic.base import make_bar
+        recovery=import_module("demos.08_option_vega.recovery")
+        code,report=self.run_main();self.assertEqual(code,0,report.get("failure"))
+        args=entry.parse_args(report["resume_argv"])
+        transport=Transport("20260814")
+        # 模拟正式传输身份；所有I/O仍由本测试方法实现，不创建原生网络API。
+        transport.is_test_transport=False
+        with patch("bomber.framework.trader.execution.ctp.CtpNativeTraderDriver",CtpNativeTraderDriver,create=True):
+            lifecycle=recovery.OptionCtpLifecycle(transport,md_front=None,orders=True,resume=True,
+                scope_to_reference_instruments=True,expected_trading_day="20260814",valuation_day="20260814",
+                state_file=self.output,require_fills=False)
+        stamp=int(datetime(2026,8,14,13,36,tzinfo=ZoneInfo("Asia/Shanghai")).timestamp())*1_000_000_000
+        now=[stamp+14_000_000_000]
+        with ExitStack() as resources:
+            context=lifecycle.prepare(resources);context.references=self.current.references
+            lifecycle.finish_preparation(context)
+            session=runtime.assemble(args,self.current,lifecycle.driver)
+            session.runner.clock_ns=lambda:now[0]
+            lifecycle.start(session,context)
+            for key,price in (("MO2609-C-6600",82.2),("IM2609",6500),("000852",6400)):
+                identity=next(i for i,value in session.runner.key_by_instrument.items() if value==key)
+                feed_id=session.runner.sources[key]
+                session.runner.publish(feed_id,make_bar(instrument_id=identity,open=price,high=price,low=price,
+                    close=price,volume=1,ts_event=stamp,ts_init=now[0],meta=session.feeds[feed_id].get_instrument_meta(identity)))
+            now[0]+=20_000_000_000;session.runner.flush_frames()
+            self.assertTrue(lifecycle.resume_ready)
+            self.assertEqual(session.strategy.frames,1)
+            self.assertEqual(session.strategy.entry_audit,[])
+            self.assertEqual(session.runner.position_manager.position(CLIENT,OPTION),Decimal(-1))
+            self.assertEqual(session.strategy.option_goals["MO2609-C-6600"],Decimal(-1))
+            stopped=lifecycle.shutdown(session,context)
+            self.assertEqual(stopped["final_managed_gross"],{OPTION:(Decimal(0),Decimal(1))})
+            self.assertEqual(stopped["final_active_orders"],0)
+        self.assertEqual((transport.sent,transport.canceled),([],[]))
+        self.assertEqual(self.source.read_bytes(),self.before)
+
+    def test_existing_output_is_not_overwritten(self):
+        self.output.write_text("preserved")
+        with redirect_stdout(StringIO()),self.assertRaises(SystemExit):self.run_main()
+        self.assertEqual(self.output.read_text(),"preserved")
+
+    def test_resume_wrapper_handles_ctrl_c_at_poll_boundary_and_calls_stop(self):
+        resume=import_module("scripts.integration.options.simnow_resume")
+        code,report=self.run_main();self.assertEqual(code,0,report.get("failure"))
+        path=next((self.root/"reports").glob("*/summary.json"))
+        signals={}
+        class Clock(datetime):
+            @classmethod
+            def now(cls,tz=None):return cls(2026,8,14,14,40,tzinfo=tz)
+        class Runtime:
+            def __init__(self):self.polls=0;self.stopped=0;self.controller=NS(poll=self.poll)
+            def poll(self,session):self.polls+=1;return True
+            def run(self):
+                self.first=self.controller.poll(None)
+                signals[resume.signal.SIGINT](resume.signal.SIGINT,None)
+                self.after=self.controller.poll(None)
+            def stop(self):self.stopped+=1
+        observed=Runtime()
+        with patch("dotenv.load_dotenv"),patch.object(resume,"datetime",Clock), \
+                patch.object(entry,"build_runtime",return_value=observed), \
+                patch.object(resume.signal,"signal",side_effect=lambda k,v:signals.__setitem__(k,v)),redirect_stdout(StringIO()):
+            resume.main(["--migration-report",str(path)])
+        self.assertTrue(observed.first);self.assertFalse(observed.after)
+        self.assertEqual((observed.polls,observed.stopped),(1,1))
+
+    def test_resume_after_close_rejects_before_building_runtime(self):
+        resume=import_module("scripts.integration.options.simnow_resume")
+        code,report=self.run_main();self.assertEqual(code,0,report.get("failure"))
+        path=next((self.root/"reports").glob("*/summary.json"))
+        class Clock(datetime):
+            @classmethod
+            def now(cls,tz=None):return cls(2026,8,14,15,0,tzinfo=tz)
+        with patch("dotenv.load_dotenv"),patch.object(resume,"datetime",Clock),patch.object(entry,"build_runtime") as build:
+            with self.assertRaisesRegex(ValueError,"收盘前"):resume.main(["--migration-report",str(path)])
+            build.assert_not_called()
 
 
 if __name__=="__main__":unittest.main()
