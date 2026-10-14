@@ -1,6 +1,6 @@
 # 同账户多策略 SimNow 宿主
 
-首期实现：一个进程内运行多个01主力EMA／04横截面策略实例，保留各自Runner、
+同进程支持01主力EMA／03跨期／04横截面策略实例，保留各自Runner、
 角色／完整分钟帧守卫，统一使用一个原生TD、账户锁、CTP开平账本与真实成交归属。
 不同策略可以声明同一真实合约；策略算法未修改，公共框架不导入demo。
 
@@ -317,3 +317,5 @@ Native CANCELED回报filled_quantity为0并不撤回此前成交：它是状态�
 PARTIALLY_FILLED、最终归属/CTP账本/柜台总仓核对，不能据此把实际仓位清零。
 新增成交须保留本测试目录account.json及events.txt；先核对新增测试仓位及原会话
 范围外基线，再决定处置，不能删除状态或直接继续原会话。GAP10整体仍开放。
+
+三策略两种模式、本机账户服务/worker和16:00 replay、21:00 realtime验收步骤见[三策略运行](THREE_STRATEGIES.md)。新增代码不等于Linux replay已通过；完整跨期原生组仍须Linux验证。

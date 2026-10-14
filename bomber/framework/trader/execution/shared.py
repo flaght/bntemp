@@ -70,7 +70,7 @@ class SharedAccountExecutionService(AccountExecutionService):
     避免柜台回调持客户端锁等待策略Runner锁。账户宿主持有独立连接租约。
     """
     def __init__(self, client, *, prices, instrument_limits, budget, checkpoint=None,
-                 clock_ns=time.time_ns, max_events=10000, instrument_scope=None):
+                 clock_ns=time.time_ns, max_events=10000, instrument_scope=None, execution_mode="netted"):
         super().__init__(client, checkpoint=checkpoint)
         if max_events < 1 or not instrument_limits:
             raise ValueError("须声明执行合约及正数回报队列上限")
@@ -78,11 +78,24 @@ class SharedAccountExecutionService(AccountExecutionService):
         if instrument_scope is not None and instrument_scope.instruments != frozenset(str(i) for i in instrument_limits):
             raise ValueError("共享持仓范围须与执行合约一致")
         self.instrument_scope = instrument_scope
+        if execution_mode not in {"netted", "independent"}:
+            raise ValueError("共享执行模式须为netted或independent")
+        self.execution_mode = execution_mode
+        if execution_mode == "independent":
+            from .ctp.limit_planner import CtpLimitPlanner, IndependentCtpLimitPlanner
+            if not isinstance(client.planner, CtpLimitPlanner):
+                raise ValueError("独立模式须使用原生CTP今昨仓限价规划")
+            client.planner = IndependentCtpLimitPlanner(client.planner, self.position_manager)
+            from .ctp.independent_risk import IndependentCtpRiskManager
+            if client.risk_manager is None:
+                raise ValueError("独立订单须配置原风控")
+            client.risk_manager = IndependentCtpRiskManager(client.risk_manager, self.position_manager)
         self.budget, self.clock_ns, self.max_events = budget, clock_ns, max_events
         self._ports = {}
         self._suspended = set()
         self._draining = set()
         self._cancelled = set()
+        self.event_journal = None
         self.client.backend = _SharedAccountBackend(self, client.backend)
         self.client.register_execution_event_handler(self._route_event)
 
@@ -99,6 +112,8 @@ class SharedAccountExecutionService(AccountExecutionService):
         if not routes or any(not key.strip() or instrument not in self.instrument_limits
                              for key, instrument in routes.items()):
             raise ValueError("策略路由为空或超出账户执行范围")
+        if self.execution_mode == "independent" and len(set(routes.values())) != len(routes):
+            raise ValueError("独立订单模式的逻辑键须对应不同真实合约")
         limits = dict(instrument_limits or {i: self.instrument_limits[i] for i in routes.values()})
         if set(limits) != set(routes.values()):
             raise ValueError("策略限额须覆盖自己的完整合约路由")
@@ -120,12 +135,16 @@ class SharedAccountExecutionService(AccountExecutionService):
             amount = abs(Decimal(str(row["quantity"])))
             if not amount.is_finite():
                 raise ValueError("策略贡献数量须有限")
-            quantity += amount
-            if not amount:
-                continue
             instrument = next((i for i in self.instrument_limits if str(i) == row["instrument_id"]), None)
             if instrument is None:
                 raise ValueError("策略贡献合约未注册")
+            owned = self.position_manager.position(row["strategy_id"], row["target_key"])
+            working = self.position_manager.attribution.working_quantity(
+                self.client_id, instrument, row["strategy_id"], row["target_key"])
+            amount = max(amount, abs(owned), abs(owned + working))  # 未平掉/撤掉的风险不能被零目标释放。
+            quantity += amount
+            if not amount:
+                continue
             reference = self.prices.get(instrument)
             limits = self.instrument_limits[instrument]
             if reference is None or not 0 <= now_ns - reference.ts_event <= (limits.max_market_age_ns or 120_000_000_000):
@@ -242,6 +261,21 @@ class SharedAccountExecutionService(AccountExecutionService):
                                            if row["instrument_id"] in scope),
             "actual_send_deadline_ns": deadline,
             "market_health_mode": "REDUCE_ONLY" if reduce_only else "NORMAL"}
+        if self.execution_mode == "independent":
+            self.validate_owned_state()
+            for sid, source in sorted(sources.items()):
+                if sid in self._suspended or not self._ports[sid]._started:
+                    continue
+                available = scope - self._active_instruments()
+                rows = tuple(row for row in source["rows"] if row["instrument_id"] in available)
+                owned_targets = {self._ports[sid].routes[row["target_key"]]: Decimal(row["quantity"])
+                                 for row in rows}
+                if not owned_targets:
+                    continue
+                self.client.submit_targets(replace(request, strategy_id=sid, targets=owned_targets,
+                    metadata={**metadata, "position_attribution": rows,
+                              "shared_execution_mode": "independent"}))
+            return
         self.client.submit_targets(replace(request, targets=targets, metadata=metadata, deadline_ns=deadline))
 
     def suspend_strategy(self, strategy_id):
@@ -384,6 +418,10 @@ class SharedAccountExecutionService(AccountExecutionService):
             state["shared"] = {"version": 1, "budget": self.budget.state(),
                 "routes": {sid: port.configuration() for sid, port in self._ports.items()},
                 "suspended": sorted(self._suspended), "draining": sorted(self._draining)}
+            if self.execution_mode != "netted":
+                state["shared"]["execution_mode"] = self.execution_mode
+            if self.event_journal is not None:
+                state["shared"]["event_journal"] = self.event_journal.snapshot_state()
             if self.instrument_scope is not None:
                 state["shared"]["managed_instruments"] = sorted(self.instrument_scope.instruments)
         return state
@@ -411,9 +449,25 @@ class SharedAccountExecutionService(AccountExecutionService):
         for key, quantity in snapshot.working_quantities.items():
             if quantity and (key.client_id != self.client_id or key.instrument_id not in self.instrument_limits):
                 raise ValueError("共享执行账本包含范围外在途委托")
+        if self.execution_mode == "independent":
+            ledger = self.client.planner.planner._planner.ledger
+            for instrument in self.instrument_limits:
+                owned = [Decimal(row["quantity"]) for row in self.position_manager.attribution.state()["owned"]
+                         if row["instrument_id"] == str(instrument) and row["client_id"] == self.client_id]
+                gross = ledger.snapshot(instrument)
+                if (gross.long_yesterday or gross.short_yesterday
+                        or sum((max(q, Decimal(0)) for q in owned), Decimal(0)) != gross.long_today
+                        or sum((max(-q, Decimal(0)) for q in owned), Decimal(0)) != gross.short_today):
+                    raise ValueError("独立策略归属总仓与CTP同日账本不一致；禁止净额/昨仓账本混用")
 
     def restore_state(self, state):
         shared = state.get("shared", {})
+        if shared.get("execution_mode", "netted") != self.execution_mode:
+            raise ValueError("共享账户恢复执行模式不一致")
+        if "event_journal" in shared:
+            if self.event_journal is None:
+                raise ValueError("跨进程账本须由账户服务恢复，不能转为普通宿主")
+            self.event_journal.restore_state(shared["event_journal"])
         if shared.get("version") != 1 or shared.get("budget") != self.budget.state() or shared.get("routes") != {
                 sid: port.configuration() for sid, port in self._ports.items()}:
             raise ValueError("共享账户恢复策略、路由或预算不一致")
@@ -433,6 +487,9 @@ class SharedAccountExecutionService(AccountExecutionService):
                     or (deadline is not None and (isinstance(deadline, bool) or not isinstance(deadline, int) or deadline < 0))):
                 raise ValueError("恢复贡献的路由、期限或政策无效")
         super().restore_state(state)
+        if self.event_journal is not None and any(row["status"] != "completed"
+                for row in self.event_journal.requests.values()):
+            self._failed = True
         self._suspended, self._draining = suspended, draining
         # 恢复旧目标先暂停，策略预热产生新目标后显式解除；不自动发送。
         self._suspended.update(self._sources)
@@ -565,6 +622,9 @@ class SharedStrategyExecutionClient:
 
     def _enqueue(self, event):
         with self._lock:
+            if self.service.event_journal is not None:
+                self.service.event_journal.append(self.strategy_id, event)
+                return  # 跨进程事件由持久化日志及确认游标消费，不进入无人绑定队列。
             if self._events_closed:
                 self.service._failed = True
                 raise RuntimeError("已关闭策略收到新执行回报，账户须闭闸对账")

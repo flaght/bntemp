@@ -156,9 +156,12 @@ class PositionAttributionLedger:
                     raise AttributionError("逻辑归属缺少一致的真实合约明细，须先核验迁移")
             # 合约子集请求不撤销其他合约的归属意图；移除腿必须显式发送0。
             scope = set(targets)
+            independent = request.metadata.get("shared_execution_mode") == "independent"
+            if independent and any(key[2] != request.strategy_id for key in desired):
+                raise AttributionError("独立订单包含其他策略目标")
             deficits = {k: desired.get(k, Decimal(0)) - self._owned.get(k, Decimal(0))
                 for k in desired.keys() | self._owned.keys()
-                if k[0] == request.client_id and k[1] in scope}
+                if k[0] == request.client_id and k[1] in scope and (not independent or k in desired)}
             reserved = {}
             for token in self._active_tokens:
                 order = self._orders[token]
@@ -167,7 +170,8 @@ class PositionAttributionLedger:
                 for leg, remaining in self._remaining(order):
                     key = (request.client_id, order["instrument_id"], leg["strategy_id"], leg["target_key"])
                     signed = order["direction"] * remaining
-                    deficits[key] = deficits.get(key, Decimal(0)) - signed
+                    if not independent or key in desired:
+                        deficits[key] = deficits.get(key, Decimal(0)) - signed
                     reserved[key[1]] = reserved.get(key[1], Decimal(0)) + signed
             instruments = set(targets) | {k[1] for k in deficits}
             for instrument in instruments:
@@ -177,7 +181,7 @@ class PositionAttributionLedger:
                 if self.positions.working_quantity(request.client_id, instrument_id) != reserved.get(instrument, 0):
                     raise AttributionError(f"账户在途量与归属订单预留不一致: {instrument}")
             transfers = []
-            for instrument in sorted(instruments):
+            for instrument in (() if independent else sorted(instruments)):
                 positive = [k for k in sorted(deficits) if k[1] == instrument and deficits[k] > 0]
                 negative = [k for k in sorted(deficits) if k[1] == instrument and deficits[k] < 0]
                 for buy in positive:

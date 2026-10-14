@@ -539,3 +539,17 @@ ACCEPTED/CANCELED、零成交，等待时行情检查失败后正常停止撤单
 字段，原15项通过，报告tests/results/main-ema-acceptance-1791960631420831000。
 证据GAP10_PARTIAL_PROBE_HEALTH_DIAGNOSTICS_20261014.json，本机未联网/发单。
 交付REV18；真实部分成交尚未覆盖，GAP10仍开放。
+
+## 2026-10-14 三策略两种执行模式（REV19）
+
+用户明确01/03/04：同进程netted允许抵消；独立进程independent各自真实订单及
+归属仓位，不把柜台总仓覆盖进策略。已补03共享装配、独立同日CTP规划/归属风险、
+Unix账户服务/客户端/策略worker、写前请求/同代事件日志/确认补交/连接租约/停止
+排空/同日重启、只读观察与三策略配置生成。集中离线206项通过，完整03原生组
+缺本地Bar构建未跑；Linux三策略replay/realtime未验证，不能宣布三需求验收完成。
+同日已终结订单恢复支持；跨日、未知活动单和未决发送仍拒绝，不自动恢复/清仓。
+
+固定需求与进度见GAP10_THREE_STRATEGY_REQUIREMENTS_2026-10-14.md，证据
+GAP10_THREE_STRATEGIES_OFFLINE_20261014.json；完整运行手册THREE_STRATEGIES.md。
+北京时间16:00 replay、21:00 realtime由用户Linux执行并回传；实时以验收通过为门槛。
+本地未连接数据库/行情/柜台，保留旧配置/状态。GAP10整体仍开放。

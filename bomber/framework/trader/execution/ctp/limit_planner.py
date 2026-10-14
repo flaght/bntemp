@@ -28,6 +28,9 @@ class CtpLimitPlanner:
 
     def plan(self, request):
         planned = tuple(self._planner.plan(request))
+        return self.price_orders(request, planned)
+
+    def price_orders(self, request, planned):
         closing = {order.instrument_id for order in planned
                    if order.position_effect is not PositionEffect.OPEN}
         result = []
@@ -51,3 +54,39 @@ class CtpLimitPlanner:
                 raise RuntimeError("CTP限价无效")
             result.append(replace(order, order_type=OrderType.LIMIT, price=price))
         return tuple(result)
+
+
+class IndependentCtpLimitPlanner:
+    """按单来源归属规划开平；首期只支持空仓起始的同交易日会话。"""
+
+    def __init__(self, planner, positions):
+        self.planner, self.positions = planner, positions
+
+    def plan(self, request):
+        from ..contracts import OrderIntent
+        if request.metadata.get("shared_execution_mode") != "independent":
+            raise ValueError("独立订单规划缺少执行模式")
+        rows = request.metadata["position_attribution"]
+        planned = []
+        for instrument, target in request.targets.items():
+            keys = [row["target_key"] for row in rows if row["instrument_id"] == str(instrument)]
+            current = sum((self.positions.position(request.strategy_id, key) for key in keys), Decimal(0))
+            delta = Decimal(target) - current
+            if not delta:
+                continue
+            side = OrderSide.BUY if delta > 0 else OrderSide.SELL
+            quantity = abs(delta)
+            effect = PositionEffect.OPEN
+            if current * delta < 0:
+                quantity = min(quantity, abs(current))
+                snapshot = self.planner._planner.ledger.snapshot(instrument)
+                available = snapshot.short_today if delta > 0 else snapshot.long_today
+                if available < abs(current):
+                    raise RuntimeError("独立归属缺少同日可平仓量；拒绝接管昨仓或其他来源")
+                effect = (PositionEffect.CLOSE if str(instrument).rsplit(".", 1)[-1] in self.planner._planner.generic_close_venues
+                          else PositionEffect.CLOSE_TODAY)
+            planned.append(OrderIntent(request.strategy_id, request.client_id, instrument, side, quantity,
+                position_effect=effect, reduce_only=effect is not PositionEffect.OPEN,
+                metadata={**request.metadata, "target": str(target), "owned_position": str(current),
+                          "request_revision": request.revision}))
+        return self.planner.price_orders(request, planned)

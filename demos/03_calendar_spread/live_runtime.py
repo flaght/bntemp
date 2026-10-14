@@ -32,13 +32,16 @@ MAX_BAR_AGE = 120_000_000_000
 
 def restore_direction(session):
     target = session.runner.target_store.get(session.strategy.strategy_id)
-    if target is None:
-        return 0
     ids = tuple(session.runner.instruments.values())
-    first, second = (target.targets[str(i)] for i in ids)
+    if target is None:
+        if not getattr(session.runner.client, "shared_account", False):
+            return 0
+        first, second = (session.runner.position_manager.position(session.strategy.strategy_id, str(i)) for i in ids)
+    else:
+        first, second = (target.targets[str(i)] for i in ids)
     quantity = session.strategy.config.quantity
     if first != -second or first not in {-quantity, Decimal(0), quantity}:
-        raise RuntimeError("恢复目标不是本策略的等手数反向双腿")
+        raise RuntimeError("恢复目标/归属不是本策略的等手数反向双腿，保留不平衡仓位并拒绝重启")
     return int(first / quantity)
 
 
@@ -106,7 +109,7 @@ class CalendarSessionRunner(UnifiedStrategyRunner):
         self._check()
         previous = self.target_store.get(intent.strategy_id)
         if (self.orders and previous is not None and dict(previous.targets) != dict(intent.targets)
-                and any(self.position_manager.working_quantity(CLIENT_ID, instrument)
+                and any(self.position_manager.working_quantity(self.client.client_id, instrument)
                         for instrument in self.fixed_ids)):
             # 旧限价单不能继续追逐已被替换的目标。撤单请求不代表已撤单；
             # 公共Planner会等待真实撤单/成交回报释放在途，再由新Tick推进。
@@ -186,7 +189,8 @@ class CalendarSessionRunner(UnifiedStrategyRunner):
                 self.close_role_gate(str(error))
 
 
-def assemble(args, references, driver, upstream, *, account_routes=(), clock_ns=None):
+def assemble(args, references, driver, upstream, *, account_routes=(), clock_ns=None,
+             shared_service=None, strategy_id=None):
     references.validate()
     references.assert_expected(args.expected_instruments)
     model, orders = args.mode == "model", args.mode != "recording"
@@ -194,7 +198,8 @@ def assemble(args, references, driver, upstream, *, account_routes=(), clock_ns=
         raise ValueError("跟随账户须选择model主策略账本")
     policy = execution_policy_from_args(args)
     profile = CtpLiveProfile(args.simnow_environment, args.replay_md_trading_day)
-    positions = PositionManager()
+    positions = shared_service.position_manager if shared_service is not None else PositionManager()
+    client_id = shared_service.client_id if shared_service is not None else CLIENT_ID
     runner = CalendarSessionRunner(references, positions, orders=orders, clock_ns=clock_ns,
         instrument_max_age_seconds=args.instrument_max_age_seconds)
     runner.market_profile = profile
@@ -210,7 +215,15 @@ def assemble(args, references, driver, upstream, *, account_routes=(), clock_ns=
         max_abs_position=args.quantity, max_order_notional=args.max_notional,
         max_abs_position_notional=args.max_notional, max_market_age_ns=MAX_BAR_AGE,
         contract_multiplier=specs[r].multiplier) for r in references.roles}
-    if model:
+    if shared_service is not None:
+        if model or account_routes or args.mode != "simnow" or not strategy_id:
+            raise ValueError("共享执行须为具备独立策略ID的SimNow装配")
+        from bomber.framework.trader.execution.shared import SharedRiskBudget
+        port = shared_service.strategy_client(strategy_id, routes={str(i): i for i in ids.values()},
+            budget=SharedRiskBudget(args.quantity * len(ids), args.max_notional * len(ids)),
+            instrument_limits=limits)
+        execution = ExecutionComponents(port, positions, shared_service.prices)
+    elif model:
         execution = build_model_execution(CLIENT_ID, instrument_limits=limits, positions=positions)
     elif orders:
         execution = build_ctp_portfolio_execution(driver, trading_day=runner.expected_day,
@@ -232,7 +245,7 @@ def assemble(args, references, driver, upstream, *, account_routes=(), clock_ns=
     config = CalendarSpreadConfig(args.leg1_role, args.leg2_role, args.quantity, args.lookback,
         args.entry_z, args.exit_z, args.rebalance_interval)
     symbols = tuple(str(ids[r].symbol).lower() for r in references.roles)
-    strategy = CalendarSpreadStrategy(CLIENT_ID, config,
+    strategy = CalendarSpreadStrategy(strategy_id or CLIENT_ID, config,
         (CalendarSelection(references.trading_day, 0, *symbols),), dict(zip(symbols, ids.values())))
     runner.strategy, runner.client, runner.prices = strategy, execution.client, execution.prices
     references.publication_lock = runner._submit_lock
@@ -243,7 +256,7 @@ def assemble(args, references, driver, upstream, *, account_routes=(), clock_ns=
         feed.register_instrument(references.instrument_meta(role))
     bindings = StrategyBindings(
         data=tuple(DataBinding(str(i), "ctp-bars", i, DataType.BAR, "1-MINUTE") for i in ids.values()),
-        execution=tuple(ExecutionRoute(str(i), CLIENT_ID, i) for i in ids.values()))
+        execution=tuple(ExecutionRoute(str(i), client_id, i) for i in ids.values()))
     assemble_strategy(runner, strategy, feeds={"ctp-bars": feed}, execution=execution, bindings=bindings)
     identity = {"mode": args.mode, "trading_day": runner.expected_day,
         "simnow_environment": profile.environment, "replay_md_trading_day": profile.replay_md_trading_day,
@@ -256,9 +269,9 @@ def assemble(args, references, driver, upstream, *, account_routes=(), clock_ns=
         "execution_policy": policy.snapshot_state()}
     attach = attach_execution_persistence if model else attach_ctp_persistence
     manager = attach(execution, runner, state_file=args.state_file, state_components={
-        "calendar_session": SessionIdentityCheckpoint(identity)}) if orders else None
+        "calendar_session": SessionIdentityCheckpoint(identity)}) if orders and shared_service is None else None
     runner.manager = manager
     return SimpleNamespace(runner=runner, strategy=strategy, client=execution.client, execution=execution,
         ledger=execution.ledger, manager=manager, driver=driver, references=references, upstream=upstream,
         bar_feed=feed, market_profile=profile, readiness=runner.readiness, position_scope=scope,
-        recovery_binding=StrategyPositionBinding(CLIENT_ID, CLIENT_ID, {str(i): i for i in ids.values()}))
+        recovery_binding=StrategyPositionBinding(strategy_id or CLIENT_ID, client_id, {str(i): i for i in ids.values()}))

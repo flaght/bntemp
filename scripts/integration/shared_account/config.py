@@ -20,11 +20,13 @@ def read_config(path):
     path = Path(path).resolve()
     config = json.loads(path.read_text(encoding="utf-8"))
     allowed = {"version", "trading_day", "environment", "replay_md_trading_day", "seconds",
-        "account_state_file", "report_dir", "account", "strategies", "position_scope"}
+        "account_state_file", "report_dir", "account", "strategies", "position_scope", "execution_mode"}
     if set(config) - allowed or config.get("version") != 1:
         raise ValueError("共享配置版本无效或存在未知字段")
     if config.get("position_scope", "account") not in {"account", "strategy_instruments"}:
         raise ValueError("position_scope须为account或strategy_instruments")
+    if config.get("execution_mode", "netted") not in {"netted", "independent"}:
+        raise ValueError("execution_mode须为netted或independent")
     day = config["trading_day"]
     if datetime.strptime(day, "%Y%m%d").strftime("%Y%m%d") != day:
         raise ValueError("trading_day须为YYYYMMDD")
@@ -67,8 +69,8 @@ def read_config(path):
         stop_after = row.get("stop_after_seconds")
         if stop_after is not None and (not math.isfinite(float(stop_after)) or not 0 < float(stop_after) < seconds):
             raise ValueError("策略独立停止时间须在会话时长以内")
-        if row["kind"] not in {"main_ema", "cross_section"}:
-            raise ValueError("首期工厂支持main_ema和cross_section")
+        if row["kind"] not in {"main_ema", "cross_section", "calendar_spread"}:
+            raise ValueError("策略工厂支持main_ema、cross_section和calendar_spread")
         if not isinstance(row["argv"], list) or any(not isinstance(arg, str) for arg in row["argv"]):
             raise ValueError("策略argv须为字符串数组")
         if any(arg.split("=", 1)[0] in PROTECTED for arg in row["argv"]):

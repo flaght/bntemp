@@ -52,7 +52,7 @@ def validate_td_preflight(config, driver, *, md_front, td_front, diagnostics):
             f"TD={td_front}；请核对TD前置和会话环境，并用只读结果确认配置交易日")
 
 
-def build_host(config, *, resume, diagnostics=None, read_only=False):
+def build_host(config, *, resume, diagnostics=None, read_only=False, strategy_processes=False):
     from bomber.framework.trader.execution.ctp import CtpNativeTraderDriver, CtpTdApiTransport
     from bomber.framework.trader.execution.builders import build_ctp_portfolio_execution
     from bomber.framework.trader.execution.shared import SharedAccountExecutionService, SharedRiskBudget
@@ -95,7 +95,8 @@ def build_host(config, *, resume, diagnostics=None, read_only=False):
             assert_account_ready(driver)
         prepared, specs = [], {}
         for row in config["strategies"]:
-            entry, args = strategy_arguments(row, config, resume=resume)
+            entry, args = strategy_arguments(row, config,
+                resume=(Path(row["state_file"]).is_file() if strategy_processes else resume))
             context = LiveRunContext(driver.trading_day, resources)
             lifecycle = SimpleNamespace(transport=transport, md_front=md_front)
             # 每个MD拥有独立flow目录；同策略类型也可以多实例。
@@ -135,7 +136,8 @@ def build_host(config, *, resume, diagnostics=None, read_only=False):
             generic_close_venues=("DCE", "CZCE"), generic_close_today_first_venues=("DCE", "CZCE"))
         driver_holder["client"] = execution.client
         service = SharedAccountExecutionService(execution.client, prices=execution.prices,
-            instrument_limits=limits, budget=budget, instrument_scope=position_scope)
+            instrument_limits=limits, budget=budget, instrument_scope=position_scope,
+            execution_mode=config.get("execution_mode", "netted"))
         sessions = []
         for row, entry, args, inputs in prepared:
             session = assemble_strategy_session(entry, args, inputs, service=service,

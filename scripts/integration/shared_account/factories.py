@@ -3,7 +3,8 @@
 from importlib import import_module
 
 
-ENTRIES = {"main_ema": "demos.01_main_ema.run_live", "cross_section": "demos.04_cross_section.run_live"}
+ENTRIES = {"main_ema": "demos.01_main_ema.run_live", "cross_section": "demos.04_cross_section.run_live",
+           "calendar_spread": "demos.03_calendar_spread.run_live"}
 
 
 def strategy_arguments(row, config, *, resume):
