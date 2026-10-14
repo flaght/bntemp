@@ -1,163 +1,178 @@
 # 当前 GAP 完成情况与评估快照
 
-更新日期：**2026-10-13，Asia/Shanghai**。保留原文件名，合并此前 10 月 11—12 日评估，补充 10 月 13 日用户明确要求的同账户多策略执行缺口。范围包括当前源码、PF2026101101 后续模型证据、PF2026101201—1207 特征／日历／08 策略交接与验收记录，以及 PF2026101208 后的 04 原生入口与账户锁核对。
+更新日期：**2026-10-14，Asia/Shanghai**。保留原文件名，合并 10 月 12—14 日的源码及最新专项证据，替换此前零散增量与过时结论。范围包括整体 GAP、共享账户 REV19／三策略两模式、08 实时与 DolphinDB 分钟流、03 跨期、交易会话通用化及 08 共享／跨日恢复交付。
 
-本次增量更新文档及证据，不改运行代码、不连接数据库或柜台；已运行的本地测试属于会话清理实施阶段，具体范围另列。实际数据库／柜台结论依据用户提供的远程输出，不代表本次独立重跑。文件名、计划日期或源码存在不能单独作为完成依据。
+本次只更新本文，未改运行代码，未运行 Python、测试、编译，也未连接数据库或柜台。通过结果来自已登记的用户远程输出和专项证据；其他任务的本机替身／离线测试单独标注，不作为本次重跑或真实柜台验证。计划时点、源码存在、completed 或单独状态文件读回不能自动等同完整验收。
+
+## 当前最小核：开发与验收基线（2026-10-14）
+
+本节依据用户本次明确确认，从当前迭代起作为**最小核需求基线 v1：M01—M06**。它回答“当前必须交付什么”，后面的整体 GAP 回答“完整架构还差什么”。最小核完成不要求全部 11 项 GAP 同时关闭；整体 GAP 的已关闭数量也不能代替下面六条验收。
+
+后续用户可以继续补充。新增需求须在本节记录编号、确认日期、语义和验收范围；修改已有条款须写明替代关系与受影响项，不静默改变旧含义。实现状态随证据更新，需求范围不得因临时排错或某个 demo 的限制自行改变。当前基线只写入需求与进度，不表示本次已实施新增代码。
+
+**核心原则：策略算法复用；运行模式、行情源、执行客户端、进程布局、仓位来源和特征来源由公共接口与装配层选择。** 新来源或第三方客户端开发适配器；已有来源切换修改运行配置与绑定，不把 CTP／BN／DolphinDB／LXGBN 分支塞进策略算法。策略的行情字段、频率、业务标的及特征需求仍须由装配满足，不能把任意不同输入强行当作等价数据。
+
+| 编号 | 用户确认的最小核要求 | 当前进度 | 最小完成标准 |
+| --- | --- | --- | --- |
+| M01 策略与行情解耦 | 同一策略无需修改算法即可用于回测／Live；Live 行情可接原生 CTP、BN-WS、DolphinDB | StrategyTemplate／Runner／标准事件和三类 Feed 已有；CTP 与 DDB 有策略实测，BN-WS 有在线 Recording 记录；各 demo 的来源切换入口仍不统一 | 同一策略类、参数和输入契约保持；通过装配选择文件／CTP／BN-WS／DDB，以标准事件运行；已有来源切换不修改策略或另造策略版本。每个纳入最小核的来源取得匹配策略输入的运行证据 |
+| M02 执行客户端可替换 | 下单可选择 CTP、BN 或自定义第三方客户端，例如 LXGBN；行情源不决定下单端 | 公共执行端口、Planner 与标准回报已有；CTP 原生成交已验，BN 适配／离线链路已有；LXGBN 仅有对接规范，具体适配器未找到 | 执行端由显式配置／工厂／路由选择；报单、撤单、受理、拒单、部分／全部成交及稳定 ID 转为标准回报；策略不调用厂商 SDK。CTP／BN 实际链路和首期第三方适配分别验收，不能以接口存在代替厂商接通 |
+| M03 多策略与进程布局 | 多个策略可在同进程运行，也可各自独立进程；同一账户多策略是核心能力 | 同进程双策略真实成交／归属／停止已验；IPC／worker 与三策略两模式已交付、局部离线通过；完整 Linux 三策略联调待验 | 01／03／04 原策略在两种布局中分别启动，订单／回报／仓位按策略隔离；停止、断线或重启一策略不重置其他策略。共享物理账户由唯一执行服务管理，独立进程不等于多个 TD 写入者 |
+| M04 策略独立仓位 | 策略管理自己的仓位，可以不接入真实账户仓位 | position 读取归属；strict／observe／off 与 fills／model 已实现，模型及原生归属已有实际证据；新跨进程组合仍待验 | 策略不会被整账户净仓覆盖；off 不查询物理持仓且报告为 None；fills 只由选定真实执行来源推进，model 明确标记模拟来源；恢复保留自己的版本／归属。真实执行端所需资金、可平量、活动订单等校验由适配器负责，不强迫策略使用账户仓位 |
+| M05 自定义特征两种运行方式 | 同一特征定义支持回测与 Live | 配置生成 Schema／不可变 Payload、版本／对齐、文件回放与数据库刷新已实现；离线、DDB／CSV 和实际指数策略消费已验；新现货等业务场景待配置／验收 | 同一 Schema、计算版本、字段和绑定契约；回测读标准导出、用模拟可见时钟，Live 读实际源／用真实可见时钟；策略使用相同查询及对齐接口。普通已计算特征新增声明／映射，不新增专用 Provider；迟到与缺失行为显式、可审计 |
+| M06 Live 的 DolphinDB 预热 | **需要历史窗口的 Live 版本必须接入 DolphinDB 获取数据进行预热，不能只靠启动后等待实时 Bar** | 公共 HistoryService／DolphinDB Provider 和 EMA 历史钩子已有，真实 IM 指标预热／重启回补已验；多策略公共装配、统一源配置及正式当前历史→实时验收未完成，CU 历史分钟源仍缺 | 窗口、频率、真实合约／多腿、会话、时间标签及价格口径可配置；从 DDB 实际读取所需已完成数据，经公共预热接口初始化指标／窗口，再无重复无缺口衔接当前行情。读取、覆盖、使用数和接续结果有实际报告 |
+
+### M06 预热的明确语义
+
+1. **历史来源与实时来源独立选择。** 实时可以是 CTP、BN-WS 或 DDB；预热可以从 DDB 取得该策略对应的历史输入。DDB 作为预热来源不强制实时也选 DDB，更不决定执行客户端。
+2. **策略不直接连接数据库。** 公共 Provider／历史服务负责读取和标准化，启动协调器负责窗口、缺口、实时缓冲与阶段切换；策略提供复用的预热／指标更新入口。需要新的预热钩子时在公共接口与装配层接入，不复制一份 Live 策略算法。
+3. **预热只初始化状态，不重放历史交易。** 历史数据不产生历史报单／成交，不重复提交旧目标，也不把行情初始化当成交易仓位重建。账户／策略归属恢复与指标预热分别处理；完成预热后才按新的完整实时输入正常决策。
+4. **衔接须覆盖查询期间到达的行情。** 明确历史截止点，提前订阅／缓冲实时输入，按合约及时间合并去重；未完成 Bar 不进入窗口。多腿及外部特征按各自需求对齐，不用缺腿、复制价格或跨分钟拼接补造完整帧。
+5. **缺数据不能伪称完成。** 保留显式 fail／allow 政策与策略自身最小预热条件；默认严格，只有显式配置允许不足时按有效数据继续，报告真实缺口及实际条数。连接失败、身份／字段错误、价格版本冲突不能被“允许缺行情”掩盖。
+6. **文件是可选缓存，DDB 能力是最小核要求。** 保留此前已确认的盘前文件优先、缺少／不足时 DDB 补足，以及盘中恢复读 DDB 的规则；同时要能配置并实际验证 DDB 预热路径。仅文件成功、实时重新预热或数据源构造成功，都不能代替 M06 的 DDB 验收。回测继续消费标准文件，避免将 Live 数据库访问带入回测算法。
+7. **当前范围是已声明并有数据的输入。** 不要求一次支持全部品种，但必须为当前验收策略提供真实历史表／字段映射和需求窗口。CU 源缺失明确阻塞该场景，不能把 IM 历史或 CU 仅枚举的分钟时间点当成 CU 历史价格。
+
+M06 对应 GAP04，恢复接续部分关联 GAP06；它是本次新增的最小核要求，**当前不能标记完成**。源码依据为 [历史服务](/Users/kerry/work/bomber1/pro/bomber/framework/dataprep/history/service.py)、[EMA 历史装配](/Users/kerry/work/bomber1/pro/demos/01_main_ema/history.py)；既有文件／数据库规则见 [启动与恢复政策](/Users/kerry/work/bomber1/pro/doc/HANDOFF/history/HANDOFF_HISTORY_STARTUP_POLICY_2026-10-09.md)。
+
+### 已确认的政策、需补资料与防止范围漂移
+
+- 仓位政策与是否真实下单是两个选择：off＋fills 仍可发真实订单；model 的模拟回报不等于柜台成交。策略归属、执行账户和信号状态分别保存。
+- 首期已确认同进程 netted 允许抵消，独立进程 independent 分别真实发单；进程布局与执行净额政策分开记录，不以“多进程”要求为由删除账户写入锁或归属校验。
+- 需要补齐的外部资料主要是 **LXGBN 的具体 SDK／协议**，以及 **预热数据库的真实表、字段／合约映射、时间／价格口径和需求窗口**。第三方规范目前是草案；可复用 [对接说明](/Users/kerry/work/bomber1/pro/doc/integration/DXBM_LXG_INTEGRATION_SPEC.md)，确认本次 LXGBN 是否为该接口后落实实际适配。
+- 所有交易所／期权业务、复杂订单、自动补偿、跨主机、全面跨日换约和 Windows 等完整架构扩展继续单独跟踪，不自动成为六条最小核的新增门槛。当前最小核所依赖的基本订单关联、回报去重、期限、停止／恢复和数据可见性仍须满足，不能因缩小范围而绕过。
+- 每次实施／验收标明 M01—M06 中对应项、源码版本、运行组合和结果。状态分为“接口／代码已有”“正式入口可用”“离线通过”“实际场景通过”“尚缺”，不以单个 demo 成功推称所有组合完成，不以整体 GAP 未关闭推称最小核毫无进展。
+
+最小核下一步按 **统一来源／执行装配 → 三策略两种布局验收 → DDB 预热及当前行情接续 → BN／第三方实际接入**推进，数据和适配资料核对可并行。M04／M05 已验的能力保持，不为本次需求澄清重复重写。
 
 ## 完成情况总览
 
-**11 项整体 GAP 中，已关闭 2 项：GAP01、GAP03；其余 9 项未整体关闭。**
+**整体仍为 11 项 GAP：GAP01、GAP03 已按既定范围关闭，其余 9 项未整体关闭。** 本轮新增了多个已完成的子项，不新增整体关闭数量。
 
-**同一物理账户同时运行多个策略，是正式交易系统必须提供的核心功能，列为 GAP10 高优先级实施项。** 用户于 2026-10-13 明确要求：不能将“一个账户只能运行一个策略”作为正常产品能力边界。现已实现配置化同进程共享原生宿主，保留各策略独立Runner、目标及归属账本；用户提供的当前SimNow运行已确认范围外持仓隔离、横截面14笔成交及EMA独立停止。首轮EMA停止前未完成预热；后续同日恢复已取得两个来源实际成交及RB共享母单2手各归属1手的日志证据，最终RB空2/HC多1与两策略合计一致。原独立demo CLI继续争账户锁；2026-10-14已增加同机跨进程协议/客户端、独立订单模式与03装配；本机离线验证通过，完整Linux三策略replay尚待验收。跨主机保护仍缺，GAP10整体保持开放。
+**同一物理账户同时运行多个策略是正式交易系统核心要求，保持 GAP10 高优先级。** 当前同进程共享宿主已经取得双策略实际成交、冻结分配、独立停止和同日恢复证据；同机跨进程及三策略两种执行模式已交付并通过局部离线验证。不能再将“账户只能运行一个策略”作为产品能力边界；完整 Linux 三策略及真实独立订单模式仍待验收。
 
-“未关闭”不代表没有实现。本次最明显的新增完成项是：**04 模型运行及同文件恢复、GAP08 通用特征离线验收与真实 DolphinDB／CSV 链路、08 Replay 工程目标及模型／原生期权成交、公共交易日期接口**。这些完成项各有范围，不能直接替代完整实时运行、多账户成交、通用恢复或通用会话验收。
-
-| 类别 | 项目 | 如何理解 |
+| 类别 | 当前项目 | 判断 |
 | --- | --- | --- |
-| 已完成并整体关闭 | GAP01、GAP03 | 达到原定关闭标准；新增模式和场景仍按各自范围验收 |
-| 已有实现及局部通过，整体未完成 | GAP04、05、06、07、08、10 | 下表明确已经完成的部分及剩余条件 |
-| 关键修复／设计决定仍未完成 | GAP02、09、11 | 期限主链、NT／框架状态职责及部署目标仍需落实 |
+| 已按整体标准关闭 | GAP01、GAP03 | 原关闭结论保持；新增模式独立验收 |
+| 已有实现与局部验收，整体仍开放 | GAP04、05、06、07、08、10 | 本轮重点进展在共享执行、实时特征消费、原生恢复及通用会话 |
+| 核心修复／设计决定未完成 | GAP02、09、11 | 普通期限主链、NT／框架状态职责、部署平台仍需落实 |
 
-## 各 GAP：已完成与未完成
+本轮最重要的状态变化：
 
-| GAP | 已完成／已通过的部分 | 尚未完成 | 整体状态 |
+- **共享母单按冻结所有者撤单已实现且真实零成交撤单通过**，旧“只按触发策略撤单”的代码缺口已修复；真实部分成交后撤余单、拒单及 peer 后续实际重规划仍未覆盖。
+- **同机跨进程协议／客户端与 independent 模式已实现**，旧“协议尚不存在”已过时；跨主机保护和完整三策略线上验证仍缺。
+- **08 实时非映射目标链与期权原生成交已通过相应范围**；DolphinDB 分钟推送＋指数查询也取得实时 Recording 目标链验收，不再停留于工程映射。
+- **静态会话核心及 CU 两来源窗口／分钟序列对照已完成**；完整会话专项、历史行情读取与实时接续仍未关闭。
+- **08 共享执行接入及启动跨日恢复已交付、离线通过**，真实原仓恢复及新来源继续管理尚待验收。
+
+## 各 GAP：已完成与尚未完成
+
+| GAP | 当前已完成／已验证 | 尚未完成 | 整体状态 |
 | --- | --- | --- | --- |
-| 01 成交归属 | 通用冻结分配、内部净额、回报去重及持久化；原 EMA 实际成交／最终权威核对；04 PB 开平及新增 MO 期权归属成交证据 | 新多账户真实回报、共享母单撤单等新增能力另行验收，不扩大原关闭范围 | **已关闭** |
-| 02 目标截止时间 | 根因、统一时钟和共享贡献问题已分析；部分续执行／Joint 有局部期限检查 | 普通／动态入口、贡献期限、逐笔实际发送、在途到期维护与恢复统一落实 | **未完成：修复仍缺** |
-| 03 数据源边界与一致性 | 来源政策、参考时效、失效闭闸及真实数据库→导出→本地一致性；控制线程缓存公共化 | 日常资料日核验继续执行；新历史和特征能力分别归 04／08 | **已关闭** |
-| 04 历史预热与实时接续 | 历史 Provider／工厂、逐日因子；真实 IM 指标重启／回补；统一静态会话及CU两源窗口／分钟时间点对照 | 统一3份历史源配置；CU分钟源目前缺失；当前正式历史→实时接续、生产恢复及MongoDB历史Provider待验 | **部分完成，保持开放** |
-| 05 多腿协调与续执行 | 04 完整分钟帧、Tick 保留目标续执行、可选完整组／手数上限；真实 Recording、PB 开平及其他双侧成交 | 旧目标活动单取消／确认／重规划；共享母单按归属撤单；通用腿状态、敞口限制、超时／补偿；原四合约覆盖 | **部分完成** |
-| 06 在线重启与恢复 | 公共同 TD 恢复、01／04 受限入口、预热暂停旧目标、CTP 同代保存锁；**04 模型同文件恢复通过** | 01 模型恢复、08 恢复、当前版本原生完整恢复；跨日／换约／挂单断点、漏成交／未知订单及双端恢复 | **部分完成** |
-| 07 执行语义与风控 | 渠道／健康／范围门控、strict／observe／off、fills／model；原生资金与账户锁；08 特定 MO 期权原生开仓／归属／状态读回 | 逐通道能力声明、TIF／套保、费用／保证金／组合风险；实时非映射、非零期货对冲及最新版本完整原生回归 | **部分完成** |
-| 08 自定义特征／DataHub | 配置生成不可变 Payload、Schema／版本、文件／DolphinDB／MongoDB Provider、EXACT／WINDOW／ASOF、有限等帧；252 项＋D0 离线、真实 DDB／CSV 链路；08 工程消费链 | 实时非映射同分钟／期限／恢复验收；真实现货／期现消费；真实 MongoDB、Parquet 往返、历史可见性及量额语义 | **首期公共能力已验，整体未关闭** |
-| 09 状态权威职责 | 唯一策略账本来源、执行基准／物理观测分离、来源标记和政策恢复校验已实现 | 正式统一 NT Cache／Portfolio／ExecutionEngine 与框架状态职责，验证 CTP／BN 读取和镜像一致性 | **部分职责已定，整体未完成** |
-| 10 CTP＋BN／多账户／同账户多策略执行 | Joint／fanout基础；配置化同进程共享原生宿主、逐策略端口与生命周期、显式持仓范围；首轮横截面14笔成交；后续同日恢复双来源10笔/13手及共享母单全量分配核对通过；共享恢复/拆分/撤单离线覆盖 | 真实共享母单部分成交/撤单/拒单、单策略原生重建；CTP＋BN联合成交/恢复、真实第三方多账户；跨进程协议、跨主机保护、BN写前/漏成交重建仍缺 | **部分完成，整体未关闭** |
-| 11 Windows／Linux | Linux 原生 CTP 与账户／策略文件锁路径已有 | 正式决定首期平台；若要求 Windows，补 SDK／构建／锁／生命周期兼容 | **未完成：部署口径未统一** |
+| 01 成交归属 | 原 EMA 闭环；04 PB 开平、MO 期权原生成交；共享母单双来源全量分配及归属合计核对；停止回调修复 | 新 independent／真实多账户及异常共享成交按新增范围验收 | **已关闭，保留原范围** |
+| 02 目标截止时间 | 根因已分析；新共享路径保存源期限，逐单检查，CTP 写前保存后复查实际发送期限 | 普通／动态／其他分发及执行路径统一期限、在途到期维护与恢复；不能以共享局部实现关闭全项 | **未完成** |
+| 03 数据源边界与一致性 | 来源政策、参考时效、失效闭闸与数据库→导出→本地一致性；控制线程缓存 | 每次运行继续核验来源日／可见性；新历史与特征分别归 04／08 | **已关闭** |
+| 04 历史预热与实时接续 | 历史 Provider／逐日因子、真实 IM 指标重启回补；统一静态会话及 CU 两源窗口／分钟时间点对照 | 3 份历史源 JSON 统一、CU 历史分钟、当前正式历史→实时接续、MongoDB 历史 Provider；暂缓缺口保留 | **部分完成** |
+| 05 多腿协调与续执行 | 04 固定组合／Tick 续执行；03 双腿 Live；新共享目标替换撤单／确认及 peer 重规划离线、真实零成交母单撤单 | 通用腿生命周期、裸腿数量／时间限制、超时／补偿；真实部分成交／拒单／peer 续成；03 修正版在线目标完成 | **部分完成** |
+| 06 在线重启与恢复 | 04 模型恢复；03 空检查点模型恢复、带仓原生恢复／平今局部证据；共享同日双来源恢复、只读终态检查点修复；08 跨日交付 | 当前三策略／08 共享跨日实际恢复；01 模型恢复；未知／挂单断点／漏成交；自动换约与一般跨日恢复 | **部分完成** |
+| 07 执行语义与风控 | 政策、范围／来源健康、资金门控；四交易所适配；MO 实时期权、CU 双腿及共享归属预算／原生开平证据 | 四交易所完整实际组合验收、TIF／套保／费用／保证金／组合风险；非零期货对冲；最新变更原生回归 | **部分完成** |
+| 08 自定义特征／DataHub | 配置化 Schema／版本／Provider／对齐与有限等帧；252 项＋D0 离线、DDB／CSV；实时 CTP＋指数及 DDB 分钟流 Recording 目标链 | 真实现货／期现、MongoDB／Parquet、历史可见版本与量额语义；恢复后持续消费、在线迟到／超时样本 | **首期多层验收完成，整体开放** |
+| 09 状态权威职责 | 唯一策略来源、物理账户／策略归属分离；netted 与 independent 显式政策；账户宿主统一执行事实 | 正式统一总体架构的 NT 主链／框架主链口径及 CTP／BN 镜像、读取和未知外部回报一致性 | **职责部分明确，未关闭** |
+| 10 同账户多策略／多端／多账户 | 同进程双来源实测、归属／停止／母单撤销；同机 IPC／客户端、01／03／04 工厂与两模式、可靠事件日志局部离线；08 共享接入 | Linux 三策略 netted／independent、真实部分成交／拒单／worker 停止重启；CTP＋BN、真实第三方多账户、跨主机、BN 写前／漏成交 | **高优先级，部分完成** |
+| 11 Windows／Linux | Linux CTP、账户／状态锁和 Unix 服务路径已有 | 正式统一部署目标；若需 Windows，补 SDK／构建／锁／跨进程传输及生命周期兼容 | **未完成** |
 
-依据：[整体清单](/Users/kerry/work/bomber1/pro/doc/audits/ARCHITECTURE_GAPS_2026-10-09.md)、[目标架构](/Users/kerry/work/bomber1/pro/doc/architecture/ARCHITECTURE_FIXED.md)、[实现台账](/Users/kerry/work/bomber1/pro/doc/architecture/STRATEGY_ARCHITECTURE.md)。清单部分旧段落仍保留实施前状态，以本文及最新专项证据判断当前完成范围。
+依据：[整体清单](/Users/kerry/work/bomber1/pro/doc/audits/ARCHITECTURE_GAPS_2026-10-09.md)、[目标架构](/Users/kerry/work/bomber1/pro/doc/architecture/ARCHITECTURE_FIXED.md)、[实现台账](/Users/kerry/work/bomber1/pro/doc/architecture/STRATEGY_ARCHITECTURE.md)。历史索引仍有实施前状态，不以其旧“未实现”段落否定最新源码及证据。
 
-## 已经完成的具体能力
+## GAP10：共享执行已从端口扩展到正式宿主与同机进程服务
 
-### 1. 公共 Live、独立策略账本与受限恢复
+### 已完成的结构与政策
 
-行情与执行渠道独立装配，来源和失败原因可审计；参考查询与缓存刷新在控制线程，行情回调不查询数据库。策略账本可以选择 fills 或 model，物理账户政策可以选择 strict／observe／off。多账户分发及进程内共享连接已有公共实现，跟随回报不会累计进主策略仓位。
+公共 SharedAccountExecutionService／策略端口、Shared Host 和 CTP Shared 生命周期已接入。一个账户持有唯一 TD、物理账户写入锁、PositionManager、冻结归属、订单机、CTP 今昨账本和账户文件；策略各自保留 Runner、信号窗口、目标版本、路由与信号文件。公共框架不导入 demo，应用工厂装配原 01／03／04，另增加 08 接入。
 
-已登记的模型验收：
+两种模式显式选择：
 
-| 场景 | 结果 | 已验证内容 |
+| 模式 | 当前语义 | 验收状态 |
 | --- | --- | --- |
-| 01 真实 CTP MD 驱动模型 | **通过**，model-1791673733149458028 | 9 根 Bar、模型 SELL 1，策略与执行仓位 RB=-1 |
-| 04 真实 CTP MD 驱动模型 | **通过**，cross-section-model-1791706100508175757 | 9 同步帧、6 调仓、12 模型成交；最终 AU=0、AG=+1、SC=-1 |
-| 04 同文件模型重启恢复 | **通过**，cross-section-model-1791707067358178583 | 原目标版本 6→7；第 4 帧预热后才执行新目标；6 模型成交；最终 AU=0、AG=-1、SC=+1 写回原文件 |
-| 01 模型恢复／01 与 04 同时运行／真实多账户回报 | **未验收** | 单独运行通过不能证明并行或第三方账户执行 |
+| netted | 同账户目标汇总，允许策略间抵消；内部划转另审计，不伪造柜台成交／手续费 | 双策略共享实际正常成交及分配已验；完整 01／03／04 三策略仍待验 |
+| independent | 各策略独立真实订单及归属，不跨策略抵消；账户层统一风险、编号、持久化与连接 | 代码、实际 OS socket 进程及替身柜台离线通过；Linux 三策略原生订单／停止恢复待验 |
 
-上述回报是 reference-price 模型成交，物理账户未关联，不作为柜台成交。04 后续通过已经替代旧“15:18 无行情失败”为当前运行结论，失败记录仅作历史保留；MD 停机报告修正版是否在成功运行机加载仍无完整核验结果。
+同机 Unix JSON 协议、能力身份、请求幂等／冲突检查、写前日志、同代事件日志、确认游标、租约到期及重连补交已有实现。策略进程不争物理 TD 锁；回报补交按至少一次传输处理，自定义外部回调副作用仍须按事件 ID 幂等。不是跨主机服务；未知活动单、未决发送及未覆盖跨日条件仍闭闸，不盲目重发。
 
-依据：[模型最新交接](/Users/kerry/work/bomber1/pro/doc/HANDOFF/live/HANDOFF_MODEL_REPLAY_2026-10-11.md)、[结构化模型证据](/Users/kerry/work/bomber1/pro/doc/evidence/live/MODEL_REPLAY_20261011.json)、[执行服务交接](/Users/kerry/work/bomber1/pro/doc/HANDOFF/live/HANDOFF_STRATEGY_EXECUTION_2026-10-11.md)。
+依据：[共享交接最新 REV19](/Users/kerry/work/bomber1/pro/doc/HANDOFF/gaps/HANDOFF_GAP10_SHARED_ACCOUNT_2026-10-13.md)、[三策略固定需求](/Users/kerry/work/bomber1/pro/doc/HANDOFF/gaps/GAP10_THREE_STRATEGY_REQUIREMENTS_2026-10-14.md)、[运行手册](/Users/kerry/work/bomber1/pro/scripts/integration/shared_account/THREE_STRATEGIES.md)、[公共共享核心](/Users/kerry/work/bomber1/pro/bomber/framework/trader/execution/shared.py)、[同机协议](/Users/kerry/work/bomber1/pro/bomber/framework/trader/execution/ipc.py)。
 
-### 2. GAP08 通用特征：公共首期已实现并完成离线验收
+### 已取得的真实证据与限制
 
-当前扩展路径为：
-
-`业务 JSON → DatasetSpec／不可变 Payload → 通用 Provider → 版本缓存／DataHub → 策略需求与对齐帧`。
-
-普通已计算特征通过 Schema 与来源映射接入，不再为每个指数或品种新增专用 Provider／Feed／Channel。支持多数据集、多频率、显式业务键、字段重命名、源身份与 Schema 指纹；EXACT、WINDOW、ASOF、可见时间／接收时间、修订、有限等待及超时跳过已有实现。特征查询是需求声明加轮询，不是原生推送订阅。
-
-PF1203 REV2 已登记 **9 组、252 项测试及 D0 全部通过**：features 35、definitions 10、index 17、legacy 14、entry 9、feature-query-live 9、option-vega 33、option-vega-live 12、live-common 113。早期 market/frames 与 08 CLI 混版已取得修正后通过证据，不能继续列为当前未解决阻塞。
-
-随后 PF1204 REV3 受影响远程组通过：feature-query-live 9、option-vega 34、option-vega-live 14、option-calendar 18、live-common 120，合计执行 195 项，10 个部署摘要全部匹配。两批属于不同版本及覆盖，不相加为唯一测试总数，也不自动覆盖 PF1205—1207 的全部新代码；后续局部测试与实际工程运行分别记录。
-
-依据：[声明式特征交接](/Users/kerry/work/bomber1/pro/doc/HANDOFF/gaps/HANDOFF_GAP08_DECLARATIVE_2026-10-12.md)、[252 项证据](/Users/kerry/work/bomber1/pro/doc/evidence/live/GAP08_DECLARATIVE_OFFLINE_PASS_20261012.json)、[REV3 远程证据](/Users/kerry/work/bomber1/pro/doc/evidence/live/OPTION_RECORDING_REV3_REMOTE_20261012.json)、[Schema](/Users/kerry/work/bomber1/pro/bomber/framework/datahub/features/schema.py)、[来源配置装配](/Users/kerry/work/bomber1/pro/bomber/framework/dataprep/features/definition.py)。
-
-### 3. 真实 DolphinDB 查询、标准化与 CSV 往返
-
-真实 `dfs://min_bar/index_1min` 元信息与样例已核验；DATE＋TIME、上海时区、分钟结束标签、标准事件及来源身份转换已通过。报告 feature-readonly-1791777601420035517 返回 3 条，标准 CSV 导出／逐记录读回通过；原表最早记录截图解释了该区间为何只返回 11:25—11:27，没有时间过滤异常证据。
-
-后续真实读取 2026-10-12 的 14:18—14:24 共 7 条，时间标签与 CTP 请求边界一致。来源持续更新得到用户确认，但查询在 15:00 后完成，不能证明早先各帧截止前已经可见。
-
-updateTime 已确认是最后更新时间，当前保持 observed；下载历史数据不能回填成历史当时已可用。volume／turnover 的累计规则与单位仍未确认，不自动差分；08 当前消费指数 close，这一通过不代表所有量额字段已满足其他策略语义。
-
-依据：[CSV 往返证据](/Users/kerry/work/bomber1/pro/doc/evidence/live/GAP08_DOLPHINDB_CSV_PASS_20261012.json)、[覆盖核验](/Users/kerry/work/bomber1/pro/doc/evidence/live/GAP08_DOLPHINDB_COVERAGE_20261012.json)、[原表配置](/Users/kerry/work/bomber1/pro/bomber/framework/dataprep/features/configs/features.json)。
-
-### 4. 08 期权工程链：目标、模型及原生柜台成交已取得证据
-
-08 显式 Replay 工程时钟把已完成 CTP Bar 映射到估值分钟，指数查询对应映射分钟。原始数据与接收时间保留；这是工程联通验证，不是实时非映射策略或同步历史研究验证。
-
-| 验收项 | 已完成结果 | 证据边界 |
+| 场景 | 已完成结果 | 不能扩大到的范围 |
 | --- | --- | --- |
-| 工程行情与选约评价 | 10 帧消费、同分钟指数送达、5 秒期限内接收；初次 ZERO_ALLOCATION | 该次没有非零目标，不以运行 passed 代替目标链通过 |
-| 工程 Recording 非零目标 | Delta 档 0.25，MO2610-C-7300=-1；Recording 实际收到匹配请求，10 帧、指数跳过 0 | 0 报单／成交符合 Recording；不能称实时验收 |
-| 工程 Model 成交与保存 | 1 次模型成交，策略／执行仓 -1；JsonStateStore 读回 generation 14、校验通过 | 模型未连接 TD；文件读回不是重启恢复 |
-| 工程原生 SimNow 成交与保存 | **1 单 1 成交**：MO2610-C-7300 SELL OPEN 1，限价 37.2、成交 37.4；策略／执行／柜台净仓 -1，活动单 0，清理无错；generation 15 读回校验通过 | 特定期权原生链已通过；没有非零期货对冲、实时非映射或重启恢复证据 |
+| 同日双来源恢复／共享成交 | 10 单、13 手；RB 卖开 2 手冻结为横截面与 EMA 各 1 手；最终归属合计 RB-2／HC+1 与柜台一致，活动单 0，范围外仓位保持 | 原启动／检查点及运行摘要未全部展示；不是未知订单或漏成交通用重建 |
+| 停止回调修复正常路径 | 报告 1791945013262536404：7 单、10 手；EMA 1 与横截面 6 次归属回调均入队／派发／接收一致，pending 为 0；EMA 停止后 peer 仍提交目标 | 所有真实成交在 EMA 停止前；停止瞬间排队／迟到成交边界为离线覆盖 |
+| 非提交所有者撤共享母单 | 报告 1791959032663749879：CU 2 手双来源各 1 手，ACCEPTED→CANCELED，非提交者停止、peer 活动、0 成交、活动单 0、原文件哈希不变 | 没有真实部分成交、拒单、撤单后 peer 新成交 |
+| 共享故障专项 Linux | REV13 48 文件核验、7 项故障回归通过，10 源摘要一致 | 受控传输／替身柜台，无真实柜台部分成交或拒单 |
+| REV19 三策略／IPC 离线 | 65 shared-account＋15 母单＋10 IPC／应用＋116 公共，共 206 项；socket 使用 3 个实际 OS 进程 | 完整 03 原生 28 项因本机 Bar 依赖未执行；Linux 三策略 replay／realtime 未验 |
 
-原生状态文件为远端 `demos/08_option_vega/results/replay-ctp-20261012-114149.json`；原会话结束保留空 1 手，不代表当前柜台仍是该状态。不能将模型文件作原生接管，也不能将工程映射会话直接迁移为另一交易日实时恢复。
+零成交母单撤单之后的 partial 试验只见受理／撤单、0 成交，行情检查失败正常撤销，不登记真实部分成交通过。新增诊断保留原 3 秒接收／10 秒事件预算，未因测试需求放宽门禁。
 
-依据：[08 最新交接](/Users/kerry/work/bomber1/pro/doc/HANDOFF/live/HANDOFF_OPTION_CALENDAR_RECORDING_2026-10-12.md)、[Recording 目标证据](/Users/kerry/work/bomber1/pro/doc/evidence/live/OPTION_REPLAY_TEST_CLOCK_RECORDING_TARGET_20261012.json)、[Model 成交与读回](/Users/kerry/work/bomber1/pro/doc/evidence/live/OPTION_REPLAY_TEST_CLOCK_MODEL_FILL_20261012.json)、[原生成交与读回](/Users/kerry/work/bomber1/pro/doc/evidence/live/OPTION_REPLAY_CTP_NATIVE_FILL_20261012.json)。
+依据：[双来源成交](/Users/kerry/work/bomber1/pro/doc/evidence/live/GAP10_SHARED_ACCOUNT_RESUME_TWO_SOURCE_20261013.json)、[停止回调验收](/Users/kerry/work/bomber1/pro/doc/evidence/live/GAP10_STOP_CALLBACK_ACCEPTANCE_20261014.json)、[真实母单撤单](/Users/kerry/work/bomber1/pro/doc/evidence/live/GAP10_SHARED_MOTHER_CANCEL_SIMNOW_20261014.json)、[故障 Linux 证据](/Users/kerry/work/bomber1/pro/doc/evidence/live/GAP10_SHARED_MOTHER_FAULTS_LINUX_20261014.json)、[三策略离线](/Users/kerry/work/bomber1/pro/doc/evidence/live/GAP10_THREE_STRATEGIES_OFFLINE_20261014.json)。
 
-### 5. 公共交易日期接口与健康／就绪修复
+## GAP02／05：新共享路径已有修复，不能继续写成全部未实现
 
-[calendars/trading.py](/Users/kerry/work/bomber1/pro/bomber/framework/calendars/trading.py)已提供 CalendarProvider／Snapshot、NativeCalendarProvider、ExportedCalendarProvider，08 Live 读取编译日历，回测消费带 manifest／SHA 的日期导出。当前公开维护 china.cffex／china.sse、1991—2026，未知覆盖拒绝；不是所有交易所全年日历已经验证。
+当前普通及动态 Runner 仍调用 TargetStore.apply(intent) 而未传处理时间，GAP02 主链整体缺口保留。新共享路径已经保存各源 deadline、内部划转前检查、取有效贡献期限、逐 Backend 发送前核验；CTP Driver 在写前保存之后读取 actual_send_deadline_ns 复查。不能再笼统说“所有共享贡献没有期限”，也不能认为共享实现自动覆盖普通、动态、Joint、旧 fanout 及所有在途到期恢复。
 
-公共就绪等待已按控制线程刷新参考及特征后再检查，避免启动等待期间缓存过期；报告保留诊断。CTP 健康增加经校验原始深度观测，派生事件继续去重，无成交不制造 Bar；静默、回退、溢出及派发错误仍拦截。相关受影响远程回归随 PF1204 REV3 通过。
+CTP cancel_strategy 已按 order.strategy_id **或 allocation_legs 所有者**识别母单，旧按触发者单独筛选的问题已修复。共享目标替换、暂停／停止／到期先撤未完母单、确认前不替换同合约订单；来源贡献最终冻结到实际归属，保留持仓而不隐式平仓。停止流程先关新目标、排空已入账及迟到事件，再解绑；超时保留绑定及队列，回调失败保留事件并关闭账户。
 
-**静态交易会话核心已实施，完整专项未关闭。** `calendars.SessionCalendar`统一普通时段、跨午夜、交易日归属及分钟窗口；旧Runtime名称保留兼容，ImDayWindow委托同一服务。DolphinDB与Feather Provider实际接入，CU的5段规则、10月12/13日10个窗口、600个最近分钟时间点及930个区间分钟时间点真实对照通过。三份旧demo日历JSON已本地移除，CU的7条停夜盘例外已迁移CSV/Feather；例外表尚未远程导入。
+这补齐了旧评估指出的多项机制。剩余是受限路径外的统一实现、真实部分成交／拒单／peer 续成与通用腿状态、敞口、超时／补偿。03 独立入口目标变化也已补撤旧策略单，REV6 27 项 Linux 通过，但在线修正版双腿最新目标完成尚无通过记录。
 
-清理后本地`trading-hours`43项通过，清理版本`im-runtime`远程复验结果尚未提供。实际第二套TD/MD只读为20261012、净仓0/活动订单0；CU Replay Recording只展示3/5根实时Bar预热，没有最终summary，且`history_enabled=False`。这些不是数据库历史预热验收。三个`history_*.json`的统一配置、CU分钟资料、正式历史接续、真实期权系列会话和历史规则修订as-of仍待完成。详见[专项台账](/Users/kerry/work/bomber1/pro/doc/data/TRADING_SESSION_GENERALIZATION_2026-10-09.md)与[结构化证据](/Users/kerry/work/bomber1/pro/doc/evidence/live/TRADING_SESSIONS_CU_PASS_20261013.json)，不新增GAP编号或扩大既有关闭范围。
+依据：[普通入口](/Users/kerry/work/bomber1/pro/bomber/framework/trader/runner.py:290)、[共享期限与协调](/Users/kerry/work/bomber1/pro/bomber/framework/trader/execution/shared.py)、[原生发送及所有者撤单](/Users/kerry/work/bomber1/pro/bomber/framework/trader/execution/ctp/native_driver.py)、[03 REV6 回归](/Users/kerry/work/bomber1/pro/doc/evidence/live/CALENDAR_SPREAD_LIVE_REV6_PASS_20261013.json)。
 
-## 已实现，但还需要验收的部分
+## GAP08／07：实时特征消费与期权成交已有正式增量
 
-| 能力 | 当前已有实现／局部证据 | 还需取得的验收 |
+首期配置化特征 Schema、不可变 Payload、版本／可见性、文件／DolphinDB／MongoDB Provider、EXACT／WINDOW／ASOF 和有限等帧保持已实现。PF1203 REV2 的 252 项＋D0、PF1204 REV3 的 195 项属于不同版本覆盖，不相加为唯一数量。真实 DDB 元信息、标准化读取与 CSV 往返已有证据，observed 不伪造历史首次可用时间。
+
+| 新场景 | 已登记结果 | 当前剩余 |
 | --- | --- | --- |
-| 08 原始时间实时特征消费 | 实际 CTP 深度和指数查询已接通；此前实时 Recording 有 SKIPPED_INDEX／STALE 失败记录，修正已交付 | 同交易日非映射下非零目标请求、实际接收期限、超时跳过及恢复就绪 |
-| 01／04／08 各类恢复 | 04 模型已通过；01／04 原生同 TD 入口及 08 保存／读回已有 | 01 模型恢复、08 真实恢复、当前原生完整恢复；工程映射路径明确不接受 resume |
-| 一策略多账户分发 | fanout、账户倍率、独立账本、pending 保存／闭闸已有，离线覆盖 | 真实多账户异步回报、部分成交／失败隔离／结果不明确对账 |
-| 同账户多策略同进程宿主 | 正式配置入口、唯一TD、逐策略端口/归属、范围外持仓基线及原子检查点已实现；横截面实际成交/独立停止、同日恢复后双来源共享母单全量成交已核对 | 部分成交/撤单/拒单及单策略重建实证待验；独立策略进程协议与跨主机保护尚未实现 |
-| MongoDB 特征、Parquet／现货 | 通用 Provider 和文件格式接口、配置样例及离线夹具已有 | 真实 MongoDB、真实 Parquet 往返、现货／期现策略消费；示例表名不是实际源表存在证据 |
-| CTP＋BN 联合交易 | Joint、独立渠道、同机租约、整体 HALTED、显式剩余量规划及离线已过 | 双端当前实际成交、最终仓位、失败恢复，不能以单 CTP 多品种或 fanout 代替 |
+| 10 月 13 日 CTP 实时＋DFS 指数 Recording | 报告 1791861210699461223，15 帧、11:19 非零 MO 目标；返回验收 target_chain=passed，同分钟及接收期限核验通过 | 无线上指数超时样本，不声称所有迟到／恢复场景已验 |
+| 10 月 13 日实时非映射 SimNow | 报告 1791869412309900311，1 单 1 归属成交，MO2611-C-7400 空 1；策略／执行／账户一致，活动单 0、清理无错 | 价与交易所 ID、原文件读回未全部提供；无实际平仓及非零期货对冲 |
+| 后续同日 resume | resume_ready=true，但原始深度事件超龄／全流 STALE，运行 failed，停机保留原空 1 且活动单 0 | 证明恢复启动局部通过，持续健康运行及完整恢复未通过 |
+| 10 月 14 日 DDB 分钟推送＋DFS 指数 Recording | 报告 1791956075214033439；返回原 summary 复核 target_chain=passed，16 帧、13:40 MO2611-C-7300 空 1 目标，skipped=0 | 此来源下原生新成交、持续至收盘、迁移／恢复未验；原进程退出码未独立核对 |
 
-10 月 13 日实时 Recording 在专项中是下一步计划，**截至本次更新没有通过结果**。不因日历日期或预写命令标记完成。PF1206 价格审计与 PF1207 冻结组件包装已有局部测试／实际运行证据，但未展示最新版本完整远程离线结果；不能将旧 REV3 195 项自动写成最新全部通过。
+DolphinDB market 使用 stream_cffex_1min，指数为 index.minute 查询；market 与 execution 分离，不因行情改源自动选择交易端。Recording 不连接 TD、不产生柜台成交。该目标链已经超过旧“真实实时消费待验”的状态，但 GAP08 的真实现货／期现、MongoDB／Parquet、量额单位及完整历史版本、恢复消费仍未齐。
 
-## 尚未完成的核心实现与决定
+CTP 原始 FULL／REDUCED／FULL 样本中首次全链接收间隔约 31.55 秒，缩减订阅后改善，第二次全链仍有间隔；只能确认关联，尚未证明柜台、网络、回调或调度的具体根因。切换 DDB 后本次目标链成功不等于原 CTP 连续性问题已定位或消除。
 
-### 高优先级：同一账户多策略的正式执行入口（GAP10，关联 GAP01／02／05／06／07／09）
+依据：[实时 Recording](/Users/kerry/work/bomber1/pro/doc/evidence/live/OPTION_VEGA_REALTIME_RECORDING_20261013.json)、[实时成交及恢复失败](/Users/kerry/work/bomber1/pro/doc/evidence/live/OPTION_VEGA_REALTIME_SIMNOW_FILL_20261013.json)、[DDB 实时验收](/Users/kerry/work/bomber1/pro/doc/evidence/live/OPTION_VEGA_DOLPHIN_RECORDING_ACCEPTANCE_20261014.json)、[原始 ABA 诊断](/Users/kerry/work/bomber1/pro/doc/evidence/live/OPTION_VEGA_RAW_ABA_20261014.json)、[配置化特征交接](/Users/kerry/work/bomber1/pro/doc/HANDOFF/gaps/HANDOFF_GAP08_DECLARATIVE_2026-10-12.md)。
 
-**功能要求。** 多个策略应能同时使用同一个物理账户交易，各自保存策略 ID、信号窗口、目标版本、订单关联、成交归属及已成交仓位。物理账户仓位是账户事实；策略仓位是各自归属账本。一个策略的目标更新、暂停、停止或恢复，不应覆盖另一个策略的目标或仓位。该功能与“一策略分发到多个账户”分别实现、分别验收，不能由后者替代。
+## GAP06：模型、原生及跨日恢复分别评估
 
-**当前限制与证据。** 原01／04独立CLI仍各自获取同一账户的`bomber-ctp`锁，off不会解除该锁。新增`scripts.integration.shared_account.run`在一个进程内装配多个原Runner，唯一账户服务持有TD和写入锁，并非同时运行两份独立CLI。用户运行`shared-simnow-1791900354405023844`已通过TD/参考资料/显式合约范围检查，横截面14个订单各成交1手，最终RB多1、HC空1，五个范围外持仓不变，活动订单0。EMA仅预热4/5根Bar就按300秒配置停止，未产目标。本次证明共享宿主与单来源原生成交，未证明双来源真实冻结分配；跨进程协议仍缺。详见[逐笔核对](../evidence/live/GAP10_SHARED_ACCOUNT_SIMNOW_20261013_REVIEW.md)及[专项交接](../HANDOFF/gaps/HANDOFF_GAP10_SHARED_ACCOUNT_2026-10-13.md)。
+| 恢复范围 | 当前完成情况 | 尚未完成 |
+| --- | --- | --- |
+| 04 模型同文件 | 原 9 帧／6 次成交、版本 6→7、第 4 帧新目标、归属和执行一致，通过保持有效 | 不能代替原生账户恢复 |
+| 03 CU 模型原空检查点 | 14 帧／8 目标／8 模型成交、最终双腿及在途／未归属 0，passed | 原始文件为零仓空目标，不扩大为非零旧仓／目标恢复 |
+| 03 CU 原生带仓 | 恢复代数 8、平远腿今仓；再次恢复代数 19 后双腿最终 0，停机撤单／对账干净 | 两次整体 failed，最新目标仍有旧挂单在途；REV6 修正版在线最新目标完成待验，平昨／跨日换约未验 |
+| 共享同日终态修复／恢复 | 真实只读核验备份 3021→3022、不发单冻结贡献；后续双来源正常成交及检查点延续 | 限同日、终态与权威事实一致；不是漏成交、未知订单或未决发送自动重建 |
+| 08 共享／启动跨日 | 原生归属导入、备份原代、权威今昨数量／成本校验、同日去重、次日清缓存／不重放旧目标、CFFEX 独立平仓已交付，局部离线通过 | Linux 原生 state／recovery、原仓实际跨日启动及新来源继续管理尚未验收 |
 
-代码依据：[账户锁与生命周期](/Users/kerry/work/bomber1/pro/bomber/framework/trader/runtime/live/channels/ctp.py:250)、[04 原生入口装配](/Users/kerry/work/bomber1/pro/demos/04_cross_section/run_live.py)、[01 原生入口装配](/Users/kerry/work/bomber1/pro/demos/01_main_ema/run_live.py)、[进程内账户服务](/Users/kerry/work/bomber1/pro/bomber/framework/trader/execution/account.py)、[执行来源及账户关联政策](/Users/kerry/work/bomber1/pro/bomber/framework/trader/execution/policy.py)。
+08 跨日范围限 realtime、向前 TD、固定策略集合／执行政策、原订单终态、无未知活动单、总仓及成本条款一致；非零持仓／目标路由不得移除。独立执行的 SHFE 等昨仓分配仍拒绝，不能将 CFFEX 局部方案扩大成所有交易所跨日恢复。不是跨夜常驻、自动换约、漏成交归属重建或多份检查点合并。
 
-**实现方向。** 账户级执行服务统一持有 TD 连接、账户锁、订单编号、资金／活动订单查询和账户检查点；多个策略通过明确路由接入服务，保留各自账本与策略检查点。账户锁用于确保同一账户服务只有一个有效写入者，服务可承载多个策略；不能仅删除锁或按 strategy_id 分别加锁后放任多个 TD 进程独立报单。目标汇总／净额、账户风险预算、母子订单关联和成交分配由账户层统一协调，策略继续负责自己的信号和仓位意图。
+旧 CTP→DDB 显式迁移与新共享恢复均有代码／离线证据；真实准备和 resume 仍待返回。不新建状态丢掉原仓，不把旧柜台快照当作当前事实。
 
-可配置的同进程多策略宿主与共享原生入口已提供。针对分别启动各demo的使用方式，还需独立策略进程接入本机账户服务的协议／客户端。进程内租约不能代替跨进程通信，不能以本机`/tmp`文件锁宣称跨主机保护已覆盖。
+依据：[03 带仓恢复](/Users/kerry/work/bomber1/pro/doc/evidence/live/CALENDAR_SPREAD_SIMNOW_RESUME_INCOMPLETE_20261013.json)、[03 旧挂单失败](/Users/kerry/work/bomber1/pro/doc/evidence/live/CALENDAR_SPREAD_SIMNOW_STALE_ORDER_20261013.json)、[共享只读修复](/Users/kerry/work/bomber1/pro/doc/evidence/live/GAP10_SHARED_ACCOUNT_RECONCILE_REMOTE_20261013.json)、[08 共享跨日交接](/Users/kerry/work/bomber1/pro/doc/HANDOFF/live/HANDOFF_OPTION_VEGA_SHARED_ROLLOVER_2026-10-14.md)、[跨日离线证据](/Users/kerry/work/bomber1/pro/doc/evidence/live/OPTION_VEGA_SHARED_ROLLOVER_20261014.json)。
 
-**待办与关闭标准。** 此专项达到下列标准后，才能登记同账户多策略功能完成；不自动关闭 GAP10 的 CTP＋BN 联合和第三方多账户剩余范围。
+## GAP04 与独立会话专项：核心已实施，行情接续仍未完成
 
-- [x] 同进程正式配置／启动入口允许至少两个不同策略ID接入一个SimNow账户，统一管理TD与写入锁；当前真实运行已确认宿主装配。
-- [x] 独立目标、归属、信号版本及检查点结构已实施且离线通过；范围外物理持仓不直接分配给策略。双来源共享全量成交亦已逐笔核对；异常场景仍待验。
-- [ ] 订单与成交回报通过稳定身份和冻结归属分配正确策略，覆盖同合约、同向／反向贡献、部分成交、重复／乱序回报。若采用内部净额／转移政策，明确来源及记账规则，不把内部处理冒充柜台真实成交。
-- [ ] 一策略改目标、撤单、暂停、退出或释放租约时，保留其他策略的目标、仓位及有效连接；共享母单取消与剩余目标重规划按归属处理，解决 GAP05 已列出的撤单缺口。
-- [ ] 同时执行策略级和账户级资金／数量／名义金额／敞口限制，传播并执行各策略贡献期限；局部策略异常可按政策隔离，账户身份、订单或回报不明时统一闭闸并对账。
-- [ ] 账户服务与策略进程的重启／断线／未决发送可恢复目标贡献、订单关联及成交去重；单策略恢复不会重置其他策略，跨进程请求具有版本、幂等和连接身份校验。
-- [ ] 取得两个策略并行向同一 SimNow 账户真实报单／成交、逐策略归属及最终账户汇总一致的报告，并覆盖停止一个策略后另一个继续、拒单／部分成交和重启恢复。仅两份模型结果、单策略运行或进程内无网络测试不能替代该验收。
+calendars.SessionCalendar 已统一时段、跨午夜、交易日归属、窗口和分钟枚举；trading_sessions.py 旧名称为兼容适配，load_sessions 不再按 CU／IM 分支选择两套算法；ImDayWindow 仍为限定日探针，但委托同一服务。静态七字段时段、DDB／Feather Provider、显式绑定和日期例外已接入。
 
-### 其他核心缺口
+CU 真实 5 段、10 月 12／13 日共 10 窗口、最近 600 与区间 930 个完整交易分钟时间点两来源一致。**时间点枚举不是读取了 600／930 根行情。** 清理后 trading-hours 43 项本地通过；清理前 IM 9、history-provider 41、gap03 22、entry 55 的远端结果有效于其版本，清理后 IM 复验仍待提供。
 
-1. **GAP02 统一执行期限。** 当前普通／动态 Runner 仍调用 apply(intent) 而未传处理时间；OrderIntent 未建立独立期限传播。账户贡献仍未保存各源 deadline，顺序分发、写前保存及真正发单仍需复查。新增“特征帧等待超时跳过”约束的是数据决策帧，不替代订单期限生命周期。依据：[Runner](/Users/kerry/work/bomber1/pro/bomber/framework/trader/runner.py:290)、[期限分析](/Users/kerry/work/bomber1/pro/doc/HANDOFF/gaps/HANDOFF_GAP02_2026-10-09.md)。
-2. **GAP05 旧挂单与共享母单处置。** 已观察到目标为 0 而旧挂单仍在途；取消、确认和重规划未形成通用闭环。AccountExecutionService 合并贡献后保留触发 strategy_id，其撤单委托下层；CTP 仍仅按 order.strategy_id 匹配，未按冻结 allocation_legs 的所有者识别。多策略共享母单撤单可能漏掉其他触发者的归属单或影响其他所有者；这是源码推演，未登记新的柜台事故。依据：[账户服务](/Users/kerry/work/bomber1/pro/bomber/framework/trader/execution/account.py)、[CTP 撤单](/Users/kerry/work/bomber1/pro/bomber/framework/trader/execution/ctp/native_driver.py:410)。
-3. **GAP04／06 通用数据与交易恢复。** IM 指标进程重启通过仍是 239／240 根、显式 allow；13:00 缺口和主力／因子偏差按用户约定暂缓。01 IM 正式历史→实时尚无新增通过记录；08 新期权成交不自动开放或验收 01 IM 报单。跨日、换约、挂单和漏成交恢复仍缺，MongoDB 历史 Provider 仍占位。依据：[历史重启](/Users/kerry/work/bomber1/pro/doc/HANDOFF/history/HANDOFF_HISTORY_RESTART_2026-10-09.md)、[IM 接续交接](/Users/kerry/work/bomber1/pro/doc/HANDOFF/history/HANDOFF_DOLPHINDB_INTRADAY_MONDAY_2026-10-12.md)。
-4. **GAP09 状态职责。** 策略独立账本与物理观测政策已明确；总体设计的 NT 主导执行和当前 CTP 框架状态主链仍需统一。BN 内部 NT 状态与框架消费状态的读取、镜像和未知外部回报一致性仍待决定／验证。
-5. **GAP11 平台决定及独立会话专项。** 原生CTP仍Linux，账户与策略文件锁仍依赖fcntl；Windows目标未统一。静态会话／分钟核心与CU真实对照已经完成，真实期权资料、日期例外部署及历史规则版本仍按独立专项推进。
+3 份旧 demo 日历 JSON 已清理，7 条停夜盘例外已迁移 CSV／Feather，Live 例外表尚未部署。3 份 history JSON 尚未统一，CU 历史分钟源缺失；当前 CU Replay 仅见 history_enabled=false 的实时 3／5 根预热进度，没有最终 summary。原 IM 239／240 根指标停机重启保持通过，13:00 缺口与主力／因子偏差按用户约定暂缓，MongoDB 历史 Provider 仍占位。
 
-## 后续推进与文档使用
+真实期权系列会话、合约级覆盖、规则历史版本／as-of 与统一历史→实时仍待完成。该专项保持独立，局部完成不调整整体 GAP 数量。
 
-- **继续验证共享部分成交／撤单／拒单与单策略重建。** 同日恢复后两个活跃来源和共享母单全量分配已取得用户日志证据，详见[恢复核对](../evidence/live/GAP10_SHARED_ACCOUNT_RESUME_TWO_SOURCE_20261013.json)；跨进程协议、跨主机保护和CTP＋BN／第三方多账户继续分别跟踪。
-- 先完成 08 实时非映射目标链及接收／期限验证，再分别验非零期货对冲和恢复；保留所有历史状态、失败报告及工程映射证据。
-- 执行期限、旧挂单／共享母单和通用多腿协调仍是核心实现待办；按最终变更选择受影响回归。
-- 01 模型恢复、两策略并行、真实多账户、CTP＋BN 双端联合按各自身份与状态独立验收。
-- 特征离线 252 项、REV3 195 项、真实 DDB 查询／CSV、04 模型恢复、08 已过工程链不因本次文档更新重复；新代码和未覆盖场景单列验证。
-- 本文与专项台账、共享GAP清单同步更新当前范围；旧摘要保留历史版本。旧“GAP08只有门面”“04模型仍无行情”“模型恢复全部待验”“日历接口尚不存在”“会话Provider尚未实施”不再适用于相应已完成部分。
+依据：[会话专项当前台账](/Users/kerry/work/bomber1/pro/doc/data/TRADING_SESSION_GENERALIZATION_2026-10-09.md)、[CU 实际对照](/Users/kerry/work/bomber1/pro/doc/evidence/live/TRADING_SESSIONS_CU_PASS_20261013.json)、[统一会话源码](/Users/kerry/work/bomber1/pro/bomber/framework/calendars/sessions.py)、[Runtime 兼容入口](/Users/kerry/work/bomber1/pro/bomber/framework/trader/runtime/trading_sessions.py)。
 
-### 2026-10-14 三策略需求重新确认与实施
+## 当前优先事项与未改变的设计缺口
 
-同进程netted允许内部抵消；三个独立进程independent分别发单，各自策略仓位不被柜台总仓覆盖。账户执行层仍校验资金/总仓/可平量。01/03/04装配、独立同日订单规划、本机Unix协议/能力文件/租约/同代事件日志/确认补交已增加，集中离线206项通过。完整03原生组因本地Bar构建缺失未执行，Linux及SimNow replay/realtime仍未验证；不能宣称三策略运行验收通过。当前跨进程恢复仅同TD日已终结订单，跨日/未决/未知活动单保持拒绝。详细需求和门槛见[三策略需求](../HANDOFF/gaps/GAP10_THREE_STRATEGY_REQUIREMENTS_2026-10-14.md)，运行指令见[scripts/integration/shared_account/THREE_STRATEGIES.md](/Users/kerry/work/bomber1/pro/scripts/integration/shared_account/THREE_STRATEGIES.md)。
+1. **验三策略两模式。** 以 REV19 完整源码／配置一致版本核验 Linux 原生组、共享服务及三个原策略 worker，分别观察 netted 抵消／independent 独立订单、归属、游标、停止重启及最终柜台事实。16:00 replay／21:00 realtime 是计划，未收到通过报告不登记完成，未通过不自动切环境。
+2. **继续共享异常及一般期限。** 真实部分成交后撤余单、拒单与 peer 续成仍缺；普通／动态主链及非共享路径统一 deadline 仍为 GAP02 核心待办。通用多腿敞口和补偿不能由正常成交或零成交撤单替代。
+3. **验 08 原仓与跨日。** 按新共享入口实际禁单核验原归属、TD、今昨成本和条款，再验证新日持续消费／停止；保留原文件与备份。历史原空仓位不得凭本地记录推定为当前柜台事实。
+4. **补历史及会话数据。** 统一历史源配置、确认可用分钟源、部署完整例外并验当前历史→实时；随后真实期权系列及规则版本。
+5. **收敛 GAP09／11，保留 GAP10 其他范围。** 同账户两模式的账本职责更明确，但 NT／框架状态整体决定仍未完成。原生 CTP 限 Linux，新增 Unix socket 不形成 Windows 兼容。CTP＋BN 双端实测、第三方多账户、跨主机保护与 BN 写前／漏成交恢复仍独立开放。
+
+本次更新清理了旧“仅端口／没有跨进程”“母单撤单未实现”“实时非映射全部待验”“会话代码未开始”等失效结论，保留各自实际证据与限制。未修改共享清单、专项历史、状态文件或部署摘要；已通过且未受新增代码影响的验收不因文档更新重复，未覆盖的新版本／场景单列验证。
