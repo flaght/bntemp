@@ -52,6 +52,8 @@
 
 用户要求继续验证后，补充 [SimNow 原仓只读预检](../../scripts/integration/options/simnow_preflight.py)，核对原状态和同一柜台当前 MO/IM 总仓/今昨仓、资金及活动订单，其他品种保持外部归属；不发单、不撤单、不改原状态、不开闸。原 20261013 / CTP 身份不能直接用于当前 20261014 / DolphinDB 恢复。9 项专项及原 81 项主回归通过，线上预检仍待返回；跨日与来源迁移未实施，SimNow 新来源成交仍待验。[预检补充包](archives/OPTION_VEGA_SIMNOW_PREFLIGHT_20261014.tar.gz)、[摘要](checksums/OPTION_VEGA_SIMNOW_PREFLIGHT_20261014_SHA256.txt)、[范围说明](live/OPTION_VEGA_SIMNOW_PREFLIGHT_20261014.json) 不覆盖既有 REV5 运行包。
 
+首轮 [预检缺失原文件](live/OPTION_VEGA_SIMNOW_PREFLIGHT_MISSING_STATE_20261014.json) 返回：五项部署摘要均 OK，sample-1791958587861857268 的 failure 为指定原 state 文件不存在。读取失败在 TD 连接之前发生，未报单、未改状态；不能推断柜台仓位已平或文件已被删除。下一步用现有 TD 只读探针取得当前账户事实，并查找原文件/08 SimNow 检查点及备份；summary/events 不能代替检查点，不重建空状态绕过归属。当前真实原仓核对、迁移及新来源成交均未通过。本次 [缺失状态文档与证据摘要](checksums/OPTION_VEGA_SIMNOW_PREFLIGHT_MISSING_STATE_20261014_SHA256.txt) 只更新状态记录，不修改运行代码或原补充包。
+
 ## 2026-10-11模型运行与恢复证据
 
 同日08期权Vega源码新增，使用独立清单

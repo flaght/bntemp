@@ -75,6 +75,15 @@ def protected_state(paths):
     return instruments, hashes
 
 
+def validate_td(driver, args):
+    if driver.trading_day != args.trading_day:
+        raise RuntimeError(f"TD交易日不符: actual={driver.trading_day} expected={args.trading_day}")
+    if not driver.is_simnow_authenticated:
+        raise RuntimeError("TD登录会话的SimNow身份不符")
+    if args.submit and not driver.is_simnow_session:
+        raise RuntimeError("提交阶段没有SimNow发单授权")
+
+
 def select_spec(specs, args, gross, protected):
     eligible = []
     for spec in specs:
@@ -317,6 +326,7 @@ def main(argv=None):
     host = driver = probe = None
     status, failure, shutdown_failure, plan = "failed", None, None, None
     observed_td_day = None
+    authenticated_simnow = submission_session = False
     raised = False
     try:
         transport = build_simnow_transport(CtpTdApiTransport, client_id=CLIENT_ID,
@@ -334,8 +344,8 @@ def main(argv=None):
         resources.callback(driver.stop)
         driver.start(lambda row: None)
         observed_td_day = driver.trading_day
-        if driver.trading_day != args.trading_day or not driver.is_simnow_session:
-            raise RuntimeError("TD交易日或SimNow身份不符")
+        authenticated_simnow, submission_session = driver.is_simnow_authenticated, driver.is_simnow_session
+        validate_td(driver, args)
         if driver.reconcile_active_orders().orders:
             raise RuntimeError("全账户有活动订单，禁止独立测试")
         gross = occupied_positions(transport)
@@ -386,6 +396,8 @@ def main(argv=None):
             events = tuple(host.account.execution.backend.reports) if host else ()
             snapshot.update(plan=plan, failure=failure, shutdown_failure=shutdown_failure,
                 expected_trading_day=args.trading_day, observed_td_trading_day=observed_td_day,
+                authenticated_simnow_at_preflight=authenticated_simnow,
+                submission_session_at_preflight=submission_session,
                 protected_state_unchanged=unchanged, protected_hashes=hashes,
                 orders_submitted=driver.submitted_orders if driver else 0,
                 verification="controlled_live_mother_probe" if args.submit else "readonly_plan_no_orders",

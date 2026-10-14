@@ -96,6 +96,31 @@ class ProbeNativeTests(unittest.TestCase):
     native_account = fixtures.SharedAccountTests.native_account
     callback_host = fixtures.SharedAccountTests.callback_host
 
+    def test_readonly_authenticated_td_passes_identity_check_without_enabling_orders(self):
+        with TemporaryDirectory() as directory:
+            modules = self.native_modules()
+            _, _, transport, _, _ = self.native_account(Path(directory) / "unused.json", modules)
+            driver = modules.driver.CtpNativeTraderDriver("account", "demo", transport)
+            self.addCleanup(driver.stop)
+            driver.start(lambda report: None)
+            args = probe.parse_args(["--connect", "--trading-day", "20261013"])
+            self.assertTrue(driver.is_simnow_authenticated)
+            self.assertFalse(driver.is_simnow_session)
+            probe.validate_td(driver, args)
+            args.submit = True
+            with self.assertRaisesRegex(RuntimeError, "发单授权"):
+                probe.validate_td(driver, args)
+            self.assertFalse(transport.sent)
+            args.submit = False
+            args.trading_day = "20261014"
+            with self.assertRaisesRegex(RuntimeError, "交易日不符"):
+                probe.validate_td(driver, args)
+            driver.stop()
+            self.assertFalse(driver.is_simnow_authenticated)
+            args.trading_day = "20261013"
+            with self.assertRaises(RuntimeError):
+                probe.validate_td(driver, args)
+
     def test_real_probe_builder_preserves_external_positions_and_uses_fresh_state(self):
         with ExitStack() as cleanup:
             directory = Path(cleanup.enter_context(TemporaryDirectory()))

@@ -1,0 +1,45 @@
+{
+  "date": "2026-10-14",
+  "source": "user_returned_preflight_console",
+  "command": "python -u -m scripts.integration.options.simnow_preflight --connect --expected-trading-day 20261014 --timeout 30 --state-file tests/results/gap08-realtime-simnow/state-1791869411336135873.json",
+  "deployment_checks": {
+    "scripts/integration/options/simnow_preflight.py": "OK",
+    "tests/test_option_simnow_preflight.py": "OK",
+    "demos/08_option_vega/README.md": "OK",
+    "doc/evidence/README.md": "OK",
+    "doc/evidence/live/OPTION_VEGA_SIMNOW_PREFLIGHT_20261014.json": "OK"
+  },
+  "returned_preflight": {
+    "scope": "readonly_migration_preflight",
+    "status": "failed",
+    "failure": "[Errno 2] No such file or directory: 'tests/results/gap08-realtime-simnow/state-1791869411336135873.json'",
+    "cleanup_errors": [],
+    "state_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/tests/results/gap08-realtime-simnow/state-1791869411336135873.json",
+    "expected_trading_day": "20261014",
+    "orders_enabled": false,
+    "can_start_orders": false,
+    "state_modified": false
+  },
+  "remote_report": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/tests/results/option-vega-simnow-preflight/sample-1791958587861857268/summary.json",
+  "diagnosis": {
+    "stage": "原文件读取；在构建/连接TD Driver前失败",
+    "observed": "指定路径的原检查点不存在",
+    "not_established": [
+      "文件被删除还是移走",
+      "是否存在其他完整08 SimNow检查点或备份",
+      "当前柜台是否仍持有昨日MO空仓"
+    ]
+  },
+  "next_steps": [
+    "现有CTP TD只读探针取得当前持仓与活动订单",
+    "只读搜索项目/备份中的原文件及08 SimNow检查点",
+    "找到候选后使用实际路径重做公共校验和与柜台总仓核对"
+  ],
+  "guard": "不把summary/events当作恢复检查点，不由路径缺失推断空仓，不自动创建替代状态或改归属",
+  "migration_created": false,
+  "td_connected_in_failed_probe": false,
+  "orders_sent": false,
+  "original_state_modified": false,
+  "runtime_code_changed": false,
+  "limitations": "按用户输出与本地已核对代码判定失败阶段，未独立访问运行机或查询柜台。"
+}
