@@ -47,7 +47,7 @@ FEATURE_RUNTIME_HASHES = {
     "demos/08_option_vega/acceptance.py": "a9f39a99fc55b77711ef814ec4def22d40315c7dea17e5b7418880524a24cf88",
     "demos/08_option_vega/live_runtime.py": "2571608bdd2c17706a867276128ef3738038401f98e3ee6b5938332dbbdfcf3c",
     "demos/08_option_vega/recovery.py": "c0708c564a6a3e181359be843341364789802024ced15fcb3fd7c41454dcbfc4",
-    "demos/08_option_vega/run_live.py": "0fd113fda2dfca78f58e6b2e220c63cb220406fa54f20e0ad097c3d748af56d7",
+    "demos/08_option_vega/run_live.py": "8aa43bc8be1ff05e2dd8dfbd986446557b00142874cf2967a7b51077a132e3ed",
     "demos/08_option_vega/strategy.py": "4961502b55a163d6e1cbe69d724771ddcc2beab6b5724efc7943251c411c25a6",
     "scripts/integration/options/__init__.py": "be65a34d8f3388d3252d04a55411d216618753783cbba6d4cf40f8aa24690b02",
     "scripts/integration/options/recording.py": "1d0ff5e5b14dd0223640bcfaacd94165ff3077d8e15d5594364ad8d711d39aeb",
@@ -69,12 +69,13 @@ FEATURE_RUNTIME_HASHES = {
     "tests/test_option_replay_test.py": "e40ee8fc098889e726e9b62c854194fa021bce36e5adbe5817b42221983937bd",
     "demos/08_option_vega/execution_audit.py": "87a3a2723b2342c1942b611eb02bee656c8585c19e5f8ce7d6578856d69818d2",
     "tests/test_option_execution_audit.py": "b1c2e4257a2fdafda2c5682c642fae057e8abbc17fe59131ae087ec603e61442",
-    "bomber/framework/market/native/dolphin/driver.py": "8d3b51165316f3f20f23a461c08930d63f32035439bf79cb8c24df9efb395c1d",
-    "bomber/framework/market/stream/dolphin/config.py": "fc15e6448c9c9be02a2433818d94829b7595c9a776bf1ab88f24d71d460fe4ab",
+    "bomber/framework/market/native/dolphin/driver.py": "5051664e2b5be093431041cedd74de13b0cb87da5962dc04a44e15f8d388bac3",
+    "bomber/framework/market/stream/dolphin/config.py": "3acd6a5a052f61adc3744612cf65e1edd3a538937cfc43d92e41943c411161b9",
     "bomber/framework/market/stream/dolphin/converter.py": "e0cd771fca99a01242db9293c7a5b96771825dc7fac1b4ad34f477b30df8da58",
     "bomber/framework/market/stream/dolphin/feed.py": "6601b5c79f756ad863976742fc27a1700edfbe897ceaf411effcb77fb0e1172e",
     "bomber/framework/trader/runtime/live/channels/dolphin.py": "e928b84ba28cd4c9e20defb69d5f584a55e87c2827a75f3f755e869e6d72c626",
-    "tests/test_option_dolphin_stream.py": "ffe43bbf6c165437f491efc91f46b96c1386235f89ded8d29b8a494e842b65b4",
+    "tests/test_option_dolphin_stream.py": "28fd3d4b2c1aaa9df56ac8f1ef3be55ec8945430583d6055585fcd961e9246c7",
+    "scripts/integration/options/dolphin_stream_probe.py": "1b9b7555a0662217347612bcd2b02e61a5632e661c638d7fed14653eb1c407e8",
 }
 
 
@@ -245,6 +246,7 @@ SOURCES = (
     "bomber/framework/market/stream/dolphin/converter.py",
     "bomber/framework/market/stream/dolphin/feed.py",
     "tests/test_option_dolphin_stream.py",
+    "scripts/integration/options/dolphin_stream_probe.py",
 )
 
 

@@ -854,6 +854,79 @@ class SharedAccountTests(unittest.TestCase):
         self.assertEqual(one.event_diagnostics()["fills_delivered"], 0)
         self.assertEqual(one.event_diagnostics()["pending_fills"], 1)
 
+    def test_cancel_probe_selects_partial_shared_mother_and_keeps_peer_running(self):
+        from scripts.integration.shared_account.cancel_probe import SharedMotherCancelProbe
+        with ExitStack() as cleanup:
+            directory = cleanup.enter_context(TemporaryDirectory())
+            host, transport, rows = self.callback_host(Path(directory))
+            cleanup.callback(host.stop)
+            original = host.account.client.planner
+            host.account.client.planner = type("Paused", (), {"plan": lambda *_: ()})()
+            rows[0].session.strategy.set_target("main", 2, self.now)
+            host.account.client.planner = original
+            rows[1].session.strategy.set_target("main", 3, self.now)
+            ref = transport.sent[0]["OrderRef"]
+            transport.fill(ref, 3)
+            probe = SharedMotherCancelProbe("one")
+            probe.poll(host)
+            self.assertEqual(transport.canceled, [ref])
+            self.assertFalse(rows[0].active)
+            self.assertTrue(rows[1].active)
+            self.assertEqual(rows[0].failure, "acceptance_shared_cancel")
+            self.assertEqual(probe.mother["submitting_strategy"], "two")
+            self.assertEqual(len(transport.sent), 1)  # 观察入口没有制造额外目标/订单。
+            self.now += 1
+            host.service.continue_targets("two", self.instrument, self.now)
+            self.assertEqual(transport.sent[1]["VolumeTotalOriginal"], 2)
+            transport.fill(transport.sent[1]["OrderRef"])
+            host.poll()
+            result = probe.result(host, runtime_status="completed")
+            self.assertEqual(result["status"], "passed")
+            self.assertTrue(result["partial_fill_observed"])
+            self.assertEqual(result["peer_fills_after_stop"], 1)
+            self.assertGreater(result["peer_target_continuations_after_stop"], 0)
+            self.assertEqual(result["extra_targets_submitted"], 0)
+            probe.poll(host)
+            self.assertEqual(transport.canceled, [ref])
+            self.assertEqual(probe.result(host, runtime_status="failed")["status"], "failed")
+
+    def test_cancel_probe_does_not_stop_for_filled_or_single_owner_orders(self):
+        from scripts.integration.shared_account.cancel_probe import SharedMotherCancelProbe
+        with ExitStack() as cleanup:
+            directory = cleanup.enter_context(TemporaryDirectory())
+            host, transport, rows = self.callback_host(Path(directory))
+            cleanup.callback(host.stop)
+            rows[0].session.strategy.set_target("main", 1, self.now)
+            probe = SharedMotherCancelProbe("one")
+            probe.poll(host)
+            self.assertIsNone(probe.mother)
+            transport.fill(transport.sent[0]["OrderRef"])
+            probe.poll(host)
+            self.assertIsNone(probe.mother)
+            self.assertEqual(probe.result(host, runtime_status="completed")["status"], "not_exercised")
+            self.assertTrue(rows[0].active)
+            self.assertTrue(rows[1].active)
+            self.assertFalse(transport.canceled)
+
+    def test_cancel_probe_fill_racing_cancel_is_not_a_cancel_pass(self):
+        from scripts.integration.shared_account.cancel_probe import SharedMotherCancelProbe
+        with ExitStack() as cleanup:
+            directory = cleanup.enter_context(TemporaryDirectory())
+            host, transport, rows = self.callback_host(Path(directory))
+            cleanup.callback(host.stop)
+            original = host.account.client.planner
+            host.account.client.planner = type("Paused", (), {"plan": lambda *_: ()})()
+            rows[0].session.strategy.set_target("main", 1, self.now)
+            host.account.client.planner = original
+            rows[1].session.strategy.set_target("main", 1, self.now)
+            transport.cancel_order = lambda ref: transport.fill(ref)
+            probe = SharedMotherCancelProbe("one")
+            probe.poll(host)
+            result = probe.result(host, runtime_status="completed")
+            self.assertEqual(result["status"], "not_exercised")
+            self.assertFalse(result["canceled_report_ids"])
+            self.assertTrue(rows[1].active)
+
     def test_host_single_strategy_restart_keeps_peer_revision_position_and_td(self):
         modules = self.native_modules()
         contracts = import_module("bomber.framework.trader.contracts")
@@ -1324,6 +1397,26 @@ class SharedConfigTests(unittest.TestCase):
                 [arg for arg in valid if arg != "--resume"], [arg for arg in valid if arg != "--connect"]):
             with redirect_stderr(StringIO()), self.assertRaises(SystemExit):
                 parse_args(argv)
+
+    def test_cancel_probe_requires_order_authorization_and_declared_owner(self):
+        from scripts.integration.shared_account import run
+        parse_args = run.parse_args
+        from contextlib import redirect_stderr
+        from io import StringIO
+        valid = ["--config", "session.json", "--connect", "--enable-orders", "--confirm-simnow",
+                 "--resume", "--acceptance-cancel-owner", "one"]
+        self.assertEqual(parse_args(valid).acceptance_cancel_owner, "one")
+        for argv in ([arg for arg in valid if arg != "--connect"],
+                     [arg for arg in valid if arg != "--enable-orders"],
+                     valid + ["--reconcile-only"]):
+            with redirect_stderr(StringIO()), self.assertRaises(SystemExit):
+                parse_args(argv)
+        unknown = valid[:-1] + ["unknown"]
+        with patch.object(run, "read_config", return_value=self.read(self.config())), \
+                patch.object(run, "build_host") as build:
+            with self.assertRaisesRegex(ValueError, "已声明"):
+                run.main(unknown)
+            build.assert_not_called()
 
     def test_budget_migration_only_allows_account_notional_increase(self):
         from copy import deepcopy

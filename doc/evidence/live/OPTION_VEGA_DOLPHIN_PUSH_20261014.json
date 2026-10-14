@@ -27,7 +27,24 @@
     "receipt_clock": "client_wall_clock",
     "first_cumulative_row": "baseline_with_zero_bar_volume",
     "shared_table_name_user_reported": true,
-    "schema_verified_on_server": false
+    "schema_verified_on_server": false,
+    "schema_columns_user_reported": [
+      "minTime",
+      "date",
+      "Code",
+      "open",
+      "high",
+      "low",
+      "close",
+      "prev_close",
+      "prev_settlement",
+      "volume",
+      "turnover",
+      "pct_change",
+      "open_interest",
+      "prev_open_interest",
+      "updateTime"
+    ]
   },
   "execution": {
     "ctp_td_supported": true,
@@ -98,6 +115,11 @@
     "script": "doc/evidence/commands/OPTION_VEGA_DOLPHIN_STREAM_PROBE.py",
     "sample_seconds_default": 180,
     "offline_checks": "real native adapter with fake SDK: two schemas/three keys/receipt JSON/unsubscribe/close and missing-schema rejection passed",
-    "live_result_received": false
+    "live_result_received": true,
+    "first_live_status": "failed",
+    "failure_evidence": "doc/evidence/live/OPTION_VEGA_DOLPHIN_ACTION_FIX_20261014.json",
+    "latest_implementation": "scripts/integration/options/dolphin_stream_probe.py",
+    "latest_probe_version": 3,
+    "live_fixed_result_received": false
   }
 }

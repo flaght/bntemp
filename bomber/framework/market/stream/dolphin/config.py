@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import re
 from typing import Any, Literal
 
 
@@ -78,6 +79,8 @@ class DolphinDbStreamSpec:
             raise ValueError(f"unsupported DolphinDB stream kind: {self.kind}")
         if not self.table_name or not self.action_name:
             raise ValueError("table_name and action_name are required")
+        if re.fullmatch(r"[A-Za-z0-9_]+", self.action_name) is None:
+            raise ValueError("DolphinDB action_name只能包含字母、数字和下划线")
         expected = TICK_COLUMNS if self.kind == "tick" else BAR_COLUMNS
         if self.auto_schema and (self.kind != "bar" or self.columns):
             raise ValueError("auto_schema requires a Bar stream with server-resolved columns")

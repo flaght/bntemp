@@ -36,6 +36,8 @@
 
 已确认表名后的补充交付为 [REV2 摘要](checksums/OPTION_VEGA_DOLPHIN_PUSH_20261014_REV2_SHA256.txt) 和 [REV2 源码包](archives/OPTION_VEGA_DOLPHIN_PUSH_20261014_REV2.tar.gz)，包含新的只读原始推送探针和最新文档，运行模块及验收入口字节保持初次交付版本。原包和原摘要不覆盖，仍描述当次交付；若原代码已部署，本轮诊断只需补充探针文件。
 
+用户第一次探针实际运行 failed：客户端 actionName 含连字符被服务器拒绝，指数又缺 date/minTime；市场 15 列结构已读到，但三条监控行情均未收到。该结果不登记为订阅成功。最新 [REV3 源码包](archives/OPTION_VEGA_DOLPHIN_PUSH_20261014_REV3.tar.gz) 和 [REV3 摘要](checksums/OPTION_VEGA_DOLPHIN_PUSH_20261014_REV3_SHA256.txt) 修正两处任务名生成并添加启动前字符校验；只读探针迁入 scripts，新增 market/index/both 范围，原始指数不再猜测 date/minTime，正式策略仍保留严格时间校验与 DFS 指数路径。76 项主回归 + 111 项相关回归通过，77 文件版本预检及 entry 组通过；修正版线上结果待返回。见 [失败证据及修正范围](live/OPTION_VEGA_DOLPHIN_ACTION_FIX_20261014.json)，旧交付包不覆盖。
+
 ## 2026-10-11模型运行与恢复证据
 
 同日08期权Vega源码新增，使用独立清单

@@ -74,6 +74,76 @@ class DolphinMinuteTests(unittest.TestCase):
     def test_wrong_row_width_is_rejected(self):
         with self.assertRaises(ValueError): rows_from_message(["symbol", 1], ("Code", "close", "volume"))
 
+    def test_action_name_rejects_hyphens_before_sdk_calls(self):
+        for action in ("vega-market", "name with space", "name/path", ""):
+            with self.subTest(action=action):
+                with self.assertRaisesRegex(ValueError, "action_name"):
+                    NativeDolphinSubscription("stream_cffex_1min", action, BAR_REQUIRED_COLUMNS)
+        with self.assertRaises(ValueError):
+            DolphinDbStreamSpec.bar("stream_cffex_1min", action_name="vega-market")
+
+    def test_option_market_and_index_generate_valid_unique_action_names(self):
+        entry = import_module("demos.08_option_vega.run_live")
+        with patch.dict(os.environ, {"DDB_HOST":"ddb.test","DDB_USERNAME":"test","DDB_PASSWORD":"fixture"}, clear=True):
+            for source in ("vega-market", "vega-index"):
+                feed = entry._dolphin_feed("stream_cffex_1min", source, max_age_seconds=120)
+                action = feed.config.streams[0].action_name
+                self.assertRegex(action, r"^[A-Za-z0-9_]+$")
+                self.assertNotIn("-", action)
+                self.assertEqual(NativeDolphinSubscription("stream_cffex_1min", action, ()).action_name, action)
+
+    def run_raw_probe(self, streams):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        probe = import_module("scripts.integration.options.dolphin_stream_probe")
+        # Publisher shape observed for market, different time-column shape for index.
+        index_columns = ("timestamp", "Code", "open", "high", "low", "close", "volume")
+        class Publisher(Session):
+            def run(self, script):
+                self.queries.append(script)
+                return index_columns if '"stream_index_1min"' in script else BAR_REQUIRED_COLUMNS
+            def subscribe(self, **kwargs):
+                import re
+                if not re.fullmatch(r"[A-Za-z0-9_]+", kwargs["actionName"]):
+                    raise ValueError("server actionName rejected")
+                self.subscriptions.append(kwargs)
+                table = kwargs["tableName"]
+                columns = index_columns if table == "stream_index_1min" else BAR_REQUIRED_COLUMNS
+                for key in probe.TABLE_KEYS[table]:
+                    row = dict(timestamp="2026-10-14T11:10:00", Code=key, date="2026-10-14",
+                        minTime="11:10:00", open=82.8, high=82.8, low=82.8, close=82.8, volume=2)
+                    kwargs["handler"]([row[c] for c in columns])
+        publisher = Publisher(())
+        driver = OfficialDolphinDbDriver(session_factory=lambda **kw:publisher)
+        with TemporaryDirectory() as directory, patch.object(probe, "ROOT", Path(directory)), \
+                patch.dict(os.environ, {"DDB_HOST":"ddb.test","DDB_USERNAME":"fake","DDB_PASSWORD":"fixture"}, clear=True), \
+                patch("bomber.framework.market.native.dolphin.driver.create_native_driver", return_value=driver), \
+                patch.object(probe.time, "monotonic", side_effect=[0,61]), redirect_stdout(StringIO()):
+            code = probe.main(["--seconds","60","--streams",streams])
+            import json
+            report = json.loads(next(Path(directory).glob("tests/results/option-vega-dolphin-stream-probe/*/summary.json")).read_text())
+        self.assertEqual(code,0)
+        self.assertEqual(report["probe_version"],3)
+        self.assertEqual(report["missing_monitored_keys"],[])
+        return report, publisher
+
+    def test_raw_probe_reads_index_schema_without_guessing_time_fields(self):
+        report, publisher = self.run_raw_probe("both")
+        self.assertEqual(len(publisher.subscriptions),2)
+        self.assertNotIn("date",report["schema"]["stream_index_1min"])
+        self.assertNotIn("minTime",report["schema"]["stream_index_1min"])
+        row = report["tables"]["stream_index_1min"]["matched"]["000852"]["last_observation"]["row"]
+        self.assertEqual(row["timestamp"],"2026-10-14T11:10:00")
+        self.assertNotIn("minTime",row)
+
+    def test_market_only_probe_does_not_query_or_subscribe_unknown_index(self):
+        report, publisher = self.run_raw_probe("market")
+        self.assertEqual(set(report["tables"]),{"stream_cffex_1min"})
+        self.assertEqual(len(publisher.subscriptions),1)
+        self.assertTrue(all("stream_index_1min" not in query for query in publisher.queries))
+
     def test_cumulative_volume_baseline_flat_minute_increment_and_day_reset(self):
         convert = lambda row: self.converter.convert_bar(row, self.instrument, self.meta, "1-MINUTE",
             volume_mode="cumulative", received_ns=ns("2026-10-14 09:35") + 14_000_000_000)

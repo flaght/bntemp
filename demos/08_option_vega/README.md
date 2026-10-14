@@ -428,7 +428,20 @@ order by date desc, minTime desc
 python -u doc/evidence/commands/OPTION_VEGA_DOLPHIN_STREAM_PROBE.py --seconds 180
 ```
 
-探针复用实际 DolphinDB 原生适配，订阅两张已确认流表，offset=-1，结构在订阅前按服务器列名验证；不依赖 minTime 标签猜测，不转换标准 Bar、不启动策略、不连接 CTP，也不读取或改写策略状态。输出 `DDB_STREAM_SCHEMA`、`DDB_FIRST_ROW`、`DDB_BAR_ROW` 和 `DDB_STREAM_PROBE_FINAL`，保存到 `tests/results/option-vega-dolphin-stream-probe/sample-<ns>/summary.json`。监控 MO2611-C-7400、IM2611、000852，每行保留原始字段、Python 类型及实际上海接收时间；每键最多保留最近 20 行，同时统计该表全部接收行。180 秒采样不含连接准备时间，准备期间已收到的行也保留；Ctrl+C 保存已有记录并释放订阅。缺列会在订阅前失败，监控键未收到时退出码为 1；completed 只表示采样结束，不证明发布的是完整分钟或已经通过策略验收。本地真实适配 + 假 SDK 的两流三键/缺列/清理检查通过，尚无该探针线上返回。
+探针复用实际 DolphinDB 原生适配，订阅两张已确认流表，offset=-1，结构在订阅前按服务器列名验证；不依赖 minTime 标签猜测，不转换标准 Bar、不启动策略、不连接 CTP，也不读取或改写策略状态。输出 `DDB_STREAM_SCHEMA`、`DDB_FIRST_ROW`、`DDB_BAR_ROW` 和 `DDB_STREAM_PROBE_FINAL`，保存到 `tests/results/option-vega-dolphin-stream-probe/sample-<ns>/summary.json`。监控 MO2611-C-7400、IM2611、000852，每行保留原始字段、Python 类型及实际上海接收时间；每键最多保留最近 20 行，同时统计该表全部接收行。180 秒采样不含连接准备时间，准备期间已收到的行也保留；Ctrl+C 保存已有记录并释放订阅。缺列会在订阅前失败，监控键未收到时退出码为 1；completed 只表示采样结束，不证明发布的是完整分钟或已经通过策略验收。本地真实适配 + 假 SDK 的两流三键/缺列/清理检查通过，首次线上失败与后续修正见下段。
+
+用户第一次运行在约 11:07 返回 failed：市场流实际列为既有 15 列，但 SDK 异步报 `actionName` 不允许连字符；指数结构检查又发现缺少 date/minTime，三键没有收到。列名查询完成不等于订阅成功。这次暴露了客户端任务名生成的遗漏和原始探针对指数时间列的过度假设，精简记录见 [任务名/结构失败及修正](../../doc/evidence/live/OPTION_VEGA_DOLPHIN_ACTION_FIX_20261014.json)。
+
+REV3 将正式入口和原始探针任务名统一生成为字母/数字/下划线，并在流配置及原生订阅对象构造时拒绝非法字符，避免 SDK 自动重订阅反复报错。原始探针迁入 `scripts.integration.options.dolphin_stream_probe`，旧 doc 命令仍作为兼容入口；当前版本启动打印 `DDB_STREAM_PROBE_VERSION: 3`。市场检查仍要求八列；原始指数探针只要求 Code/open/high/low/close/volume，并完整输出其已有时间列，不猜列名、不补造 date/minTime。这项放宽仅用于读原始行，正式标准 Bar 输入及策略校验仍要求明确时间结构；指数生产路径继续使用已验证的 DFS。
+
+更新 REV3 源码后可重新测试两流，或先只测已确认结构的市场流：
+
+```bash
+python -u -m scripts.integration.options.dolphin_stream_probe --streams both --seconds 180
+python -u -m scripts.integration.options.dolphin_stream_probe --streams market --seconds 180
+```
+
+上述两条是不同采样范围，任选一条，不要同时运行。market 范围不查询/订阅指数流，报告不把未选择的 000852 当成缺失。both 范围用于补齐指数实际 schema 和原始行。REV3 本地 76 项主回归、111 项相关回归共 187 项通过，包括服务器任务名约束及非 date/minTime 的指数夹具；原生 Driver 离线探针、77 文件部署摘要预检及独立 entry 组通过。尚无修正版真实推送结果。
 
 这些语句不创建或改写共享表。应确认表持续接收当日这两类合约的已完成分钟，并确认 minTime 是起点还是终点、volume 是分钟增量还是日累计量；字段名相同不能证明业务含义相同。若没有分钟共享流表，需要先由数据发布程序提供对应流；客户端不能把 `loadTable(...)` 的查询结果当成实时推送，也不自动创建表、改聚合引擎或定期查询市场 DFS 来冒充推送。推送模型及流表发现依据见 [DolphinDB 流订阅](https://docs.dolphindb.com/zh/api/python/BasicOperations/Subscription/Subscription.html) 与 [流计算状态监控](https://docs.dolphindb.com/zh/stream/str_monitor.html)。
 

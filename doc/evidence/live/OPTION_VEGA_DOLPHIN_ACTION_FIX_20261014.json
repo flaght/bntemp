@@ -1,0 +1,51 @@
+{
+  "date": "2026-10-14",
+  "version": "OPTION_DOLPHIN_PUSH_20261014_REV3",
+  "provenance": "user_reported_remote_probe_console",
+  "remote_summary": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/tests/results/option-vega-dolphin-stream-probe/sample-1791947222876586050/summary.json",
+  "remote_original_summary_read_locally": false,
+  "reported_failure": {
+    "status": "failed",
+    "requested_seconds": 180,
+    "sampling_completed": false,
+    "sdk_error": "actionName can't contain characters other thanletters, digits, and underscore(_).",
+    "failure": "DolphinDB分钟流缺少必需列或结构无效: ['date', 'minTime']",
+    "cleanup_errors": [],
+    "missing_monitored_keys": ["MO2611-C-7400", "IM2611", "000852"],
+    "market_columns": ["minTime", "date", "Code", "open", "high", "low", "close", "prev_close", "prev_settlement", "volume", "turnover", "pct_change", "open_interest", "prev_open_interest", "updateTime"],
+    "actual_index_columns": null,
+    "market_schema_read_does_not_prove_subscription_success": true
+  },
+  "fixes": [
+    "generate underscore-only task names in live entry and probe",
+    "validate action characters in stream config and native subscription before SDK calls",
+    "retain actual schema columns when validation fails",
+    "raw index probe reads existing time fields without inventing date/minTime",
+    "market-only probe skips index schema and subscription",
+    "probe implementation under scripts allows runtime tests without deploying doc directory"
+  ],
+  "unmodified_policy": {
+    "formal_bar_time_requirements": "strict",
+    "recommended_index_source": "dolphindb-dfs",
+    "old_position_state_migration": "not_performed",
+    "new_ctp_connections_or_orders": 0
+  },
+  "offline_validation": {
+    "main_regression_tests": 76,
+    "related_regression_tests": 111,
+    "total_unittest_cases": 187,
+    "all_passed": true,
+    "native_dolphin_driver_offline_probe": "passed",
+    "deployment_preflight_files": 77,
+    "deployment_preflight_mismatches": [],
+    "separate_entry_acceptance": "passed",
+    "logs": ["/tmp/option-dolphin-action-fix.log", "/tmp/option-dolphin-action-related.log", "/tmp/option-dolphin-action-entry.log"]
+  },
+  "live_fix_verified": false,
+  "pending": [
+    "new probe version 3 subscription and receipt",
+    "actual index stream column names and types",
+    "producer complete-minute label and volume meaning",
+    "actual market push Recording target verification"
+  ]
+}
