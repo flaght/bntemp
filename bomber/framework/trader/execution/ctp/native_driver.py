@@ -161,13 +161,18 @@ class CtpNativeTraderDriver:
         self._transition_lock = None
 
     @property
-    def is_simnow_session(self) -> bool:
+    def is_simnow_authenticated(self) -> bool:
+        """已登录且身份匹配的SimNow会话；不表示具有发单授权。"""
         session = self._session
         return bool(
-            self._enable_simnow_orders and self._connected
+            self._connected
             and session is not None and session.broker_id == "9999"
             and session.investor_id == self.account_id
         )
+
+    @property
+    def is_simnow_session(self) -> bool:
+        return bool(self._enable_simnow_orders and self.is_simnow_authenticated)
 
     @property
     def trading_day(self) -> str | None:
