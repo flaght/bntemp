@@ -42,6 +42,8 @@
 
 样本回归与最新证据补充为 [REV4 摘要](checksums/OPTION_VEGA_DOLPHIN_PUSH_20261014_REV4_SHA256.txt) / [REV4 包](archives/OPTION_VEGA_DOLPHIN_PUSH_20261014_REV4.tar.gz)，更新测试、验收入口摘要和文档；原 REV3 运行模块字节保持不变，已部署者可直接运行现有 Recording 命令，无需为这次样本补充重启或更新运行模块。旧交付包保留原版。
 
+13:22 Recording 的 [旧分钟失败证据与修正](live/OPTION_VEGA_DOLPHIN_OLD_MINUTE_20261014.json) 已返回：市场流转换 90 根、无转换错误，指数 13:22 投影成功后又发布 13:21，触发时间倒退；没有消费帧或生成目标。最新 [REV5 包](archives/OPTION_VEGA_DOLPHIN_PUSH_20261014_REV5.tar.gz) / [REV5 摘要](checksums/OPTION_VEGA_DOLPHIN_PUSH_20261014_REV5_SHA256.txt) 修正公共查询 Bar 流跨轮询顺序，旧请求审计 OLDER_THAN_PROJECTED，旧帧缺指数按原期限跳过。保留真实倒退及期限检查；新增实际 Runner/Recording 回归，本地 81 + 111 项及 entry 组通过。完整线上 Recording 仍待复测，旧包保持原版。
+
 ## 2026-10-11模型运行与恢复证据
 
 同日08期权Vega源码新增，使用独立清单

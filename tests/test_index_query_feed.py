@@ -55,6 +55,42 @@ class QueryFeedTests(unittest.TestCase):
         self.source.rows = [row()]
         self.assertEqual(self.feed.poll((END,)), (END,))
 
+    def test_pending_minutes_are_projected_in_event_order(self):
+        self.now = END + M + 1_000_000_000
+        self.source.rows = [row(event=END+M, published=END+M+100), row()]
+        self.feed.connect()
+        self.assertEqual(self.feed.poll((END+M, END, END)), (END, END+M))
+        self.assertEqual([bar.ts_event for bar in self.bars], [END, END+M])
+
+    def test_old_pending_added_after_new_projection_does_not_regress_stream(self):
+        self.now = END + M + 14_000_000_000
+        self.source.rows = [row(), row(event=END+M, published=END+M+100)]
+        self.feed.connect()
+        self.assertEqual(self.feed.poll((END+M,)), (END+M,))
+        self.now += 4_000_000_000
+        self.assertEqual(self.feed.poll((END+M, END)), ())
+        self.assertEqual([bar.ts_event for bar in self.bars], [END+M])
+        lookup = self.feed.manifest["minute_lookups"][str(END)]
+        self.assertEqual(lookup["status"], "OLDER_THAN_PROJECTED")
+        self.assertEqual(lookup["latest_projected_ns"], END+M)
+        self.assertIsNone(self.feed.cache.failure)
+        self.assertTrue(FeatureQueryChannel(self.feed.cache, clock_ns=lambda:self.now).check())
+        self.now = END + 2*M + 14_000_000_000
+        self.source.rows.append(row(event=END+2*M, published=END+2*M+100))
+        self.assertEqual(self.feed.poll((END, END+2*M)), (END+2*M,))
+
+    def test_missing_old_index_arriving_after_new_projection_cannot_backfill(self):
+        self.now = END + M + 14_000_000_000
+        self.source.rows = [row(event=END+M, published=END+M+100)]
+        self.feed.connect()
+        self.assertEqual(self.feed.poll((END, END+M)), (END+M,))
+        self.assertEqual(self.feed.manifest["minute_lookups"][str(END)]["status"], "MISSING")
+        self.source.rows.append(row())
+        self.now += 4_000_000_000
+        self.assertEqual(self.feed.poll((END,)), ())
+        self.assertEqual(self.feed.manifest["minute_lookups"][str(END)]["status"], "OLDER_THAN_PROJECTED")
+        self.assertEqual(len(self.bars), 1)
+
     def test_expired_pending_minute_rejected_by_public_buffer(self):
         buffer = MinuteFrameBuffer({"future": "future-bars", "index": "index-bars"}, grace_seconds=2)
         self.assertTrue(buffer.add("future", 6400, END, END, source_id="future-bars"))
