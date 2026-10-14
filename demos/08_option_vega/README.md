@@ -964,7 +964,7 @@ bash doc/evidence/commands/CTP_CU_NIGHT_PIPELINE_PROBE.sh cu2612 600
 
 #### 2026-10-14 开盘后同连接全链／缩减／全链诊断
 
-[OPTION_VEGA_RAW_ABA_PROBE.py](../../doc/evidence/commands/OPTION_VEGA_RAW_ABA_PROBE.py) 在启动时只读 DolphinDB 当日 MO/IM 基础条款，复用 `LiveOptionReferences` 的有效认购及同月期货筛选，随后关闭参考源。它不读取昨天状态、不恢复策略、不连接 TD、不报单；采样阶段不查询指数 DFS，也不执行标准 Tick 转换或分钟聚合。本轮尚无用户返回的线上结果，不登记为行情验收通过。
+[OPTION_VEGA_RAW_ABA_PROBE.py](../../doc/evidence/commands/OPTION_VEGA_RAW_ABA_PROBE.py) 在启动时只读 DolphinDB 当日 MO/IM 基础条款，复用 `LiveOptionReferences` 的有效认购及同月期货筛选，随后关闭参考源。它不读取昨天状态、不恢复策略、不连接 TD、不报单；采样阶段不查询指数 DFS，也不执行标准 Tick 转换或分钟聚合。用户已返回 FULL_2 及最终停机结果，具体范围见下文；FULL_1、REDUCED 尚未提供，不登记完整对比或正式行情验收通过。
 
 将该 Python 文件同步到运行机同名目录，先停止其他使用同一账号的行情诊断或 08 进程，避免额外会话影响对比。在项目根目录执行：
 
@@ -985,6 +985,18 @@ python -u doc/evidence/commands/OPTION_VEGA_RAW_ABA_PROBE.py \
 如果两个全链段都有长间隔、缩减段明显连续，可进一步怀疑订阅负载，但盘中推送本身会变化，仍不能凭单次对比确定因果。若三段原始接收都稳定，再做正式 Feed/Bar 与指数轮询的对照，排查转换、分派、线程竞争和数据库调用；此探针本身没有覆盖这些层。昨日 MO 空 1 手的检查点仍须保留，当前固定恢复身份不能通过修改估值日直接跨日恢复交易。
 
 本地已用无网络回调夹具检查交易阶段边界、同连接订阅/退订确认、两腿不退订、首尾/零回调间隔及断线中止；没有连接运行机或柜台。
+
+用户返回 FULL_2：北京时间 09:51:50.939—09:56:51.098，107 个订阅、采样 300 秒，最终 `ABA_FINAL` 为 completed、failure=null、cleanup_errors=[]。原报告路径为运行机 `tests/results/option-vega-raw-aba/sample-1791942104929305866/summary.json`；本机未独立读取该报告。
+
+| 原始回调流 | 回调数 | 最大接收间隔（秒） | 末尾静默（秒） | 段结束时最新源事件年龄（秒） |
+| --- | --- | --- | --- | --- |
+| ALL | 29467 | 13.910 | 0.037 | 1.598 |
+| MO2611-C-7400 | 439 | 17.231 | 0.392 | 2.098 |
+| IM2611 | 548 | 17.667 | 0.049 | 1.598 |
+
+三项源交易日均为 20261014，wrong_trading_day_ticks=0，unexpected_ticks=0。这一段没有观测到达到 30 秒的原始接收静默，但 ALL 的 13.91 秒空档仍需与其他两段对比，不能称为完全无停顿。进度在采样 240.131 秒时三流最新源事件年龄均为 6.070 秒；该值及末尾年龄均是快照，不是整个窗口的最大源年龄，因此不能据最大接收间隔小于 30 秒推导逐合约事件年龄门控全过程通过。精简证据见 [OPTION_VEGA_RAW_ABA_20261014.json](../../doc/evidence/live/OPTION_VEGA_RAW_ABA_20261014.json)。
+
+补齐 FULL_1、REDUCED 及切换确认后才能审查完整同连接对比。此 FULL_2 窗口尚未复现昨日 30 秒原始接收超时，107 个订阅本身导致该故障的结论仍无充分证据；正式转换、聚合和指数查询的健康状态也尚未由本轮覆盖。
 
 #### 订阅范围与订阅量诊断
 
