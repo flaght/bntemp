@@ -32,6 +32,8 @@ def parse_args(argv=None):
     parser.add_argument("--side", choices=("BUY", "SELL"), default="BUY")
     parser.add_argument("--limit-price", type=decimal_arg, help="提交时须明确指定预检输出的限价")
     parser.add_argument("--passive-ticks", type=int, default=10)
+    parser.add_argument("--cancel-after", choices=("accepted", "partial"), default="accepted")
+    parser.add_argument("--partial-wait-seconds", type=int, default=30)
     parser.add_argument("--max-notional", type=decimal_arg, default=Decimal("1200000"))
     parser.add_argument("--timeout", type=int, default=30)
     parser.add_argument("--submit", action="store_true")
@@ -50,8 +52,10 @@ def parse_args(argv=None):
     if args.submit != args.confirm_simnow or args.submit and (
             not args.connect or not args.instrument or args.limit_price is None):
         parser.error("提交须connect、submit、confirm-simnow并明确instrument和limit-price")
-    if not 1 <= args.timeout <= 60 or not 1 <= args.passive_ticks <= 100:
-        parser.error("timeout须1至60秒，passive-ticks须1至100")
+    if (not 1 <= args.timeout <= 60 or not 0 <= args.passive_ticks <= 100
+            or args.passive_ticks == 0 and args.cancel_after != "partial"
+            or not 1 <= args.partial_wait_seconds <= 60):
+        parser.error("timeout/partial-wait-seconds须1至60秒；零跳仅用于partial模式")
     if not args.max_notional.is_finite() or not 0 < args.max_notional <= Decimal("2300000"):
         parser.error("测试总名义限额须为正且不超过230万")
     if args.limit_price is not None and (not args.limit_price.is_finite() or args.limit_price <= 0):
@@ -101,7 +105,7 @@ def select_spec(specs, args, gross, protected):
     return eligible[0]
 
 
-def price_plan(raw, observation, args, spec):
+def price_plan(raw, observation, args, spec, *, enforce_passive=True):
     if (observation.trading_day != args.trading_day or observation.timestamp_regressed
             or not 0 <= time.monotonic_ns() - observation.received_monotonic_ns <= 3_000_000_000
             or not 0 <= time.time_ns() - observation.ts_event <= 10_000_000_000):
@@ -118,9 +122,11 @@ def price_plan(raw, observation, args, spec):
         raise RuntimeError("测试盘口与涨跌停边界不一致")
     suggested = bid - spec.tick * args.passive_ticks if args.side == "BUY" else ask + spec.tick * args.passive_ticks
     price = args.limit_price if args.limit_price is not None else suggested
-    if (not low <= price <= high or price % spec.tick != 0
-            or args.side == "BUY" and price >= bid or args.side == "SELL" and price <= ask):
-        raise RuntimeError("限价须在涨跌停范围及价位网格内，买价低于买一/卖价高于卖一")
+    passive = ((price <= bid and price < ask) if args.side == "BUY" else (price >= ask and price > bid))
+    if args.cancel_after == "accepted":
+        passive = price < bid if args.side == "BUY" else price > ask
+    if not low <= price <= high or price % spec.tick != 0 or enforce_passive and not passive:
+        raise RuntimeError("限价须在涨跌停及网格内；partial模式可挂本方一档但不跨对手价")
     notional = max(price, values["LastPrice"]) * spec.multiplier * 2
     if notional > args.max_notional:
         raise RuntimeError(f"测试2手总名义金额{notional}超过限额{args.max_notional}")
@@ -129,6 +135,8 @@ def price_plan(raw, observation, args, spec):
         "tick": str(spec.tick), "multiplier": str(spec.multiplier), "notional": str(notional),
         "quote": {k: str(v) for k, v in values.items()}, "quote_ts_event": observation.ts_event,
         "observed_md_trading_day": observation.trading_day,
+        "cancel_after": args.cancel_after, "partial_wait_seconds": args.partial_wait_seconds,
+        "book_volume": {key: raw.get(key) for key in ("BidVolume1", "AskVolume1")},
         "unexpected_fill_policy": "最多2手意外成交归独立测试账本；保留持仓，不自动平仓或改原检查点"}
 
 
@@ -148,14 +156,16 @@ class ProbePlanner:
         return (replace(orders[0], price=self.price),)
 
 
-def exercise(host, instrument, price, validate, *, timeout):
+def exercise(host, instrument, price, validate, *, timeout, cancel_after="accepted",
+             partial_wait_seconds=30, observe_health=None):
     from bomber.framework.trader.contracts import ExecutionRequest
     from .cancel_probe import SharedMotherCancelProbe
     items = list(host.strategies.values())
     planner = ProbePlanner(host.account.client.planner, price, validate)
     host.account.client.planner = planner
     sign = 1 if host.probe_side == "BUY" else -1
-    contribution_window_ns = int((timeout + host.account.cancel_seconds + 5) * 1_000_000_000)
+    wait = partial_wait_seconds if cancel_after == "partial" else 0
+    contribution_window_ns = int((timeout + wait + host.account.cancel_seconds + 5) * 1_000_000_000)
     for item in items:
         port = item.session.client
         key = next(iter(port.routes))
@@ -168,17 +178,35 @@ def exercise(host, instrument, price, validate, *, timeout):
     planner.deferred = False
     host.service.continue_targets(items[1].strategy_id, instrument, host.service.clock_ns())
     probe = SharedMotherCancelProbe(items[0].strategy_id)
+    probe.trigger_mode, probe.wait_outcome = cancel_after, "waiting_acceptance"
     deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
+    partial_deadline = None
+    while True:
         host.service.poll()
         for item in items:
             item.session.client.drain_events()
-        probe.poll(host)
-        if probe.mother is not None:
+        types = {row.report_type.value for row in host.account.execution.backend.reports}
+        if "FILLED" in types or "REJECTED" in types:
+            probe.wait_outcome = "filled_before_cancel" if "FILLED" in types else "rejected"
             break
-        if any(row.report_type.value in {"FILLED", "REJECTED"}
-               for row in host.account.execution.backend.reports):
+        if cancel_after == "accepted" or "PARTIALLY_FILLED" in types:
+            probe.poll(host)
+            if probe.mother is not None:
+                probe.wait_outcome = "partial_observed" if "PARTIALLY_FILLED" in types else "accepted_observed"
+                break
+        now = time.monotonic()
+        if cancel_after == "partial" and "ACCEPTED" in types and partial_deadline is None:
+            partial_deadline = now + partial_wait_seconds
+        if partial_deadline is not None and now >= partial_deadline:
+            probe.wait_outcome = "partial_wait_timeout"
+            probe.poll(host)  # 未部分成交也撤剩余单，但不登记部分成交验收通过。
             break
+        if partial_deadline is None and now >= deadline:
+            probe.wait_outcome = "acceptance_timeout"
+            break
+        host.account.poll()
+        if observe_health is not None:
+            observe_health()
         time.sleep(0.02)
     for item in items:
         item.session.client.drain_events()
@@ -187,6 +215,29 @@ def exercise(host, instrument, price, validate, *, timeout):
             "source": host.service.snapshot_state()["sources"].get(item.strategy_id)}
         for item in items[1:]}
     return probe
+
+
+def partial_cancel_result(probe, events, runtime_status):
+    result = {"status": "not_exercised", "wait_outcome": getattr(probe, "wait_outcome", None)}
+    if probe is None or probe.mother is None:
+        if runtime_status == "failed":
+            result["status"] = "failed"
+        return result
+    rows = [row for row in events if row.client_order_id == probe.mother["client_order_id"]]
+    partial = [row for row in rows if row.report_type.value == "PARTIALLY_FILLED"
+               and 0 < row.filled_quantity < row.order_quantity and row.ts_event <= probe.requested_at_ns]
+    canceled = [row for row in rows if row.report_type.value == "CANCELED"
+                and row.ts_event >= probe.requested_at_ns]
+    result.update(partial_report_ids=[row.report_id for row in partial],
+                  canceled_report_ids=[row.report_id for row in canceled],
+                  observed_filled_quantity=str(max((row.filled_quantity for row in partial), default=Decimal(0))))
+    if runtime_status == "failed":
+        result["status"] = "failed"
+    # Native CANCELED的filled_quantity默认0；它是状态回报，不撤回此前已入账成交。
+    elif (partial and canceled and not any(row.report_type.value == "FILLED" for row in rows)
+            and probe.stopped_at_ns is not None and probe.peers_active_after_stop):
+        result["status"] = "passed"
+    return result
 
 
 def read_specs(args):
@@ -375,7 +426,11 @@ def main(argv=None):
         holder["host"] = host
         validate()
         host.start()
-        probe = exercise(host, instrument, args.limit_price, validate, timeout=min(args.timeout, 10))
+        def observe_health():
+            price_plan(*feed.quote(), args, spec, enforce_passive=False)
+        probe = exercise(host, instrument, args.limit_price, validate, timeout=min(args.timeout, 10),
+            cancel_after=args.cancel_after, partial_wait_seconds=args.partial_wait_seconds,
+            observe_health=observe_health)
         status = "completed"
     except BaseException as error:
         raised = True
@@ -411,6 +466,9 @@ def main(argv=None):
             snapshot["reference_evidence"] = getattr(args, "reference_evidence", None)
             snapshot["eligible_instruments"] = getattr(args, "eligible_instruments", [])
             snapshot["peer_state_after_owner_cancel"] = getattr(probe, "controlled_peer_state", None)
+            snapshot["cancel_after"] = args.cancel_after
+            if args.cancel_after == "partial":
+                snapshot["partial_cancel_acceptance"] = partial_cancel_result(probe, events, status)
             try:
                 report.write(status=status, fields=snapshot, session=host, events=events)
             finally:
