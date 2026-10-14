@@ -5,6 +5,8 @@ from contextlib import ExitStack
 from pathlib import Path
 import time
 
+from .prepare_session import parse_cross_products
+
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
@@ -12,6 +14,7 @@ def main(argv=None):
     parser.add_argument("--environment", choices=("replay", "realtime"), required=True)
     parser.add_argument("--report-dir", type=Path, default=Path("scripts/integration/shared_account/results"))
     parser.add_argument("--output", type=Path, help="保存本次只读观察摘要，供会话生成器读取")
+    parser.add_argument("--cross-products", type=parse_cross_products, default="CU,AL")
     args = parser.parse_args(argv)
     from dotenv import load_dotenv
     from .run import PROJECT_ROOT
@@ -29,7 +32,7 @@ def main(argv=None):
     load_dotenv(PROJECT_ROOT / ".env")
     report = LiveRunReport(args.report_dir, prefix=f"three-discover-{args.environment}")
     report.begin()
-    status, failure, driver, feed, fields = "failed", None, None, None, {}
+    status, failure, driver, feed, fields = "failed", None, None, None, {"cross_products": args.cross_products}
     with ExitStack() as resources:
         try:
             transport = build_simnow_transport(CtpTdApiTransport, client_id="three-discover",
@@ -52,11 +55,12 @@ def main(argv=None):
             resources.enter_context(source)
             references = [LiveFuturesReferences(source, products=(product,), trading_day=driver.trading_day,
                 started_ns=time.time_ns(), roles=roles, factor_roles=(), refresh_seconds=0)
-                for product, roles in (("CU", ("main", "secondary", "far")), ("AL", ("main",)))]
+                for product, roles in [(p, ("main", "secondary", "far") if p == "CU" else ("main",))
+                    for p in dict.fromkeys(("CU", *args.cross_products))]]
             source_days = {r.snapshot(time.time_ns()).source_day.strftime("%Y%m%d") for r in references}
             fields["observed_source_days"] = sorted(source_days)
             if len(source_days) != 1:
-                raise RuntimeError("CU/AL资料来源日不一致，不能生成同一会话")
+                raise RuntimeError("声明品种资料来源日不一致，不能生成同一会话")
             lifecycle = SimpleNamespace(transport=transport, md_front=required("CTP_MD_ADDRESS"))
             feed = CtpLiveDataFeed(build_md_config(CtpMdConfig, lifecycle, flow_path=str(report.path / "md-flow")))
             resources.callback(feed.disconnect)
@@ -76,7 +80,7 @@ def main(argv=None):
             until = time.monotonic() + 30
             while not set(instruments) <= set(feed.depth_observations):
                 if time.monotonic() >= until:
-                    raise RuntimeError("只读观察未取得完整CU/AL逐合约MD；保留实际MD观察，不猜测日期")
+                    raise RuntimeError("只读观察未取得完整声明合约MD；保留实际MD观察，不猜测日期")
                 time.sleep(0.2)
             days = {row.trading_day for row in feed.depth_observations.values()}
             fields["observed_md_trading_days"] = sorted(days)

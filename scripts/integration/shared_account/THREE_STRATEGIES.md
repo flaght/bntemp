@@ -7,6 +7,21 @@
 [08共享恢复交接](../../../doc/HANDOFF/live/HANDOFF_OPTION_VEGA_SHARED_ROLLOVER_2026-10-14.md)。
 
 需求见doc/HANDOFF/gaps/GAP10_THREE_STRATEGY_REQUIREMENTS_2026-10-14.md。
+
+2026-10-14需求纠正：正式横截面品种为 **CU、AL、AG、AU**。下文CU/AL为旧两品种
+调试会话，保留历史命令；不得当作正式策略品种全集。discover/prepare_session现可
+显式传入`--cross-products CU,AL,AG,AU`。生成器使用新横截面ID
+`cross-cu-al-ag-au-three`及独立检查点目录，拒绝拿缺少AG/AU的旧观察摘要生成四品种
+会话。旧账户、策略ID、检查点不自动迁移。四品种候选参与排序，按每侧金额分配，
+不足一手的入选品种仍为零目标，不承诺每个品种必有订单。
+
+本地`three_realtime_cu_al_ag_au.json`为TD20261015/资料20261014的配置草案，仍保留
+5手/300万元账户上限，不增加额度。运行前须核对四品种实际主力、资金、行情、
+最大组合归属预算及原账户所有策略状态。本次柜台ag2612/au2612已有各1手空仓；
+若它们是新增主力，现有实现会拒绝管理范围内未归属仓位。它们不能自动变成新
+策略仓位。当前未实现同合约外部基线与新归属并存，不能仅替换products再resume。
+在完成范围迁移/基线隔离之前，此草案不是已批准执行的替代运行配置。
+
 execution_mode=netted：同进程净额执行，内部抵消单独记录，不虚构柜台成交。
 execution_mode=independent：一个账户服务及三个独立worker，订单不跨策略抵消。
 账户服务持有唯一TD、写入锁、编号、资金/订单查询和同代检查点；worker只有自己的

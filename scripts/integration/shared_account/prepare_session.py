@@ -4,6 +4,16 @@ import argparse
 from datetime import datetime
 import json
 from pathlib import Path
+import re
+
+
+def parse_cross_products(value):
+    products = tuple(item.strip().upper() for item in value.split(","))
+    if (len(products) < 2 or len(set(products)) != len(products)
+            or any(not re.fullmatch(r"[A-Z]+", item) for item in products)
+            or len("cross-" + "-".join(products) + "-three") > 64):
+        raise argparse.ArgumentTypeError("横截面须声明至少两个不同的字母品种，策略ID长度不超过64")
+    return products
 
 
 def main(argv=None):
@@ -16,6 +26,8 @@ def main(argv=None):
     parser.add_argument("--observations", type=Path, help="本次discover只读摘要；不得与手工日期混用")
     parser.add_argument("--replay-md-trading-day")
     parser.add_argument("--seconds", type=int, default=900)
+    parser.add_argument("--cross-products", type=parse_cross_products, default="CU,AL",
+                        help="横截面完整品种列表，如CU,AL,AG,AU；旧两品种配置不自动改写")
     args = parser.parse_args(argv)
     if args.observations:
         if args.trading_day or args.source_day or args.replay_md_trading_day:
@@ -26,6 +38,12 @@ def main(argv=None):
                 or observed.get("environment") != args.environment):
             parser.error("只读摘要未通过或环境不一致")
         dates = observed["session_arguments"]
+        if args.cross_products != ("CU", "AL"):
+            contracts = observed.get("contracts", {})
+            required = {p: {"main"} for p in args.cross_products}
+            required["CU"] = {"main", "secondary", "far"}
+            if any(not roles <= set(contracts.get(product, {})) for product, roles in required.items()):
+                parser.error("只读观察未覆盖新横截面品种及CU跨期合约；须用同样的cross-products重新观察")
         args.trading_day, args.source_day = dates["trading_day"], dates["source_day"]
         args.replay_md_trading_day = dates["replay_md_trading_day"]
     if not args.trading_day or not args.source_day:
@@ -38,6 +56,9 @@ def main(argv=None):
     if args.output.exists() or not 0 < args.seconds <= 3600:
         parser.error("不得覆盖已有配置；运行时长须在(0,3600]秒")
     suffix = f"{args.environment}-{args.execution_mode}-{args.trading_day}"
+    cross_id = "cross-" + "-".join(p.lower() for p in args.cross_products) + "-three"
+    if args.cross_products != ("CU", "AL"):
+        suffix += "-" + "-".join(p.lower() for p in args.cross_products)
     reference = ["--expected-source-day", args.source_day]
     factors = ["--factor-date-basis", "source", "--factor-availability",
                "source-day-end" if args.environment == "replay" else "observed-on-read"]
@@ -53,9 +74,9 @@ def main(argv=None):
              "state_file": f"results/three-{suffix}/ema.json",
              "argv": ["--product", "CU", *reference, *factors, "--fast", "3", "--slow", "5",
                       "--quantity", "1", "--max-notional", "1000000"]},
-            {"strategy_id": "cross-cu-al-three", "kind": "cross_section",
+            {"strategy_id": cross_id, "kind": "cross_section",
              "state_file": f"results/three-{suffix}/cross.json",
-             "argv": ["--products", "CU,AL", *reference, *factors, "--lookback", "3",
+             "argv": ["--products", ",".join(args.cross_products), *reference, *factors, "--lookback", "3",
                  "--rebalance-interval", "1", "--group-fraction", "0.5", "--target-notional", "1000000",
                  "--target-quantity-cap", "1", "--max-quantity", "1", "--max-notional", "1000000"]},
             {"strategy_id": "calendar-cu-three", "kind": "calendar_spread",

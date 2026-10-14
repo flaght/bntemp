@@ -1,0 +1,98 @@
+{
+  "version": 1,
+  "trading_day": "20261015",
+  "environment": "realtime",
+  "position_scope": "strategy_instruments",
+  "execution_mode": "independent",
+  "seconds": 900,
+  "account_state_file": "results/three-realtime-independent-20261015-cu-al-ag-au/account.json",
+  "report_dir": "results/three-realtime-independent-20261015-cu-al-ag-au",
+  "account": {
+    "client_id": "three-realtime-independent",
+    "max_gross_quantity": "5",
+    "max_gross_notional": "3000000",
+    "max_session_orders": 20,
+    "limit_offset_ticks": 1
+  },
+  "strategies": [
+    {
+      "strategy_id": "ema-cu-three",
+      "kind": "main_ema",
+      "state_file": "results/three-realtime-independent-20261015-cu-al-ag-au/ema.json",
+      "argv": [
+        "--product",
+        "CU",
+        "--expected-source-day",
+        "20261014",
+        "--factor-date-basis",
+        "source",
+        "--factor-availability",
+        "observed-on-read",
+        "--fast",
+        "3",
+        "--slow",
+        "5",
+        "--quantity",
+        "1",
+        "--max-notional",
+        "1000000"
+      ]
+    },
+    {
+      "strategy_id": "cross-cu-al-ag-au-three",
+      "kind": "cross_section",
+      "state_file": "results/three-realtime-independent-20261015-cu-al-ag-au/cross.json",
+      "argv": [
+        "--products",
+        "CU,AL,AG,AU",
+        "--expected-source-day",
+        "20261014",
+        "--factor-date-basis",
+        "source",
+        "--factor-availability",
+        "observed-on-read",
+        "--lookback",
+        "3",
+        "--rebalance-interval",
+        "1",
+        "--group-fraction",
+        "0.5",
+        "--target-notional",
+        "1000000",
+        "--target-quantity-cap",
+        "1",
+        "--max-quantity",
+        "1",
+        "--max-notional",
+        "1000000"
+      ]
+    },
+    {
+      "strategy_id": "calendar-cu-three",
+      "kind": "calendar_spread",
+      "state_file": "results/three-realtime-independent-20261015-cu-al-ag-au/calendar.json",
+      "argv": [
+        "--product",
+        "CU",
+        "--expected-source-day",
+        "20261014",
+        "--leg1-role",
+        "secondary",
+        "--leg2-role",
+        "far",
+        "--quantity",
+        "1",
+        "--lookback",
+        "3",
+        "--rebalance-interval",
+        "1",
+        "--entry-z",
+        "1",
+        "--exit-z",
+        "0.25",
+        "--max-notional",
+        "1000000"
+      ]
+    }
+  ]
+}
