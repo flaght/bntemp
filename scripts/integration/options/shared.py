@@ -1,12 +1,10 @@
 """08正常启动：自动观察TD日、恢复归属、共享执行，运行至收盘或主动停止。"""
 from argparse import ArgumentParser
-from datetime import datetime, time as day_time
+from datetime import datetime
 from importlib import import_module
 import json
 from pathlib import Path
-import signal
 import time
-from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -61,46 +59,37 @@ def observe_day():
             driver.stop()
 
 
-def run_session(config, *, resume):
+def run_session(config, *, resume, window, stop_event, clock=None, session_order_budget=None,
+                calendar_provenance=None):
     from scripts.integration.shared_account.run import build_host
     from bomber.framework.trader.runtime.reports import LiveRunReport
-    from bomber.framework.trader.runtime.live.readiness import wait_for_session_ready
-    report = LiveRunReport(config["report_dir"], prefix="option-vega-shared", metadata={"config": config})
+    from bomber.framework.trader.runtime.live.continuous import StopRequested
+    clock = clock or (lambda: datetime.now(window.end.tzinfo))
+    report = LiveRunReport(config["report_dir"], prefix="option-vega-shared", metadata={
+        "config": config, "calendar": calendar_provenance,
+        "window": {"trading_day": window.trading_day, "segment": window.segment_id,
+                   "start": window.start.isoformat(), "end": window.end.isoformat()}})
     report.begin()
     host, failure, cleanup_error, status = None, None, None, "failed"
-    requested = [False]
-    def stop_requested(*args):
-        requested[0] = True
-    previous = {sig: signal.signal(sig, stop_requested) for sig in (signal.SIGINT, signal.SIGTERM)}
+    def check_window():
+        if stop_event.is_set() or clock() >= window.end:
+            raise StopRequested("主动停止或交易窗口已结束")
     try:
-        host = build_host(config, resume=resume)
-        host.ready_seconds = 180
+        check_window()
+        host = build_host(config, resume=resume, session_order_budget=session_order_budget)
+        host.ready_seconds = min(180, max(0.2, (window.end-clock()).total_seconds()))
+        host.preparation_check = check_window
         host.start()
-        print("08共享会话就绪；持仓已恢复，运行至15:00或Ctrl+C；停止保留持仓", flush=True)
+        print("08共享会话就绪；按日历窗口管理归属仓位，停止保留成交仓位", flush=True)
         until = time.monotonic() + config["seconds"]
-        paused = False
-        while not requested[0] and time.monotonic() < until:
-            now = datetime.now(ZoneInfo("Asia/Shanghai"))
-            if now.strftime("%Y%m%d") != config["trading_day"] or now.time() >= day_time(15):
-                break
-            if day_time(11, 30, 40) <= now.time() < day_time(13):
-                # 日盘午休停止决策，账户查询/撤单回报仍推进；不沿用午前报价。
-                host.account.poll(); host.service.poll()
-                for item in host.strategies.values():
-                    item.session.client.drain_events()
-                paused = True
-            else:
-                if paused:
-                    for item in host.strategies.values():
-                        item.session.runner.accept_bars = False
-                        wait_for_session_ready(item.session, 180, lost=lambda: requested[0] or None)
-                        item.session.strategy.restored = True
-                        item.session.runner.begin_bars()
-                    paused = False
-                host.poll()
-                if not any(item.active for item in host.strategies.values()):
-                    raise RuntimeError("08策略已因异常停止，查看逐策略failure")
-            time.sleep(0.2)
+        while time.monotonic() < until:
+            check_window()
+            host.poll()
+            if not any(item.active for item in host.strategies.values()):
+                raise RuntimeError("08策略已因异常停止，查看逐策略failure")
+            stop_event.wait(0.2)
+        status = "completed"
+    except StopRequested:
         status = "completed"
     except BaseException as error:
         failure = str(error) or type(error).__name__
@@ -113,16 +102,77 @@ def run_session(config, *, resume):
             cleanup_error, status = str(error), "failed"
             raise
         finally:
-            for sig, handler in previous.items():
-                signal.signal(sig, handler)
             snapshot = host.snapshot() if host else {}
+            option_reports = {sid: import_module("demos.08_option_vega.run_live").describe(item.session)
+                              for sid, item in host.strategies.items()} if host else {}
             report.write(status=status, fields={**snapshot, "failure": failure, "cleanup_error": cleanup_error,
+                "stopped_by_operator": stop_event.is_set(),
                 "rollover": getattr(host.account, "rollover_audit", None) if host else None,
                 "final_gross": host.account.final_gross if host else None,
                 "final_active_orders": host.account.final_active_orders if host else None,
-                "option_report": import_module("demos.08_option_vega.run_live").describe(
-                    next(iter(host.strategies.values())).session) if host else None}, session=host,
+                "option_reports": option_reports,
+                "option_report": next(iter(option_reports.values())) if len(option_reports) == 1 else None}, session=host,
                 events=host.account.execution.backend.reports if host else ())
+    return {"status": status, "failure": failure, "cleanup_error": cleanup_error,
+            "trading_day": window.trading_day, "segment": window.segment_id}
+
+
+def load_identity(state_file):
+    from bomber.framework.trader.persistence import JsonStateStore
+    saved = JsonStateStore(state_file).load()
+    if saved is None:
+        raise ValueError("须提供原08归属检查点；不能用空文件绕过原仓")
+    identity = saved.payload["component_states"]["session_identity"]["identity"]
+    if "strategies" in identity:
+        if len(identity["strategies"]) != 1:
+            raise ValueError("此快捷入口只管理单个08；多策略使用共享run/server/worker")
+        identity = next(iter(identity["strategies"].values()))["reference"]
+    if identity.get("strategy_id") != "option-vega-live":
+        raise ValueError("原归属检查点须为option-vega-live")
+    return saved, identity
+
+
+def load_calendar(args, identity):
+    from dataclasses import replace
+    from bomber.framework.dataprep.session_inputs import session_inputs_from_args, load_session_inputs
+    if args.trading_calendar is not None:
+        raise ValueError("持续管理使用公共Provider；不接受旧日历JSON")
+    if args.session_timezone != "Asia/Shanghai":
+        raise ValueError("08实时日盘使用Asia/Shanghai，不能改变估值日期口径")
+    original_id = identity["calendar_manifest"]["calendar_id"]
+    args.calendar_id = args.calendar_id or original_id
+    if args.calendar_id != original_id:
+        raise ValueError("不能改变原策略交易日历身份")
+    calendar = load_session_inputs(replace(session_inputs_from_args(args, product="MO", exchange="CFFEX"),
+                                          asset_type="OPTION"))
+    if any(s.date_anchor != "TRADING_DAY" or s.start_day_offset or s.end_day_offset
+           for s in calendar.segments) or any(s.date_anchor != "TRADING_DAY" or s.start_day_offset or s.end_day_offset
+                for override in calendar.overrides for s in override.segments):
+        raise ValueError("08当前只支持CFFEX当日日盘，不能借用夜盘时段")
+    return calendar
+
+
+class OptionWindowRuntime:
+    def __init__(self, args, calendar, window, stop_event):
+        self.args, self.calendar, self.window, self.stop = args, calendar, window, stop_event
+
+    def run(self):
+        from bomber.framework.trader.runtime.live.continuous import orders_for_day
+        # 每次读取最新一代，午休和跨日均不复用首次装配时的旧身份或目标。
+        saved, identity = load_identity(self.args.state_file)
+        if self.stop.is_set():
+            return {"status": "completed"}
+        day = observe_day()
+        if day != self.window.trading_day:
+            raise RuntimeError(f"当前TD日{day}与calendars窗口{self.window.trading_day}不一致")
+        remaining = self.args.max_session_orders - orders_for_day(saved.payload, day)
+        if remaining <= 0:
+            raise RuntimeError("本交易日报单额度已用完；停止并保存，不重启刷新额度")
+        config = session_config(identity, day=day, account_state=self.args.state_file,
+            signal_state=self.args.signal_state, report_dir=self.args.report_dir,
+            max_orders=self.args.max_session_orders)
+        return run_session(config, resume=True, window=self.window, stop_event=self.stop,
+            session_order_budget=remaining, calendar_provenance=self.calendar.provenance)
 
 
 def main(argv=None):
@@ -134,6 +184,9 @@ def main(argv=None):
     parser.add_argument("--confirm-simnow", action="store_true")
     parser.add_argument("--max-session-orders", type=int, default=20)
     parser.add_argument("--report-dir", type=Path, default=ROOT/"tests/results/gap08-shared")
+    parser.add_argument("--run-forever", action="store_true", help="休市等待，下一交易日自动恢复；默认当天收盘退出")
+    from bomber.framework.dataprep.session_inputs import add_session_arguments
+    add_session_arguments(parser)
     args = parser.parse_args(argv)
     if not args.connect:
         if args.enable_orders or args.confirm_simnow:
@@ -142,32 +195,25 @@ def main(argv=None):
         return
     if not (args.enable_orders and args.confirm_simnow) or args.max_session_orders < 1:
         parser.error("连接须双报单授权及正订单上限")
-    now = datetime.now(ZoneInfo("Asia/Shanghai"))
-    if not day_time(9, 29) <= now.time() < day_time(14, 56):
-        parser.error("08日盘启动时间须在09:29至14:56之间，为当前分钟就绪留出时间")
     from dotenv import load_dotenv
     load_dotenv(ROOT/".env")
-    from bomber.framework.trader.persistence import JsonStateStore
-    state_file = args.state_file.resolve()
-    saved = JsonStateStore(state_file).load()
-    if saved is None:
-        parser.error("首次使用此恢复入口须提供原08归属检查点；空仓新会话使用共享配置入口")
-    identity = saved.payload["component_states"]["session_identity"]["identity"]
-    if "strategies" in identity:
-        if len(identity["strategies"]) != 1:
-            parser.error("此快捷入口只管理单个08；多策略使用共享run/server/worker")
-        identity = next(iter(identity["strategies"].values()))["reference"]
-    if identity.get("strategy_id") != "option-vega-live":
-        parser.error("原归属检查点须为option-vega-live")
-    day = observe_day()
-    if day != now.strftime("%Y%m%d"):
-        parser.error("当前TD日不是本地日盘日期，不能运行实时08行情")
-    signal_state = (args.signal_state or state_file.with_name(state_file.name+".vega-signal.json")).resolve()
-    if signal_state == state_file:
+    from bomber.framework.trader.runtime.live.continuous import ContinuousPositionRuntime, StopSignal
+    from bomber.framework.trader.runtime.live.local import strategy_state_lock
+    args.state_file = args.state_file.resolve()
+    args.signal_state = (args.signal_state or args.state_file.with_name(
+        args.state_file.name+".vega-signal.json")).resolve()
+    args.report_dir = args.report_dir.resolve()
+    if args.signal_state == args.state_file:
         parser.error("信号文件与账户文件须不同")
-    config = session_config(identity, day=day, account_state=state_file, signal_state=signal_state,
-        report_dir=args.report_dir.resolve(), max_orders=args.max_session_orders)
-    run_session(config, resume=True)
+    # 常驻所有权锁与每个窗口实际账户/状态锁分开，禁止两个调度器交替接管同一文件。
+    with strategy_state_lock(str(args.state_file)+".continuous-owner"), StopSignal() as stop:
+        _, identity = load_identity(args.state_file)
+        calendar = load_calendar(args, identity)
+        print("会话日历:", json.dumps(calendar.provenance, ensure_ascii=False), flush=True)
+        runtime = ContinuousPositionRuntime(calendar,
+            lambda window, event: OptionWindowRuntime(args, calendar, window, event),
+            run_forever=args.run_forever, stop_event=stop)
+        print("持续管理结束:", json.dumps(runtime.run(), ensure_ascii=False), flush=True)
 
 
 if __name__ == "__main__":

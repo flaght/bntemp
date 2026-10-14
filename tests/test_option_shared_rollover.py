@@ -49,7 +49,7 @@ class OptionSharedRolloverTests(unittest.TestCase):
         return lifecycle, session, context, transport
 
     def frame(self, session, slot="13:35"):
-        stamp = int(datetime.fromisoformat("2026-08-14T" + slot + ":00").replace(
+        stamp = int(datetime.fromisoformat(str(session.references.service.valuation_day) + "T" + slot + ":00").replace(
             tzinfo=ZoneInfo("Asia/Shanghai")).timestamp()) * 1_000_000_000
         now = [stamp + 14_000_000_000]
         session.runner.clock_ns = lambda: now[0]
@@ -304,25 +304,138 @@ class OptionSharedRolloverTests(unittest.TestCase):
         self.assertFalse(transport.sent)
         host.stop()
 
-    def test_shared_fast_entry_stops_at_close_or_signal_and_finally_saves(self):
+    def test_shared_fast_entry_stops_at_calendar_close_and_finally_saves(self):
         from scripts.integration.options import shared as fast
+        from bomber.framework.calendars.sessions import TradingWindow
+        from threading import Event
         from unittest.mock import MagicMock
-        class Clock(datetime):
-            @classmethod
-            def now(cls, tz=None):
-                return cls(2026, 8, 14, 15, 0, tzinfo=tz)
+        zone = ZoneInfo("Asia/Shanghai")
+        window = TradingWindow("20260814", datetime(2026, 8, 14, 13, tzinfo=zone),
+                               datetime(2026, 8, 14, 14, tzinfo=zone), "early_close")
+        now = [window.start]
         host = MagicMock()
+        host.start.side_effect = lambda: now.__setitem__(0, window.end)
         host.strategies = {CLIENT: NS(session=NS())}
         host.snapshot.return_value = {}
         host.account.rollover_audit = {}
         host.account.execution.backend.reports = ()
         report = MagicMock()
-        with patch.object(fast, "datetime", Clock), patch("scripts.integration.shared_account.run.build_host", return_value=host), \
+        with patch("scripts.integration.shared_account.run.build_host", return_value=host), \
                 patch("bomber.framework.trader.runtime.reports.LiveRunReport", return_value=report), \
-                patch.object(entry, "describe", return_value={}), patch.object(fast.signal, "signal", return_value=None):
-            fast.run_session(dict(trading_day="20260814", report_dir=str(self.root), seconds=86400), resume=True)
+                patch.object(entry, "describe", return_value={}):
+            result = fast.run_session(dict(trading_day="20260814", report_dir=str(self.root), seconds=86400),
+                resume=True, window=window, stop_event=Event(), clock=lambda: now[0])
         host.start.assert_called_once(); host.stop.assert_called_once(); host.poll.assert_not_called()
+        self.assertEqual(result["status"], "completed")
         self.assertEqual(report.write.call_args.kwargs["status"], "completed")
+
+    def test_operator_stop_before_connect_keeps_state_bytes(self):
+        from scripts.integration.options import shared as fast
+        from bomber.framework.calendars.sessions import TradingWindow
+        from threading import Event
+        from unittest.mock import MagicMock
+        stop = Event(); stop.set()
+        zone = ZoneInfo("Asia/Shanghai")
+        window = TradingWindow("20260814", datetime(2026, 8, 14, 13, tzinfo=zone),
+                               datetime(2026, 8, 14, 15, tzinfo=zone))
+        original = self.source.read_bytes()
+        with patch("scripts.integration.shared_account.run.build_host") as build, \
+                patch("bomber.framework.trader.runtime.reports.LiveRunReport", return_value=MagicMock()):
+            result = fast.run_session(dict(trading_day="20260814", report_dir=str(self.root), seconds=86400),
+                resume=True, window=window, stop_event=stop)
+        self.assertEqual(result["status"], "completed")
+        build.assert_not_called()
+        self.assertEqual(self.source.read_bytes(), original)
+
+    def test_window_adapter_uses_actual_td_and_saved_day_budget(self):
+        from scripts.integration.options import shared as fast
+        from bomber.framework.calendars.sessions import TradingWindow
+        from threading import Event
+        zone = ZoneInfo("Asia/Shanghai")
+        window = TradingWindow("20260814", datetime(2026, 8, 14, 13, tzinfo=zone),
+                               datetime(2026, 8, 14, 15, tzinfo=zone))
+        args = NS(state_file=self.source, signal_state=self.root/"signal.json", report_dir=self.root,
+                  max_session_orders=20)
+        adapter = fast.OptionWindowRuntime(args, NS(provenance={"fixture": True}), window, Event())
+        with patch.object(fast, "observe_day", return_value="20260814"), \
+                patch.object(fast, "run_session", return_value={"status": "completed"}) as run:
+            self.assertEqual(adapter.run()["status"], "completed")
+            self.assertEqual(run.call_args.kwargs["session_order_budget"], 20)
+            self.assertEqual(run.call_args.args[0]["trading_day"], "20260814")
+        with patch.object(fast, "observe_day", return_value="20260813"), patch.object(fast, "run_session") as run:
+            with self.assertRaisesRegex(RuntimeError, "窗口"):
+                adapter.run()
+            run.assert_not_called()
+
+
+    def test_stop_during_preparation_prevents_authorization_and_keeps_owned_state(self):
+        from bomber.framework.trader.runtime.live.shared import SharedAccountLiveHost
+        from bomber.framework.trader.runtime.live.continuous import StopRequested
+        account, service, session, identity, transport = self.shared()
+        host = SharedAccountLiveHost(account, service,
+            [SharedStrategySession(session, self.root/"prepared-signal.json", identity)],
+            resources=account.resources, resume=True)
+        checks = [0]
+        def cancelled():
+            checks[0] += 1
+            if checks[0] == 3:
+                raise StopRequested()
+        host.preparation_check = cancelled
+        with self.assertRaises(StopRequested):
+            host.start()
+        self.assertFalse(service.client.is_armed)
+        self.assertFalse(transport.sent)
+        self.assertEqual(service.position_manager.position(CLIENT, OPTION), -1)
+        self.assertTrue(host._stopped)
+
+    def test_public_scheduler_preserves_owned_position_across_real_shared_windows(self):
+        from bomber.framework.calendars import CalendarSnapshot, TradingHoursSnapshot, SessionSegment, SessionCalendar, SessionBinding
+        from bomber.framework.trader.runtime.live.continuous import ContinuousPositionRuntime
+        from bomber.framework.trader.runtime.live.shared import SharedAccountLiveHost
+        from threading import Event
+        days = (date(2026, 8, 13), date(2026, 8, 14), date(2026, 8, 17))
+        dates = CalendarSnapshot("china.cffex", "fixture", days[0], days[-1], days, "fixture")
+        hours = TradingHoursSnapshot(tuple(("IM", SessionSegment(name, "TRADING_DAY", 0, start, 0, end))
+            for name, start, end in (("morning", "09:30", "11:30"), ("afternoon", "13:00", "15:00"))), "fixture")
+        calendar = SessionCalendar(hours, dates, SessionBinding("MO", "IM", "china.cffex", "Asia/Shanghai", "CFFEX", "OPTION"))
+        now = [datetime(2026, 8, 14, 10, tzinfo=calendar.zone)]
+        stop, windows, generations = Event(), [], []
+        from scripts.integration.options import shared as fast
+        def factory(window, event):
+            def run():
+                current = inputs(datetime.strptime(window.trading_day, "%Y%m%d").date(), "dolphindb")
+                account, service, session, identity, transport = self.shared(current=current)
+                host = SharedAccountLiveHost(account, service,
+                    [SharedStrategySession(session, self.root/"daily-signal.json", identity)], resources=account.resources,
+                    resume=True)
+                # 公共账户/策略生命周期实际启动，只有传输与时钟为夹具。
+                original_poll = host.poll
+                def poll():
+                    self.frame(session, "10:01" if window.segment_id == "morning" else "13:35")
+                    session.client._wall_clock_ns = session.runner.clock_ns
+                    original_poll()
+                    now[0] = window.end
+                host.poll = poll
+                with patch("scripts.integration.shared_account.run.build_host", return_value=host):
+                    result = fast.run_session(dict(trading_day=window.trading_day, report_dir=str(self.root), seconds=86400),
+                        resume=True, window=window, stop_event=event, clock=lambda: now[0])
+                self.assertEqual(service.position_manager.position(CLIENT, OPTION), -1)
+                self.assertGreaterEqual(session.strategy.frames, 1)
+                self.assertFalse(transport.sent)
+                state = JsonStateStore(self.source).load()
+                self.assertEqual(state.payload["ctp_ledgers"][CLIENT]["trading_day"], window.trading_day)
+                generations.append(state.generation); windows.append((window.trading_day, window.segment_id))
+                if window.trading_day == "20260817":
+                    event.set()
+                return result
+            return NS(run=run)
+        runtime = ContinuousPositionRuntime(calendar, factory, run_forever=True, stop_event=stop,
+            clock=lambda: now[0], wait=lambda _: now.__setitem__(0, now[0]+__import__("datetime").timedelta(minutes=30)),
+            status=lambda _: None)
+        self.assertTrue(runtime.run()["stopped_by_operator"])
+        self.assertEqual(windows, [("20260814", "morning"), ("20260814", "afternoon"), ("20260817", "morning")])
+        self.assertEqual(generations, sorted(set(generations)))
+        self.assertEqual(self.source.with_name(self.source.name+".before-rollover-g1.json").read_bytes(), self.before)
 
     def test_same_day_shared_restart_keeps_sent_day_and_does_not_select_again(self):
         account, service, session, identity, transport = self.shared()

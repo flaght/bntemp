@@ -43,6 +43,32 @@ M06 对应 GAP04，恢复接续部分关联 GAP06；它是本次新增的最小�
 
 最小核下一步按 **统一来源／执行装配 → 三策略两种布局验收 → DDB 预热及当前行情接续 → BN／第三方实际接入**推进，数据和适配资料核对可并行。M04／M05 已验的能力保持，不为本次需求澄清重复重写。
 
+### 08持续仓位管理补充（2026-10-14）
+
+新增公共 `runtime/live/continuous.py`，复用 `calendars.SessionCalendar` / 会话Provider，支持每日至收盘与常驻休市等待、下一窗口自动恢复。08快捷入口及多08共享入口已接入；同进程共用账户服务，不同进程由唯一server和逐策略worker执行，worker先正常停机保存再关闭TD。JSON仍为现有归属/OMS/成交去重持久化，不新增仓位所有权算法。实际公共账户恢复与新鲜帧跨首日两窗口、下一交易日的离线验证通过；本机没有连接真实柜台，服务器跨日证据仍待返回。本批不扩展01/03/04的滚动历史预热和非CFFEX独立昨仓，M02/M05/M06等剩余项保持开放。详见 [本次交付](../HANDOFF/live/HANDOFF_OPTION_VEGA_CONTINUOUS_POSITION_2026-10-14.md)。
+
+### 当前策略需求核对：需求覆盖与实现达标分别判断
+
+2026-10-14再次按当前源码核对01／03／04／08。**M01—M06作为需求定义基本覆盖当前策略；现有实现尚未全部达标。** 对08的MO／IM、DolphinDB分钟、指数特征和CTP执行，主要运行组件已具备，共享执行与启动跨日恢复已交付，但当前版本真实原仓持续管理仍待验收。本节为静态源码及既有证据核对，没有新增运行或柜台通过结果，不修改六条需求的范围。
+
+| 最小核项 | 当前策略适配结论 | 核对依据与剩余工作 |
+| --- | --- | --- |
+| M01 策略／行情解耦 | 08主要需求具备；完整来源矩阵仍部分完成 | 08回测和Live共用`OptionVegaStrategy`及`assembly.py`，市场／指数来源由入口装配。标准事件接口可复用；BN不提供MO／IM行情，不能把不匹配业务标的的来源强行用于08，也不能据此判08算法不解耦。统一来源入口仍须完成适用业务组合。 |
+| M02 执行可替换 | 08的CTP执行具备；全部最小要求未完成 | 公共执行端口存在，但当前共享应用仍直接构建CTP执行；BN实际链路及LXGBN适配没有达到此六条基线的完整验收。不能把“行情改为DDB、下单仍为CTP”扩大为共享入口已可配置任意执行端。 |
+| M03 多策略／两种布局 | 接口与代码已具备，正式组合验收未齐 | 工厂已包含01／03／04／08；共享宿主、独立worker、账户服务与IPC已交付。当前三策略Linux完整联调及08共享实际持续运行仍待结果；源文件存在、替身socket测试和原双策略成交不能代替新组合通过。 |
+| M04 独立策略仓位 | 核心语义具备，须按明确模式使用 | 策略`position`按strategy_id读取归属，不被整个账户净仓覆盖；off／observe／strict与model已有公共政策。08使用independent时符合只由本策略真实成交推进的预期。跨日CFFEX原仓恢复有离线证据，实际柜台恢复仍待验；并非所有交易所／未知断点均已支持。 |
+| M05 同定义特征回测／Live | 公共能力具备；08正式回测尚未完成相同特征链路接入 | Live指数经声明式`index.minute` Provider／查询缓存／DataHub，再由`FeatureQueryBarFeed`投影成Bar。08回测仍直接读取指数Feather Bar，未调用特征文件Provider或按`visible_ns`回放。相同策略价格输入不等于Schema／修订／可见时间一致；须复用已有特征文件与模拟时钟回放，明确历史发布时间或可见性假设，再验迟到／缺失行为。不能直接断言现有回测有未来函数，但不能将它登记为M05完整通过。 |
+| M06 DDB历史窗口预热 | 08当前不需要指标历史窗口；01／03／04组合未达标 | 08按新鲜期权／期指／指数分钟估值选约，无EMA或滚动价格窗口，等待同分钟输入不是历史预热。01有历史服务及钩子；共享工厂仍显式拒绝`history_minutes`和`run_forever`，宿主／worker没有调用统一历史准备阶段。03／04仍从实时Bar积累lookback，尚未接入对应DDB窗口；改小lookback或等待实时Bar不能满足M06。 |
+
+**两处直接可定位的接入缺口：**
+
+1. 共享工厂 [strategy_arguments](/Users/kerry/work/bomber1/pro/scripts/integration/shared_account/factories.py:11) 将执行模式固定为SimNow，并在第21行拒绝历史窗口。共享 [账户装配](/Users/kerry/work/bomber1/pro/scripts/integration/shared_account/run.py:136) 直接调用CTP builder。因此公共端口可扩展，当前应用入口仍不是M02／M06完整的可配置装配。补齐历史准备、实时缓冲与去重阶段；不能仅删除参数拒绝而没有预热生命周期。
+2. 08 [回测行情准备](/Users/kerry/work/bomber1/pro/demos/08_option_vega/run_backtest.py:168) 将指数与交易腿一起按普通Bar准备；Live的 [指数特征装配](/Users/kerry/work/bomber1/pro/demos/08_option_vega/run_live.py:253) 则走声明式特征链。公共 [特征文件Provider](/Users/kerry/work/bomber1/pro/bomber/framework/dataprep/features/file.py) 和 [模拟可见时钟回放](/Users/kerry/work/bomber1/pro/bomber/framework/datahub/features/replay.py:17) 已有，可直接复用，避免新增专用指数Provider或复制策略算法。
+
+**M04与netted的语义需明确区分。** 当前 [归属规划](/Users/kerry/work/bomber1/pro/bomber/framework/trader/execution/attribution.py:159) 在independent模式不跨策略划转；netted模式允许内部抵消并更新归属，单独记录transfer，不生成柜台成交。M04中“fills只由真实执行来源推进”应按执行政策解释：independent为归属成交，netted还包含已确认政策允许的审计划转；两者均不得伪造FillEvent或让整账户仓位覆盖策略。此处解释已确认的两种政策，不撤销netted能力；08当前以independent符合用户的真实成交仓位管理预期。
+
+**实施优先级：** 08继续核对新入口实际恢复／新鲜输入／正常停止；01／03／04优先补共享DDB预热与实时接续；08补同Schema及可见性规则的特征回测接入。随后按已声明业务输入统一行情／执行工厂，并接通BN／LXGBN。当前08不因CU历史源缺失而增加无用预热，也不以08不需要窗口为由免除其他策略的M06要求。其余完整GAP仍独立跟踪，不要求先关闭全部GAP才能运行当前限定范围策略。
+
 ## 完成情况总览
 
 **整体仍为 11 项 GAP：GAP01、GAP03 已按既定范围关闭，其余 9 项未整体关闭。** 本轮新增了多个已完成的子项，不新增整体关闭数量。

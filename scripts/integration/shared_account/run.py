@@ -53,7 +53,8 @@ def validate_td_preflight(config, driver, *, md_front, td_front, diagnostics):
             f"TD={td_front}；请核对TD前置和会话环境，并用只读结果确认配置交易日")
 
 
-def build_host(config, *, resume, diagnostics=None, read_only=False, strategy_processes=False):
+def build_host(config, *, resume, diagnostics=None, read_only=False, strategy_processes=False,
+               session_order_budget=None):
     from bomber.framework.trader.execution.ctp import CtpNativeTraderDriver, CtpTdApiTransport
     from bomber.framework.trader.execution.builders import build_ctp_portfolio_execution
     from bomber.framework.trader.execution.shared import SharedAccountExecutionService, SharedRiskBudget
@@ -71,6 +72,9 @@ def build_host(config, *, resume, diagnostics=None, read_only=False, strategy_pr
     driver = host = None
     try:
         account_config = config["account"]
+        order_budget = account_config["max_session_orders"] if session_order_budget is None else session_order_budget
+        if isinstance(order_budget, bool) or not isinstance(order_budget, int) or not 0 < order_budget <= account_config["max_session_orders"]:
+            raise ValueError("运行窗口订单额度须为不超过原账户配置的正整数")
         transport = build_simnow_transport(CtpTdApiTransport, client_id=account_config["client_id"],
             flow_path=f"/tmp/{account_config['client_id']}-td", timeout_seconds=15)
         dolphin_only = all(row["kind"] == "option_vega" and "--market-source" in row["argv"] and
@@ -87,7 +91,7 @@ def build_host(config, *, resume, diagnostics=None, read_only=False, strategy_pr
             if client is not None:
                 client.mark_disconnected(reason)
         driver = CtpNativeTraderDriver(transport.client_id, transport.account_id, transport,
-            enable_simnow_orders=not read_only, max_session_orders=account_config["max_session_orders"],
+            enable_simnow_orders=not read_only, max_session_orders=order_budget,
             disconnect_handler=disconnected)
         driver.start(lambda report: None)
         validate_td_preflight(config, driver, md_front=md_front, td_front=transport.front,

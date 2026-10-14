@@ -11,7 +11,7 @@ import time
 from .config import read_config
 
 
-def main(argv=None):
+def _main(argv):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--strategy-id", required=True)
@@ -33,6 +33,14 @@ def main(argv=None):
             parser.error("离线检查不接受授权或恢复")
         print(f"策略进程配置通过：{args.strategy_id}；未连接")
         return
+    from bomber.framework.trader.runtime.live.continuous import StopSignal
+    with StopSignal() as stop_event:
+        return _run(args, config, stop_event)
+
+
+def _run(args, config, stop_event):
+    row = next(row for row in config["strategies"] if row["strategy_id"] == args.strategy_id)
+    from bomber.framework.trader.runtime.live.continuous import StopRequested
     from dotenv import load_dotenv
     from .run import PROJECT_ROOT
     from .factories import strategy_arguments, assemble_strategy_session
@@ -114,6 +122,8 @@ def main(argv=None):
             session.runner.start()
             until_ready = time.monotonic() + (strategy_args.ready_timeout if row["kind"] == "option_vega" else 30)
             while not session.runner.session_ready():
+                if stop_event.is_set():
+                    raise StopRequested()
                 port.drain_events()
                 session.references.refresh()
                 poll = getattr(session.runner, "poll_live_inputs", None)
@@ -124,9 +134,11 @@ def main(argv=None):
                 time.sleep(0.2)
             port.drain_events()
             save()
+            if stop_event.is_set():
+                raise StopRequested()
             session.runner.begin_bars()
             until = time.monotonic() + min(config["seconds"], row.get("stop_after_seconds", config["seconds"]))
-            while time.monotonic() < until:
+            while not stop_event.is_set() and time.monotonic() < until:
                 with session.runner._submit_lock:
                     port.drain_events()
                     session.references.refresh()
@@ -137,6 +149,8 @@ def main(argv=None):
                         raise RuntimeError(session.runner.failure or "策略行情/参考/账户失效")
                     save()
                 time.sleep(0.2)
+            status = "completed"
+        except StopRequested:
             status = "completed"
         except BaseException as error:
             failure = str(error) or type(error).__name__
@@ -165,6 +179,10 @@ def main(argv=None):
                     "bar_counts": {str(i): n for i, n in getattr(session.runner, "bar_counts", {}).items()} if session else {},
                     "last_processed_ns": getattr(session.strategy, "last_processed_ns", None) if session else None},
                     session=session, events=session.client.received_events if session else ())
+
+
+def main(argv=None):
+    return _main(argv)
 
 
 if __name__ == "__main__":

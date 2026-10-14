@@ -92,6 +92,11 @@ class SharedAccountLiveHost:
         self.resources, self.resume, self.ready_seconds = resources, resume, ready_seconds
         self._started = self._stopped = False
         self._prepared = False
+        self.preparation_check = None
+
+    def _check_preparation(self):
+        if self.preparation_check is not None:
+            self.preparation_check()
 
     def start(self):
         if self._stopped:
@@ -101,7 +106,9 @@ class SharedAccountLiveHost:
         for item in self.strategies.values():
             self.resources.enter_context(strategy_state_lock(item.state_file))
         try:
+            self._check_preparation()
             self.account.start(resume=self.resume)
+            self._check_preparation()
             self.service.start()  # 宿主租约；各Runner取得自己的租约。
             self._started = True
             for item in self.strategies.values():
@@ -110,6 +117,7 @@ class SharedAccountLiveHost:
                 item.session.runner.start()
             deadline = time.monotonic() + self.ready_seconds
             while any(not item.session.runner.session_ready() for item in self.strategies.values()):
+                self._check_preparation()
                 for item in self.strategies.values():
                     item.session.references.refresh()
                     poll = getattr(item.session.runner, "poll_live_inputs", None)
@@ -121,8 +129,10 @@ class SharedAccountLiveHost:
                 time.sleep(0.2)
             for item in self.strategies.values():
                 item.save(self.service)
+            self._check_preparation()
             self.account.authorize()
             self._prepared = True
+            self._check_preparation()
             for item in self.strategies.values():
                 item.session.runner.begin_bars()
         except BaseException:
