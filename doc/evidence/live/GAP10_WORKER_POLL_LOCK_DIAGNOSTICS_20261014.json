@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "date": "2026-10-14",
+  "remote_report": "cross-cu-al-three-1791985376694245949",
+  "remote_failure": "策略行情/参考/账户失效",
+  "remote_failure_readiness": null,
+  "remote_source_revision": 0,
+  "remote_fills_received": 0,
+  "remote_shutdown_failure": null,
+  "root_cause_status": "Exact failed readiness condition not recorded remotely; worker query under submit lock confirmed in code.",
+  "changes": [
+    "Database reference refresh runs outside runner submit lock; cache retains atomic publication lock.",
+    "Execution events, health checks and checkpoint save remain serialized.",
+    "Capture readiness results, instrument ages and remote execution freshness before shutdown.",
+    "Distinguish market/account readiness failure from fixed reference change."
+  ],
+  "local_verification": {
+    "shared_process_cli": {"tests_run": 6, "status": "passed"},
+    "native_shared_ipc_without_socket_case": {"tests_run": 7, "status": "passed"},
+    "three_process_socket_case": "not rerun in this revision",
+    "network_connected": false,
+    "real_broker_orders_submitted": 0
+  },
+  "remote_verification": "pending Linux worker resume report with concrete readiness diagnosis",
+  "gap10_closed": false
+}

@@ -6,12 +6,63 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+import threading
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from scripts.integration.shared_account import config, prepare_session, server, worker, preflight
 
 
 class ProcessCliTests(unittest.TestCase):
+    def test_worker_reference_query_allows_market_thread_and_serializes_execution(self):
+        lock, progressed, calls = threading.RLock(), threading.Event(), []
+        def market_tick():
+            with lock:
+                progressed.set()
+        def refresh():
+            tick = threading.Thread(target=market_tick)
+            tick.start()
+            try:
+                self.assertTrue(progressed.wait(1), "数据库查询阻塞行情提交锁")
+            finally:
+                tick.join(timeout=1)
+            calls.append("reference")
+        def drain():
+            self.assertTrue(lock._is_owned())
+            calls.append("execution")
+        def save():
+            self.assertTrue(lock._is_owned())
+            calls.append("saved")
+        runner = SimpleNamespace(_submit_lock=lock, failure=None, fixed_spec="same",
+            session_ready=lambda: True)
+        session = SimpleNamespace(runner=runner, references=SimpleNamespace(spec="same", refresh=refresh),
+            client=SimpleNamespace(drain_events=drain))
+        worker.poll_strategy_session(session, save)
+        self.assertEqual(calls, ["reference", "execution", "saved"])
+        runner.failure = "原行情故障"
+        with self.assertRaisesRegex(RuntimeError, "原行情故障"):
+            worker.poll_strategy_session(session, save)
+        self.assertEqual(calls, ["reference", "execution", "saved"])
+
+    def test_worker_failed_health_preserves_diagnostic_and_does_not_save_or_submit(self):
+        context = {"channel_readiness": {"ready": False,
+            "issues": [{"code": "INSTRUMENT_UNHEALTHY", "detail": "AL"}]}}
+        session = SimpleNamespace(runner=SimpleNamespace(_submit_lock=threading.RLock(),
+            failure=None, fixed_spec="old", session_ready=lambda: False),
+            references=SimpleNamespace(refresh=lambda: None, spec="new"),
+            client=SimpleNamespace(drain_events=lambda: None))
+        saved = []
+        with patch.object(worker, "capture_session_failure", return_value=context) as capture:
+            with self.assertRaisesRegex(RuntimeError, "行情或账户未就绪.*INSTRUMENT_UNHEALTHY"):
+                worker.poll_strategy_session(session, lambda: saved.append(True))
+            capture.assert_called_once_with(session)
+        self.assertFalse(saved)
+        session.runner.session_ready = lambda: True
+        with patch.object(worker, "capture_session_failure", return_value=context):
+            with self.assertRaisesRegex(RuntimeError, "参考合约或条款变化"):
+                worker.poll_strategy_session(session, lambda: saved.append(True))
+        self.assertFalse(saved)
+
     def test_worker_checks_fixed_reference_without_requiring_optional_runner_method(self):
         references = SimpleNamespace(spec=("CU", "AL", "version-1"))
         runner = SimpleNamespace(fixed_spec=references.spec)

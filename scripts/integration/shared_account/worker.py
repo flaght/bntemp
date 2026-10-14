@@ -17,6 +17,49 @@ def session_reference_is_current(session):
     return current() if callable(current) else session.references.spec == session.runner.fixed_spec
 
 
+def capture_session_failure(session):
+    """停机清空Feed之前保存原健康结果及本策略账户连接状态。"""
+    from bomber.framework.trader.runtime.live.health import readiness_failure_context
+    context = readiness_failure_context(session.runner)
+    port = session.client
+    context["execution_port"] = {"started": port._started, "stopping": port._stopping,
+        "reconciled": port.is_reconciled, "account_reconciled": port.state.get("reconciled"),
+        "observation_age_seconds": time.monotonic() - port._observed}
+    session.runner.failure_readiness = context
+    return context
+
+
+def require_session_health(session):
+    runner = session.runner
+    if runner.failure:
+        raise RuntimeError(runner.failure)
+    reason = None
+    if not runner.session_ready():
+        reason = "策略行情或账户未就绪"
+    elif not session_reference_is_current(session):
+        reason = "策略参考合约或条款变化"
+    if reason:
+        context = capture_session_failure(session)
+        raise RuntimeError(f"{reason}: {context}")
+
+
+def poll_strategy_session(session, save):
+    # 原参考缓存只在发布版本时持提交锁；数据库查询允许行情分派继续推进。
+    with session.runner._submit_lock:
+        if session.runner.failure:
+            raise RuntimeError(session.runner.failure)
+    session.references.refresh()
+    with session.runner._submit_lock:
+        if session.runner.failure:
+            raise RuntimeError(session.runner.failure)
+        session.client.drain_events()
+        poll = getattr(session.runner, "poll_live_inputs", None)
+        if callable(poll):
+            poll()
+        require_session_health(session)
+        save()
+
+
 def _main(argv):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, required=True)
@@ -142,7 +185,8 @@ def _run(args, config, stop_event):
                 if callable(poll):
                     poll()
                 if time.monotonic() >= until_ready:
-                    raise RuntimeError("策略未在期限内取得健康行情/参考/账户")
+                    context = capture_session_failure(session)
+                    raise RuntimeError(f"策略未在期限内取得健康行情/参考/账户: {context}")
                 time.sleep(0.2)
             port.drain_events()
             save()
@@ -151,23 +195,18 @@ def _run(args, config, stop_event):
             session.runner.begin_bars()
             until = time.monotonic() + min(config["seconds"], row.get("stop_after_seconds", config["seconds"]))
             while not stop_event.is_set() and time.monotonic() < until:
-                with session.runner._submit_lock:
-                    if session.runner.failure:
-                        raise RuntimeError(session.runner.failure)
-                    port.drain_events()
-                    session.references.refresh()
-                    poll = getattr(session.runner, "poll_live_inputs", None)
-                    if callable(poll):
-                        poll()
-                    if session.runner.failure or not session.runner.session_ready() or not session_reference_is_current(session):
-                        raise RuntimeError(session.runner.failure or "策略行情/参考/账户失效")
-                    save()
+                poll_strategy_session(session, save)
                 time.sleep(0.2)
             status = "completed"
         except StopRequested:
             status = "completed"
         except BaseException as error:
             failure = str(error) or type(error).__name__
+            if session and getattr(session.runner, "failure_readiness", None) is None:
+                try:
+                    capture_session_failure(session)
+                except Exception as diagnostic_error:
+                    session.runner.failure_readiness = {"diagnostic_error": str(diagnostic_error)}
             raise
         finally:
             try:
