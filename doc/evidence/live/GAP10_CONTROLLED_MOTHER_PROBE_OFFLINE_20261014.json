@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "date": "2026-10-14",
+  "status": "offline_passed_linux_readonly_plan_and_real_cancel_pending",
+  "entry": "scripts.integration.shared_account.mother_probe",
+  "report": "tests/results/main-ema-acceptance-1791958560895722000/summary.json",
+  "counts": {
+    "shared-account": 64,
+    "shared-mother-probe": 8,
+    "live-common": 116
+  },
+  "network_connected": false,
+  "real_broker_orders_submitted": 0,
+  "implemented": [
+    "default no connection; connect only is read-only and orders disabled",
+    "protect original CU/AU and RB/HC checkpoint hashes and all known instruments, even net zero",
+    "same physical account locks and writer lease; no existing working orders; new contract gross flat",
+    "stable DDB terms and valid lifecycle; fresh native depth and trading-day checks",
+    "price inside daily limits/tick grid; passive to book; 2-hand gross notional limit",
+    "explicit submit+confirm+instrument+limit-price; one native mother maximum",
+    "two independent observer ports each contribute1, durable staging then combined OPEN2 mother",
+    "existing host stops non-submitter and captures cancel/frozen owners/peer target state",
+    "unexpected fills belong only to fresh probe checkpoint; no automatic liquidation",
+    "original checkpoints checked unchanged; report original/probe states separately"
+  ],
+  "offline_verified": [
+    "declarations and malformed/unauthorized inputs",
+    "zero-net protected contract and gross hedge cannot be selected",
+    "stale/regressed/wrong-day/invalid depth and budget price checks",
+    "actual scoped builder/Runner/native Driver/persistence with fake transport",
+    "single OPEN2 at explicit limit, frozen shares1/1, non-submitter cancellation",
+    "external holdings unchanged, original state file not created or overwritten",
+    "late partial fill retained in correct attributed book and reported"
+  ],
+  "limits": [
+    "Native SDK/MD/TD assembly on Linux still requires read-only execution.",
+    "Real SimNow price plan needed before supplying a concrete submit command.",
+    "Passive limits cannot guarantee no fills; preserve new account.json if fills occur."
+  ],
+  "gap10_closed": false
+}

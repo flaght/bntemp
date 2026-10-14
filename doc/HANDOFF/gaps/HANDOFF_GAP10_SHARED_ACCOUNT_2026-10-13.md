@@ -445,3 +445,36 @@ tests/results/main-ema-acceptance-1791947768601573000，64+116共180项通过。
 用户同步后先跑shared-account组，再于有效交易时段用原230万配置同日resume加
 --acceptance-cancel-owner ema-cu-gamma。保留所有状态、策略ID及预算；保存新
 summary.json/events.txt核对。本机未连接或操作柜台，GAP10整体保持开放。
+
+## 2026-10-14 独立受控双来源母单入口（REV15）
+
+自然观察轮shared-simnow-1791955825637609089正常完成，EMA停止后横截面三单
+成交4手，回调3/3/3、最终CU净0/AU空1一致。但各单冻结legs只有横截面，
+not_exercised正确；不再靠重复自然启动来保证双来源母单。逐笔证据
+GAP10_SHARED_CANCEL_OBSERVER_REMOTE_20261014.json保留。
+
+新增应用入口mother_probe.py及专用测试，不改公共交易实现。connect仅只读TD/MD/
+DDB预检，Driver orders禁用；先检查原CU/AU和RB/HC两份共享检查点，保护全部
+known_instruments（含净0逻辑对冲），取账户锁后重核文件哈希，候选无总仓、全
+账户无活动单、合约生命周期距到期至少7天。DDB基础条款两次稳定读且发布时间
+有效；原生MD确认盘口、涨跌停、TD日、3秒接收/10秒事件时效，不猜合约或价格。
+默认选择CU其他未持仓月份合约，输出候选和2手被动限价计划，默认总名义120万、
+显式上限230万。submit须双授权并指定本次实际instrument和limit-price，再验证
+当前盘口仍满足被动价格及预算。
+
+新报告目录独立账户及双Observer策略文件，原EMA/横截面算法不启动，不改原信号。
+复用原scope builder/SharedAccount/Runner/CTP Driver及原子持久化，各源先提交1手
+并写前保存，暂停首次规划后统一推进一次，唯一2手OPEN母单；验收Planner只给本次
+明确限价，原Driver最多1张单，禁止重发/重规划。通过原宿主停止非提交者撤单，
+保存对方当时目标/活动状态，再正常结束测试，不自动平仓。若意外成交，保留新
+测试账本和实际持仓，先核对范围外基线及新增仓位，不能删检查点直接恢复原会话。
+记录原哈希unchanged、实际TD/MD日、原生回报、冻结归属、peer_state_after_owner_cancel、
+unexpected_fill及fresh account.json路径；抢先全成交不登记撤单通过。
+
+新增八项测试覆盖纯预检边界、禁止接管原净0合约/总仓双向、被动价格/预算/时效，
+实际scoped builder/双Runner/原生Driver/持久化装配和唯一母单撤销、外部持仓不变、
+意外部分成交归属保留。SDK类型/传输为替身；未宣称真实网络装配。集中报告
+tests/results/main-ema-acceptance-1791958560895722000，64+8+116共188项通过。
+详细证据GAP10_CONTROLLED_MOTHER_PROBE_OFFLINE_20261014.json。交付REV15，
+下一步Linux先只读预检取得具体合约/限价，再提供明确提交命令；原状态不得删除。
+本机未连接或操作柜台，GAP10整体保持开放。
