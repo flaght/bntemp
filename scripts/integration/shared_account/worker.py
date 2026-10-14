@@ -134,6 +134,8 @@ def _run(args, config, stop_event):
             while not session.runner.session_ready():
                 if stop_event.is_set():
                     raise StopRequested()
+                if session.runner.failure:
+                    raise RuntimeError(session.runner.failure)
                 port.drain_events()
                 session.references.refresh()
                 poll = getattr(session.runner, "poll_live_inputs", None)
@@ -150,6 +152,8 @@ def _run(args, config, stop_event):
             until = time.monotonic() + min(config["seconds"], row.get("stop_after_seconds", config["seconds"]))
             while not stop_event.is_set() and time.monotonic() < until:
                 with session.runner._submit_lock:
+                    if session.runner.failure:
+                        raise RuntimeError(session.runner.failure)
                     port.drain_events()
                     session.references.refresh()
                     poll = getattr(session.runner, "poll_live_inputs", None)
@@ -179,6 +183,7 @@ def _run(args, config, stop_event):
                 raise
             finally:
                 report.write(status=status, fields={"failure": failure, "shutdown_failure": shutdown_failure,
+                    "failure_readiness": getattr(session.runner, "failure_readiness", None) if session else None,
                     "verification": "independent_strategy_process", "strategy_id": args.strategy_id,
                     "positions": session.client.state["positions"] if session else None,
                     "cursor": session.client.cursor if session else None,

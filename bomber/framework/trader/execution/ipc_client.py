@@ -107,6 +107,8 @@ class RemoteStrategyExecutionClient:
             self.cursor = row["sequence"]
 
     def drain_events(self, *, completed=None):
+        if not self._started:
+            return  # begin_stop已排空并确认回报；不能再轮询已关闭的租约。
         result = self.service.connection.call("poll", {"cursor": self.cursor,
             "ready": bool(not self._stopping and self.ready_check())})
         self.sync(result["state"])

@@ -86,6 +86,21 @@ class DepthTests(unittest.TestCase):
         self.upstream.depth_observations.clear()
         self.assertEqual(set(gate.stale_instruments()), {"AU", "AG"})
 
+    def test_depth_snapshot_precedes_check_clock_when_new_tick_arrives_during_read(self):
+        clocks = [NOW, MONO]
+        class UpdatingFeed:
+            @property
+            def depth_observations(self):
+                # 模拟等待CTP深度锁时新Tick到达；其时间晚于进入检查时的时钟。
+                clocks[0] += 2_000_000
+                clocks[1] += 2_000_000
+                return {"AU": NS(ts_event=clocks[0], received_monotonic_ns=clocks[1],
+                    trading_day="20261008", timestamp_regressed=False)}
+        gate = policy.InstrumentHealthGate(UpdatingFeed(), ("AU",), "20261008",
+            clock_ns=lambda: clocks[0], monotonic_ns=lambda: clocks[1])
+        self.assertFalse(gate.stale_instruments())
+        self.assertEqual(gate.depth_records["AU"].ts_event, NOW + 2_000_000)
+
     def test_replay_accepts_old_event_but_real_rejects(self):
         for replay in (False, True):
             gate = self.gate(replay=replay)

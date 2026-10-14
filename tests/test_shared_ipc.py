@@ -217,6 +217,7 @@ class SharedIpcTests(unittest.TestCase):
             transport.fill(transport.sent[-1]["OrderRef"], 1)
             port.drain_events()
             self.assertEqual(remote.position_manager.position("one", "main"), 1)
+
             self.assertEqual(remote.position_manager.position("two", "main"), 0)
             self.assertTrue(RemoteTraderSession(remote, "20261013").is_simnow_session)
             count = len(events)
@@ -227,6 +228,12 @@ class SharedIpcTests(unittest.TestCase):
             self.assertFalse(port._started)
             self.assertEqual(completed[-1], port.cursor)
             self.assertEqual(remote.position_manager.position("one", "main"), 1)
+
+            # 行情线程disarm后，worker后续排空不能使用已关闭的租约掩盖行情故障。
+            sequence, cursor, delivered = connection.sequence, port.cursor, len(events)
+            port.drain_events()
+            port.begin_stop()
+            self.assertEqual((connection.sequence, port.cursor, len(events)), (sequence, cursor, delivered))
 
     def test_native_rejection_is_journaled_only_to_owner_and_blocks_new_requests(self):
         with nullcontext(self.enterContext(TemporaryDirectory())) as directory:

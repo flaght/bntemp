@@ -1,0 +1,33 @@
+{
+  "item": "M01",
+  "date": "2026-10-14",
+  "timezone": "Asia/Shanghai",
+  "source": "user_returned_remote_unittest_console_tail",
+  "requested_command": "python -m unittest -v tests.test_market_sources",
+  "environment": "remote server; result returned following the requested native unittest invocation",
+  "result": {
+    "status": "passed",
+    "tests": 21,
+    "elapsed_seconds": 1.112,
+    "unittest_summary": "OK"
+  },
+  "reported_test_names": [
+    "test_cross_section_same_strategy_receives_dolphin_frames",
+    "test_ema_original_strategy_consumes_dolphin_minutes",
+    "test_four_live_clis_share_source_config_and_reject_bn_before_connect",
+    "test_local_source_runs_existing_history_hook_before_decisions"
+  ],
+  "ema_report": {
+    "bars_used": 2,
+    "slow_period": 2,
+    "fast_ema": 105.0,
+    "slow_ema": 103.33333333333334
+  },
+  "remote_source_sha256": null,
+  "scope": "Remote offline validation of configuration, standard event adapters and original strategy assemblies; market data and references remain fixtures.",
+  "limitations": [
+    "The supplied output is the unittest console tail, not the full log or a remote source hash manifest.",
+    "No new real DolphinDB/CTP/BN source connection, live target chain, counterparty order or complete historical backtest is established by this result.",
+    "The actual source matrix and M06 historical/live continuation remain open."
+  ]
+}

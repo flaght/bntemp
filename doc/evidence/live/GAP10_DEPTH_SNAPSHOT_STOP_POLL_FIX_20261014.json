@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "date": "2026-10-14",
+  "remote_report": "cross-cu-al-three-1791984683128136618",
+  "observed_event_age_seconds": -0.002029022,
+  "remote_failure": "策略连接租约失效",
+  "remote_fills_received": 0,
+  "remote_source_revision": 0,
+  "changes": [
+    "Freeze CTP depth and fallback observations before sampling check clocks; preserve strict future-time rejection.",
+    "Do not poll a lease after successful stop, event delivery and acknowledgement.",
+    "Worker checks runner failure before polling and includes failure_readiness in final report."
+  ],
+  "root_cause_limit": "Read-before-clock race reproduced offline; old remote log alone does not exclude actual exchange/local clock skew.",
+  "local_verification": {
+    "live_common": {"tests_run": 117, "status": "passed", "report": "tests/results/main-ema-acceptance-1791985123251202000"},
+    "shared_ipc_without_socket_case": {"tests_run": 7, "status": "passed"},
+    "shared_process_cli": {"tests_run": 4, "status": "passed"},
+    "unique_tests_run": 128,
+    "three_process_socket_case": "not rerun in this revision",
+    "network_connected": false,
+    "real_broker_orders_submitted": 0
+  },
+  "linux_resume": "pending; preserve existing account and strategy checkpoints",
+  "gap10_closed": false
+}
