@@ -516,7 +516,7 @@ python -u -m scripts.integration.options.recording \
 ```bash
 python -u -m scripts.integration.options.simnow_preflight \
   --connect --expected-trading-day 20261014 --timeout 30 \
-  --state-file tests/results/gap08-realtime-simnow/state-1791869411336135873.json
+  --state-file /workspace/worker/pj/Chrono/nautilus_trader_demo/pro_new/tests/results/gap08-realtime-simnow/state-1791869411336135873.json
 ```
 
 结果打印 OPTION_VEGA_SIMNOW_PREFLIGHT，并保存至 tests/results/option-vega-simnow-preflight/sample-<ns>/summary.json。completed 只表示这轮只读核对完成，can_start_orders 固定 false；migration_required 表示旧日期或来源仍需迁移，不是开闸信号。脚本没有报单/撤单调用，也不写新的策略状态；前后比较原文件 SHA256，检测状态变动即失败。若仓位不同、原文件损坏、同账户有运行进程或订单未结束，保留现场并返回原因，不自动平仓、接管或绕过 strict 对账。
@@ -528,6 +528,10 @@ python -u -m scripts.integration.options.simnow_preflight \
 先独立运行第 3.4 节已有 TD 只读探针获取当前持仓和活动订单；同时在运行机项目及其备份中查找原文件或其他 08 SimNow 检查点。查找时以 payload/component_states/session_identity 的 strategy_id=option-vega-live、mode=simnow 识别候选；报告目录中的 summary.json 或 Recording events.txt 不是可恢复检查点。找到候选后记录实际路径、generation、TD 日和非零归属，并用 simnow_preflight 的 --state-file 指向它，再进行公共校验和与柜台核对。不得根据 report 中的 state_file 引用直接认定被引用文件存在，也不选最高 generation 或修改时间就自动恢复。
 
 若未找回检查点，需先结合当前柜台权威仓位及原成交记录明确归属，再准备独立接管方案，不能把原文件缺失当作空仓；本次不创建替代状态或发送任何订单。当前原仓只读核对、迁移与新来源 SimNow 执行验证仍未完成。
+
+**原状态已在 pro_new 定位**：用户独立 TD 只读查询返回 trading_day=20261014、active_orders=0、MO2611-C-7400.CFFEX 净仓 -1；搜索在 `/workspace/worker/pj/Chrono/nautilus_trader_demo/pro_new/tests/results/gap08-realtime-simnow/state-1791869411336135873.json` 找到 generation=35、td_day=20261013、策略归属 MO2611-C-7400 空 1 手。文件名、原TD日、合约及数量与原开仓证据相符，因此作为下一轮校验候选，而不是凭 generation 最大选定。另两个候选是 20261009 的旧 Replay 状态，其中一个持有 MO2610-C-7300；不能替代本次原状态。
+
+见 [定位与当前净仓证据](../../doc/evidence/live/OPTION_VEGA_SIMNOW_STATE_LOCATED_20261014.json)。当前运行代码仍从 pro 目录加载，--state-file 使用上述 pro_new 下的实际绝对路径；不切换运行目录、复制旧代码或移动/修改原文件。净仓 -1 一致仍不能代替总仓、今昨仓、原文件校验和与账户身份核对，使用上面的只读预检重新执行；成功前不登记迁移或报单通过。账户其他品种持仓继续保持外部事实。
 
 ### 3.7 Replay 与工程时间映射
 
