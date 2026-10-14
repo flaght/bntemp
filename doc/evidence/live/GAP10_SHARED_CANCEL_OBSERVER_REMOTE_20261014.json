@@ -1,0 +1,114 @@
+{
+  "version": 1,
+  "date": "2026-10-14",
+  "report": "shared-simnow-1791955825637609089",
+  "input_sha256": "d0bead792f85e796599e62c5e9ffa36ff1ade45c1d205329112cb9539fdb85a5",
+  "status": "peer_post_stop_real_fills_passed_shared_cancel_not_exercised",
+  "orders": 3,
+  "filled_contract_quantity": 4,
+  "fills": [
+    {
+      "order_ref": "52",
+      "type": "FILLED",
+      "ts_ns": 1791956402576819244,
+      "quantity": 2,
+      "instrument": "cu2611.SHFE",
+      "owner": "cross-cu-au-delta",
+      "report_id": "CTP-9999-097561-20261014-52:2",
+      "trade_id": "SHFE:      233679"
+    },
+    {
+      "order_ref": "53",
+      "type": "FILLED",
+      "ts_ns": 1791956403540290707,
+      "quantity": 1,
+      "instrument": "au2612.SHFE",
+      "owner": "cross-cu-au-delta",
+      "report_id": "CTP-9999-097561-20261014-53:2",
+      "trade_id": "SHFE:      233716"
+    },
+    {
+      "order_ref": "54",
+      "type": "FILLED",
+      "ts_ns": 1791956404027125322,
+      "quantity": 1,
+      "instrument": "au2612.SHFE",
+      "owner": "cross-cu-au-delta",
+      "report_id": "CTP-9999-097561-20261014-54:2",
+      "trade_id": "SHFE:      233720"
+    }
+  ],
+  "ema_stopped_at_ns": 1791956345633825781,
+  "peer_fills_after_ema_stop": 3,
+  "callback_counts": {
+    "ema-cu-gamma": 0,
+    "cross-cu-au-delta": 3
+  },
+  "first_fill_after_ema_stop_seconds": 56.942993463,
+  "why_probe_did_not_trigger": "All frozen allocation_legs belong only to cross-cu-au-delta. CU order52 quantity2 is one-source reversal, not a two-owner mother; aggregated position_attribution containing EMA does not change frozen ownership.",
+  "final_owned": [
+    {
+      "strategy_id": "cross-cu-au-delta",
+      "target_key": "au2612.SHFE",
+      "quantity": "-1"
+    },
+    {
+      "strategy_id": "cross-cu-au-delta",
+      "target_key": "cu2611.SHFE",
+      "quantity": "1"
+    },
+    {
+      "strategy_id": "ema-cu-gamma",
+      "target_key": "cu_main",
+      "quantity": "-1"
+    }
+  ],
+  "final_gross": {
+    "MO2611-C-7400.CFFEX": [
+      "0",
+      "1"
+    ],
+    "au2612.SHFE": [
+      "0",
+      "1"
+    ],
+    "hc2701.SHFE": [
+      "1",
+      "0"
+    ],
+    "sc2611.INE": [
+      "1",
+      "0"
+    ],
+    "ni2611.SHFE": [
+      "1",
+      "0"
+    ],
+    "i2701.DCE": [
+      "0",
+      "1"
+    ],
+    "ag2612.SHFE": [
+      "0",
+      "1"
+    ]
+  },
+  "external_positions_unchanged": true,
+  "shared_cancel_acceptance": {
+    "status": "not_exercised",
+    "stop_owner": "ema-cu-gamma",
+    "selection": "accepted_working_shared_mother_with_non_submitter_owner",
+    "extra_targets_submitted": 0,
+    "limit_prices_overridden": false,
+    "mother": null,
+    "requested_at_ns": null,
+    "stopped_at_ns": null,
+    "peers_active_after_stop": [],
+    "partial_fill_observed": false,
+    "rejection_observed": false,
+    "peer_target_continuations_after_stop": 0,
+    "peer_fills_after_stop": 0,
+    "reason": "未捕获符合条件的在途共享母单；不制造目标或扩大订单"
+  },
+  "gap10_closed": false
+}
