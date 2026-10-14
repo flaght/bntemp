@@ -1,0 +1,54 @@
+{
+  "status": "passed",
+  "verification": "controlled_transport_offline",
+  "network_connected": false,
+  "real_broker_orders_submitted": 0,
+  "tests_run": 7,
+  "cases": [
+    {
+      "name": "tests.test_shared_account.SharedAccountTests.test_native_shared_partial_duplicate_cancel_and_peer_replan",
+      "status": "passed"
+    },
+    {
+      "name": "tests.test_shared_account.SharedAccountTests.test_native_shared_rejection_notifies_both_owners_and_closes_account",
+      "status": "passed"
+    },
+    {
+      "name": "tests.test_shared_account.SharedAccountTests.test_native_shared_order_cancelled_by_allocation_owner_and_other_target_replanned",
+      "status": "passed"
+    },
+    {
+      "name": "tests.test_shared_account.SharedAccountTests.test_host_stop_delivers_fill_already_queued_before_unbinding",
+      "status": "passed"
+    },
+    {
+      "name": "tests.test_shared_account.SharedAccountTests.test_host_stop_waits_for_late_partial_fill_and_cancel_before_unbinding",
+      "status": "passed"
+    },
+    {
+      "name": "tests.test_shared_account.SharedAccountTests.test_host_stop_timeout_keeps_runner_bound_and_rejects_new_target",
+      "status": "passed"
+    },
+    {
+      "name": "tests.test_shared_account.SharedAccountTests.test_callback_failure_keeps_event_pending_and_closes_account",
+      "status": "passed"
+    }
+  ],
+  "sources": {
+    "tests/run_shared_account_fault_acceptance.py": "65a355ad78440cb7bb77b0c3b511ada84a444b9069c3fd0434acae80368908d4",
+    "tests/test_shared_account.py": "a6b5538bc7630b38d507a5f34520910635b95e6f430d21d3421ba8e6672f62da",
+    "bomber/framework/trader/execution/shared.py": "5eb77062ba7479bb61cf5ff06f9d8384258744130b270921d3440424394222ef",
+    "bomber/framework/trader/execution/attribution.py": "2b4acf7b8f35f2e2a944df06088421e808271b5b5427fc1ae973f6fffe5443f2",
+    "bomber/framework/trader/execution/ctp/native_driver.py": "ff61e13c467cf8e62e1e71a016806183d849038bef24950c7c68fd35457482f6",
+    "bomber/framework/trader/execution/live/client.py": "a2285013dcf3f43a30777dec70dcbafb956b0b79f3d5b38260212524873edc88",
+    "bomber/framework/trader/execution/live/controlled.py": "aae7d666c0c39168663b3477ade136c7528324a2316a700706c03d253eab8942",
+    "bomber/framework/trader/execution/builders.py": "54733c8ab2e7bb9713a2cd2bfcd4d9fe274c53479bc7eac6a8661b9428d2b37d",
+    "bomber/framework/trader/runtime/live/shared.py": "db1502c416d397ce24785d6b510ab92991fbbc88f85957728d86565bf5889f15",
+    "bomber/framework/trader/runtime/live/channels/ctp_shared.py": "4781c1527ad9f6fdfa8cc5cb6af1e9ea6a8d3c4f96a98c4ac70921c47bc8ab09"
+  },
+  "live_acceptance_remaining": [
+    "SimNow partial fills",
+    "SimNow shared mother cancellation",
+    "SimNow rejection; controlled responses do not prove broker behavior"
+  ]
+}

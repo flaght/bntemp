@@ -211,3 +211,20 @@ python -u -m tests.run_cross_section_acceptance --only shared-account \
 
 本入口是同进程宿主，不提供独立策略进程的RPC接入。跨主机fencing、CTP＋BN联合
 剩余范围及真实两策略并行SimNow成交仍单独验收，不能由本期离线结果关闭GAP10。
+
+共享母单故障专项可单独运行，不连接行情、数据库或柜台，不读取或修改交易状态文件：
+
+```bash
+python -u -m tests.run_shared_account_fault_acceptance
+```
+
+该入口使用真实账户服务、CTP Driver/状态机/归属/持久化及Runner，传输和SDK类型为
+替身。报告写入`tests/results/shared-account-faults-<时间戳>/`，包含`summary.json`、
+`tests.txt`及源文件摘要，`verification=controlled_transport_offline`。七个用例是
+共享账户测试组的子集，不另加到全组测试数量中。
+其中母单5手先成交3手分别归属2/1，重复成交不重复记账；非提交者即使已成交自己
+全部份额仍可撤母单，等待剩余份额终结，另一策略仅重新规划差额2手。拒单同时通知
+两名冻结所有者，无成交、不产生归属仓位，账户闭闸；拒单后的新贡献不能修改来源
+或检查点。其余用例核对停止期间迟到成交、撤单超时及回调失败。
+这些受控回报不登记为SimNow实际部分成交、撤单或拒单。真实柜台验证仍须保存完整
+原生回报、停止时间、每策略归属及最终总仓/活动订单，不能通过篡改回报或策略账本补证。

@@ -1,0 +1,12 @@
+test_native_shared_partial_duplicate_cancel_and_peer_replan (tests.test_shared_account.SharedAccountTests.test_native_shared_partial_duplicate_cancel_and_peer_replan) ... ok
+test_native_shared_rejection_notifies_both_owners_and_closes_account (tests.test_shared_account.SharedAccountTests.test_native_shared_rejection_notifies_both_owners_and_closes_account) ... ok
+test_native_shared_order_cancelled_by_allocation_owner_and_other_target_replanned (tests.test_shared_account.SharedAccountTests.test_native_shared_order_cancelled_by_allocation_owner_and_other_target_replanned) ... ok
+test_host_stop_delivers_fill_already_queued_before_unbinding (tests.test_shared_account.SharedAccountTests.test_host_stop_delivers_fill_already_queued_before_unbinding) ... ok
+test_host_stop_waits_for_late_partial_fill_and_cancel_before_unbinding (tests.test_shared_account.SharedAccountTests.test_host_stop_waits_for_late_partial_fill_and_cancel_before_unbinding) ... ok
+test_host_stop_timeout_keeps_runner_bound_and_rejects_new_target (tests.test_shared_account.SharedAccountTests.test_host_stop_timeout_keeps_runner_bound_and_rejects_new_target) ... ok
+test_callback_failure_keeps_event_pending_and_closes_account (tests.test_shared_account.SharedAccountTests.test_callback_failure_keeps_event_pending_and_closes_account) ... ok
+
+----------------------------------------------------------------------
+Ran 7 tests in 0.310s
+
+OK

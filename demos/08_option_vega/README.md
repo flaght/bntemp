@@ -420,15 +420,25 @@ where Code in ["MO2611-C-7400", "IM2611"]
 order by date desc, minTime desc
 ```
 
+用户随后返回 `getStreamingStat().pubTables` 截图，确认该节点存在 `stream_cffex_1min`（动作 save_cffex_1min_to_dfs）和 `stream_index_1min`（动作 save_index_1min_to_dfs）。市场使用前者，指数推送使用后者；`stream_ctp_cffex`、`stream_ctp_cffex_std` 是原始/标准化逐笔链，不替代一分钟流。actions 是服务器已有的处理任务，客户端使用独立订阅任务名，不复用或取消这些任务。发布状态截图没有提供字段结构、最新业务日及 minTime/volume 语义，因此仍须验证实时新行。
+
+只核对结构时可直接执行 `schema(objByName("stream_cffex_1min", true))`、`schema(objByName("stream_index_1min", true))`。也可把 [OPTION_VEGA_DOLPHIN_STREAM_PROBE.py](../../doc/evidence/commands/OPTION_VEGA_DOLPHIN_STREAM_PROBE.py) 同步到运行机同名目录，在项目根运行：
+
+```bash
+python -u doc/evidence/commands/OPTION_VEGA_DOLPHIN_STREAM_PROBE.py --seconds 180
+```
+
+探针复用实际 DolphinDB 原生适配，订阅两张已确认流表，offset=-1，结构在订阅前按服务器列名验证；不依赖 minTime 标签猜测，不转换标准 Bar、不启动策略、不连接 CTP，也不读取或改写策略状态。输出 `DDB_STREAM_SCHEMA`、`DDB_FIRST_ROW`、`DDB_BAR_ROW` 和 `DDB_STREAM_PROBE_FINAL`，保存到 `tests/results/option-vega-dolphin-stream-probe/sample-<ns>/summary.json`。监控 MO2611-C-7400、IM2611、000852，每行保留原始字段、Python 类型及实际上海接收时间；每键最多保留最近 20 行，同时统计该表全部接收行。180 秒采样不含连接准备时间，准备期间已收到的行也保留；Ctrl+C 保存已有记录并释放订阅。缺列会在订阅前失败，监控键未收到时退出码为 1；completed 只表示采样结束，不证明发布的是完整分钟或已经通过策略验收。本地真实适配 + 假 SDK 的两流三键/缺列/清理检查通过，尚无该探针线上返回。
+
 这些语句不创建或改写共享表。应确认表持续接收当日这两类合约的已完成分钟，并确认 minTime 是起点还是终点、volume 是分钟增量还是日累计量；字段名相同不能证明业务含义相同。若没有分钟共享流表，需要先由数据发布程序提供对应流；客户端不能把 `loadTable(...)` 的查询结果当成实时推送，也不自动创建表、改聚合引擎或定期查询市场 DFS 来冒充推送。推送模型及流表发现依据见 [DolphinDB 流订阅](https://docs.dolphindb.com/zh/api/python/BasicOperations/Subscription/Subscription.html) 与 [流计算状态监控](https://docs.dolphindb.com/zh/stream/str_monitor.html)。
 
 在 3.2 数组中替换对应来源参数，并用实际已核验表名与业务语义：
 
 ```text
---market-source dolphindb --market-bar-table <期权与期货已收盘分钟流表>
+--market-source dolphindb --market-bar-table stream_cffex_1min
 --market-bar-timestamp <start或end> --market-volume-mode <per-bar或cumulative>
 --market-bar-max-age-seconds 120
---index-source dolphindb --index-bar-table <指数已收盘分钟流表>
+--index-source dolphindb --index-bar-table stream_index_1min
 --index-bar-timestamp end
 ```
 
@@ -444,7 +454,7 @@ Bar 的 ts_init 使用客户端实际接收时间，updateTime 不冒充本机�
 
 切换行情来源会改变持久化 sources/labels/volume_mode 身份，旧 CTP 会话文件不能直接用此路径 `--resume`。昨日真实 MO 空 1 手的原文件及柜台仓位须保留，Recording 不接管或改变它；后续真实交易恢复需另行处理跨日及来源迁移，不能新建空状态绕过已有持仓。分钟输入没有实时买一/卖一，原生限价仍按分钟参考价及跳价计算，order_submission_audit 的 quote/crosses_observed_quote 可以为空，不能把 Bar 接入或目标记录当成实际成交。
 
-本地 72 项 SDK 实体替身下的实际公共组件回归通过，含 11 项分钟推送专项：字段顺序变化/缺列/非法 DFS 名、累计量及零量、冻结快照时效、起点标签、必需腿过期，以及真实 Feed 分派 → 帧 → Recording 非零目标全链（仅 SDK 传输为夹具）；另有 11 项报告复核回归通过，含新来源和原 CTP 报告。本轮尚未连接服务器共享流表；实际流表名、时间标签、成交量语义仍待用户返回，线上接收与交易验收不登记为通过。
+本地 72 项 SDK 实体替身下的实际公共组件回归通过，含 11 项分钟推送专项：字段顺序变化/缺列/非法 DFS 名、累计量及零量、冻结快照时效、起点标签、必需腿过期，以及真实 Feed 分派 → 帧 → Recording 非零目标全链（仅 SDK 传输为夹具）；另有 11 项报告复核回归通过，含新来源和原 CTP 报告。用户报告已更新远端代码并提供上述两张共享表名；本轮没有独立连接运行机或读取远端源码，时间标签、成交量语义及实时推送数据仍待核对，线上接收与交易验收不登记为通过。
 
 ### 3.7 Replay 与工程时间映射
 

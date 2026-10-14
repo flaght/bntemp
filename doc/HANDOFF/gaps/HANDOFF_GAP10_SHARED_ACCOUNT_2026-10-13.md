@@ -392,3 +392,29 @@ EMA停止时间1791945539705794796之后，横截面audit仍提交目标，直�
 按GAP10剩余验收独立推进，不据此关闭整体GAP10。证据：
 doc/evidence/live/GAP10_STOP_CALLBACK_ACCEPTANCE_20261014.json。
 本轮只补验收记录，运行代码不变。文档清单REV12保留REV11历史摘要。
+
+## 2026-10-14 共享母单故障链补验与拒单后贡献闭闸（REV13）
+
+新增原生组件受控测试：5手双来源母单先成交3手，冻结分配2/1；重复TradeID不
+重复记账。one虽份额已全成交，仍以冻结所有者撤two提交的母单，终态前不能封闭
+回调输入。撤单确认后two只重规划差额2手，最终归属2/3、账户5，活动单0。
+另一用例在实际_CtpPortfolioClient上拒共享母单，两所有者各一次REJECTED，无Fill
+及虚构仓位，重复拒单不重通知；物理账户撤授权并标恢复必需。
+
+此补验发现账户已拒单闭闸时，后续新目标虽被物理Client拒绝，但AccountService
+可先更新来源版本/协调器及检查点。Shared.submit_targets现提前检查服务失败、回报
+错误、未对账、恢复必需或portfolio_failure，禁止上述状态下修改贡献或撤单。
+测试核对两端口均拒绝、完整service.snapshot_state不变、无新柜台发送。检查点
+格式/预算/归属/策略身份不变；原配置可同日resume，不迁移或清除任何旧状态。
+
+新增tests.run_shared_account_fault_acceptance专用七项入口，报告明确标识
+controlled_transport_offline，传输与SDK类型为替身，真实共享/CTP/Runner代码执行；
+不连接MD/TD/数据库，不读取交易状态。七项是60项shared-account的子集，不重复
+计数。集中报告tests/results/main-ema-acceptance-1791946233968410000，
+shared-account60/live-common116共176项通过；专项最终报告
+tests/results/shared-account-faults-1791946289775784000七项通过。证据
+doc/evidence/live/GAP10_SHARED_MOTHER_FAULTS_OFFLINE_20261014.json。
+Linux同步REV13后运行python -u -m tests.run_shared_account_fault_acceptance，
+贴出summary.json和tests.txt。真实SimNow部分成交/共享母单撤单/拒单仍待柜台证据，
+不通过放大数量或制造非法委托来代替验收；GAP10整体保持开放。本轮未动Dolphin
+行情、08策略等其他任务修改。

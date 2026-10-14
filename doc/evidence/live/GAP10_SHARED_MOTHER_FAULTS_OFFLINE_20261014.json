@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "date": "2026-10-14",
+  "status": "controlled_transport_passed_live_broker_fault_acceptance_pending",
+  "fault_report": "tests/results/shared-account-faults-1791946289775784000/summary.json",
+  "regression_report": "tests/results/main-ema-acceptance-1791946233968410000/summary.json",
+  "regression_counts": {
+    "shared-account": 60,
+    "live-common": 116
+  },
+  "fault_cases": 7,
+  "fault_cases_are_subset_not_added_to_regression_total": true,
+  "production_fix": "Reject new source contributions before version/coordinator/cancellation/checkpoint mutation when shared execution has report errors, failed state, lost reconciliation, recovery required or portfolio failure.",
+  "verified": [
+    "shared mother quantity5, partial3 split2/1",
+    "duplicate native trade ignored",
+    "non-submitter cancels even when its own frozen share fully filled",
+    "wait for shared mother terminal; remaining peer2 replanned",
+    "final ownership2/3 and account5",
+    "native rejection routes one rejection to each frozen owner; duplicate terminal ignored",
+    "rejection disarms physical account and requires recovery",
+    "post-rejection targets preserve sources/coordinator/checkpoint; no new order",
+    "queued/late fill and stop timeout/callback failure regressions"
+  ],
+  "network_connected": false,
+  "real_broker_orders_submitted": 0,
+  "remaining": [
+    "Linux execution of controlled faults runner",
+    "SimNow real partial fill/shared mother cancellation/rejection evidence; controlled transport not a substitute"
+  ],
+  "gap10_closed": false
+}
