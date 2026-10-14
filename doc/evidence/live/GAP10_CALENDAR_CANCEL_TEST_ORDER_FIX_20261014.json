@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "date": "2026-10-14",
+  "remote_group": "calendar-live",
+  "remote_tests_run": 28,
+  "remote_failed_tests": [
+    "test_changed_native_target_cancels_old_orders_and_waits_for_callbacks"
+  ],
+  "observed_positions": [
+    "0",
+    "1"
+  ],
+  "old_expected_positions": [
+    "-1",
+    "0"
+  ],
+  "cause": "Test filled api.sent[0] assuming secondary short order; coordinator known keys are a set, so far long order may be first.",
+  "change": "Select filled order by exact instrument ID; exercise both roles in subtests and validate correct remaining ownership, zero working quantity, final close instrument and side.",
+  "public_execution_changed": false,
+  "local_verification": {
+    "syntax": "passed",
+    "diff_check": "passed",
+    "shared_account_and_live_common_tests": 181,
+    "report": "tests/results/main-ema-acceptance-1791973972676081000"
+  },
+  "native_calendar_local": "unavailable: missing bomber.framework.fixes.Bar; Linux revalidation required",
+  "replay_acceptance": "not_completed",
+  "gap10_closed": false
+}

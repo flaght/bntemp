@@ -385,6 +385,13 @@ class LiveAssemblyTests(unittest.TestCase):
         self.assertEqual([s.strategy.position(str(i)) for i in s.runner.instruments.values()], [-1, 1])
 
     def test_changed_native_target_cancels_old_orders_and_waits_for_callbacks(self):
+        for role in ("secondary", "far"):
+            with self.subTest(filled_role=role):
+                self.now = NOW
+                self.path = Path(self.temp.name) / f"cancel-{role}.json"
+                self.check_changed_native_target_cancels_old_orders(role)
+
+    def check_changed_native_target_cancels_old_orders(self, filled_role):
         s, transport = self.native()
         self.warm_and_enter(s)
         api = transport._api
@@ -405,19 +412,25 @@ class LiveAssemblyTests(unittest.TestCase):
         self.assertEqual([s.runner.position_manager.working_quantity(runtime.CLIENT_ID, i)
             for i in s.runner.instruments.values()], [-1, 1])
         # 撤单在途期间先到成交：仍须归属记账，不能把撤单请求当作清零。
-        self.fill(transport, 0)
-        fields = api.sent[1]
+        filled_instrument = str(s.runner.instruments[filled_role])
+        fill_index = next(index for index, row in enumerate(api.sent)
+            if f"{row['InstrumentID']}.{row['ExchangeID']}" == filled_instrument)
+        cancel_index = 1 - fill_index
+        self.fill(transport, fill_index)
+        fields = api.sent[cancel_index]
         api.onRtnOrder({"BrokerID": "9999", "InvestorID": "demo",
             "InstrumentID": fields["InstrumentID"], "ExchangeID": fields["ExchangeID"],
-            "OrderRef": fields["OrderRef"], "OrderSysID": "SYS1", "FrontID": 1,
+            "OrderRef": fields["OrderRef"], "OrderSysID": f"SYS{cancel_index}", "FrontID": 1,
             "SessionID": 2, "OrderStatus": "5", "VolumeTraded": 0})
-        self.assertEqual([s.strategy.position(str(i)) for i in s.runner.instruments.values()], [-1, 0])
+        expected = [-1, 0] if filled_role == "secondary" else [0, 1]
+        self.assertEqual([s.strategy.position(str(i)) for i in s.runner.instruments.values()], expected)
         self.assertEqual([s.runner.position_manager.working_quantity(runtime.CLIENT_ID, i)
             for i in s.runner.instruments.values()], [0, 0])
         s.runner.submit(replace(zero, revision=zero.revision + 1))
         self.assertEqual(api.request_names.count("cancel"), 2)
         self.assertEqual(len(api.sent), 3)
-        self.assertEqual(api.sent[-1]["Direction"], "0")
+        self.assertEqual(f"{api.sent[-1]['InstrumentID']}.{api.sent[-1]['ExchangeID']}", filled_instrument)
+        self.assertEqual(api.sent[-1]["Direction"], "0" if filled_role == "secondary" else "1")
         self.assertEqual(api.sent[-1]["CombOffsetFlag"], "3")
         self.assertFalse(s.client.report_errors)
         with self.assertRaisesRegex(RuntimeError, "ctp_front_disconnected"):
