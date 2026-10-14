@@ -1,0 +1,31 @@
+{
+  "revision": "REV27",
+  "status": "offline_passed_remote_preflight_pending",
+  "problem": "Prepared EMA cache expires while other strategies and account inputs are prepared before Runner construction",
+  "remote_report": "three-readonly-1791994238784796978",
+  "remote_failure": "参考缓存观测过期或时钟回退",
+  "remote_orders_submitted": 0,
+  "fix": "Capture prepared reference declaration during input preparation; refresh each non-option strategy in control thread immediately before assembly; reject changed declaration or query failure",
+  "unchanged": [
+    "30 second observation limit",
+    "No queries on market callbacks",
+    "Original V3 names, config and checkpoint paths",
+    "Existing account and strategy ownership policies"
+  ],
+  "test_report": "tests/results/main-ema-acceptance-1791994504451768000",
+  "tests_run": 23,
+  "verification": "controlled_transport_and_actual_local_three_process_unix_socket",
+  "network_connected": false,
+  "real_broker_orders_submitted": 0,
+  "new_regressions": [
+    "Elapsed 35 seconds between preparation and binding with real LiveReferenceCache; refresh succeeds and 30 second age rule still expires afterwards",
+    "Refresh error prevents Runner binding",
+    "Changed contract or terms prevents Runner binding"
+  ],
+  "source_hashes": {
+    "scripts/integration/shared_account/factories.py": "98dac78e1e984e263badde3dd14b4939c1c30829123beb0cae5b9c95b19bb6a6",
+    "scripts/integration/shared_account/run.py": "cd2ed410b56deac5d3b03ba91b8164958a311ec1f6ca92bcf25b71911df6753d",
+    "tests/test_shared_process_cli.py": "863f8e05048fc01f67e1ad093b1e47b77aa37423e880ec633a89b54f147dfc3f"
+  },
+  "remaining": "Linux shared-ipc and V3 readonly preflight, followed by account server and three V3 workers; no old checkpoint repair required"
+}

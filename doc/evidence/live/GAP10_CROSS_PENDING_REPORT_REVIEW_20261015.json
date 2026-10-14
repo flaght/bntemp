@@ -1,0 +1,129 @@
+{
+  "verification": "review_of_user_supplied_simnow_reports",
+  "status": "blocked_by_current_broker_position_mismatch",
+  "source_reports": {
+    "scripts/integration/shared_account/results/three-realtime-independent-20261015/cross-cu-al-three-1791983112633111626/summary.json": "8d0ae330bbe89e8fa20d762e483305d4396ade76cde5eeac39e8a1ba3e7be32b",
+    "scripts/integration/shared_account/results/three-realtime-independent-20261015/cross-cu-al-three-1791988287453222224/summary.json": "4824d57002843a5a5068482d5eecf92ad8f6cdf09169d1bb2d6ada89fab8c709",
+    "scripts/integration/shared_account/results/three-realtime-independent-20261015/shared-account-server-1791988206362347276/summary.json": "2521b07c4a747424f3fb739ac9231c75bee660f31f6400d67c7e01610db6c51b"
+  },
+  "earliest_worker_failure": "'CrossSectionSessionRunner' object has no attribute 'reference_is_current'",
+  "latest_worker_failure": "共享执行预算缺少当前有效参考价",
+  "latest_worker_market_and_execution_ready": true,
+  "latest_worker_reference_current": true,
+  "latest_worker_bars_per_instrument": 4,
+  "latest_worker_source_revision": 0,
+  "latest_worker_fill_count": 0,
+  "account_failure": null,
+  "account_shutdown_failure": null,
+  "account_final_active_orders": 0,
+  "pending_request": "cross-cu-al-three:64d4ed84e7044729965bd1b1072be456",
+  "journal_evidence": {
+    "ema": {
+      "fill_events": 1,
+      "ack": 3,
+      "events": 3
+    },
+    "calendar": {
+      "fill_events": 14,
+      "ack": 42,
+      "events": 42
+    },
+    "cross": {
+      "fill_events": 0,
+      "ack": 0,
+      "events": 0
+    }
+  },
+  "interpretation": [
+    "Budget requires valid prices for full account contribution risk, including other owners; worker readiness is insufficient to establish those prices",
+    "Exact missing, stale or future instrument is absent from historical error message; do not assert its identity",
+    "Pending IPC entry is saved before port submission; report evidence suggests pre-submission budget rejection, but original durable checkpoint and broker facts are required before any repair",
+    "REV26 account valuation addresses future fresh-price availability; it does not resolve existing pending records"
+  ],
+  "required_next_input": "Latest remote account generation and latest strategy stop reports; determine whether later own fills or another strategy/manual trading changed CU legs and AU. Do not repair pending, migrate, overwrite ledger, infer ownership or automatically close positions.",
+  "broker_connected_by_reviewer": false,
+  "checkpoint_modified": false,
+  "gap10_closed": false,
+  "checkpoint_review": {
+    "path": "scripts/integration/shared_account/results/three-realtime-independent-20261015/account.json",
+    "sha256": "09573d5950808d03e22dd92019ce926be7288e8717c4ed1c41eb6def641b5bef",
+    "checksum_valid": true,
+    "generation": 3788,
+    "saved_at_ns": 1791989113641993555,
+    "service_failed": false,
+    "service_pending": false,
+    "ipc_pending_requests": {
+      "cross-cu-al-three:64d4ed84e7044729965bd1b1072be456": {
+        "digest": "512162d5dca21e0c347ccf02a0da47a58c877d296a6ae9de1b7489e1cdf8b59b",
+        "status": "pending"
+      }
+    },
+    "terminal_orders": 15,
+    "all_order_statuses": "FILLED",
+    "driver_next_ref": 16,
+    "driver_active_associations": 0,
+    "working_quantity": 0,
+    "cross_source_revision": 0,
+    "cross_events": 0,
+    "cross_ack": 0,
+    "cross_owned_positions": 0,
+    "cross_order_allocations": 0,
+    "strategy_positions": [
+      {
+        "quantity": "1",
+        "strategy_id": "calendar-cu-three",
+        "target_key": "cu2612.SHFE"
+      },
+      {
+        "quantity": "-1",
+        "strategy_id": "calendar-cu-three",
+        "target_key": "cu2701.SHFE"
+      },
+      {
+        "quantity": "1",
+        "strategy_id": "ema-cu-three",
+        "target_key": "cu_main"
+      }
+    ],
+    "broker_validation_current": false,
+    "original_checkpoint_modified": false
+  },
+  "current_user_readonly_result": {
+    "trading_day": "20261015",
+    "active_orders": 0,
+    "account_revision": 1,
+    "orders_revision": 1,
+    "net_positions": {
+      "MO2611-C-7400.CFFEX": "-1",
+      "au2612.SHFE": "-2",
+      "cu2612.SHFE": "0",
+      "cu2701.SHFE": "0",
+      "cu2611.SHFE": "1",
+      "sc2611.INE": "1",
+      "ni2611.SHFE": "1",
+      "i2701.DCE": "-1",
+      "hc2701.SHFE": "1",
+      "ag2612.SHFE": "-1"
+    },
+    "position_differences_from_generation_3788": {
+      "au2612.SHFE": {
+        "checkpoint_net": "-1",
+        "observed_net": "-2",
+        "difference": "-1"
+      },
+      "cu2612.SHFE": {
+        "checkpoint_net": "1",
+        "observed_net": "0",
+        "difference": "-1"
+      },
+      "cu2701.SHFE": {
+        "checkpoint_net": "-1",
+        "observed_net": "0",
+        "difference": "1"
+      }
+    },
+    "gross_and_today_yesterday_buckets_provided": false,
+    "source": "user_pasted_ctp_td_readonly_output",
+    "reviewer_connected": false
+  }
+}

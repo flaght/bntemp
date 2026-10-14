@@ -15,6 +15,64 @@ from scripts.integration.shared_account import config, prepare_session, server, 
 
 
 class ProcessCliTests(unittest.TestCase):
+    def test_assembly_refreshes_expired_prepared_reference_before_runner_binding(self):
+        from bomber.framework.dataprep.live_cache import LiveReferenceCache
+        from scripts.integration.shared_account.factories import assemble_strategy_session
+        clock = [0]
+        cache = LiveReferenceCache(clock_ns=lambda: clock[0])
+        assignment = SimpleNamespace(effective_ns=0, available_ns=0)
+        class References:
+            def refresh(self):
+                cache.refresh(lambda: (assignment, "original-route", {
+                    "observed_at_ns": clock[0], "freshness_policy": {"max_observation_age_seconds": 30}}))
+            @property
+            def spec(self):
+                cache.snapshot(clock[0])
+                return cache.value[1]
+        references = References()
+        references.refresh()
+        prepared = references.spec
+        # 后续策略和账户查询耗时35秒，首个策略仍使用原30秒限制。
+        clock[0] = 35_000_000_000
+        with self.assertRaisesRegex(RuntimeError, "观测过期"):
+            _ = references.spec
+        calls = []
+        def assemble(args, refs, driver, upstream, **kwargs):
+            calls.append(refs.spec)
+            return SimpleNamespace()
+        with patch.dict("sys.modules", {"scripts.integration.shared_account.rollover":
+                SimpleNamespace(validate_strategy_identity=lambda *args: None)}):
+            assemble_strategy_session(SimpleNamespace(assemble=assemble), None,
+                SimpleNamespace(references=references, upstream=None), service=None, driver=None,
+                strategy_id="ema", prepared_reference=prepared)
+        self.assertEqual(calls, ["original-route"])
+        clock[0] += 31_000_000_000
+        with self.assertRaisesRegex(RuntimeError, "观测过期"):
+            _ = references.spec
+
+    def test_assembly_reference_refresh_failure_never_binds_runner(self):
+        from scripts.integration.shared_account.factories import assemble_strategy_session
+        from unittest.mock import Mock
+        refresh = Mock(side_effect=RuntimeError("数据库查询失败"))
+        assemble = Mock()
+        with self.assertRaisesRegex(RuntimeError, "数据库查询失败"):
+            assemble_strategy_session(SimpleNamespace(assemble=assemble), None,
+                SimpleNamespace(references=SimpleNamespace(refresh=refresh), upstream=None),
+                service=None, driver=None, strategy_id="ema", prepared_reference="original")
+        assemble.assert_not_called()
+
+    def test_assembly_changed_reference_requires_repreparing_instrument_metadata(self):
+        from scripts.integration.shared_account.factories import assemble_strategy_session
+        from unittest.mock import Mock
+        references = SimpleNamespace(spec="old")
+        references.refresh = lambda: setattr(references, "spec", "new-contract-or-factor")
+        assemble = Mock()
+        with self.assertRaisesRegex(RuntimeError, "条款已变化"):
+            assemble_strategy_session(SimpleNamespace(assemble=assemble), None,
+                SimpleNamespace(references=references, upstream=None), service=None, driver=None,
+                strategy_id="ema", prepared_reference="old")
+        assemble.assert_not_called()
+
     def test_four_product_session_has_separate_books_and_requires_observation_coverage(self):
         with TemporaryDirectory() as directory:
             old, updated, observed = (Path(directory) / name for name in ("old.json", "four.json", "observed.json"))

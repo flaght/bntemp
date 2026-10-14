@@ -36,18 +36,30 @@ def instrument_specs(kind, references):
     return {references.instrument_ids[p]: spec for p, spec in references.specs.items()}
 
 
-def assemble_strategy_session(entry, args, inputs, *, service, driver, strategy_id):
+def assemble_strategy_session(entry, args, inputs, *, service, driver, strategy_id,
+                              prepared_reference=None):
     if hasattr(inputs, "ctp_upstream"):
         from importlib import import_module
         session = import_module("demos.08_option_vega.live_runtime").assemble(args, inputs, driver,
             shared_service=service, strategy_id=strategy_id)
         session.restore_signal = lambda state: import_module("demos.08_option_vega.rollover").restore_signal(session, state)
     else:
+        refresh_prepared_references(inputs.references, prepared_reference)
         session = entry.assemble(args, inputs.references, driver, inputs.upstream,
                           shared_service=service, strategy_id=strategy_id)
     from .rollover import validate_strategy_identity
     session.validate_rollover_identity = validate_strategy_identity
     return session
+
+
+def refresh_prepared_references(references, prepared_reference=None):
+    """控制线程组装前刷新观测；其他策略准备耗时不能使首个缓存过期。"""
+    refresh = getattr(references, "refresh", None)
+    if not callable(refresh):
+        return
+    refresh()
+    if prepared_reference is not None and references.spec != prepared_reference:
+        raise RuntimeError("策略组装前参考合约或条款已变化，须重新准备会话")
 
 
 def reference_identity(session):

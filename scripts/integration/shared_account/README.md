@@ -326,3 +326,15 @@ CU／AL／AG／AU横截面、原CU EMA与跨期采用一个账户服务及三个
 同合约已有外部仓保存基线，不进入自己的策略/CTP成交账本。已有原归属、消费
 游标及订单编号通过同日只读迁移保留；未来Tick最多等待100毫秒后再发布，超限
 仍闭闸。215项离线通过，尚待Linux原生及实际三个策略运行报告。
+
+## REV27：组装前参考缓存刷新（2026-10-15）
+
+V3预检失败于EMA Runner构造：首个策略的缓存被后续输入准备及柜台查询耗时
+拖过30秒观测限额，尚未连接MD或报单。公共应用工厂现在在控制线程组装每个
+01/03/04之前刷新参考，并核对准备时的合约/条款；刷新失败或声明变化拒绝
+继续，原时效及交易门控不放宽，08装配路径不变。
+本机shared-ipc 23项通过，含真实三个子进程；源码及证据见
+`doc/evidence/checksums/GAP10_PREASSEMBLY_REFERENCE_REFRESH_20261015_REV27_SHA256.txt`
+和`doc/evidence/live/GAP10_PREASSEMBLY_REFERENCE_REFRESH_20261015.json`。
+同步后只复验shared-ipc及原V3只读preflight，通过后启动原V3服务及三个worker。
+不重跑discover/prepare，不改名字、不加resume；本次失败未创建交易检查点。

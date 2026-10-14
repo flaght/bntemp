@@ -106,12 +106,14 @@ def build_host(config, *, resume, diagnostics=None, read_only=False, strategy_pr
             assert_flat_account(driver, transport)
         else:
             assert_account_ready(driver)
-        prepared, specs = [], {}
+        prepared, specs, prepared_references = [], {}, {}
         for row, entry, args in arguments:
             context = LiveRunContext(driver.trading_day, resources)
             lifecycle = SimpleNamespace(transport=transport, md_front=md_front)
             # 每个MD拥有独立flow目录；同策略类型也可以多实例。
             inputs = entry.prepare_inputs(args, context, lifecycle)
+            if row["kind"] != "option_vega":
+                prepared_references[row["strategy_id"]] = inputs.references.spec
             upstream = getattr(inputs, "upstream", getattr(inputs, "ctp_upstream", None))
             upstream_config = getattr(upstream, "config", None)
             if upstream_config is not None and source_config(args).source == "ctp":
@@ -156,7 +158,8 @@ def build_host(config, *, resume, diagnostics=None, read_only=False, strategy_pr
         sessions = []
         for row, entry, args, inputs in prepared:
             session = assemble_strategy_session(entry, args, inputs, service=service,
-                driver=driver, strategy_id=row["strategy_id"])
+                driver=driver, strategy_id=row["strategy_id"],
+                prepared_reference=prepared_references.get(row["strategy_id"]))
             session.client.ready_check = session.runner.session_ready
             sessions.append(SharedStrategySession(session, Path(row["state_file"]),
                 identity={"strategy_id": row["strategy_id"], "kind": row["kind"], "argv": row["argv"],
