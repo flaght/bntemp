@@ -4,7 +4,7 @@
 set -euo pipefail
 VEGA_DAY=${1:?请提供当日YYYYMMDD}
 VEGA_SLOT=${2:?请提供启动完成后的选约HH:MM}
-VEGA_TABLE=${3:?请提供实际共享分钟流表名，不能使用DFS路径}
+VEGA_TABLE=${3:-stream_cffex_1min}
 VEGA_BAR_LABEL=${4:?请确认minTime为start或end}
 VEGA_VOLUME_MODE=${5:?请确认volume为cumulative或per-bar}
 cd /workspace/worker/pj/Chrono/nautilus_trader_demo/pro

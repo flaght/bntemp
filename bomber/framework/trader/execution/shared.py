@@ -138,6 +138,11 @@ class SharedAccountExecutionService(AccountExecutionService):
 
     def submit_targets(self, request):
         with self._dispatch_lock:
+            # 已知账户故障须在修改来源版本、撤单或写检查点之前拒绝新贡献。
+            if (self._failed or self.client.report_errors or not self.client.is_reconciled
+                    or self.position_manager.is_recovery_required(self.client_id)
+                    or getattr(self.client, "portfolio_failure", None)):
+                raise RuntimeError("共享账户执行状态不明，拒绝新策略贡献")
             port = self._ports.get(request.strategy_id)
             if port is None or not port._started or request.strategy_id in self._suspended:
                 raise RuntimeError("策略端口未启动或已暂停")

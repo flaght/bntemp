@@ -392,6 +392,106 @@ class SharedAccountTests(unittest.TestCase):
             account.stop()
             self.assertEqual(account.final_active_orders, 0)
 
+    def test_native_shared_partial_duplicate_cancel_and_peer_replan(self):
+        modules = self.native_modules()
+        with TemporaryDirectory() as directory:
+            account, service, transport, (one, two), _ = self.native_account(Path(directory) / "account.json", modules)
+            account.start(resume=False)
+            service.start()
+            one.start()
+            two.start()
+            account.authorize()
+            events = [[], []]
+            for port, received in zip((one, two), events):
+                port.register_execution_event_handler(received.append)
+            original = account.client.planner
+            account.client.planner = type("Paused", (), {"plan": lambda *_: ()})()
+            self.submit(one, 2)
+            account.client.planner = original
+            self.submit(two, 3)
+            ref = transport.sent[0]["OrderRef"]
+            self.assertEqual(transport.sent[0]["VolumeTotalOriginal"], 5)
+            raw = transport.raw(ref)
+            transport.fill(ref, 3)  # one先分2手，two分1手；母单仍有2手。
+            transport.on_trade({**raw, "TradeID": f"T{ref}-3", "Volume": 3,
+                                "Price": transport.sent[0]["LimitPrice"]})
+            for port in (one, two):
+                port.drain_events()
+            self.assertEqual((service.position_manager.position("one", "main"),
+                              service.position_manager.position("two", "main")), (2, 1))
+            self.assertEqual([sum(e.quantity for e in rows if isinstance(e, modules.events.FillEvent))
+                              for rows in events], [2, 1])
+            original_cancel = transport.cancel_order
+            transport.cancel_order = lambda requested: None
+            one.begin_stop()  # 母单由two提交；one份额已全成交，仍须等待母单撤单终态。
+            self.assertFalse(one.finish_stop_events())
+            self.assertEqual(len(transport.sent), 1)
+            original_cancel(ref)
+            service.poll()
+            self.assertTrue(one.finish_stop_events())
+            one.stop()
+            two.drain_events()
+            service.continue_targets("two", self.instrument, self.now)
+            self.assertEqual(transport.sent[1]["VolumeTotalOriginal"], 2)
+            transport.fill(transport.sent[1]["OrderRef"])
+            two.drain_events()
+            self.assertEqual((service.position_manager.position("one", "main"),
+                              service.position_manager.position("two", "main")), (2, 3))
+            self.assertEqual(service.position_manager.account_position("account", self.instrument), 5)
+            self.assertEqual([sum(e.quantity for e in rows if isinstance(e, modules.events.FillEvent))
+                              for rows in events], [2, 3])
+            self.assertFalse(account.client.report_errors)
+            self.assertEqual(one.event_diagnostics()["pending_events"], 0)
+            self.assertTrue(any(e.status.value == "CANCELED" for e in events[0]
+                                if isinstance(e, modules.events.OrderUpdateEvent)))
+            account.stop()
+            self.assertEqual(account.final_active_orders, 0)
+
+    def test_native_shared_rejection_notifies_both_owners_and_closes_account(self):
+        modules = self.native_modules()
+        with TemporaryDirectory() as directory:
+            account, service, transport, (one, two), _ = self.native_account(
+                Path(directory) / "account.json", modules, scoped=True)
+            account.start(resume=False)
+            service.start()
+            one.start()
+            two.start()
+            account.authorize()
+            events = [[], []]
+            for port, received in zip((one, two), events):
+                port.register_execution_event_handler(received.append)
+            original = account.client.planner
+            account.client.planner = type("Paused", (), {"plan": lambda *_: ()})()
+            self.submit(one, 2)
+            account.client.planner = original
+            self.submit(two, 3)
+            ref = transport.sent[0]["OrderRef"]
+            rejected = {**transport.raw(ref), "OrderSubmitStatus": "4", "StatusMsg": "controlled rejection"}
+            transport.on_order(rejected)
+            transport.active.pop(ref)
+            transport.on_order(rejected)  # 重复终态不重通知，也不改变归属。
+            for port in (one, two):
+                port.drain_events()
+            for rows in events:
+                self.assertEqual(sum(isinstance(e, modules.events.OrderUpdateEvent)
+                    and e.status.value == "REJECTED" for e in rows), 1)
+                self.assertFalse(any(isinstance(e, modules.events.FillEvent) for e in rows))
+            self.assertFalse(account.client.is_armed)
+            self.assertTrue(account.client.portfolio_failure)
+            self.assertTrue(service.position_manager.is_recovery_required(service.client_id))
+            self.assertEqual((service.position_manager.position("one", "main"),
+                              service.position_manager.position("two", "main")), (0, 0))
+            with self.assertRaises(RuntimeError):
+                service.poll()
+            before = service.snapshot_state()
+            with self.assertRaises(RuntimeError):
+                self.submit(one, 1, 2)
+            with self.assertRaises(RuntimeError):
+                self.submit(two, 1, 2)
+            self.assertEqual(service.snapshot_state(), before)
+            self.assertEqual(len(transport.sent), 1)
+            self.assertFalse(account.driver.reconcile_active_orders().orders)
+
     def test_native_write_before_send_expiry_never_reaches_transport(self):
         modules = self.native_modules()
         with TemporaryDirectory() as directory:
