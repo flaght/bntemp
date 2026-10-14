@@ -17,21 +17,21 @@ class CtpMarketCredentials:
 
 class CtpMarketSessionLifecycle(LocalExecutionLifecycle):
     def __init__(self, *, expected_trading_day, environment="realtime", replay_md_trading_day=None,
-                 resume=False, state_file=None):
+                 resume=False, state_file=None, market_source="ctp"):
         if datetime.strptime(expected_trading_day, "%Y%m%d").strftime("%Y%m%d") != expected_trading_day:
             raise ValueError("独立CTP行情须声明有效参考交易日YYYYMMDD")
         super().__init__(expected_trading_day, resume=resume, state_file=state_file)
         self.profile = CtpLiveProfile(environment, replay_md_trading_day)
-        self.md_front = required("CTP_MD_ADDRESS")
+        self.md_front = required("CTP_MD_ADDRESS") if market_source == "ctp" else None
         self.md_credentials = CtpMarketCredentials(os.getenv("CTP_BROKER_ID", "9999"),
             required("CTP_ACCOUNT_ID"), required("CTP_PASSWORD"),
-            os.getenv("CTP_PRODUCTION_MODE", "true").lower() in {"1", "true", "yes", "on"})
+            os.getenv("CTP_PRODUCTION_MODE", "true").lower() in {"1", "true", "yes", "on"}) if market_source == "ctp" else None
         self._md_shutdown = False
         self._shutdown_md_day = None
 
     def shutdown(self, session, context):
         # Feed停止会清空连接状态；报告保留停止前实际观测值，不能用预期日补齐。
-        self._shutdown_md_day = None if session is None else session.upstream.latest_trading_day
+        self._shutdown_md_day = None if session is None else getattr(session.upstream, "latest_trading_day", None)
         self._md_shutdown = True
         return super().shutdown(session, context)
 

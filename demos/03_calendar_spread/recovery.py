@@ -110,7 +110,7 @@ class CalendarLocalLifecycle(CalendarControl, CtpMarketSessionLifecycle):
                 session.runner.accept_bars = False
         # 公共Local停机不依赖Recording的backend属性（仅最终计数需要避开）。
         if self.mode == "recording":
-            self._shutdown_md_day = None if session is None else session.upstream.latest_trading_day
+            self._shutdown_md_day = None if session is None else getattr(session.upstream, "latest_trading_day", None)
             self._md_shutdown = True
             if session:
                 session.runner.stop()

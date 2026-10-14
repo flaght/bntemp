@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "date": "2026-10-14",
+  "remote_report": "cross-cu-al-three-1791983112633111626",
+  "failure": "CrossSectionSessionRunner has no reference_is_current method",
+  "remote_positions": {
+    "al2611.SHFE": "0",
+    "cu2611.SHFE": "0"
+  },
+  "remote_source_revision": 0,
+  "remote_fills_received": 0,
+  "remote_shutdown_failure": null,
+  "change": "Worker uses runner-specific reference check when provided, otherwise compares references.spec to fixed_spec, matching existing shared host policy.",
+  "strategy_algorithm_changed": false,
+  "local_verification": {
+    "tests": "tests.test_shared_process_cli",
+    "tests_run": 4,
+    "status": "passed",
+    "diff_check": "passed"
+  },
+  "full_shared_ipc_rerun": "not run: automatic permission review timed out; focused non-socket tests passed instead",
+  "live_worker_restart": "pending Linux --resume with original checkpoint",
+  "gap10_closed": false
+}

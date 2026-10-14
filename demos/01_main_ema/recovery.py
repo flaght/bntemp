@@ -7,6 +7,7 @@ from bomber.framework.trader.runtime.live.channels.ctp_recovery import (
 
 
 def recovery_identity(args, references, policy):
+    from bomber.framework.market.sources import source_config
     assignment = references.snapshot(time.time_ns())
     product = args.product.strip().upper()
     result = {
@@ -28,6 +29,8 @@ def recovery_identity(args, references, policy):
     execution = execution_policy_from_args(args)
     if execution != ExecutionPolicy():
         result["execution_policy"] = execution.snapshot_state()
+    if source_config(args).source != "ctp":
+        result["market_config"] = source_config(args).identity
     return result
 
 

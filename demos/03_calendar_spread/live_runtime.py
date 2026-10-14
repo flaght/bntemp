@@ -1,5 +1,7 @@
 """固定双腿Live装配；同一分钟两腿到齐才分派原策略。"""
 
+from bomber.framework.market.sources import source_config, assemble_minute_market
+
 from dataclasses import asdict, replace
 from decimal import Decimal
 import time
@@ -16,10 +18,9 @@ from bomber.framework.trader.execution.policy import execution_policy_from_args
 from bomber.framework.trader.execution.recording import RecordingExecutionClient
 from bomber.framework.trader.execution.risk import RiskLimits, MarketReferencePriceStore
 from bomber.framework.trader.runtime.live.channels.ctp import (
-    CtpLiveProfile, CtpMarketChannel, CtpExecutionChannel, InstrumentHealthGate)
+    CtpLiveProfile, CtpExecutionChannel)
 from bomber.framework.trader.runtime.live.contracts import SessionReadiness
 from bomber.framework.trader.runtime.live.local import LocalExecutionChannel
-from bomber.framework.trader.runtime.live.profiles import build_minute_feed
 from bomber.framework.trader.runtime.live.health import validate_instrument_max_age
 from bomber.framework.trader.runtime.live.recovery import (
     InstrumentPositionScope, StrategyPositionBinding, SessionIdentityCheckpoint)
@@ -153,7 +154,7 @@ class CalendarSessionRunner(UnifiedStrategyRunner):
             return
         with self._submit_lock:
             try:
-                if feed_id != "ctp-bars":
+                if feed_id != getattr(self, "market_feed_id", "ctp-bars"):
                     raise ValueError("跨期Bar来源与绑定不一致")
                 self._check()
                 now, stamp = self._clock_ns(), event.ts_event
@@ -184,7 +185,13 @@ class CalendarSessionRunner(UnifiedStrategyRunner):
                         self._check()
                         super().publish(feed_id, frame[current])
                     del self.pending_frames[pending]
-                # 未完成目标由after_tick当前真实报价推进，Bar不推进开平今昨订单。
+                    if (getattr(self, "market_feed_id", "ctp-bars") != "ctp-bars"
+                            and self.orders and self.strategy.last_targets is not None):
+                        for current in self.instruments.values():
+                            self._check()
+                            self.continue_execution_target(self.strategy.strategy_id, str(current),
+                                pending, trigger_instrument_id=current)
+                # Tick源由after_tick推进；分钟源只使用完整双腿帧推进保留目标。
             except Exception as error:
                 self.close_role_gate(str(error))
 
@@ -204,11 +211,10 @@ def assemble(args, references, driver, upstream, *, account_routes=(), clock_ns=
         instrument_max_age_seconds=args.instrument_max_age_seconds)
     runner.market_profile = profile
     runner.replay_md_trading_day = profile.replay_md_trading_day
-    market = CtpMarketChannel(upstream, runner.expected_day, profile=profile)
-    runner.instrument_health = InstrumentHealthGate(upstream, runner.fixed_ids, runner.expected_day,
-        policy=profile, max_age_seconds=args.instrument_max_age_seconds, clock_ns=runner._clock_ns,
+    feed, market, runner.instrument_health = assemble_minute_market(args, upstream,
+        "CALENDAR_SPREAD_1M", profile, runner.fixed_ids, runner.expected_day,
+        after_tick=runner.continue_on_tick, clock_ns=runner._clock_ns,
         fallback_events=runner.tick_events, fallback_receives=runner.tick_receives)
-    market.instrument_health = runner.instrument_health
     ids, specs = references.instrument_ids, references.specs
     scope = InstrumentPositionScope(ids.values())
     limits = {ids[r]: RiskLimits(max_order_quantity=args.quantity * 2,
@@ -249,15 +255,15 @@ def assemble(args, references, driver, upstream, *, account_routes=(), clock_ns=
         (CalendarSelection(references.trading_day, 0, *symbols),), dict(zip(symbols, ids.values())))
     runner.strategy, runner.client, runner.prices = strategy, execution.client, execution.prices
     references.publication_lock = runner._submit_lock
-    upstream.register_trade_tick_handler(runner.observe_tick)
-    feed = build_minute_feed("CALENDAR_SPREAD_1M", upstream, profile,
-        after_tick=runner.continue_on_tick, max_age_seconds=args.instrument_max_age_seconds, clock_ns=runner._clock_ns)
+    if source_config(args).source == "ctp":
+        upstream.register_trade_tick_handler(runner.observe_tick)
     for role in references.roles:
         feed.register_instrument(references.instrument_meta(role))
+    runner.market_feed_id = "ctp-bars" if source_config(args).source == "ctp" else "market-bars"
     bindings = StrategyBindings(
-        data=tuple(DataBinding(str(i), "ctp-bars", i, DataType.BAR, "1-MINUTE") for i in ids.values()),
+        data=tuple(DataBinding(str(i), runner.market_feed_id, i, DataType.BAR, "1-MINUTE") for i in ids.values()),
         execution=tuple(ExecutionRoute(str(i), client_id, i) for i in ids.values()))
-    assemble_strategy(runner, strategy, feeds={"ctp-bars": feed}, execution=execution, bindings=bindings)
+    assemble_strategy(runner, strategy, feeds={runner.market_feed_id: feed}, execution=execution, bindings=bindings)
     identity = {"mode": args.mode, "trading_day": runner.expected_day,
         "simnow_environment": profile.environment, "replay_md_trading_day": profile.replay_md_trading_day,
         "product": references.product, "roles": list(references.roles),
@@ -266,7 +272,8 @@ def assemble(args, references, driver, upstream, *, account_routes=(), clock_ns=
         "config": {k: str(v) for k, v in asdict(config).items()},
         "max_notional": str(args.max_notional), "limit_offset_ticks": args.limit_offset_ticks,
         "instrument_max_age_seconds": args.instrument_max_age_seconds,
-        "execution_policy": policy.snapshot_state()}
+        "execution_policy": policy.snapshot_state(),
+        **({"market_config": source_config(args).identity} if source_config(args).source != "ctp" else {})}
     attach = attach_execution_persistence if model else attach_ctp_persistence
     manager = attach(execution, runner, state_file=args.state_file, state_components={
         "calendar_session": SessionIdentityCheckpoint(identity)}) if orders and shared_service is None else None
@@ -274,4 +281,5 @@ def assemble(args, references, driver, upstream, *, account_routes=(), clock_ns=
     return SimpleNamespace(runner=runner, strategy=strategy, client=execution.client, execution=execution,
         ledger=execution.ledger, manager=manager, driver=driver, references=references, upstream=upstream,
         bar_feed=feed, market_profile=profile, readiness=runner.readiness, position_scope=scope,
+        market_source_identity=source_config(args).identity if source_config(args).source != "ctp" else None,
         recovery_binding=StrategyPositionBinding(strategy_id or CLIENT_ID, client_id, {str(i): i for i in ids.values()}))

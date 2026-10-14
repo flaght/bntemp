@@ -371,3 +371,10 @@ Replay下单需Linux验证。完整同步和命令见
 恢复须继续使用原路径。双策略同时运行及第三方多账户真实成交仍待验收。
 完整证据见[模型验收记录](../../doc/HANDOFF/live/HANDOFF_MODEL_REPLAY_2026-10-11.md)。
 
+
+
+## M01 公共行情来源配置（2026-10-14）
+
+本入口已接入统一 `--market-config` / `--market-source`。回测使用文件，Live默认CTP，
+可配置DolphinDB共享分钟流；行情选择独立于执行与历史来源。
+参数、BN业务输入限制、共享worker用法及验证见[公共配置说明](../market_sources/README.md)。

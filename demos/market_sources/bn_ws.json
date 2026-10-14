@@ -1,0 +1,5 @@
+{
+  "source": "bn-ws",
+  "market_type": "spot",
+  "max_age_seconds": 120
+}

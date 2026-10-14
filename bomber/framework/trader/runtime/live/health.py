@@ -84,3 +84,17 @@ class StreamHealthCheck:
                 issues.append(issue)
         return ReadinessResult((self.identity,), tuple(issues))
 
+
+class InstrumentMarketChannel:
+    """组合厂商流健康与每个声明合约的真实输入时效，来源身份保持原通道。"""
+    def __init__(self, channel, instrument_health):
+        self.channel, self.instrument_health = channel, instrument_health
+        self.identity = channel.identity
+
+    def check(self):
+        result = self.channel.check()
+        issues = list(result.issues)
+        for instrument, details in self.instrument_health.stale_instruments().items():
+            issues.append(ReadinessIssue(self.identity, "INSTRUMENT_UNHEALTHY", instrument, details))
+        return ReadinessResult((self.identity,), tuple(issues))
+

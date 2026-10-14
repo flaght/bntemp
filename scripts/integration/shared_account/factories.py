@@ -51,4 +51,6 @@ def assemble_strategy_session(entry, args, inputs, *, service, driver, strategy_
 
 
 def reference_identity(session):
-    return getattr(session, "session_identity", None) or str(session.references.spec)
+    identity = getattr(session, "session_identity", None) or str(session.references.spec)
+    market = getattr(session, "market_source_identity", None)
+    return {"reference": identity, "market_config": market} if market is not None else identity

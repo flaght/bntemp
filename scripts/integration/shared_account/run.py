@@ -66,20 +66,24 @@ def build_host(config, *, resume, diagnostics=None, read_only=False, strategy_pr
     from bomber.framework.trader.runtime.live.contracts import LiveRunContext
     from bomber.framework.trader.runtime.live.recovery import InstrumentPositionScope
     from .factories import strategy_arguments, instrument_specs, assemble_strategy_session, reference_identity
+    from bomber.framework.market.sources import source_config
 
     resources = ExitStack()
     diagnostics = {} if diagnostics is None else diagnostics
     driver = host = None
     try:
+        # 配置先解析，再连接账户；行情选择来自公共配置，不能仅扫描08的argv。
+        arguments = [(row, *strategy_arguments(row, config,
+            resume=(Path(row["state_file"]).is_file() if strategy_processes else resume)))
+            for row in config["strategies"]]
         account_config = config["account"]
         order_budget = account_config["max_session_orders"] if session_order_budget is None else session_order_budget
         if isinstance(order_budget, bool) or not isinstance(order_budget, int) or not 0 < order_budget <= account_config["max_session_orders"]:
             raise ValueError("运行窗口订单额度须为不超过原账户配置的正整数")
         transport = build_simnow_transport(CtpTdApiTransport, client_id=account_config["client_id"],
             flow_path=f"/tmp/{account_config['client_id']}-td", timeout_seconds=15)
-        dolphin_only = all(row["kind"] == "option_vega" and "--market-source" in row["argv"] and
-            row["argv"][row["argv"].index("--market-source")+1] == "dolphindb" for row in config["strategies"])
-        md_front = os.getenv("CTP_MD_ADDRESS", "") if dolphin_only else required("CTP_MD_ADDRESS")
+        market_uses_ctp = any(source_config(args).source == "ctp" for row, entry, args in arguments)
+        md_front = required("CTP_MD_ADDRESS") if market_uses_ctp else None
         if config["environment"] == "replay":
             validate_replay_environment(md_front, transport.front, transport.production_mode)
         CtpSharedAccountLifecycle.acquire(resources, transport, environment="simnow")
@@ -103,16 +107,14 @@ def build_host(config, *, resume, diagnostics=None, read_only=False, strategy_pr
         else:
             assert_account_ready(driver)
         prepared, specs = [], {}
-        for row in config["strategies"]:
-            entry, args = strategy_arguments(row, config,
-                resume=(Path(row["state_file"]).is_file() if strategy_processes else resume))
+        for row, entry, args in arguments:
             context = LiveRunContext(driver.trading_day, resources)
             lifecycle = SimpleNamespace(transport=transport, md_front=md_front)
             # 每个MD拥有独立flow目录；同策略类型也可以多实例。
             inputs = entry.prepare_inputs(args, context, lifecycle)
             upstream = getattr(inputs, "upstream", getattr(inputs, "ctp_upstream", None))
             upstream_config = getattr(upstream, "config", None)
-            if upstream_config is not None:
+            if upstream_config is not None and source_config(args).source == "ctp":
                 from dataclasses import replace
                 upstream.config = replace(upstream_config,
                     flow_path=f"/tmp/{account_config['client_id']}-{row['strategy_id']}-md")
@@ -170,7 +172,9 @@ def build_host(config, *, resume, diagnostics=None, read_only=False, strategy_pr
         account.option_sessions = {item.strategy_id: item.session for item in sessions
                                    if hasattr(item.session, "signal_checkpoint")}
         ready_seconds = max([30] + [args.ready_timeout for row, entry, args, inputs in prepared
-                                   if row["kind"] == "option_vega"])
+                                   if row["kind"] == "option_vega"] +
+                            [source_config(args).max_age_seconds for row, entry, args, inputs in prepared
+                             if source_config(args).source != "ctp"])
         host = SharedAccountLiveHost(account, service, sessions, resources=resources, resume=resume,
             ready_seconds=ready_seconds)
         return host

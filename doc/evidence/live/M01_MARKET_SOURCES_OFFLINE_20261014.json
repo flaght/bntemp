@@ -1,0 +1,93 @@
+{
+  "item": "M01",
+  "date": "2026-10-14",
+  "timezone": "Asia/Shanghai",
+  "status": "formal_config_entries_available_offline_passed_actual_source_matrix_pending",
+  "base_commit": "517c7d58ea079e76171707e60d4bb394e7135103",
+  "verification_environment": "local macOS; SDK market entities and EMA shim for source/option assembly; actual public Python Feed/Runner/strategy/execution modules; no database or counterparty connection",
+  "checks": [
+    {
+      "suite": "market_sources",
+      "tests": 21,
+      "status": "passed",
+      "command": "python -m tests.run_option_vega_offline --market-sources",
+      "log": "/private/tmp/m01-sources.log"
+    },
+    {
+      "suite": "option_regression",
+      "tests": 81,
+      "status": "passed",
+      "command": "python -m tests.run_option_vega_offline",
+      "log": "/private/tmp/m01-option-regression.log"
+    },
+    {
+      "suite": "public_live",
+      "tests": 116,
+      "status": "passed",
+      "command": "python -m unittest tests.test_live_common tests.test_live_channels tests.test_live_recovery tests.test_execution_composition",
+      "log": "/private/tmp/m01-live-regression.log"
+    },
+    {
+      "suite": "shared_account_cli",
+      "tests": 68,
+      "status": "passed",
+      "command": "python -m unittest tests.test_shared_account tests.test_shared_process_cli",
+      "log": "/private/tmp/m01-shared-clean.log"
+    },
+    {
+      "suite": "shared_ipc",
+      "tests": 8,
+      "status": "passed",
+      "command": "python -m unittest tests.test_shared_ipc",
+      "log": "/private/tmp/m01-ipc.log",
+      "note": "Unix socket test uses three actual local OS processes with fake account transport; required local socket sandbox permission"
+    },
+    {
+      "suite": "shared_continuous",
+      "tests": 9,
+      "status": "passed",
+      "command": "existing SDK entity bootstrap + unittest tests.test_shared_continuous",
+      "log": "/private/tmp/m01-continuous.log"
+    }
+  ],
+  "unchanged_strategy_sha256": {
+    "demos/01_main_ema/strategy.py": "6331a9094b2695818e6e36b79b79fe863ed70cd9d1e76273e77ef394c7c7d0c9",
+    "demos/03_calendar_spread/strategy.py": "ddf4f6d3ec4c90397c9305a5aaa36faa23604d28a9f6f180e4ad53fb7effa98e",
+    "demos/04_cross_section/strategy.py": "c81073c0f8d476887c2eecce870d82d8891ca576d7c6b4f23cc0a692bca631ab",
+    "demos/08_option_vega/strategy.py": "4961502b55a163d6e1cbe69d724771ddcc2beab6b5724efc7943251c411c25a6"
+  },
+  "source_sha256": {
+    "bomber/framework/market/sources.py": "7fefed7fa6e71f381be2323f856e926c1ce8f9c65ad4df62263027909543f875",
+    "bomber/framework/market/stream/completed.py": "9838fa2d1bf0f65812e8b44b4dd6382b86580e28366f5671e135cdff9dd06d22",
+    "bomber/framework/trader/runtime/live/channels/ctp.py": "550a899202c7f830b658a9d8cf03c6288e01fa45937e8680458e3cf4c711ca53",
+    "bomber/framework/trader/runtime/live/channels/ctp_market.py": "d7f275f9f16cc962ef7bff77aab965952bb50366e69e0d9685e7a923e6a42d99",
+    "bomber/framework/trader/runtime/live/health.py": "8630d38a4148b2603db3171937bff38354a2b122a113c66086b4942d3839536f",
+    "bomber/framework/trader/runtime/live/local.py": "57eb30980762801b36dd0e63a1983b665ef0586034b4050eb91a727807c10390",
+    "demos/01_main_ema/recovery.py": "dc730ac70ce4e9a4fb4c5c272ff9e42ae963b04e27270d510f05e4cd8f505d57",
+    "demos/01_main_ema/run_backtest.py": "3a41593d945e24c4e497da909aabae5a90d0cca318bafab0d67e85d0a5af313d",
+    "demos/01_main_ema/run_live.py": "f266c078a3ff3960429cb9735d65c49c06df3f22c38603c9ea10daf3a5021e31",
+    "demos/03_calendar_spread/live_runtime.py": "ec657d59ddd664e349fb9f3bed39235b430aef1f26ac9e81da2d650f125c1675",
+    "demos/03_calendar_spread/recovery.py": "e095b5a908894f6d9cfc242cd8893445b7c51c3c0825e65984448f5dd7eab2f4",
+    "demos/03_calendar_spread/run_backtest.py": "62dd49033282aea38e317985b3873397c58b2e6e5ca2891fbb7e78f5bd865144",
+    "demos/03_calendar_spread/run_live.py": "93d0cc70b7749d4168d1486126c8b6b4a86fc7eeb8075b06a3986f17f876d80f",
+    "demos/04_cross_section/live_runtime.py": "31eef7101c6f0eb2f1d6566ccba9271973fb65109f99ac055e044c590a2b6387",
+    "demos/04_cross_section/run_backtest.py": "468dace86b4c0ba4a39846a6d62c2ed9ed9f3c263d06ecfe3e39d9bc719215ed",
+    "demos/04_cross_section/run_live.py": "e4e63ae70552da1781693947fd539a2ed2443aaa2e1d8bb48cd6090cdb545af8",
+    "demos/08_option_vega/run_backtest.py": "196144b29e3dec0b9647314411e41089cc2df168fa6f8657dfc394cea5cc4d05",
+    "demos/08_option_vega/run_live.py": "bb010fb046ca7d9a91513ab847a94e6f9e8f23ae252c4ba28d0a723b0e25ff9e",
+    "demos/market_sources/bn_ws.json": "cd8b1ca938b8132b8446bb34657eadea91552b0c44ef29809a9e5518eec9ffb4",
+    "demos/market_sources/ctp.json": "674d36bb48a12d2daf725bca3ea9dd32979bc6cf9be9a09b7fa8371363dda869",
+    "demos/market_sources/dolphindb.json": "94e32f14d8bb158a6b287913f5e6b20d2a3076dd117044a6b64e5512ae870786",
+    "demos/market_sources/file.json": "fe9c3d4e713c295e0fd5ea695d4dad9e46e0725eb93e62f1b392c2fdd009a96f",
+    "scripts/integration/shared_account/factories.py": "572a1e81e1f78f7840a011f55faae7362bced8e6b1e6c401b6a5d4ac7e711e73",
+    "scripts/integration/shared_account/run.py": "e97cbdc0bce5140d65a50e5d8107d8df962f09d7a266d21b54dc4db9af1d42de",
+    "scripts/integration/shared_account/worker.py": "37fb3e13ae7750860843b0812df9b60841246bf23e1abd60b6271c01416f7bd3",
+    "tests/run_option_vega_offline.py": "b2651baf381a06e56b737aa93a64d375b2182ee64c017bc720cd8ede57c046ce",
+    "tests/test_market_sources.py": "7f4b6569ee5118daa3218ba9de11f136453b5e5aadbdc7149d64cba8858f1e52"
+  },
+  "limitations": [
+    "No new live DolphinDB/CTP/BN online acceptance or complete native backtest was executed.",
+    "Current domestic futures/options inputs reject BN-WS before connection; the public factory supports matching BINANCE inputs.",
+    "M02 execution selection, M05 option feature replay and M06 historical coverage/live continuation are not closed by this delivery."
+  ]
+}

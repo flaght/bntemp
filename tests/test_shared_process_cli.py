@@ -6,11 +6,25 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from types import SimpleNamespace
 
 from scripts.integration.shared_account import config, prepare_session, server, worker, preflight
 
 
 class ProcessCliTests(unittest.TestCase):
+    def test_worker_checks_fixed_reference_without_requiring_optional_runner_method(self):
+        references = SimpleNamespace(spec=("CU", "AL", "version-1"))
+        runner = SimpleNamespace(fixed_spec=references.spec)
+        session = SimpleNamespace(runner=runner, references=references)
+        self.assertTrue(worker.session_reference_is_current(session))
+        references.spec = ("CU", "AL", "version-2")
+        self.assertFalse(worker.session_reference_is_current(session))
+        runner.reference_is_current = lambda: True
+        self.assertTrue(worker.session_reference_is_current(session))
+        runner.reference_is_current = lambda: False
+        references.spec = runner.fixed_spec
+        self.assertFalse(worker.session_reference_is_current(session))
+
     def test_three_modes_have_distinct_paths_and_default_does_not_connect(self):
         with TemporaryDirectory() as directory:
             path = Path(directory) / "session.json"

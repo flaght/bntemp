@@ -1289,3 +1289,10 @@ OptionMarketInputs日志记录指数DFS轮询启用、分钟MISSING、查询投�
 等待超时跳过及帧必需输入缺失。相同来源/分钟/状态不重复打印，状态记录上限64。
 查询投影完成只表示查到数据并尝试发布，不代表已经通过帧接收期限。
 CTP期权/期货缺失Bar不自动补查DolphinDB；日志不改变查询、等待、决策或定价规则。
+
+
+## M01 公共行情来源配置（2026-10-14）
+
+本入口已接入统一 `--market-config` / `--market-source`。回测使用文件，Live默认CTP，
+可配置DolphinDB共享分钟流；行情选择独立于执行与历史来源。
+参数、BN业务输入限制、共享worker用法及验证见[公共配置说明](../market_sources/README.md)。
