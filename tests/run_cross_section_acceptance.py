@@ -74,7 +74,7 @@ FEATURE_RUNTIME_HASHES = {
     "bomber/framework/market/stream/dolphin/converter.py": "e0cd771fca99a01242db9293c7a5b96771825dc7fac1b4ad34f477b30df8da58",
     "bomber/framework/market/stream/dolphin/feed.py": "6601b5c79f756ad863976742fc27a1700edfbe897ceaf411effcb77fb0e1172e",
     "bomber/framework/trader/runtime/live/channels/dolphin.py": "e928b84ba28cd4c9e20defb69d5f584a55e87c2827a75f3f755e869e6d72c626",
-    "tests/test_option_dolphin_stream.py": "28fd3d4b2c1aaa9df56ac8f1ef3be55ec8945430583d6055585fcd961e9246c7",
+    "tests/test_option_dolphin_stream.py": "a8cb1e2306d112b6171fede640cf0e3900ff63c6e03546147c6292c5d6e21edb",
     "scripts/integration/options/dolphin_stream_probe.py": "1b9b7555a0662217347612bcd2b02e61a5632e661c638d7fed14653eb1c407e8",
 }
 

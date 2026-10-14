@@ -11,8 +11,28 @@
     "sdk_error": "actionName can't contain characters other thanletters, digits, and underscore(_).",
     "failure": "DolphinDB分钟流缺少必需列或结构无效: ['date', 'minTime']",
     "cleanup_errors": [],
-    "missing_monitored_keys": ["MO2611-C-7400", "IM2611", "000852"],
-    "market_columns": ["minTime", "date", "Code", "open", "high", "low", "close", "prev_close", "prev_settlement", "volume", "turnover", "pct_change", "open_interest", "prev_open_interest", "updateTime"],
+    "missing_monitored_keys": [
+      "MO2611-C-7400",
+      "IM2611",
+      "000852"
+    ],
+    "market_columns": [
+      "minTime",
+      "date",
+      "Code",
+      "open",
+      "high",
+      "low",
+      "close",
+      "prev_close",
+      "prev_settlement",
+      "volume",
+      "turnover",
+      "pct_change",
+      "open_interest",
+      "prev_open_interest",
+      "updateTime"
+    ],
     "actual_index_columns": null,
     "market_schema_read_does_not_prove_subscription_success": true
   },
@@ -39,13 +59,18 @@
     "deployment_preflight_files": 77,
     "deployment_preflight_mismatches": [],
     "separate_entry_acceptance": "passed",
-    "logs": ["/tmp/option-dolphin-action-fix.log", "/tmp/option-dolphin-action-related.log", "/tmp/option-dolphin-action-entry.log"]
+    "logs": [
+      "/tmp/option-dolphin-action-fix.log",
+      "/tmp/option-dolphin-action-related.log",
+      "/tmp/option-dolphin-action-entry.log"
+    ]
   },
-  "live_fix_verified": false,
+  "live_fix_verified": true,
   "pending": [
-    "new probe version 3 subscription and receipt",
     "actual index stream column names and types",
     "producer complete-minute label and volume meaning",
     "actual market push Recording target verification"
-  ]
+  ],
+  "live_fix_scope": "user-reported market-only raw push: completed, two monitored keys and two consecutive business minutes received; no standard Bar/Recording/index claim",
+  "followup_evidence": "doc/evidence/live/OPTION_VEGA_DOLPHIN_MARKET_RECEIPT_20261014.json"
 }

@@ -36,7 +36,11 @@
 
 已确认表名后的补充交付为 [REV2 摘要](checksums/OPTION_VEGA_DOLPHIN_PUSH_20261014_REV2_SHA256.txt) 和 [REV2 源码包](archives/OPTION_VEGA_DOLPHIN_PUSH_20261014_REV2.tar.gz)，包含新的只读原始推送探针和最新文档，运行模块及验收入口字节保持初次交付版本。原包和原摘要不覆盖，仍描述当次交付；若原代码已部署，本轮诊断只需补充探针文件。
 
-用户第一次探针实际运行 failed：客户端 actionName 含连字符被服务器拒绝，指数又缺 date/minTime；市场 15 列结构已读到，但三条监控行情均未收到。该结果不登记为订阅成功。最新 [REV3 源码包](archives/OPTION_VEGA_DOLPHIN_PUSH_20261014_REV3.tar.gz) 和 [REV3 摘要](checksums/OPTION_VEGA_DOLPHIN_PUSH_20261014_REV3_SHA256.txt) 修正两处任务名生成并添加启动前字符校验；只读探针迁入 scripts，新增 market/index/both 范围，原始指数不再猜测 date/minTime，正式策略仍保留严格时间校验与 DFS 指数路径。76 项主回归 + 111 项相关回归通过，77 文件版本预检及 entry 组通过；修正版线上结果待返回。见 [失败证据及修正范围](live/OPTION_VEGA_DOLPHIN_ACTION_FIX_20261014.json)，旧交付包不覆盖。
+用户第一次探针实际运行 failed：客户端 actionName 含连字符被服务器拒绝，指数又缺 date/minTime；市场 15 列结构已读到，但三条监控行情均未收到。该结果不登记为订阅成功。最新 [REV3 源码包](archives/OPTION_VEGA_DOLPHIN_PUSH_20261014_REV3.tar.gz) 和 [REV3 摘要](checksums/OPTION_VEGA_DOLPHIN_PUSH_20261014_REV3_SHA256.txt) 修正两处任务名生成并添加启动前字符校验；只读探针迁入 scripts，新增 market/index/both 范围，原始指数不再猜测 date/minTime，正式策略仍保留严格时间校验与 DFS 指数路径。76 项主回归 + 111 项相关回归通过，77 文件版本预检及 entry 组通过；该版交付时修正版线上结果待返回，后续接收见下文。见 [失败证据及修正范围](live/OPTION_VEGA_DOLPHIN_ACTION_FIX_20261014.json)，旧交付包不覆盖。
+
+修正版市场探针结果现已返回：[11:27—11:29 接收证据](live/OPTION_VEGA_DOLPHIN_MARKET_RECEIPT_20261014.json) 登记 market/120 秒 completed、无错误及缺失键，实际收到 IM2611/MO2611-C-7400 两个连续业务分钟。累计量证据为 IM 增量 47、MO 增量 1，MO 成交额增加 7200，与 72 × 100 相符。实际 NumPy 日期/TIME 样本的本地转换回归通过，主回归增至 77 项；当前没有新的运行代码修改。下一步用已部署 REV3 在下午做 Recording，同分钟帧及非零目标仍待验，指数流未验收，end 标签仅由接收时序推断。
+
+样本回归与最新证据补充为 [REV4 摘要](checksums/OPTION_VEGA_DOLPHIN_PUSH_20261014_REV4_SHA256.txt) / [REV4 包](archives/OPTION_VEGA_DOLPHIN_PUSH_20261014_REV4.tar.gz)，更新测试、验收入口摘要和文档；原 REV3 运行模块字节保持不变，已部署者可直接运行现有 Recording 命令，无需为这次样本补充重启或更新运行模块。旧交付包保留原版。
 
 ## 2026-10-11模型运行与恢复证据
 

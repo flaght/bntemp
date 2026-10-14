@@ -164,6 +164,36 @@ class DolphinMinuteTests(unittest.TestCase):
             self.assertEqual(bar.volume.as_decimal(), volume)
             self.assertEqual(bar.close.as_decimal(), Decimal("82.8"))
 
+    def test_reported_numpy_time_rows_use_business_date_and_cumulative_increment(self):
+        import numpy as np
+        samples = (
+            ("IM2611", 200, (6941.4,6942.6,6938.6,6940.2,19420),
+                (6940.2,6943.8,6936.0,6936.0,19467),
+                1791948481272364375,1791948540862200453,47),
+            ("MO2611-C-7400", 100, (72.4,72.4,71.6,71.6,1607),
+                (71.6,72.0,71.6,72.0,1608),
+                1791948481284191872,1791948542991255356,1),
+        )
+        for symbol, multiplier, first, second, first_receipt, second_receipt, expected_volume in samples:
+            with self.subTest(symbol=symbol):
+                instrument = InstrumentId.from_str(symbol + ".CFFEX")
+                meta = InstrumentMeta(instrument, price_precision=1, size_precision=0,
+                    price_increment=Decimal(".2"), multiplier=Decimal(multiplier))
+                bars = []
+                for minute, values, received in (("11:28:00",first,first_receipt),("11:29:00",second,second_receipt)):
+                    row = dict(date=np.datetime64("2026-10-14","D"),
+                        minTime=np.datetime64("1970-01-01T" + minute,"ms"), Code=symbol,
+                        open=values[0],high=values[1],low=values[2],close=values[3],volume=values[4],
+                        updateTime=np.datetime64("2026-10-14T" + minute,"ms"))
+                    bar = self.converter.convert_bar(row,instrument,meta,"1-MINUTE",
+                        volume_mode="cumulative",received_ns=received)[0].event
+                    self.assertEqual(bar.ts_event,ns("2026-10-14 " + minute[:5]))
+                    self.assertEqual(bar.ts_init,received)
+                    self.assertEqual(bar.close.as_decimal(),Decimal(str(values[3])))
+                    bars.append(bar)
+                self.assertEqual(bars[0].volume.as_decimal(),0)
+                self.assertEqual(bars[1].volume.as_decimal(),expected_volume)
+
     def feed(self):
         spec = DolphinDbStreamSpec.bar("cffexBarStream", auto_schema=True, local_receipt_time=True)
         feed = DolphinDbLiveDataFeed(DolphinDbConfig("ddb.test", 8848, "test", "password", (spec,)))
