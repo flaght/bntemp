@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "date": "2026-10-14",
+  "remote_report": "shared-mother-probe-1791960391664245707",
+  "remote_status": "failed",
+  "native_reports": [
+    "ACCEPTED",
+    "CANCELED"
+  ],
+  "native_filled_quantity": "0",
+  "orders_submitted": 1,
+  "final_active_orders": 0,
+  "protected_state_unchanged": true,
+  "failure": "market day, regression or quote age check; previous message did not distinguish cause",
+  "subsequent_readonly_report": "shared-mother-probe-1791960519672603845",
+  "subsequent_readonly_status": "prechecked",
+  "diagnostic_change": "report exact failed conditions, event and monotonic receive ages, observed/expected days and unchanged thresholds",
+  "verification": "controlled_transport_offline",
+  "tests_run": 15,
+  "status": "passed",
+  "local_report": "tests/results/main-ema-acceptance-1791960631420831000",
+  "network_connected": false,
+  "real_broker_orders_submitted": 0,
+  "root_cause_confirmed": false,
+  "gap10_closed": false
+}

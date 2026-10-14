@@ -78,13 +78,20 @@ class ProbePreflightTests(unittest.TestCase):
                 probe.price_plan(*self.quote(), self.args(*extra), self.spec())
 
     def test_stale_wrong_day_regressed_and_invalid_quotes_fail_closed(self):
-        for change in ({"trading_day": "20261015"}, {"timestamp_regressed": True},
-                       {"received_monotonic_ns": time.monotonic_ns() - 4_000_000_000},
-                       {"ts_event": time.time_ns() - 11_000_000_000}):
+        for change, issue in (({"trading_day": "20261015"}, "trading_day_mismatch"),
+                       ({"timestamp_regressed": True}, "timestamp_regressed"),
+                       ({"received_monotonic_ns": time.monotonic_ns() - 4_000_000_000}, "receive_age_out_of_range"),
+                       ({"ts_event": time.time_ns() - 11_000_000_000}, "event_age_out_of_range"),
+                       ({"ts_event": time.time_ns() + 11_000_000_000}, "event_age_out_of_range")):
             raw, observation = self.quote()
             vars(observation).update(change)
-            with self.assertRaises(RuntimeError):
+            with self.assertRaises(RuntimeError) as error:
                 probe.price_plan(raw, observation, self.args(), self.spec())
+            detail = json.loads(str(error.exception).split(": ", 1)[1])
+            self.assertIn(issue, detail["issues"])
+            self.assertEqual(detail["observed_trading_day"], observation.trading_day)
+            self.assertEqual(detail["max_receive_age_ns"], 3_000_000_000)
+            self.assertEqual(detail["max_event_age_ns"], 10_000_000_000)
 
     def test_partial_mode_allows_own_best_price_but_does_not_cross_spread(self):
         args = self.args("--cancel-after", "partial", "--passive-ticks", "0")
