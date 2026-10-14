@@ -2,12 +2,16 @@
   "evidence_date": "2026-10-14",
   "timezone": "Asia/Shanghai",
   "provenance": {
-    "kind": "user_reported_console_phase_result_and_progress",
+    "kind": "user_reported_remote_summary_extraction_and_console_progress",
     "remote_original_summary_read_locally": false,
     "new_local_live_session_started": false,
     "worker_exit_code": null,
-    "provided_phases": ["FULL_2"],
-    "missing_phases": ["FULL_1", "REDUCED"]
+    "provided_phases": [
+      "FULL_1",
+      "REDUCED",
+      "FULL_2"
+    ],
+    "missing_phases": []
   },
   "remote_summary": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/tests/results/option-vega-raw-aba/sample-1791942104929305866/summary.json",
   "reported_final": {
@@ -15,78 +19,218 @@
     "failure": null,
     "cleanup_errors": []
   },
-  "reported_phase": {
-    "phase": "FULL_2",
-    "started_at": "2026-10-14T09:51:50.938750+08:00",
-    "ended_at": "2026-10-14T09:56:51.098216+08:00",
-    "subscriptions": 107,
-    "sample_seconds": 300.0,
-    "unexpected_ticks": 0,
-    "streams": {
-      "ALL": {
-        "ticks": 29467,
-        "max_receive_gap_seconds": 13.91,
-        "trailing_silence_seconds": 0.037,
-        "last_source": {
-          "InstrumentID": "MO2611-C-6900",
-          "TradingDay": "20261014",
-          "ActionDay": "20261014",
-          "UpdateTime": "09:56:49",
-          "UpdateMillisec": 500
-        },
-        "latest_event_age_seconds": 1.598,
-        "wrong_trading_day_ticks": 0
-      },
-      "MO2611-C-7400": {
-        "ticks": 439,
-        "max_receive_gap_seconds": 17.231,
-        "trailing_silence_seconds": 0.392,
-        "last_source": {
-          "InstrumentID": "MO2611-C-7400",
-          "TradingDay": "20261014",
-          "ActionDay": "20261014",
-          "UpdateTime": "09:56:49",
-          "UpdateMillisec": 0
-        },
-        "latest_event_age_seconds": 2.098,
-        "wrong_trading_day_ticks": 0
-      },
-      "IM2611": {
-        "ticks": 548,
-        "max_receive_gap_seconds": 17.667,
-        "trailing_silence_seconds": 0.049,
-        "last_source": {
-          "InstrumentID": "IM2611",
-          "TradingDay": "20261014",
-          "ActionDay": "20261014",
-          "UpdateTime": "09:56:49",
-          "UpdateMillisec": 500
-        },
-        "latest_event_age_seconds": 1.598,
-        "wrong_trading_day_ticks": 0
-      }
-    }
-  },
   "reported_progress_event_ages_seconds": [
-    {"sample_seconds": 240.131, "ALL": 6.07, "MO2611-C-7400": 6.07, "IM2611": 6.07},
-    {"sample_seconds": 270.145, "ALL": 2.084, "MO2611-C-7400": 3.084, "IM2611": 2.084}
+    {
+      "sample_seconds": 240.131,
+      "ALL": 6.07,
+      "MO2611-C-7400": 6.07,
+      "IM2611": 6.07
+    },
+    {
+      "sample_seconds": 270.145,
+      "ALL": 2.084,
+      "MO2611-C-7400": 3.084,
+      "IM2611": 2.084
+    }
   ],
   "assessment": {
-    "scope": "raw_md_callback_receipt_in_full_2_window",
-    "raw_receive_gap_at_least_30_seconds_observed": false,
+    "scope": "raw_md_callback_receipt_in_three_reported_aba_windows",
+    "raw_receive_gap_at_least_30_seconds_observed": true,
     "no_receive_gap_during_sample": false,
     "whole_window_max_source_event_age_known": false,
     "subscription_load_cause_confirmed": false,
-    "full_aba_comparison_reviewed": false,
+    "full_aba_comparison_reviewed": true,
     "formal_conversion_bar_index_polling_verified": false,
-    "completed_means": "sampling_finished_not_market_health_accepted"
+    "completed_means": "sampling_finished_not_market_health_accepted",
+    "subscription_load_association_observed": true,
+    "raw_gap_observed_without_formal_feed_or_index_polling": true,
+    "gaps_proven_to_be_simultaneous": false,
+    "interpretation": "FULL_1 aggregate receipt gap exceeds the 30-second threshold; reduced subscriptions improve receipt continuity, with intermediate gaps after full subscriptions return. Association is observed; venue/network/native callback/process scheduling cause remains unproven. Maxima alone lack timing to confirm synchronized gaps."
   },
   "pending": [
-    "FULL_1 and REDUCED phase results",
-    "all subscription and unsubscription acknowledgement results",
     "independent original summary read and worker exit code",
-    "cause and exact timing of the 13.91-second aggregate callback gap",
-    "source event age throughout the complete window",
-    "formal Feed, minute aggregation and index polling comparison"
+    "exact timing and cause of aggregate and instrument gaps",
+    "control loop scheduling and process CPU during callback gaps",
+    "source timestamps before and after callback gaps and source age during the whole window",
+    "repeat subscription comparison with enhanced diagnostics",
+    "formal Feed, minute aggregation and index polling comparison after raw MD diagnosis"
+  ],
+  "reported_subscription_transitions": [
+    {
+      "operation": "subscribe",
+      "requested": 107,
+      "accepted": 107,
+      "missing": []
+    },
+    {
+      "operation": "unsubscribe",
+      "requested": 105,
+      "accepted": 105,
+      "missing": []
+    },
+    {
+      "operation": "subscribe",
+      "requested": 105,
+      "accepted": 105,
+      "missing": []
+    }
+  ],
+  "reported_phases": [
+    {
+      "phase": "FULL_1",
+      "started_at": "2026-10-14T09:41:47.312075+08:00",
+      "ended_at": "2026-10-14T09:46:47.483689+08:00",
+      "subscriptions": 107,
+      "sample_seconds": 300.0,
+      "unexpected_ticks": 0,
+      "streams": {
+        "ALL": {
+          "ticks": 27509,
+          "max_receive_gap_seconds": 31.55,
+          "trailing_silence_seconds": 0.191,
+          "last_source": {
+            "InstrumentID": "MO2610-C-7300",
+            "TradingDay": "20261014",
+            "ActionDay": "20261014",
+            "UpdateTime": "09:46:46",
+            "UpdateMillisec": 0
+          },
+          "latest_event_age_seconds": 1.484,
+          "wrong_trading_day_ticks": 0
+        },
+        "MO2611-C-7400": {
+          "ticks": 414,
+          "max_receive_gap_seconds": 31.552,
+          "trailing_silence_seconds": 0.191,
+          "last_source": {
+            "InstrumentID": "MO2611-C-7400",
+            "TradingDay": "20261014",
+            "ActionDay": "20261014",
+            "UpdateTime": "09:46:46",
+            "UpdateMillisec": 0
+          },
+          "latest_event_age_seconds": 1.484,
+          "wrong_trading_day_ticks": 0
+        },
+        "IM2611": {
+          "ticks": 526,
+          "max_receive_gap_seconds": 31.575,
+          "trailing_silence_seconds": 0.205,
+          "last_source": {
+            "InstrumentID": "IM2611",
+            "TradingDay": "20261014",
+            "ActionDay": "20261014",
+            "UpdateTime": "09:46:46",
+            "UpdateMillisec": 0
+          },
+          "latest_event_age_seconds": 1.484,
+          "wrong_trading_day_ticks": 0
+        }
+      }
+    },
+    {
+      "phase": "REDUCED",
+      "started_at": "2026-10-14T09:46:47.540782+08:00",
+      "ended_at": "2026-10-14T09:51:47.696938+08:00",
+      "subscriptions": 2,
+      "sample_seconds": 300.0,
+      "unexpected_ticks": 0,
+      "streams": {
+        "ALL": {
+          "ticks": 1035,
+          "max_receive_gap_seconds": 1.94,
+          "trailing_silence_seconds": 0.952,
+          "last_source": {
+            "InstrumentID": "MO2611-C-7400",
+            "TradingDay": "20261014",
+            "ActionDay": "20261014",
+            "UpdateTime": "09:51:45",
+            "UpdateMillisec": 500
+          },
+          "latest_event_age_seconds": 2.197,
+          "wrong_trading_day_ticks": 0
+        },
+        "MO2611-C-7400": {
+          "ticks": 443,
+          "max_receive_gap_seconds": 5.016,
+          "trailing_silence_seconds": 0.952,
+          "last_source": {
+            "InstrumentID": "MO2611-C-7400",
+            "TradingDay": "20261014",
+            "ActionDay": "20261014",
+            "UpdateTime": "09:51:45",
+            "UpdateMillisec": 500
+          },
+          "latest_event_age_seconds": 2.197,
+          "wrong_trading_day_ticks": 0
+        },
+        "IM2611": {
+          "ticks": 592,
+          "max_receive_gap_seconds": 1.94,
+          "trailing_silence_seconds": 0.952,
+          "last_source": {
+            "InstrumentID": "IM2611",
+            "TradingDay": "20261014",
+            "ActionDay": "20261014",
+            "UpdateTime": "09:51:45",
+            "UpdateMillisec": 500
+          },
+          "latest_event_age_seconds": 2.197,
+          "wrong_trading_day_ticks": 0
+        }
+      }
+    },
+    {
+      "phase": "FULL_2",
+      "started_at": "2026-10-14T09:51:50.938750+08:00",
+      "ended_at": "2026-10-14T09:56:51.098216+08:00",
+      "subscriptions": 107,
+      "sample_seconds": 300.0,
+      "unexpected_ticks": 0,
+      "streams": {
+        "ALL": {
+          "ticks": 29467,
+          "max_receive_gap_seconds": 13.91,
+          "trailing_silence_seconds": 0.037,
+          "last_source": {
+            "InstrumentID": "MO2611-C-6900",
+            "TradingDay": "20261014",
+            "ActionDay": "20261014",
+            "UpdateTime": "09:56:49",
+            "UpdateMillisec": 500
+          },
+          "latest_event_age_seconds": 1.598,
+          "wrong_trading_day_ticks": 0
+        },
+        "MO2611-C-7400": {
+          "ticks": 439,
+          "max_receive_gap_seconds": 17.231,
+          "trailing_silence_seconds": 0.392,
+          "last_source": {
+            "InstrumentID": "MO2611-C-7400",
+            "TradingDay": "20261014",
+            "ActionDay": "20261014",
+            "UpdateTime": "09:56:49",
+            "UpdateMillisec": 0
+          },
+          "latest_event_age_seconds": 2.098,
+          "wrong_trading_day_ticks": 0
+        },
+        "IM2611": {
+          "ticks": 548,
+          "max_receive_gap_seconds": 17.667,
+          "trailing_silence_seconds": 0.049,
+          "last_source": {
+            "InstrumentID": "IM2611",
+            "TradingDay": "20261014",
+            "ActionDay": "20261014",
+            "UpdateTime": "09:56:49",
+            "UpdateMillisec": 500
+          },
+          "latest_event_age_seconds": 1.598,
+          "wrong_trading_day_ticks": 0
+        }
+      }
+    }
   ]
 }

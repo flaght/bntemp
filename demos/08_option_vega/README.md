@@ -401,16 +401,50 @@ python -u -m demos.08_option_vega.run_live \
 
 ### 3.6 替换为 DolphinDB 标准分钟流
 
-在 3.2 数组中替换对应来源参数，并用实际已核验表名：
+2026-10-14 按同连接原始行情对比结果，新增并补齐推荐的直接分钟推送路径：期权与同月期货从 DolphinDB 接收已完成的一分钟 Bar，指数可继续 DFS 查询，原生 SimNow 执行仍使用 CTP TD。原 CTP Tick 聚合路径保留为对照，入口默认仍为 ctp；启用下面的显式来源参数即可切换，不打开 CTP MD，也不再订阅全链 QuoteTick/TradeTick 或本地合成市场分钟。截图 `dfs://min_bar/cffex_1min` 是持久化查询表，不是共享推送表名称。
+
+先在行情所在 DolphinDB 数据节点的查询窗口逐条执行这些只读语句：
+
+```dolphindb
+getStreamTables()
+getStreamingStat().pubTables
+```
+
+前者查看共享流表清单，后者查看发布/订阅状态；读取 DFS 的节点不一定是流表实际发布节点。找到候选名称后，用实际名称替换下面字符串，再检查结构及最新数据：
+
+```dolphindb
+schema(objByName("实际共享流表名", true))
+t = objByName("实际共享流表名", true)
+select top 10 * from t
+where Code in ["MO2611-C-7400", "IM2611"]
+order by date desc, minTime desc
+```
+
+这些语句不创建或改写共享表。应确认表持续接收当日这两类合约的已完成分钟，并确认 minTime 是起点还是终点、volume 是分钟增量还是日累计量；字段名相同不能证明业务含义相同。若没有分钟共享流表，需要先由数据发布程序提供对应流；客户端不能把 `loadTable(...)` 的查询结果当成实时推送，也不自动创建表、改聚合引擎或定期查询市场 DFS 来冒充推送。推送模型及流表发现依据见 [DolphinDB 流订阅](https://docs.dolphindb.com/zh/api/python/BasicOperations/Subscription/Subscription.html) 与 [流计算状态监控](https://docs.dolphindb.com/zh/stream/str_monitor.html)。
+
+在 3.2 数组中替换对应来源参数，并用实际已核验表名与业务语义：
 
 ```text
 --market-source dolphindb --market-bar-table <期权与期货已收盘分钟流表>
---market-bar-timestamp end
+--market-bar-timestamp <start或end> --market-volume-mode <per-bar或cumulative>
+--market-bar-max-age-seconds 120
 --index-source dolphindb --index-bar-table <指数已收盘分钟流表>
 --index-bar-timestamp end
 ```
 
-两类来源可以独立选择，例如 CTP 市场 + DolphinDB 指数流。标准流没有默认表名，必须显式参数或环境变量配置，且遵循标准 Bar 字段契约。文件不作为 Live 当前指数输入，期货价格不能代替指数。全 DolphinDB 行情无需 MD 连接；原生执行仍需 TD 配置，使用实时环境。
+市场与指数来源独立；本轮第一阶段推荐指数继续使用已验证的 `--index-source dolphindb-dfs --index-bar-timestamp end --index-availability observed`，无须同时更换指数。若也改指数流，再单独确认其共享表与标签。市场流没有默认表名，使用 `--market-bar-table` 或 `DDB_OPTION_BAR_TABLE`；minTime/volume 两项参数在分钟推送模式必需，禁止猜测。客户端在订阅前通过 `schema(objByName(...,true)).colDefs.name` 获取实际列顺序，要求 minTime/date/Code/open/high/low/close/volume 八列；其他列可有可无，包括 updateTime。原固定 15 列的公共模式仍兼容。当前按表订阅并在客户端保留当日参考绑定的认购和同月期货，没有声称已在发布端按 Code 过滤。
+
+转换保留源 minTime，帧层仅在标签为 start 时加一分钟得到已收盘业务分钟；不会改写成当前时间或前填价格。推送提供的零成交 OHLC 分钟会正常接入，客户端不自行补造。`per-bar` 保留分钟 volume；`cumulative` 按合约、Bar 类型、业务日差分，日内首份只建立基线、输出量 0，之后累计量不变的分钟为 0；同日累计量下降或新分钟时间倒退报错。首份缺少此前基线时不能精确还原该分钟量，模型撮合不把历史累计量当成当分钟可成交量；08 选约估值主要使用价格。重复业务分钟不再次发送，已消费分钟不因后续修订重新决策。
+
+Bar 的 ts_init 使用客户端实际接收时间，updateTime 不冒充本机到达；分钟流健康检查读取每次有效转换更新的源事件/接收时间，避免 READY 快照时间冻结造成持续推送仍超时。`--market-bar-max-age-seconds` 默认 120，须大于 60 且不超过策略 `--max-market-age-seconds`；它控制市场分钟流和必需市场腿的完成分钟及接收年龄，并非原 CTP 原始深度 30 秒阈值。起点标签的源事件年龄也按完成分钟计算。缺持仓/在途/目标腿或流停止仍会关闭会话，错误 OHLC/累计量不静默丢弃，而记录 conversion_errors 并关闭流健康。帧等待仍推荐 20 秒，超过期限不追溯决策。指数保留其独立的查询与时效政策。
+
+确认流表及语义后，先使用 [OPTION_VEGA_DOLPHIN_RECORDING.sh](../../doc/evidence/commands/OPTION_VEGA_DOLPHIN_RECORDING.sh)，参数顺序为交易日、未来选约时点、实际共享表名、start/end、cumulative/per-bar；运行 900 秒，只接行情和记录目标，不接 TD、不报单。凭据从项目 `.env` 读取，不写入命令。报告检查 `market_sources.market`、`market_streams`（实际列顺序/接收 Bar 数/最后时间/转换错误）、frame_audit 和 entry_audit。不要直接复制占位表名，也不要使用已过去的选约时点。
+
+取得实际报告后，可用 `python -u -m scripts.integration.options.recording --trading-day YYYYMMDD --option-slot HH:MM --summary <实际summary.json路径>` 只读复核。该入口接纳 CTP 市场或 DolphinDB 分钟市场 + DFS 指数；推送路径要求真实结构/接收数、无转换错误和明确标签/量语义，不要求或伪造 CTP MD 日。start 标签的市场源时间须为选约完成分钟前一分钟，指数仍为同一完成分钟；缺目标、迟到、错误来源及混入物理账户仍拒绝。
+
+切换行情来源会改变持久化 sources/labels/volume_mode 身份，旧 CTP 会话文件不能直接用此路径 `--resume`。昨日真实 MO 空 1 手的原文件及柜台仓位须保留，Recording 不接管或改变它；后续真实交易恢复需另行处理跨日及来源迁移，不能新建空状态绕过已有持仓。分钟输入没有实时买一/卖一，原生限价仍按分钟参考价及跳价计算，order_submission_audit 的 quote/crosses_observed_quote 可以为空，不能把 Bar 接入或目标记录当成实际成交。
+
+本地 72 项 SDK 实体替身下的实际公共组件回归通过，含 11 项分钟推送专项：字段顺序变化/缺列/非法 DFS 名、累计量及零量、冻结快照时效、起点标签、必需腿过期，以及真实 Feed 分派 → 帧 → Recording 非零目标全链（仅 SDK 传输为夹具）；另有 11 项报告复核回归通过，含新来源和原 CTP 报告。本轮尚未连接服务器共享流表；实际流表名、时间标签、成交量语义仍待用户返回，线上接收与交易验收不登记为通过。
 
 ### 3.7 Replay 与工程时间映射
 
@@ -510,7 +544,9 @@ SimNow 的 strict 将柜台仓位与执行账本核对，不一致闭闸；obser
 | `--ctp-price-type` | last | last 成交 Bar；mid 报价 Bar，volume=0；无成交 LAST 不造 Bar |
 | `--market-bar-table` | 无 | DolphinDB 市场标准流表，或 `DDB_OPTION_BAR_TABLE`；该来源必需 |
 | `--index-bar-table` | 无 | DolphinDB 指数标准流表，或 `DDB_INDEX_BAR_TABLE`；标准流来源必需 |
-| `--market-bar-timestamp` | end | DolphinDB 市场流 start/end 标签；CTP 聚合时间由适配器规范化 |
+| `--market-bar-timestamp` | 无，分钟推送必需 | DolphinDB 市场流 start/end 标签；CTP 聚合时间由适配器规范化 |
+| `--market-volume-mode` | 无，分钟推送必需 | per-bar 保留分钟量；cumulative 按合约及业务日差分，首份基线量为 0 |
+| `--market-bar-max-age-seconds` | 120 | 市场分钟推送及必需腿时效；大于60秒且不超过max-market-age-seconds，CTP路径不使用 |
 | `--index-bar-timestamp` | 不覆盖 | start/end；DFS 沿配置，内置 end；标准流默认 end |
 | `--frame-wait-seconds` | 2 | 同一分钟收集期限，有限秒数，`0 ≤ 值 ≤ min(30,max-market-age-seconds)` |
 | `--instrument-max-age-seconds` | 30 | CTP 必需合约深度接收时效，`0 < 值 ≤ 120` 秒，独立于策略 Bar 年龄 |
@@ -964,7 +1000,7 @@ bash doc/evidence/commands/CTP_CU_NIGHT_PIPELINE_PROBE.sh cu2612 600
 
 #### 2026-10-14 开盘后同连接全链／缩减／全链诊断
 
-[OPTION_VEGA_RAW_ABA_PROBE.py](../../doc/evidence/commands/OPTION_VEGA_RAW_ABA_PROBE.py) 在启动时只读 DolphinDB 当日 MO/IM 基础条款，复用 `LiveOptionReferences` 的有效认购及同月期货筛选，随后关闭参考源。它不读取昨天状态、不恢复策略、不连接 TD、不报单；采样阶段不查询指数 DFS，也不执行标准 Tick 转换或分钟聚合。用户已返回 FULL_2 及最终停机结果，具体范围见下文；FULL_1、REDUCED 尚未提供，不登记完整对比或正式行情验收通过。
+[OPTION_VEGA_RAW_ABA_PROBE.py](../../doc/evidence/commands/OPTION_VEGA_RAW_ABA_PROBE.py) 在启动时只读 DolphinDB 当日 MO/IM 基础条款，复用 `LiveOptionReferences` 的有效认购及同月期货筛选，随后关闭参考源。它不读取昨天状态、不恢复策略、不连接 TD、不报单；采样阶段不查询指数 DFS，也不执行标准 Tick 转换或分钟聚合。用户已补齐三段结果及切换确认，完整对比出现超过 30 秒的原始回调空档，不登记为正式行情验收通过。
 
 将该 Python 文件同步到运行机同名目录，先停止其他使用同一账号的行情诊断或 08 进程，避免额外会话影响对比。在项目根目录执行：
 
@@ -986,23 +1022,29 @@ python -u doc/evidence/commands/OPTION_VEGA_RAW_ABA_PROBE.py \
 
 本地已用无网络回调夹具检查交易阶段边界、同连接订阅/退订确认、两腿不退订、首尾/零回调间隔及断线中止；没有连接运行机或柜台。
 
-用户返回 FULL_2：北京时间 09:51:50.939—09:56:51.098，107 个订阅、采样 300 秒，最终 `ABA_FINAL` 为 completed、failure=null、cleanup_errors=[]。原报告路径为运行机 `tests/results/option-vega-raw-aba/sample-1791942104929305866/summary.json`；本机未独立读取该报告。
+用户先返回 FULL_2，随后从原报告补齐 FULL_1、REDUCED 及全部切换确认；最终 `ABA_FINAL` 为 completed、failure=null、cleanup_errors=[]。初次订阅 107/107、退订 105/105、重新订阅 105/105，missing 均为空。原报告路径为运行机 `tests/results/option-vega-raw-aba/sample-1791942104929305866/summary.json`；本机未独立读取该报告。
 
-| 原始回调流 | 回调数 | 最大接收间隔（秒） | 末尾静默（秒） | 段结束时最新源事件年龄（秒） |
+| 分段（北京时间，各 300 秒） | 订阅数 | ALL 回调数 / 最大间隔秒 | MO2611-C-7400 回调数 / 最大间隔秒 | IM2611 回调数 / 最大间隔秒 |
 | --- | --- | --- | --- | --- |
-| ALL | 29467 | 13.910 | 0.037 | 1.598 |
-| MO2611-C-7400 | 439 | 17.231 | 0.392 | 2.098 |
-| IM2611 | 548 | 17.667 | 0.049 | 1.598 |
+| FULL_1 09:41:47—09:46:47 | 107 | 27509 / 31.550 | 414 / 31.552 | 526 / 31.575 |
+| REDUCED 09:46:47—09:51:47 | 2 | 1035 / 1.940 | 443 / 5.016 | 592 / 1.940 |
+| FULL_2 09:51:50—09:56:51 | 107 | 29467 / 13.910 | 439 / 17.231 | 548 / 17.667 |
 
-三项源交易日均为 20261014，wrong_trading_day_ticks=0，unexpected_ticks=0。这一段没有观测到达到 30 秒的原始接收静默，但 ALL 的 13.91 秒空档仍需与其他两段对比，不能称为完全无停顿。进度在采样 240.131 秒时三流最新源事件年龄均为 6.070 秒；该值及末尾年龄均是快照，不是整个窗口的最大源年龄，因此不能据最大接收间隔小于 30 秒推导逐合约事件年龄门控全过程通过。精简证据见 [OPTION_VEGA_RAW_ABA_20261014.json](../../doc/evidence/live/OPTION_VEGA_RAW_ABA_20261014.json)。
+全部源交易日均为 20261014，wrong_trading_day_ticks=0，unexpected_ticks=0。FULL_1 的 ALL 已出现 31.55 秒原始回调接收空档，超过昨日 30 秒静默阈值；两腿最大间隔数值接近，与整体停顿相符，但旧探针没有记录空档发生时刻，不能确认三个最大值必定对应同一段。FULL_2 单段小于 30 秒的初步结论保留，完整三段结论已更新为“原始接收停顿已复现，缩减订阅后接收连续性明显改善”。completed 只代表采样完成，不是行情健康通过。
 
-补齐 FULL_1、REDUCED 及切换确认后才能审查完整同连接对比。此 FULL_2 窗口尚未复现昨日 30 秒原始接收超时，107 个订阅本身导致该故障的结论仍无充分证据；正式转换、聚合和指数查询的健康状态也尚未由本轮覆盖。
+两次全链段均比缩减段更不连续，支持订阅负载关联；盘中推送变化、线路、原生回调、服务器资源及其他同时运行的会话尚未隔离，具体根因未确认。停顿可在不执行正式转换、Bar 聚合和指数轮询的探针中出现，故这些层并非这次原始空档发生的必要条件；仍不能证明它们在昨日正式会话中没有影响。各段末尾源年龄与 30 秒进度快照都不代表整个窗口的最大源年龄。精简证据见 [OPTION_VEGA_RAW_ABA_20261014.json](../../doc/evidence/live/OPTION_VEGA_RAW_ABA_20261014.json)。
+
+增强版探针 diagnostic_version=2 保持同一连接及三段订阅方式，每次原始接收间隔达到 5 秒时记录 `ABA_RECEIVE_GAP`：流名、空档起止接收时间、前后源时间和下一份行情的源事件年龄。日志由主线程在回调锁外输出，原始回调中不打印；每段最多保留最近 64 条事件，receive_gap_count 按 ALL/两腿分别累计，因此同一次整体停顿可能对应三条。末尾静默仍由原有字段记录，尚未结束的空档不产生 BETWEEN_CALLBACKS 事件。
+
+分段 diagnostics 还记录主线程循环最大间隔及超过 1 秒的起止时间、回调获取统计锁的最大等待、进程 CPU 秒和实际经过秒。若回调空档期间主线程持续约每 0.2 秒运行，更应查上游推送、网络或原生回调线程；若二者同时长时间停止，则更应查进程调度、GIL/原生阻塞或输出阻塞。两类现象都是定位线索，不能单独证明根因。CPU 用时属于整个进程（包括原生线程），不是宿主机总体 CPU；`actual_elapsed_seconds` 可显示采样控制超时，而业务采样仍截至预定 300 秒。增强版尚未取得线上结果。
+
+将同一探针文件更新到运行机后，仍执行上述命令，下一轮重点返回 `ABA_RECEIVE_GAP`、三段 `ABA_PHASE_RESULT`（含 diagnostics）和 `ABA_FINAL`。保持其他同账号策略/探针停止，并记录服务器是否同时有其他高负载任务，减少对比干扰；不通过放宽超时阈值将故障登记为修复。
 
 #### 订阅范围与订阅量诊断
 
 当前 Live 从估值日有效 MO 条款中筛选认购 C，并要求存在同月 IM，形成固定参考合约集合；行情装配对整个集合绑定一分钟 Bar。原生 SimNow 另为这些交易合约订阅 QuoteTick 用于限价诊断，CTP 同一合约的 Quote/Trade 请求共用符号订阅，不代表订阅了两份合约。本次参考报告为 101 个认购、4 个同月期货，因此是 105 个市场合约；指数 000852 来自 DolphinDB，不占 CTP 订阅。它不是所有品种或认购/认沽全部期权，但也尚未按选约到期月、执行价或持仓状态缩减候选行情订阅。
 
-订阅量可能增加推送、转换、回调和 CPU 压力，但当前只有持仓合约 30 秒原始观测超限的证据，不能直接确定 105 个合约导致超时。`CtpLiveDataFeed.on_depth_market_data` 成功转换后先更新逐合约事件/接收时间，再将派生 Tick 入队；仅后端分派或 Bar 队列积压不会直接推迟这项原始观测更新时间，不过回调本身、转换开销及线程竞争仍可能受负载影响。公共队列默认容量 100000，溢出会记录“队列满，丢弃实时事件”及 sticky QUEUE_OVERFLOW；本次提供片段没有这类证据。
+订阅量可能增加推送、转换、回调和 CPU 压力。10 月 13 日持仓合约超时不足以单独证明数量影响；10 月 14 日同连接三段原始对比新增订阅负载关联证据，但具体停顿原因尚未确定。`CtpLiveDataFeed.on_depth_market_data` 成功转换后先更新逐合约事件/接收时间，再将派生 Tick 入队；仅后端分派或 Bar 队列积压不会直接推迟这项原始观测更新时间，不过回调本身、转换开销及线程竞争仍可能受负载影响。公共队列默认容量 100000，溢出会记录“队列满，丢弃实时事件”及 sticky QUEUE_OVERFLOW；本次提供片段没有这类证据。
 
 定位时应在可比交易时段对持仓 MO2611-C-7400 进行仅 MD、不报单的单合约与全链采样，记录原始事件推进、接收最大间隔、事件到接收延迟、转换错误、处理耗时、队列积压和 CPU；当前 stage 4 探针只记录首/末行情及总数，不能据此证明采样期间没有超过 30 秒的间隔。单合约也出现长间隔更支持合约推送/线路问题；单合约连续而全链出现广泛延迟及 CPU/队列压力时，才有订阅负载问题的对比证据。
 

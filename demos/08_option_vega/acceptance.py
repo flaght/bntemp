@@ -12,9 +12,25 @@ def review_recording(summary, *, trading_day, option_slot="13:58", require_targe
     require(summary.get("status") == "passed", "运行本身未通过")
     require(summary.get("mode") == "recording" and summary.get("execution_origin") == "recording", "不是Recording来源")
     require(summary.get("simnow_environment") == "realtime", "真实实时验收不能使用Replay")
-    require(summary.get("market_source") == "ctp" and summary.get("index_source") == "dolphindb-dfs", "行情来源不符合CTP+DFS验收范围")
+    market_source = summary.get("market_source")
+    require(market_source in {"ctp", "dolphindb"} and summary.get("index_source") == "dolphindb-dfs",
+            "行情来源不符合CTP/分钟推送+DFS指数验收范围")
     require(summary.get("trading_day") == trading_day and summary.get("valuation_day") == trading_day, "交易日/估值日不符")
-    require(summary.get("observed_md_trading_day") == trading_day, "没有观测到当天CTP MD交易日")
+    market_identity = summary.get("market_sources", {}).get("market", {})
+    stream_verified = False
+    if market_source == "ctp":
+        require(summary.get("observed_md_trading_day") == trading_day, "没有观测到当天CTP MD交易日")
+    elif market_source == "dolphindb":
+        require(summary.get("observed_md_trading_day") is None, "分钟推送仍关联CTP MD")
+        require(market_identity.get("channel") == "dolphindb" and bool(market_identity.get("table")), "分钟推送来源身份缺失")
+        require(market_identity.get("timestamp_label") in {"start", "end"}
+            and market_identity.get("volume_mode") in {"per-bar", "cumulative"}, "分钟标签或成交量语义缺失")
+        streams = [row for row in summary.get("market_streams", []) if row.get("source_id") == "vega-market"]
+        required_columns = {"minTime", "date", "Code", "open", "high", "low", "close", "volume"}
+        stream_verified = len(streams) == 1 and streams[0].get("received_bars", 0) > 0 \
+            and streams[0].get("conversion_errors") == 0 \
+            and required_columns <= set(streams[0].get("resolved_columns", {}).get(market_identity.get("table"), []))
+        require(stream_verified, "分钟推送缺实际接收/结构证据或存在转换错误")
     for key, label in (("orders_submitted", "柜台报单"), ("fills_received", "成交")):
         if key not in summary:
             errors.append(f"报告缺少{label}计数证据")
@@ -47,7 +63,11 @@ def review_recording(summary, *, trading_day, option_slot="13:58", require_targe
         index_key = summary.get("index_code", "000852")
         require(index_key in observations, "选约帧缺指数")
         require(observations.get(index_key, {}).get("source_id") == "index-bars", "指数来源绑定不符")
-        require(all(row.get("source_ns") in (stamp, stamp-1) and
+        def source_times(row):
+            if market_source == "dolphindb" and row.get("source_id") == "market-bars":
+                return (stamp - 60_000_000_000,) if market_identity.get("timestamp_label") == "start" else (stamp,)
+            return (stamp, stamp-1)
+        require(all(row.get("source_ns") in source_times(row) and
             row.get("received_ns", -1) >= stamp and row.get("received_ns", -1) <= frame.get("deadline_ns", -1)
             for row in observations.values()), "选约帧业务/接收时间不一致")
         require(frame.get("request_ns", -1) >= frame.get("deadline_ns", 0), "分钟帧未等到接收期限")
@@ -73,5 +93,6 @@ def review_recording(summary, *, trading_day, option_slot="13:58", require_targe
         "target_chain_verified": target_verified, "entry_audit": entries,
         "runtime_failure": summary.get("failure"), "session_readiness": summary.get("session_readiness"),
         "index_query_verified": query_ok, "index_bar_delivery_verified": bool(delivered),
+        "market_stream_verified": stream_verified,
         "frames": summary.get("frames"), "skipped_index_frames": summary.get("skipped_index_frames"),
         "timeout_seen_online": bool(skipped), "timeout_note": "已观测同分钟指数缺失后跳过" if skipped else "无线上超时样本时，超时拒绝仅由离线测试覆盖"}

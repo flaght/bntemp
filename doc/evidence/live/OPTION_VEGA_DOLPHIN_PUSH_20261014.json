@@ -1,0 +1,60 @@
+{
+  "version": "OPTION_DOLPHIN_PUSH_20261014",
+  "date": "2026-10-14",
+  "scope": "client_minute_stream_integration_and_offline_validation",
+  "market": {
+    "channel": "dolphindb_push",
+    "shared_table": null,
+    "min_time_label": null,
+    "volume_mode": null,
+    "screenshot_dfs_table": "dfs://min_bar/cffex_1min",
+    "screenshot_is_proof_of_shared_stream": false,
+    "required_columns": ["minTime", "date", "Code", "open", "high", "low", "close", "volume"],
+    "column_order": "resolved_from_server_schema_before_subscription",
+    "optional_columns_supported": true,
+    "subscription_offset": -1,
+    "contract_filter": "local_reference_binding",
+    "market_max_age_seconds_default": 120,
+    "receipt_clock": "client_wall_clock",
+    "first_cumulative_row": "baseline_with_zero_bar_volume"
+  },
+  "execution": {
+    "ctp_td_supported": true,
+    "ctp_md_required_for_dolphin_market": false,
+    "new_broker_connections": 0,
+    "new_orders_submitted": 0,
+    "old_state_files_changed": false,
+    "old_ctp_state_source_identity_compatible": false
+  },
+  "offline_validation": {
+    "actual_public_runtime_with_sdk_entity_shim_tests": 72,
+    "minute_stream_specific_tests_included": 11,
+    "strategy_and_acceptance_entry_tests": 43,
+    "reference_and_calendar_tests": 28,
+    "channel_tests": 29,
+    "recording_report_review_tests": 11,
+    "total_unittest_cases": 183,
+    "all_passed": true,
+    "native_dolphin_driver_fake_transport_probe": "passed",
+    "current_source_preflight_files": 76,
+    "current_source_preflight_mismatches": [],
+    "separate_entry_acceptance": "passed",
+    "bash_command_syntax": "passed",
+    "recording_chain_test": "fake SDK callback -> actual DolphinDbLiveDataFeed dispatcher -> real option minute frames -> nonzero Recording target, no CTP MD/TD",
+    "local_logs": ["/tmp/option-dolphin-offline.log", "/tmp/option-dolphin-dependencies.log", "/tmp/option-dolphin-entry.log"]
+  },
+  "prerequisites_included_without_source_edits": [
+    "bomber/framework/dataprep/sources/dolphindb.py",
+    "bomber/framework/calendars/__init__.py",
+    "bomber/framework/calendars/trading.py"
+  ],
+  "pending": [
+    "publisher node and shared stream table name",
+    "producer minTime start/end and volume per-bar/cumulative confirmation",
+    "complete-minute publication and schema verification on server",
+    "actual Recording reception and scheduled target",
+    "actual native fill verification with minute-only pricing",
+    "explicit cross-day/source migration of retained MO short-one ownership"
+  ],
+  "live_acceptance_passed": false
+}

@@ -1,0 +1,160 @@
+{
+  "version": 1,
+  "date": "2026-10-14",
+  "report": "shared-simnow-1791945013262536404",
+  "input_sha256": "b802d0c45e09aeea8cf987e2112167aedcbbb035cd022d1cc7967bd1f4e297d3",
+  "status": "stop_callback_fix_offline_boundaries_and_remote_normal_fill_stop_passed",
+  "report_count": 14,
+  "orders": 7,
+  "filled_contract_quantity": 10,
+  "fills": [
+    {
+      "order_ref": "46",
+      "type": "FILLED",
+      "ts_ns": 1791945301923268201,
+      "instrument": "cu2611.SHFE",
+      "quantity": 2,
+      "side": "BUY",
+      "effect": "OPEN",
+      "owner": "cross-cu-au-delta",
+      "source_revision": 29,
+      "report_id": "CTP-9999-097561-20261014-46:2",
+      "trade_id": "SHFE:      186101"
+    },
+    {
+      "order_ref": "45",
+      "type": "FILLED",
+      "ts_ns": 1791945302016575995,
+      "instrument": "au2612.SHFE",
+      "quantity": 1,
+      "side": "SELL",
+      "effect": "CLOSE_TODAY",
+      "owner": "cross-cu-au-delta",
+      "source_revision": 29,
+      "report_id": "CTP-9999-097561-20261014-45:2",
+      "trade_id": "SHFE:      186118"
+    },
+    {
+      "order_ref": "47",
+      "type": "FILLED",
+      "ts_ns": 1791945302962534526,
+      "instrument": "au2612.SHFE",
+      "quantity": 1,
+      "side": "SELL",
+      "effect": "OPEN",
+      "owner": "cross-cu-au-delta",
+      "source_revision": 29,
+      "report_id": "CTP-9999-097561-20261014-47:2",
+      "trade_id": "SHFE:      186133"
+    },
+    {
+      "order_ref": "48",
+      "type": "FILLED",
+      "ts_ns": 1791945363959685262,
+      "instrument": "cu2611.SHFE",
+      "quantity": 2,
+      "side": "SELL",
+      "effect": "CLOSE_TODAY",
+      "owner": "ema-cu-gamma",
+      "source_revision": 7,
+      "report_id": "CTP-9999-097561-20261014-48:2",
+      "trade_id": "SHFE:      186949"
+    },
+    {
+      "order_ref": "49",
+      "type": "FILLED",
+      "ts_ns": 1791945364319379494,
+      "instrument": "au2612.SHFE",
+      "quantity": 1,
+      "side": "BUY",
+      "effect": "CLOSE_TODAY",
+      "owner": "cross-cu-au-delta",
+      "source_revision": 30,
+      "report_id": "CTP-9999-097561-20261014-49:2",
+      "trade_id": "SHFE:      186954"
+    },
+    {
+      "order_ref": "50",
+      "type": "FILLED",
+      "ts_ns": 1791945365242406400,
+      "instrument": "cu2611.SHFE",
+      "quantity": 2,
+      "side": "SELL",
+      "effect": "OPEN",
+      "owner": "cross-cu-au-delta",
+      "source_revision": 30,
+      "report_id": "CTP-9999-097561-20261014-50:2",
+      "trade_id": "SHFE:      186969"
+    },
+    {
+      "order_ref": "51",
+      "type": "FILLED",
+      "ts_ns": 1791945366694580716,
+      "instrument": "au2612.SHFE",
+      "quantity": 1,
+      "side": "BUY",
+      "effect": "OPEN",
+      "owner": "cross-cu-au-delta",
+      "source_revision": 30,
+      "report_id": "CTP-9999-097561-20261014-51:2",
+      "trade_id": "SHFE:      186984"
+    }
+  ],
+  "broker_fills_by_frozen_owner": {
+    "ema-cu-gamma": 1,
+    "cross-cu-au-delta": 6
+  },
+  "callback_counts_from_summary": {
+    "ema-cu-gamma": {
+      "enqueued": 1,
+      "delivered": 1,
+      "received": 1,
+      "pending_events": 0,
+      "pending_fills": 0
+    },
+    "cross-cu-au-delta": {
+      "enqueued": 6,
+      "delivered": 6,
+      "received": 6,
+      "pending_events": 0,
+      "pending_fills": 0
+    }
+  },
+  "final_owned": {
+    "ema-cu-gamma": {
+      "cu2611.SHFE": -1
+    },
+    "cross-cu-au-delta": {
+      "cu2611.SHFE": -1,
+      "au2612.SHFE": 1
+    }
+  },
+  "final_managed_gross_from_summary": {
+    "cu2611.SHFE": [
+      "0",
+      "2"
+    ],
+    "au2612.SHFE": [
+      "1",
+      "0"
+    ]
+  },
+  "ema_stop_requested_at_ns": 1791945539633053999,
+  "ema_stopped_at_ns": 1791945539705794796,
+  "cross_stopped_at_ns": 1791945645828038826,
+  "peer_post_stop_activity": "summary audit TARGET_SUBMITTED cross-cu-au-delta ts1791945637110749193 through1791945645684342603, after EMA stopped",
+  "peer_post_stop_fills": 0,
+  "key_orders": {
+    "48": "EMA sell CLOSE_TODAY2 changes its CU+1 to -1; peer CU+1 retained.",
+    "50": "cross sell OPEN2 changes its CU+1 to -1; EMA CU-1 retained."
+  },
+  "offline_boundary_tests": "tests/results/main-ema-acceptance-1791941843551711000/summary.json; 58+116 passed",
+  "runtime_status_from_summary": "completed",
+  "final_active_orders_from_summary": 0,
+  "limits": [
+    "All live fills occurred before stop; stopped-with-queued-fill and late-fill-during-cancel exercised offline, not claimed as real broker races.",
+    "No live partial fills/cancel/reject in this events file.",
+    "No post-EMA-stop fills; peer target continuation is supported by summary audit."
+  ],
+  "gap10_closed": false
+}

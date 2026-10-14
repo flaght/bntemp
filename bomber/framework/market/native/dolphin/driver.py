@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import json
+import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, Protocol
@@ -22,6 +24,7 @@ class NativeDolphinSubscription:
     batch_size: int = 0
     throttle: float = 0.01
     filter: Any = field(default=None, compare=False, hash=False, repr=False)
+    required_columns: tuple[str, ...] = ()
 
 
 class DolphinDbDriver(Protocol):
@@ -52,6 +55,7 @@ class OfficialDolphinDbDriver:
         self._port = 0
         self._username = ""
         self._password = ""
+        self.resolved_columns: dict[str, tuple[str, ...]] = {}
         self._subscriptions: dict[
             tuple[str, str],
             tuple[NativeDolphinSubscription, Callable[[Any], None]],
@@ -95,7 +99,16 @@ class OfficialDolphinDbDriver:
         key = (subscription.table_name, subscription.action_name)
         if key in self._subscriptions:
             return
-        callback = _make_callback(subscription.columns, handler)
+        columns = subscription.columns
+        if subscription.required_columns:
+            if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", subscription.table_name) is None:
+                raise ValueError("DolphinDB推送须为共享流表名，不能填写DFS路径或查询表达式")
+            columns = tuple(map(str, session.run(
+                f"schema(objByName({json.dumps(subscription.table_name)}, true)).colDefs.name")))
+            missing = set(subscription.required_columns) - set(columns)
+            if not columns or len(set(columns)) != len(columns) or missing:
+                raise ValueError(f"DolphinDB分钟流缺少必需列或结构无效: {sorted(missing)}")
+        callback = _make_callback(columns, handler)
         session.subscribe(
             host=self._host,
             port=self._port,
@@ -112,6 +125,7 @@ class OfficialDolphinDbDriver:
             password=self._password,
         )
         self._subscriptions[key] = (subscription, callback)
+        self.resolved_columns[subscription.table_name] = columns
         logger.info(
             "DolphinDB 流表订阅成功: table=%s action=%s",
             subscription.table_name,
@@ -196,7 +210,9 @@ def rows_from_message(message: Any, columns: tuple[str, ...]) -> list[dict[str, 
         raise TypeError(f"unsupported DolphinDB callback payload: {type(message)!r}")
 
     values = list(message)
-    if len(values) == len(columns) and (not values or not _is_sequence_like(values[0])):
+    if not values or not _is_sequence_like(values[0]):
+        if len(values) != len(columns):
+            raise ValueError(f"DolphinDB {len(columns)}-column schema expected, row has {len(values)} values")
         return [dict(zip(columns, values))]
 
     rows: list[dict[str, Any]] = []

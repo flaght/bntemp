@@ -63,7 +63,7 @@ class OptionReferences:
 class OptionSessionRunner(UnifiedStrategyRunner):
     """从独立Feed收集收盘Bar，串行发布帧；不要求所有候选期权每分钟成交。"""
     def __init__(self, *, positions, references, sources, labels, replay, grace_seconds,
-                 market_age_seconds, instrument_age_seconds, expected_day, clock_ns=None):
+                 market_age_seconds, instrument_age_seconds, expected_day, clock_ns=None, source_age_seconds=None):
         super().__init__(RuntimeMode.LIVE, position_manager=positions)
         self.references, self.sources, self.labels = references, dict(sources), dict(labels)
         self.expected_day = expected_day
@@ -71,6 +71,7 @@ class OptionSessionRunner(UnifiedStrategyRunner):
         self.replay = replay
         self.grace_seconds, self.market_age_ns = grace_seconds, int(market_age_seconds * 1e9)
         self.instrument_age_seconds = instrument_age_seconds
+        self.source_age_ns = {key: int(value * 1e9) for key, value in (source_age_seconds or {}).items()}
         self.frames = MinuteFrameBuffer(sources, grace_seconds=grace_seconds)
         self._frame_lock = threading.RLock()
         self.accept_bars = False
@@ -152,16 +153,17 @@ class OptionSessionRunner(UnifiedStrategyRunner):
                 if day != self.references.service.valuation_day:
                     raise ValueError(f"行情估值日期不一致: {feed_id}/{key}/{day}")
                 age = now - valuation
-                if not self.replay and not 0 <= age <= self.market_age_ns:
+                max_age_ns = self.source_age_ns.get(feed_id, self.market_age_ns)
+                if not self.replay and not 0 <= age <= max_age_ns:
                     required = self.strategy is None or key in self.strategy.required_market_keys()
                     # LAST在下一次成交才封闭旧桶。未持有候选的过期桶不进入
                     # 帧或价格缓存；必需腿及未来时间仍是会话硬错误。
-                    ignore = age > self.market_age_ns and not required
+                    ignore = age > max_age_ns and not required
                     audit = {"key": key, "source_id": feed_id, "source_ns": event.ts_event,
                         "valuation_ns": valuation, "received_ns": now,
-                        "age_seconds": age / 1e9, "max_age_seconds": self.market_age_ns / 1e9,
+                        "age_seconds": age / 1e9, "max_age_seconds": max_age_ns / 1e9,
                         "required": required, "action": "IGNORED_CANDIDATE" if ignore else "REJECTED",
-                        "reason": "STALE_BAR" if age > self.market_age_ns else "FUTURE_BAR"}
+                        "reason": "STALE_BAR" if age > max_age_ns else "FUTURE_BAR"}
                     self.bar_time_audit.append(audit)
                     del self.bar_time_audit[:-32]
                     if ignore:
@@ -170,7 +172,7 @@ class OptionSessionRunner(UnifiedStrategyRunner):
                         return
                     logger.error("必需或未来Bar时间无效: %s", audit)
                     raise ValueError(f"实时Bar过期或尚未收盘: key={key} source={feed_id} "
-                        f"age_seconds={age / 1e9} max_age_seconds={self.market_age_ns / 1e9} "
+                        f"age_seconds={age / 1e9} max_age_seconds={max_age_ns / 1e9} "
                         f"required={required} source_ns={event.ts_event} valuation_ns={valuation} received_ns={now}")
                 previous = self.observations.get(key)
                 if previous and valuation < previous[0]:
@@ -189,9 +191,19 @@ class OptionSessionRunner(UnifiedStrategyRunner):
         now = self.clock_ns()
         required = self.strategy.required_market_keys()
         warming = self.warm_started_ns is not None and 0 <= now - self.warm_started_ns <= self.market_age_ns
-        stale = {key: {"last": self.observations.get(key)} for key in required
-            if (key not in self.observations and not warming)
-            or (key in self.observations and not 0 <= now - self.observations[key][1] <= self.market_age_ns)}
+        stale = {}
+        for key in required:
+            limit = self.source_age_ns.get(self.sources[key], self.market_age_ns)
+            observation = self.observations.get(key)
+            key_warming = self.warm_started_ns is not None and 0 <= now - self.warm_started_ns <= limit
+            if observation is None:
+                invalid = not key_warming
+            else:
+                invalid = not 0 <= now - observation[1] <= limit
+                if self.sources[key] in self.source_age_ns and not self.replay:
+                    invalid = invalid or not 0 <= now - observation[0] <= limit
+            if invalid:
+                stale[key] = {"last": observation, "max_age_seconds": limit / 1e9}
         if self.ctp_upstream is not None:
             ids = [self.references.instrument_ids[key] for key in required if key in self.references.instrument_ids]
             health = InstrumentHealthGate(self.ctp_upstream, ids, self.expected_day,
@@ -251,7 +263,9 @@ def assemble(args, inputs, driver=None, *, account_routes=()):
     runner = OptionSessionRunner(positions=positions, references=refs, sources=inputs.sources,
         labels=inputs.labels, replay=args.simnow_environment == "replay",
         grace_seconds=args.frame_wait_seconds, market_age_seconds=args.max_market_age_seconds,
-        instrument_age_seconds=args.instrument_max_age_seconds, expected_day=args.expected_trading_day)
+        instrument_age_seconds=args.instrument_max_age_seconds, expected_day=args.expected_trading_day,
+        source_age_seconds={"market-bars": args.market_bar_max_age_seconds}
+            if inputs.source_identity.get("market", {}).get("channel") == "dolphindb" else None)
     runner.key_by_instrument = {value: key for key, value in ids.items()}
     runner.key_by_instrument[inputs.index_id] = args.index_code
     multipliers = {ids[key]: info.multiplier for key, info in refs.contracts.items()}
@@ -295,8 +309,11 @@ def assemble(args, inputs, driver=None, *, account_routes=()):
         runner.ctp_profile = CtpLiveProfile(args.simnow_environment, args.replay_md_trading_day)
         channels.append(CtpMarketChannel(inputs.ctp_upstream, args.expected_trading_day,
             profile=runner.ctp_profile, max_age_seconds=args.instrument_max_age_seconds))
-    channels.extend(DolphinMarketChannel(feed, max_receive_age_seconds=args.max_market_age_seconds,
-        allow_historical=runner.replay) for feed in inputs.dolphin_feeds)
+    channels.extend(DolphinMarketChannel(feed, max_receive_age_seconds=(args.market_bar_max_age_seconds
+        if feed.source_id == "vega-market" else args.max_market_age_seconds),
+        allow_historical=runner.replay, event_offset_seconds=60 if any(
+            value is feed and inputs.labels[key] == "start" for key, value in feeds.items()) else 0)
+        for feed in inputs.dolphin_feeds)
     runner.feature_query_feeds = tuple(getattr(inputs, "feature_query_feeds", ()))
     if runner.feature_query_feeds:
         from bomber.framework.trader.runtime.live.channels.features import FeatureQueryChannel
