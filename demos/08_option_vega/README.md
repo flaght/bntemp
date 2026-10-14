@@ -491,13 +491,13 @@ Bar 的 ts_init 使用客户端实际接收时间，updateTime 不冒充本机�
 
 不同市场合约可交错送达业务分钟，使待处理集合跨轮询新增旧分钟；原 Feed 已在每次 poll 内排序，但无法保证多次 poll 之间仍向前。REV5 的公共 `FeatureQueryBarFeed` 记录 `latest_projected_ns`：晚于或等于既有流进度的未投影分钟按原精确查询处理；早于已投影分钟的新请求记为 `OLDER_THAN_PROJECTED`，不再发布，不刷新指数行情观测。查询缓存仍保留历史资料，旧帧缺指数则按原接收期限记 `SKIPPED_INDEX`；不会将较新指数放入旧帧，也不会补做旧选约。没有关闭 Runner 的倒退检查、未来时间/年龄检查或帧期限检查。
 
-summary 的 `feature_queries[].minute_lookups` 会记录该状态及 `latest_projected_ns`，`OptionMarketInputs` 同时输出“指数分钟不可用”。真正查询或投影异常改为“指数DFS查询或投影失败”，仍传播并停机。新增回归覆盖跨轮询旧请求、旧指数后补、同轮询排序，以及实际 Runner/帧/Recording：旧帧跳过后新帧仍生成 TARGET，直接倒退发布仍拒绝。同步 [REV5 包](../../doc/evidence/archives/OPTION_VEGA_DOLPHIN_PUSH_20261014_REV5.tar.gz) 和配套摘要/验收入口后，选择留有启动余量的未来分钟运行原 Recording 命令；无须调整帧等待来掩盖本次异常。后续实际复测结果如下，完整帧期限复核仍待返回。
+summary 的 `feature_queries[].minute_lookups` 会记录该状态及 `latest_projected_ns`，`OptionMarketInputs` 同时输出“指数分钟不可用”。真正查询或投影异常改为“指数DFS查询或投影失败”，仍传播并停机。新增回归覆盖跨轮询旧请求、旧指数后补、同轮询排序，以及实际 Runner/帧/Recording：旧帧跳过后新帧仍生成 TARGET，直接倒退发布仍拒绝。同步 [REV5 包](../../doc/evidence/archives/OPTION_VEGA_DOLPHIN_PUSH_20261014_REV5.tar.gz) 和配套摘要/验收入口后，选择留有启动余量的未来分钟运行原 Recording 命令；无须调整帧等待来掩盖本次异常。后续实际复测及完整目标链复核已通过，结果如下。
 
 **2026-10-14 13:40 Recording 复测返回**：报告目录为 `tests/results/gap08-dolphin-recording/option-vega-recording-1791956075214033439`。用户提供 events.txt 请求和 summary 尾部，status=passed、session_readiness.ready=true、issues=[]、cleanup_errors=[]。市场流实际转换 1533 根 Bar、conversion_errors=0；指数 13:34—13:49 共 16 个业务分钟均为 PROJECTED，skipped_index_frames=0。13:35—13:49 连续分钟的指数接收延迟为 14.091—14.397 秒；启动时的 13:34 缓存样本在分钟后 35.971 秒首次观测，不属于稳态延迟统计。
 
 实际 Recording 请求 revision=1，signal_ts 为 13:40:00、请求时刻为 13:40:20.612690，唯一非零目标为 `MO2611-C-7300.CFFEX = -1`。请求里的 107 个合约构成完整目标快照，其余 106 个目标为 0，不能解释成 107 笔柜台订单。尾部 orders_submitted=0、execution_origin=recording、observed_td_trading_day=null，记录目标没有建立实际空仓或更改昨日柜台持仓。本次正常完成，没有因指数时间倒退停机；提供的 minute_lookups 全是 PROJECTED，没有线上 OLDER_THAN_PROJECTED 或超时样本，因此对应拒绝分支仍由离线用例验证。
 
-接收与非零目标已有真实证据，但附件未包含 entry_audit、frame_audit、recorded_requests 等完整字段，不能将 16 次指数投影当成 16 帧均消费，也尚未独立核对选约同分钟三路输入和接收期限。见 [复测证据及核验范围](../../doc/evidence/live/OPTION_VEGA_DOLPHIN_RECORDING_RECEIPT_20261014.json)。在运行机执行已有只读复核入口；该命令只读原报告并写旁边的 recording-acceptance.json，不启动行情或交易连接：
+最初附件只包含请求和 summary 尾部，接收及非零目标记录于 [初次复测证据](../../doc/evidence/live/OPTION_VEGA_DOLPHIN_RECORDING_RECEIPT_20261014.json)。用户随后在运行机执行以下既有只读入口，返回 [完整目标链验收通过证据](../../doc/evidence/live/OPTION_VEGA_DOLPHIN_RECORDING_ACCEPTANCE_20261014.json)。该命令只读原报告并写旁边的 recording-acceptance.json，不启动行情或交易连接：
 
 ```bash
 python -u -m scripts.integration.options.recording \
@@ -505,7 +505,23 @@ python -u -m scripts.integration.options.recording \
   --summary tests/results/gap08-dolphin-recording/option-vega-recording-1791956075214033439/summary.json
 ```
 
-复核应返回 status=passed、target_chain_verified=true、market_stream_verified=true、errors=[] 才登记完整目标链通过。当前只更新文档与证据，运行代码保持 REV5，无须为本次证据更新重新部署运行模块。
+实际复核返回 status=passed、scope=target_chain、errors=[]；target_chain_verified、market_stream_verified、index_query_verified、index_bar_delivery_verified 均为 true，runtime_failure=null。frames=16、skipped_index_frames=0；13:40 决策 outcome=TARGET、candidate_count=49，目标 MO2611-C-7300 空 1 手、future_bindings 明确为 IM2611。公共复核函数已检查选约帧实际消费、指数/目标腿/绑定期货同分钟来源、接收不超过截止时刻、请求不早于期限，以及 Recording 请求目标与决策一致。因此登记市场分钟推送 + DFS 指数 + Recording 完整目标链通过。
+
+验收报告位于原目录的 `recording-acceptance.json`。worker_exit_code=null 是 --summary 模式未启动子进程的正常值，不表示运行失败；这次由运行机读取原报告后返回结果，本机没有独立连接或重新读取远端文件。timeout_seen_online=false，线上超时及旧请求跳过分支仍只有离线样本覆盖。此结论限于 Recording，不登记 DolphinDB 市场下的 SimNow 报单、成交、持仓恢复/迁移或持续运行到收盘通过。当前只更新文档与证据，运行代码保持 REV5，无须为本次证据更新重新部署运行模块。
+
+**继续 SimNow 验证：先做原仓只读预检**。用户已要求继续验证，下一步沿用昨日 MO2611-C-7400 空 1 手的原状态；不能将今日 Recording 的 MO2611-C-7300 目标当成已有真实持仓。原状态固定身份为 20261013 / CTP 市场，当前为 20261014 / DolphinDB 市场，现有恢复同时要求会话身份完全一致和账本同交易日；直接改日期/来源 --resume 会拒绝，新建空状态在 strict 政策下也会因已有 MO 总仓拒绝。先核对原文件与当前柜台，再准备保留归属的独立迁移方案。
+
+新增 [simnow_preflight.py](../../scripts/integration/options/simnow_preflight.py) 是临时验收入口，不是策略运行必需模块。它使用公共 JsonStateStore 校验原文件、提取持仓/目标/来源参数，使用既有禁单 TD 探针查询当前总仓、权威今昨仓/持仓成本、资金和活动订单。持有与正式会话相同的账户锁和原状态锁，检查原账户身份、声明 TD 日、旧状态无在途/活动订单、当前无活动订单、有可用 CNY、今昨仓与总仓一致，且当前 MO/IM 总仓与原归属账本一致；外部 AG/CU 等总仓单独报告，不能归给 08。净仓相同而双向总仓不同仍拒绝。
+
+```bash
+python -u -m scripts.integration.options.simnow_preflight \
+  --connect --expected-trading-day 20261014 --timeout 30 \
+  --state-file tests/results/gap08-realtime-simnow/state-1791869411336135873.json
+```
+
+结果打印 OPTION_VEGA_SIMNOW_PREFLIGHT，并保存至 tests/results/option-vega-simnow-preflight/sample-<ns>/summary.json。completed 只表示这轮只读核对完成，can_start_orders 固定 false；migration_required 表示旧日期或来源仍需迁移，不是开闸信号。脚本没有报单/撤单调用，也不写新的策略状态；前后比较原文件 SHA256，检测状态变动即失败。若仓位不同、原文件损坏、同账户有运行进程或订单未结束，保留现场并返回原因，不自动平仓、接管或绕过 strict 对账。
+
+本地 9 项无网络专项验证通过，覆盖昨日空 1 手在当前权威昨仓中读回、外部持仓隔离、净仓相同但总仓不符、旧/当前活动订单、错误账户/交易日、分桶冲突、原文件损坏和原字节保留；SDK 实体替身下原 81 项主回归仍通过。真实预检尚待运行机返回；源码和测试见 [只读预检补充包](../../doc/evidence/archives/OPTION_VEGA_SIMNOW_PREFLIGHT_20261014.tar.gz)，不修改既有 REV5 行情或执行模块，不登记跨日迁移/SimNow 新来源成交通过。
 
 ### 3.7 Replay 与工程时间映射
 
