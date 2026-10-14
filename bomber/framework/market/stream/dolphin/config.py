@@ -54,6 +54,7 @@ BAR_COLUMNS = (
     "prev_open_interest",
     "updateTime",
 )
+BAR_REQUIRED_COLUMNS = ("minTime", "date", "Code", "open", "high", "low", "close", "volume")
 
 
 @dataclass(frozen=True)
@@ -68,6 +69,9 @@ class DolphinDbStreamSpec:
     throttle: float = 0.01
     filter: Any = field(default=None, compare=False, hash=False, repr=False)
     bar_spec: str = "1-MINUTE"
+    auto_schema: bool = False
+    volume_mode: Literal["per-bar", "cumulative"] = "per-bar"
+    local_receipt_time: bool = False
 
     def __post_init__(self) -> None:
         if self.kind not in {"tick", "bar"}:
@@ -75,7 +79,9 @@ class DolphinDbStreamSpec:
         if not self.table_name or not self.action_name:
             raise ValueError("table_name and action_name are required")
         expected = TICK_COLUMNS if self.kind == "tick" else BAR_COLUMNS
-        if self.columns != expected:
+        if self.auto_schema and (self.kind != "bar" or self.columns):
+            raise ValueError("auto_schema requires a Bar stream with server-resolved columns")
+        if not self.auto_schema and self.columns != expected:
             raise ValueError(
                 f"{self.kind} columns do not match the exp5 schema; "
                 f"expected {expected!r}",
@@ -84,6 +90,8 @@ class DolphinDbStreamSpec:
             raise ValueError("batch_size must be non-negative")
         if self.throttle < 0:
             raise ValueError("throttle must be non-negative")
+        if self.volume_mode not in {"per-bar", "cumulative"}:
+            raise ValueError("Bar volume_mode must be per-bar or cumulative")
 
     @classmethod
     def tick(
@@ -101,7 +109,8 @@ class DolphinDbStreamSpec:
         action_name: str = "bomberBar",
         **options: Any,
     ) -> "DolphinDbStreamSpec":
-        return cls("bar", table_name, action_name, BAR_COLUMNS, **options)
+        return cls("bar", table_name, action_name,
+                   () if options.get("auto_schema", False) else BAR_COLUMNS, **options)
 
 
 @dataclass(frozen=True)

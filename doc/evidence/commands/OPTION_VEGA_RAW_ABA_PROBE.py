@@ -17,6 +17,11 @@ from zoneinfo import ZoneInfo
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 SH = ZoneInfo("Asia/Shanghai")
+DIAGNOSTIC_VERSION = 2
+
+
+def wall_iso(ns):
+    return datetime.fromtimestamp(ns / 1e9, SH).isoformat()
 
 
 def require_window(day, seconds, *, now=None):
@@ -105,11 +110,14 @@ class RawComparison:
 
     def on_depth_market_data(self, data):
         received = time.monotonic()
+        received_wall = time.time_ns()
         with self.lock:
             self.last_raw = received
             phase = self.phase
-            if phase is None or received > phase["stop"]:
+            if phase is None or not phase["start"] <= received <= phase["stop"]:
                 return
+            phase["max_callback_lock_wait_seconds"] = max(
+                phase["max_callback_lock_wait_seconds"], time.monotonic() - received)
             symbol = str(data.get("InstrumentID", ""))
             if symbol not in phase["symbols"]:
                 phase["unexpected_ticks"] += 1
@@ -119,11 +127,26 @@ class RawComparison:
                     continue
                 row = phase["streams"][key]
                 previous = phase["start"] if row["last"] is None else row["last"]
-                row["max_gap"] = max(row["max_gap"], received - previous)
-                row["last"] = received
-                row["ticks"] += 1
-                row["last_source"] = {k: data.get(k) for k in
+                gap = received - previous
+                source = {k: data.get(k) for k in
                     ("InstrumentID", "TradingDay", "ActionDay", "UpdateTime", "UpdateMillisec")}
+                if gap >= 5:
+                    event = {"stream": key, "gap_seconds": round(gap, 6),
+                             "kind": "LEADING" if row["last"] is None else "BETWEEN_CALLBACKS",
+                             "gap_started_at": wall_iso(row["last_wall_ns"] or phase["start_wall_ns"]),
+                             "gap_ended_at": wall_iso(received_wall),
+                             "previous_source": row["last_source"], "next_source": source,
+                             "next_event_age_seconds": event_age(source)}
+                    phase["receive_gap_events"].append(event)
+                    phase["pending_gap_logs"].append(event)
+                    del phase["receive_gap_events"][:-64]
+                    del phase["pending_gap_logs"][:-64]
+                    phase["receive_gap_count"] += 1
+                row["max_gap"] = max(row["max_gap"], gap)
+                row["last"] = received
+                row["last_wall_ns"] = received_wall
+                row["ticks"] += 1
+                row["last_source"] = source
                 if str(data.get("TradingDay", "")) != self.day:
                     row["wrong_trading_day_ticks"] += 1
 
@@ -175,16 +198,48 @@ class RawComparison:
         return {"phase": p["name"], "started_at": p["started_at"],
                 "ended_at": datetime.now(SH).isoformat(), "subscriptions": len(p["symbols"]),
                 "sample_seconds": round(end - p["start"], 3),
-                "unexpected_ticks": p["unexpected_ticks"], "streams": streams}
+                "unexpected_ticks": p["unexpected_ticks"], "streams": streams,
+                "diagnostics": {"version": DIAGNOSTIC_VERSION,
+                    "receive_gap_threshold_seconds": 5,
+                    "receive_gap_count": p["receive_gap_count"],
+                    "receive_gap_events": list(p["receive_gap_events"]),
+                    "max_control_loop_gap_seconds": round(p["max_control_gap"], 6),
+                    "control_loop_gap_events": list(p["control_gap_events"]),
+                    "max_callback_lock_wait_seconds": round(p["max_callback_lock_wait_seconds"], 6),
+                    "process_cpu_seconds": round(time.process_time() - p["start_cpu"], 6),
+                    "actual_elapsed_seconds": round(time.monotonic() - p["start"], 6)}}
+
+    def control_observation(self):
+        now, wall = time.monotonic(), time.time_ns()
+        with self.lock:
+            p = self.phase
+            gap = now - p["control_last"]
+            p["max_control_gap"] = max(p["max_control_gap"], gap)
+            if gap >= 1:
+                p["control_gap_events"].append({"gap_seconds": round(gap, 6),
+                    "started_at": wall_iso(p["control_last_wall_ns"]), "ended_at": wall_iso(wall)})
+                del p["control_gap_events"][:-64]
+            p["control_last"], p["control_last_wall_ns"] = now, wall
+            pending = p["pending_gap_logs"][:]
+            p["pending_gap_logs"].clear()
+        # Keep all stdout I/O on the control thread, outside the callback lock.
+        for event in pending:
+            print("ABA_RECEIVE_GAP:", json.dumps({"phase": p["name"], **event}, ensure_ascii=False), flush=True)
 
     def sample(self, name, symbols, seconds, end_of_session):
         require_window(datetime.now(SH).date(), seconds)
         start = time.monotonic()
+        start_wall = time.time_ns()
         with self.lock:
             self.phase = {"name": name, "symbols": set(symbols), "start": start,
                           "stop": start + seconds, "started_at": datetime.now(SH).isoformat(),
                           "unexpected_ticks": 0,
-                          "streams": {k: {"ticks": 0, "last": None, "max_gap": 0.0,
+                          "start_wall_ns": start_wall, "start_cpu": time.process_time(),
+                          "control_last": start, "control_last_wall_ns": start_wall,
+                          "max_control_gap": 0.0, "control_gap_events": [],
+                          "receive_gap_events": [], "receive_gap_count": 0, "pending_gap_logs": [],
+                          "max_callback_lock_wait_seconds": 0.0,
+                          "streams": {k: {"ticks": 0, "last": None, "last_wall_ns": None, "max_gap": 0.0,
                                           "last_source": None, "wrong_trading_day_ticks": 0}
                                       for k in ("ALL", self.held, self.future)}}
         print(f"ABA_PHASE_START: {name} 合约={len(symbols)} 秒={seconds:g}", flush=True)
@@ -195,12 +250,14 @@ class RawComparison:
                 if datetime.now(SH) >= end_of_session:
                     raise RuntimeError("到达连续竞价边界，停止采样")
                 self.stop_requested.wait(0.2)
+                self.control_observation()
                 if time.monotonic() >= progress_at:
                     with self.lock:
                         progress = self.snapshot()
                     print("ABA_PROGRESS:", json.dumps(progress, ensure_ascii=False), flush=True)
                     progress_at += 30
         finally:
+            self.control_observation()
             with self.lock:
                 row = self.snapshot()
                 self.rows.append(row)
@@ -219,6 +276,7 @@ def main():
         parser.error("每段采样须为60至600秒")
     # Startup references + login/subscription and two transitions have a bounded reserve.
     end = require_window(day, args.phase_seconds * 3 + 300)
+    print(f"ABA_DIAGNOSTIC_VERSION: {DIAGNOSTIC_VERSION}", flush=True)
     from dotenv import load_dotenv
     load_dotenv(ROOT / ".env")
     for key in ("CTP_MD_ADDRESS", "CTP_BROKER_ID", "CTP_ACCOUNT_ID", "CTP_PASSWORD"):
@@ -280,6 +338,7 @@ def main():
         for sig, handler in old_handlers.items():
             signal.signal(sig, handler)
         result = {"status": status, "failure": failure, "cleanup_errors": cleanup_errors,
+                  "diagnostic_version": DIAGNOSTIC_VERSION,
                   "scope": "raw_md_only", "trading_day": args.day, "held": args.held, "future": future,
                   "reference_manifest_at_start": manifest, "full_symbols": sorted(full),
                   "subscription_transitions": monitor.transitions, "phases": monitor.rows,

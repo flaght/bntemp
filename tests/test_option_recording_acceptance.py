@@ -78,6 +78,48 @@ class RecordingAcceptanceTests(unittest.TestCase):
             with self.subTest(change=change):
                 self.assertEqual(self.review(data)["status"], "failed")
 
+    def dolphin_report(self, label="end"):
+        data = report()
+        data.update(market_source="dolphindb", observed_md_trading_day=None,
+            market_sources={"market":{"channel":"dolphindb","table":"cffexMinute",
+                "timestamp_label":label,"volume_mode":"cumulative"}},
+            market_streams=[{"source_id":"vega-market","received_bars":20,"conversion_errors":0,
+                "resolved_columns":{"cffexMinute":["minTime","date","Code","open","high","low","close","volume"]}}])
+        stamp=data["entry_audit"][0]["signal_ns"]
+        for row in data["frame_audit"][0]["observations"].values():
+            if row["source_id"]=="market-bars":
+                row["source_ns"]=stamp-60_000_000_000 if label=="start" else stamp
+        return data
+
+    def test_dolphin_stream_end_source_is_accepted_without_ctp_md(self):
+        result=self.review(self.dolphin_report())
+        self.assertEqual(result["status"],"passed")
+        self.assertTrue(result["market_stream_verified"])
+
+    def test_dolphin_start_label_is_normalized_and_wrong_label_is_rejected(self):
+        data=self.dolphin_report("start")
+        self.assertEqual(self.review(data)["status"],"passed")
+        data["market_sources"]["market"]["timestamp_label"]="end"
+        self.assertEqual(self.review(data)["status"],"failed")
+
+    def test_dolphin_missing_or_failed_stream_evidence_is_rejected(self):
+        for change in ("missing","error","schema","receipt"):
+            data=self.dolphin_report()
+            if change=="missing":data["market_streams"]=[]
+            elif change=="error":data["market_streams"][0]["conversion_errors"]=1
+            elif change=="schema":data["market_streams"][0]["resolved_columns"]={}
+            else:data["market_streams"][0]["received_bars"]=0
+            with self.subTest(change=change):
+                self.assertEqual(self.review(data)["status"],"failed")
+
+    def test_dolphin_claiming_ctp_md_or_missing_semantics_is_rejected(self):
+        for change in ("md","volume"):
+            data=self.dolphin_report()
+            if change=="md":data["observed_md_trading_day"]="20261012"
+            else:data["market_sources"]["market"].pop("volume_mode")
+            with self.subTest(change=change):
+                self.assertEqual(self.review(data)["status"],"failed")
+
 
 if __name__ == "__main__":
     unittest.main()

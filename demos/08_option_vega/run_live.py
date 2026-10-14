@@ -62,7 +62,11 @@ def parse_args(argv=None):
     p.add_argument("--index-bar-table", help="DolphinDB指数已收盘分钟流表；也可用DDB_INDEX_BAR_TABLE")
     p.add_argument("--market-bar-table", help="DolphinDB期权/期货已收盘分钟流表；也可用DDB_OPTION_BAR_TABLE")
     p.add_argument("--index-bar-timestamp", choices=("start", "end"), help="DFS默认沿用配置，流默认end")
-    p.add_argument("--market-bar-timestamp", choices=("start", "end"), default="end")
+    p.add_argument("--market-bar-timestamp", choices=("start", "end"), help="分钟推送须明确minTime为起点或终点")
+    p.add_argument("--market-volume-mode", choices=("per-bar", "cumulative"),
+        help="分钟推送须明确volume为当分钟量或当日累计量")
+    p.add_argument("--market-bar-max-age-seconds", type=float, default=120,
+        help="DolphinDB分钟流及必需市场腿时效，须大于60秒，默认120")
     p.add_argument("--ctp-price-type", choices=("last", "mid"), default="last",
         help="last成交Bar；mid报价Bar，零成交量，模型不代表盘口可成交性")
     p.add_argument("--frame-wait-seconds", type=float, default=2)
@@ -155,6 +159,15 @@ def parse_args(argv=None):
             raise ValueError("参考刷新间隔无效")
         if args.instrument_max_age_seconds > 120 or args.limit_offset_ticks < 0 or args.max_session_orders < 1:
             raise ValueError("逐合约时效最多120秒，跳价须非负，订单上限须为正")
+        if args.market_source == "dolphindb":
+            if not (args.market_bar_table or os.getenv("DDB_OPTION_BAR_TABLE")):
+                raise ValueError("DolphinDB行情须配置共享分钟流表market-bar-table/DDB_OPTION_BAR_TABLE；DFS表不能直接推送")
+            if args.market_bar_timestamp is None or args.market_volume_mode is None:
+                raise ValueError("DolphinDB分钟推送须明确market-bar-timestamp及market-volume-mode")
+            if not math.isfinite(args.market_bar_max_age_seconds) or not 60 < args.market_bar_max_age_seconds <= args.max_market_age_seconds:
+                raise ValueError("分钟行情时效须大于60秒且不超过max-market-age-seconds")
+            if args.simnow_environment != "realtime":
+                raise ValueError("DolphinDB分钟推送使用realtime，不采用CTP Replay日期豁免")
         if not args.max_notional.is_finite() or args.max_notional <= 0:
             raise ValueError("名义金额上限须为有限正数")
         if args.reference_source == "file" and (not args.allow_file_reference_test or not args.opt_basic or not args.fut_basic):
@@ -182,7 +195,7 @@ def parse_args(argv=None):
     return args
 
 
-def _dolphin_feed(table, source_id, *, max_age_seconds):
+def _dolphin_feed(table, source_id, *, max_age_seconds, volume_mode="per-bar"):
     from bomber.framework.market.stream.dolphin import DolphinDbLiveDataFeed, DolphinDbConfig, DolphinDbStreamSpec
     from bomber.framework.market.stream.health import StreamHealthConfig
     from bomber.framework.trader.runtime.live.channels.ctp import required
@@ -191,8 +204,10 @@ def _dolphin_feed(table, source_id, *, max_age_seconds):
     return DolphinDbLiveDataFeed(DolphinDbConfig(host=required("DDB_HOST"),
         port=int(os.getenv("DDB_PORT", "8848")), username=required("DDB_USERNAME"), password=required("DDB_PASSWORD"),
         streaming_port=int(os.getenv("DDB_STREAMING_PORT", "0")),
-        streams=(DolphinDbStreamSpec.bar(table, action_name=f"{source_id}-{os.getpid()}-{time.time_ns()}"),)),
-        source_id=source_id, health_config=StreamHealthConfig(stale_after_seconds=max_age_seconds))
+        streams=(DolphinDbStreamSpec.bar(table, action_name=f"{source_id}-{os.getpid()}-{time.time_ns()}",
+            auto_schema=True, volume_mode=volume_mode, local_receipt_time=True),)),
+        source_id=source_id, health_config=StreamHealthConfig(startup_grace_seconds=max_age_seconds,
+            stale_after_seconds=max_age_seconds))
 
 
 def prepare_inputs(args, context, lifecycle):
@@ -301,11 +316,13 @@ def prepare_inputs(args, context, lifecycle):
             identity["market"]["test_time_mapping"] = time_map.identity
     else:
         market = _dolphin_feed(args.market_bar_table or os.getenv("DDB_OPTION_BAR_TABLE"), "vega-market",
-            max_age_seconds=args.max_market_age_seconds)
+            max_age_seconds=args.market_bar_max_age_seconds, volume_mode=args.market_volume_mode)
         dolphin_feeds.append(market)
         labels["market-bars"] = args.market_bar_timestamp
         identity["market"] = {"channel": "dolphindb", "table": market.config.streams[0].table_name,
-            "host": market.config.host, "port": market.config.port}
+            "host": market.config.host, "port": market.config.port, "schema": "server_column_names",
+            "timestamp_label": args.market_bar_timestamp, "volume_mode": args.market_volume_mode,
+            "availability": "receive_wall_clock", "max_age_seconds": args.market_bar_max_age_seconds}
     for key, instrument in refs.instrument_ids.items():
         info = refs.contracts.get(key)
         tick = info.tick if info else refs.futures[key]["minChgPriceNum"]
@@ -347,6 +364,8 @@ def describe(session):
         "execution_positions": {key: p.account_position(session.client.client_id, i) for key, i in ids.items()},
         "late_bar_count": session.runner.frames.late_count, "signals": s.signals[-30:],
         "feature_queries": [feed.manifest for feed in session.runner.feature_query_feeds],
+        "market_streams": [feed.manifest for feed in session.feeds.values() if hasattr(feed, "manifest")
+            and getattr(feed, "source_id", "") in {"vega-market", "vega-index"}],
         "skipped_index_frames": session.runner.skipped_feature_frames,
         "account_dispatch": getattr(session.client, "dispatch_status", {}),
         "execution_origin": {"model": "model", "simnow": "ctp_native", "recording": "recording"}[session.mode]}

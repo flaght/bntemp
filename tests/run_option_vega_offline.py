@@ -53,6 +53,14 @@ def make_bar(*,instrument_id,meta=None,bar_type='1-MINUTE',**kw):
 base.make_bar=make_bar
 # SDK construction entry points imported by the real aggregator; unused for quote accumulation.
 base.make_trade_tick=lambda **kw: types.SimpleNamespace(**kw)
+base.make_quote_tick=lambda **kw: types.SimpleNamespace(**kw)
+class CustomBar:
+ def __init__(self,bar,factors):self.bar,self.factors=bar,dict(factors)
+ def __getattr__(self,name):return getattr(self.bar,name)
+ def get_factor(self,name):return self.factors.get(name)
+base.CustomBar=CustomBar
+base.make_custom_bar=lambda bar,factors:CustomBar(bar,factors)
+base.make_custom_bar_all_in_one=lambda **kw:CustomBar(make_bar(**kw),{})
 sys.modules[base.__name__]=base
 # These unused native SDK bridges are never instantiated in Model/Recording tests.
 gateway=types.ModuleType('bomber.framework.trader.execution.simulation.gateway')
@@ -88,6 +96,6 @@ for suffix, names in exports.items():
  for name in names:
   setattr(trader, name, getattr(module, name))
 suite=unittest.defaultTestLoader.loadTestsFromNames([
- 'tests.test_option_vega_assembly', 'tests.test_position_attribution', 'tests.test_index_query_feed', 'tests.test_option_replay_test', 'tests.test_option_execution_audit'])
+ 'tests.test_option_vega_assembly', 'tests.test_position_attribution', 'tests.test_index_query_feed', 'tests.test_option_replay_test', 'tests.test_option_execution_audit', 'tests.test_option_dolphin_stream'])
 result=unittest.TextTestRunner(verbosity=2).run(suite)
 sys.exit(not result.wasSuccessful())

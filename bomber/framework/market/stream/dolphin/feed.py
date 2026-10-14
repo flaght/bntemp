@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
@@ -16,7 +17,7 @@ from bomber.framework.market.native.dolphin import (
     NativeDolphinSubscription,
     create_native_driver,
 )
-from bomber.framework.market.stream.dolphin.config import DolphinDbConfig, DolphinDbStreamSpec
+from bomber.framework.market.stream.dolphin.config import DolphinDbConfig, DolphinDbStreamSpec, BAR_REQUIRED_COLUMNS
 from bomber.framework.market.stream.dolphin.converter import ConvertedEvent, DolphinDbMarketConverter
 
 
@@ -47,6 +48,34 @@ class DolphinDbLiveDataFeed(StreamDataFeed):
         self._converter = DolphinDbMarketConverter()
         self._symbol_to_instrument: dict[str, InstrumentId] = {}
         self._ready = threading.Event()
+        self._observation_lock = threading.RLock()
+        self._latest_received_ns = self._latest_event_ns = None
+        self._received_bars = self._conversion_errors = 0
+        self._last_conversion_error = None
+        self._resolved_columns = {}
+
+    @property
+    def latest_received_ns(self):
+        with self._observation_lock:
+            return self._latest_received_ns
+
+    @property
+    def latest_event_ns(self):
+        with self._observation_lock:
+            return self._latest_event_ns
+
+    @property
+    def conversion_failure(self):
+        with self._observation_lock:
+            return self._last_conversion_error
+
+    @property
+    def manifest(self):
+        with self._observation_lock:
+            return {"source_id": self.source_id, "received_bars": self._received_bars,
+                "latest_received_ns": self._latest_received_ns, "latest_event_ns": self._latest_event_ns,
+                "conversion_errors": self._conversion_errors, "last_conversion_error": self._last_conversion_error,
+                "resolved_columns": dict(getattr(self._driver, "resolved_columns", self._resolved_columns))}
 
     def register_instrument(self, meta: InstrumentMeta) -> None:
         super().register_instrument(meta)
@@ -79,6 +108,8 @@ class DolphinDbLiveDataFeed(StreamDataFeed):
         return self._ready.wait(timeout)
 
     def _start_network_client(self) -> None:
+        with self._observation_lock:
+            self._latest_received_ns = self._latest_event_ns = None
         driver = self._driver_factory()
         self._driver = driver
         try:
@@ -100,6 +131,7 @@ class DolphinDbLiveDataFeed(StreamDataFeed):
                     batch_size=spec.batch_size,
                     throttle=spec.throttle,
                     filter=spec.filter,
+                    required_columns=BAR_REQUIRED_COLUMNS if spec.auto_schema else (),
                 )
                 driver.subscribe(
                     native,
@@ -118,6 +150,7 @@ class DolphinDbLiveDataFeed(StreamDataFeed):
         self._ready.clear()
         driver = self._driver
         if driver is not None:
+            self._resolved_columns = dict(getattr(driver, "resolved_columns", {}))
             driver.stop()
         self._driver = None
         self._converter.reset()
@@ -154,11 +187,22 @@ class DolphinDbLiveDataFeed(StreamDataFeed):
             if spec.kind == "tick":
                 converted = self._converter.convert_tick(row, instrument_id, meta)
             else:
-                converted = self._converter.convert_bar(row, instrument_id, meta, spec.bar_spec)
+                converted = self._converter.convert_bar(row, instrument_id, meta, spec.bar_spec,
+                    volume_mode=spec.volume_mode,
+                    received_ns=time.time_ns() if spec.local_receipt_time else None)
             for item in converted:
                 if self._is_subscribed(instrument_id, item):
+                    with self._observation_lock:
+                        self._latest_received_ns = time.time_ns()
+                        self._latest_event_ns = max(self._latest_event_ns or 0, item.event.ts_event)
+                        if item.data_type is DataType.BAR:
+                            self._received_bars += 1
                     self.enqueue_event(item.event)
-        except Exception:
+        except Exception as exc:
+            with self._observation_lock:
+                self._conversion_errors += 1
+                self._last_conversion_error = str(exc)
+            self.report_stream_interruption(f"DolphinDB分钟/逐笔转换失败: {spec.table_name}: {exc}")
             logger.exception(
                 "DolphinDB market row conversion failed: table=%s kind=%s",
                 spec.table_name,

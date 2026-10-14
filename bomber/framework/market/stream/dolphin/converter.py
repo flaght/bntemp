@@ -43,10 +43,12 @@ class DolphinDbMarketConverter:
         self.timezone = _load_timezone(timezone_name)
         self._tick_states: dict[InstrumentId, _TickState] = {}
         self._bar_keys: set[tuple[InstrumentId, str, int]] = set()
+        self._bar_volumes: dict[tuple[InstrumentId, str], tuple[str, int, float]] = {}
 
     def reset(self) -> None:
         self._tick_states.clear()
         self._bar_keys.clear()
+        self._bar_volumes.clear()
 
     def convert_tick(
         self,
@@ -121,12 +123,14 @@ class DolphinDbMarketConverter:
         instrument_id: InstrumentId,
         meta: InstrumentMeta,
         bar_spec: str,
+        *, volume_mode: str = "per-bar", received_ns: int | None = None,
     ) -> list[ConvertedEvent]:
         resolved_spec = bar_spec.upper()
         # minTime 是 Bar 时间标识；updateTime 是入库或更新时间，
         # 不是行情 Bar 的时间戳。
         ts_event = _combine_ns(row.get("date"), row.get("minTime"), 0, self.timezone)
-        ts_init = _timestamp_ns(row.get("updateTime"), self.timezone) or time.time_ns()
+        ts_init = received_ns if received_ns is not None else (
+            _timestamp_ns(row.get("updateTime"), self.timezone) or time.time_ns())
         key = (instrument_id, resolved_spec, ts_event)
         if key in self._bar_keys:
             return []
@@ -141,6 +145,20 @@ class DolphinDbMarketConverter:
             raise ValueError("high is below an OHLC component")
         if low_price > min(open_price, high_price, close_price):
             raise ValueError("low is above an OHLC component")
+        if volume_mode not in {"per-bar", "cumulative"}:
+            raise ValueError("Bar volume_mode must be per-bar or cumulative")
+        volume_key = (instrument_id, resolved_spec)
+        cumulative = volume
+        day = _date_text(row.get("date"))
+        previous = self._bar_volumes.get(volume_key)
+        if volume_mode == "cumulative":
+            if previous is not None and day == previous[0]:
+                if ts_event <= previous[1] or cumulative < previous[2]:
+                    raise ValueError("累计分钟量时间倒退或同日累计量下降")
+                volume = cumulative - previous[2]
+            else:
+                # Joining intraday cannot assign all prior trades to the first Bar.
+                volume = 0
 
         bar = make_bar(
             instrument_id=instrument_id,
@@ -167,6 +185,8 @@ class DolphinDbMarketConverter:
             if (value := _finite(row.get(name), name, optional=True)) is not None
         }
         self._bar_keys.add(key)
+        if volume_mode == "cumulative":
+            self._bar_volumes[volume_key] = (day, ts_event, cumulative)
         events = [ConvertedEvent(DataType.BAR, bar, resolved_spec)]
         if factors:
             events.append(

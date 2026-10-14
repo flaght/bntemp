@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "date": "2026-10-14",
+  "report": "shared-simnow-1791943292443669966",
+  "input_sha256": "f2af0bb28436e2f3bc38959b4df3429ed92d315c5244285cf9697c6d6ab56a71",
+  "status": "cross_callback_delivery_passed_ema_live_stop_fill_not_exercised",
+  "orders": 3,
+  "filled_contract_quantity": 4,
+  "fills": [
+    {
+      "order_ref": "42",
+      "type": "FILLED",
+      "ts_ns": 1791943801522943949,
+      "quantity": 1,
+      "owner": "cross-cu-au-delta",
+      "report_id": "CTP-9999-097561-20261014-42:2",
+      "trade_id": "SHFE:      177427"
+    },
+    {
+      "order_ref": "43",
+      "type": "FILLED",
+      "ts_ns": 1791943801578791834,
+      "quantity": 2,
+      "owner": "cross-cu-au-delta",
+      "report_id": "CTP-9999-097561-20261014-43:2",
+      "trade_id": "SHFE:      177431"
+    },
+    {
+      "order_ref": "44",
+      "type": "FILLED",
+      "ts_ns": 1791943802741502214,
+      "quantity": 1,
+      "owner": "cross-cu-au-delta",
+      "report_id": "CTP-9999-097561-20261014-44:2",
+      "trade_id": "SHFE:      177482"
+    }
+  ],
+  "ema_stopped_at_ns_from_summary": 1791943817489399495,
+  "cross_stopped_at_ns_from_summary": 1791943933139470340,
+  "peer_lifecycle_continued_seconds": 115.650070845,
+  "last_fill_before_ema_stop_seconds": 14.747897281,
+  "peer_fills_after_ema_stop": 0,
+  "callback_counts_from_summary": {
+    "cross-cu-au-delta": {
+      "enqueued": 3,
+      "delivered": 3,
+      "received": 3,
+      "pending_events": 0
+    },
+    "ema-cu-gamma": {
+      "enqueued": 0,
+      "delivered": 0,
+      "received": 0,
+      "pending_events": 0
+    }
+  },
+  "runtime_status_from_summary": "completed",
+  "final_active_orders_from_summary": 0,
+  "remaining": [
+    "EMA live fill callback at stop boundary not exercised.",
+    "Peer alive after EMA stop supported by lifecycle timestamps; no post-stop trades in this events file."
+  ],
+  "gap10_closed": false
+}
