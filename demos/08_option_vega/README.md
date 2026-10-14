@@ -533,6 +533,31 @@ python -u -m scripts.integration.options.simnow_preflight \
 
 见 [定位与当前净仓证据](../../doc/evidence/live/OPTION_VEGA_SIMNOW_STATE_LOCATED_20261014.json)。当前运行代码仍从 pro 目录加载，--state-file 使用上述 pro_new 下的实际绝对路径；不切换运行目录、复制旧代码或移动/修改原文件。净仓 -1 一致仍不能代替总仓、今昨仓、原文件校验和与账户身份核对，使用上面的只读预检重新执行；成功前不登记迁移或报单通过。账户其他品种持仓继续保持外部事实。
 
+**原仓预检 completed，准备保留仓位迁移**：用户随后返回 sample-1791959088346620719，原状态 SHA256 为 `8e18ffb4e608bd6dbc8af02be37f2b1025a2df1c3572ceb755163b5597b696e1`，generation=35、state_modified=false。账户身份匹配，当前 TD=20261014、活动订单=0、有正可用 CNY，MO2611-C-7400 总仓 long=0/short=1 与原状态一致；外部 AU/HC/SC/NI/I/AG 仓位保持外部事实。本次公共权威分桶结果为 short_today=1，PositionCost=8220.0，不能凭跨日自行改为昨仓。原文件完整核对通过，migration_required=true；见 [预检通过及用户选择](../../doc/evidence/live/OPTION_VEGA_SIMNOW_PREFLIGHT_PASS_20261014.json)。用户选择“恢复并保留现有仓位”，不安排平仓成交测试。
+
+新增 [simnow_migrate.py](../../scripts/integration/options/simnow_migrate.py) 是迁移准备工具，独立于 run_live 的普通恢复。它固定读取并核对原 SHA256，持有原文件、新文件与账户锁，再次禁单查询柜台。原事实沿公共存储解码、真实合约归属、订单/成交去重和完整目标版本校验；读取当前参考资料后，仅显式转换交易日、日历/参考版本、市场来源及分钟标签，策略配置、风险、strict/fills 政策与指数来源保持一致。非零持仓腿及其条款/对冲绑定不能丢失或变动，合约集合只允许增补/移除零目标；旧未完成目标不续发，新目标以已验证归属持仓为准。
+
+原持仓归属、终结订单和成交去重历史保留，CTP 双向账本按本次权威分桶和成本另存当前日，成本基准用 PositionCost/(数量×合约乘数)；不伪造结算价、变动保证金或收益。Driver 原协议检查点保持至公共无活动订单跨日关联恢复，核对当前账户后才保存当前 Driver 日期及 OrderRef。迁移信号只携带原仓位，并标记当日已经选约，防止本轮再次开新期权；原历史 sent_days 留在迁移审计中。价格、IV及帧缓存仍从当前行情重新预热。未增加主动清仓日，保留原策略常规退出/风控/对冲规则。
+
+准备阶段装配公共恢复组件，但 Driver 禁单、Client 未 arm，行情与策略不启动。候选文件在临时目录通过公共 restore、目标版本、归属及当前总仓/今昨仓二次核对；资源关闭成功后，以独占原子方式发布新文件，禁止覆盖任何既有 output-state，原文件不写。prepared 只证明迁移文件准备成功，真实恢复仍需执行随后打印的命令。两阶段命令示例：
+
+```bash
+python -u -m scripts.integration.options.simnow_migrate \
+  --connect --expected-trading-day 20261014 \
+  --source-state /workspace/worker/pj/Chrono/nautilus_trader_demo/pro_new/tests/results/gap08-realtime-simnow/state-1791869411336135873.json \
+  --source-sha256 8e18ffb4e608bd6dbc8af02be37f2b1025a2df1c3572ceb755163b5597b696e1 \
+  --output-state tests/results/gap08-dolphin-simnow-resume/state-20261014-migrated.json \
+  --market-bar-table stream_cffex_1min --market-bar-timestamp end \
+  --market-volume-mode cumulative
+# prepared 后直接执行输出末尾的“恢复命令”，它引用本次唯一迁移报告。
+```
+
+[simnow_resume.py](../../scripts/integration/options/simnow_resume.py) 读取该迁移报告，检查新文件身份/版本及初始摘要，随后调用原 run_live 的原生恢复流程；不是修改原同日恢复规则。保存的配置/来源/参数全部沿用迁移报告，最多 4 次报单，不要求本次新增成交；当日不重新选约。它在轮询边界响应 SIGINT/SIGTERM，或上海时间 15:00 请求正常停机，公共流程撤销本会话活动订单、核验并保存到新文件，保留已成交仓位。启动必须在声明交易日，并距 15:00 至少 ready-timeout+65 秒；默认 180 秒就绪预算下须早于 14:55:55。超过该准备余量不连接；后续跨日需重新核对和迁移，不能复用今日身份。行情/持仓腿/参考失效仍按原规则停机，未掩盖数据异常。
+
+交付为 [迁移补充包](../../doc/evidence/archives/OPTION_VEGA_SIMNOW_MIGRATION_20261014.tar.gz)。本地 12 项迁移/恢复专项、9 项原预检和81 项原主回归通过；包括真实公共存储/归属/订单历史、原生禁单 Driver 与账户核对、另存文件、原生恢复→首个新鲜帧保留空仓不重复开仓、正常停机，以及 Ctrl+C、收盘/摘要/参数/持仓腿/分桶错误拒绝。SDK 实体、柜台及参考传输为夹具，未连接真实服务器。真实迁移准备与恢复持续运行尚待用户返回，不登记新来源实际成交通过。
+
+迁移工具交付时已过当日 15:00：当日只进行禁单迁移准备，取得 prepared/新文件校验结果；恢复入口会拒绝收盘后启动。下个交易日按当时实际 TD 日重新准备独立文件及身份，再执行该轮打印的恢复命令。原 20261013 文件仍保留且未被本工具修改；未启动的今日准备文件不能直接用于次日 --resume。
+
 ### 3.7 Replay 与工程时间映射
 
 **原始时间 Replay**：使用 `--simnow-environment replay --replay-md-trading-day YYYYMMDD`。估值日默认为原始 MD 日，选约和 Black76 按原始事件时间；执行请求使用接收墙钟。只豁免历史事件相对墙钟的年龄，仍检查 MD 日、源日期、接收健康、倒退和参考条款。期权、期货、指数必须属于同一估值日；墙钟到 13:58 不会触发源流其他时刻的选约。

@@ -56,6 +56,8 @@
 
 随后 [原状态定位及当前净仓](live/OPTION_VEGA_SIMNOW_STATE_LOCATED_20261014.json) 返回：原同名文件在 pro_new/tests/results/gap08-realtime-simnow 下，generation=35、td_day=20261013、08 归属 MO2611-C-7400 空 1 手；独立 TD 查询 trading_day=20261014、active_orders=0、该合约净仓 -1。其他两个 20261009 Replay 候选不用于本次核对。继续从当前 pro 运行只读预检，state-file 指向 pro_new 的实际绝对路径，不迁移或重写文件；完整校验和/账户/总仓/今昨仓核对仍待返回。本次 [定位证据与文档摘要](checksums/OPTION_VEGA_SIMNOW_STATE_LOCATED_20261014_SHA256.txt) 不修改运行代码。
 
+[原仓预检通过](live/OPTION_VEGA_SIMNOW_PREFLIGHT_PASS_20261014.json) 已返回 completed：账户匹配、当前总仓 short=1 与原归属一致、当前活动订单 0、有可用资金、原文件不变；公共权威分桶报告 short_today=1、PositionCost=8220.0，不自行改成昨仓。用户明确选择恢复并保留现有仓位。补充 [迁移准备与恢复范围](live/OPTION_VEGA_SIMNOW_MIGRATION_20261014.json)、[源码包](archives/OPTION_VEGA_SIMNOW_MIGRATION_20261014.tar.gz) 与 [摘要](checksums/OPTION_VEGA_SIMNOW_MIGRATION_20261014_SHA256.txt)：禁单准备、独占另存新身份、保留归属/订单/去重历史、当日不重新选约；公共原生恢复后15:00或Ctrl+C正常停机。21 项预检/迁移专项及原81 项主回归通过，既有 REV5 策略/执行/行情模块不改；线上迁移准备、恢复持续运行与新来源成交仍未登记通过。本轮不安排平仓成交测试。
+
 ## 2026-10-11模型运行与恢复证据
 
 同日08期权Vega源码新增，使用独立清单
