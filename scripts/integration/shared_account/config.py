@@ -40,8 +40,8 @@ def read_config(path):
     elif replay:
         raise ValueError("原始MD交易日仅用于replay")
     seconds = float(config.get("seconds", 600))
-    if not math.isfinite(seconds) or not 0 < seconds <= 3600:
-        raise ValueError("共享会话时长须为(0,3600]秒")
+    if not math.isfinite(seconds) or not 0 < seconds <= 86400:
+        raise ValueError("共享会话时长须为(0,86400]秒")
     account = config["account"]
     if set(account) != {"client_id", "max_gross_quantity", "max_gross_notional", "max_session_orders", "limit_offset_ticks"}:
         raise ValueError("账户配置须完整声明身份、总量、名义预算及订单上限")
@@ -55,8 +55,8 @@ def read_config(path):
         if isinstance(account[key], bool) or not isinstance(account[key], int) or account[key] < minimum:
             raise ValueError("账户订单上限/跳价偏移无效")
     rows = config["strategies"]
-    if not isinstance(rows, list) or len(rows) < 2:
-        raise ValueError("至少配置两个策略")
+    if not isinstance(rows, list) or not rows:
+        raise ValueError("至少配置一个策略")
     ids, paths = set(), {str((path.parent / config["account_state_file"]).resolve())}
     for row in rows:
         if not {"strategy_id", "kind", "state_file", "argv"} <= set(row) or set(row) - {
@@ -69,8 +69,8 @@ def read_config(path):
         stop_after = row.get("stop_after_seconds")
         if stop_after is not None and (not math.isfinite(float(stop_after)) or not 0 < float(stop_after) < seconds):
             raise ValueError("策略独立停止时间须在会话时长以内")
-        if row["kind"] not in {"main_ema", "cross_section", "calendar_spread"}:
-            raise ValueError("策略工厂支持main_ema、cross_section和calendar_spread")
+        if row["kind"] not in {"main_ema", "cross_section", "calendar_spread", "option_vega"}:
+            raise ValueError("策略工厂支持main_ema、cross_section、calendar_spread和option_vega")
         if not isinstance(row["argv"], list) or any(not isinstance(arg, str) for arg in row["argv"]):
             raise ValueError("策略argv须为字符串数组")
         if any(arg.split("=", 1)[0] in PROTECTED for arg in row["argv"]):

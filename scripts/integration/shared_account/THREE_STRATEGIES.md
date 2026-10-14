@@ -1,5 +1,11 @@
 # 01／03／04 三策略同账户运行
 
+2026-10-14后续补充：工厂已支持08 `option_vega`；共享宿主/worker支持其DolphinDB
+分钟与指数特征查询、封帧及选约去重检查点。实时CFFEX已终结订单的前日归属账本
+可按当日权威今昨仓/成本核验后恢复。下文REV19的“仅同日”是原交付边界；SHFE等
+独立昨仓仍拒绝，跨日未知活动单／未决发送仍拒绝。08入口、原仓导入和范围见
+[08共享恢复交接](../../../doc/HANDOFF/live/HANDOFF_OPTION_VEGA_SHARED_ROLLOVER_2026-10-14.md)。
+
 需求见doc/HANDOFF/gaps/GAP10_THREE_STRATEGY_REQUIREMENTS_2026-10-14.md。
 execution_mode=netted：同进程净额执行，内部抵消单独记录，不虚构柜台成交。
 execution_mode=independent：一个账户服务及三个独立worker，订单不跨策略抵消。

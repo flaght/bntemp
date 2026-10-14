@@ -125,6 +125,17 @@ class OptionCtpLifecycle(OptionControl, CtpResumeLifecycle, CtpSessionLifecycle)
     def validate_restored_session(self, session, day):
         return validate_restored_session(session, day)
 
+    def restore_session(self, session, context):
+        saved = session.manager.repository.load()
+        if saved is None:
+            return session.manager.restore()
+        old = saved.payload["component_states"]["session_identity"]["identity"]
+        if old["td_day"] == context.trading_day:
+            return session.manager.restore()
+        from .rollover import payload_for_day
+        return session.manager.restore(payload_transform=lambda payload: payload_for_day(session, payload,
+            driver=self.driver, transport=self.transport, day=context.trading_day))
+
     def start(self, session, context):
         if self.resuming:
             return super().start(session, context)

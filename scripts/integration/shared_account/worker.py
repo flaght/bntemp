@@ -56,9 +56,13 @@ def main(argv=None):
             resources.enter_context(strategy_state_lock(Path(row["state_file"])))
             store = JsonStateStore(Path(row["state_file"]))
             persisted = store.load()
-            if bool(persisted) != args.resume or (persisted and persisted.payload["identity"] != identity):
-                raise ValueError("策略进程恢复标志、身份或状态文件不一致")
             credentials = json.loads(args.credentials.read_text())
+            bootstrap = credentials.get("bootstrap_signal")
+            if bool(persisted) != args.resume and not (args.resume and persisted is None and bootstrap is not None):
+                raise ValueError("策略进程恢复标志、身份或状态文件不一致")
+            if persisted and persisted.payload["identity"] != identity:
+                from .rollover import validate_strategy_identity
+                validate_strategy_identity(persisted.payload["identity"], identity)
             if credentials["strategy_id"] != args.strategy_id:
                 raise ValueError("客户端凭据不属于本策略")
             connection = UnixExecutionConnection(Path(credentials["socket"]), args.strategy_id, credentials["key"])
@@ -69,22 +73,31 @@ def main(argv=None):
             driver = RemoteTraderSession(service, config["trading_day"])
             entry, strategy_args = strategy_arguments(row, config, resume=args.resume)
             import os
-            lifecycle = SimpleNamespace(md_front=required("CTP_MD_ADDRESS"), transport=SimpleNamespace(
+            lifecycle = SimpleNamespace(md_front=(None if row["kind"] == "option_vega" and
+                strategy_args.market_source == "dolphindb" else required("CTP_MD_ADDRESS")), transport=SimpleNamespace(
                 investor_id=required("CTP_ACCOUNT_ID"), password=required("CTP_PASSWORD"),
                 production_mode=os.getenv("CTP_PRODUCTION_MODE", "true").lower() in {"1", "true", "yes", "on"}))
             from datetime import datetime
             context = LiveRunContext(resources=resources, trading_day=datetime.strptime(config["trading_day"], "%Y%m%d").date())
             inputs = entry.prepare_inputs(strategy_args, context, lifecycle)
-            inputs.upstream.config = replace(inputs.upstream.config,
-                flow_path=f"/tmp/{config['account']['client_id']}-{args.strategy_id}-worker-md")
+            upstream = getattr(inputs, "upstream", getattr(inputs, "ctp_upstream", None))
+            if getattr(upstream, "config", None) is not None:
+                upstream.config = replace(upstream.config,
+                    flow_path=f"/tmp/{config['account']['client_id']}-{args.strategy_id}-worker-md")
             session = assemble_strategy_session(entry, strategy_args, inputs,
                 service=service, driver=driver, strategy_id=args.strategy_id)
             port = session.client
+            if hasattr(session, "session_identity") and credentials.get("reference") != session.session_identity:
+                raise ValueError("08行情/特征/条款身份与账户服务声明不一致")
             if persisted and persisted.payload["revision"] > state["source_revision"]:
                 raise ValueError("策略信号版本领先账户服务")
-            if not persisted and state["source_revision"]:
+            if not persisted and state["source_revision"] and bootstrap is None:
                 raise ValueError("账户已有策略来源，须使用原策略检查点恢复")
             session.strategy.restore_target_revision(state["source_revision"])
+            if persisted and hasattr(session, "restore_signal"):
+                session.restore_signal(persisted.payload["signal"])
+            elif bootstrap is not None:
+                session.restore_signal(bootstrap)
             session.strategy.fills_received = persisted.payload.get("fills_received", 0) if persisted else 0
             port.set_cursor(persisted.payload.get("cursor", 0) if persisted else 0)
             generation = persisted.generation if persisted else 0
@@ -92,15 +105,20 @@ def main(argv=None):
                 nonlocal generation
                 saved = store.save({"version": 1, "identity": identity,
                     "revision": port.state["source_revision"], "cursor": port.cursor if cursor is None else cursor,
-                    "fills_received": session.strategy.fills_received}, expected_generation=generation)
+                    "fills_received": session.strategy.fills_received,
+                    **({"signal": session.signal_checkpoint.snapshot_state()}
+                       if hasattr(session, "signal_checkpoint") else {})}, expected_generation=generation)
                 generation = saved.generation
             port.completed = save
             port.ready_check = session.runner.session_ready
             session.runner.start()
-            until_ready = time.monotonic() + 30
+            until_ready = time.monotonic() + (strategy_args.ready_timeout if row["kind"] == "option_vega" else 30)
             while not session.runner.session_ready():
                 port.drain_events()
                 session.references.refresh()
+                poll = getattr(session.runner, "poll_live_inputs", None)
+                if callable(poll):
+                    poll()
                 if time.monotonic() >= until_ready:
                     raise RuntimeError("策略未在期限内取得健康行情/参考/账户")
                 time.sleep(0.2)
@@ -112,6 +130,9 @@ def main(argv=None):
                 with session.runner._submit_lock:
                     port.drain_events()
                     session.references.refresh()
+                    poll = getattr(session.runner, "poll_live_inputs", None)
+                    if callable(poll):
+                        poll()
                     if session.runner.failure or not session.runner.session_ready() or not session.runner.reference_is_current():
                         raise RuntimeError(session.runner.failure or "策略行情/参考/账户失效")
                     save()

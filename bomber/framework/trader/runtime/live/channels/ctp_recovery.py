@@ -91,6 +91,9 @@ class CtpResumeLifecycle:
     def recovery_binding(self, session):
         return session.recovery_binding
 
+    def restore_session(self, session, context):
+        return session.manager.restore()
+
     def start(self, session, context):
         if not self.resuming:
             return super().start(session, context)
@@ -99,7 +102,7 @@ class CtpResumeLifecycle:
         if callable(validate_scope):
             validate_scope(session)
         session.runner.accept_bars = False
-        summary = session.manager.restore()
+        summary = self.restore_session(session, context)
         if summary is None:
             raise RuntimeError("恢复文件不存在，不能作为空仓新会话启动")
         self.restored_generation = summary.generation
@@ -114,7 +117,7 @@ class CtpResumeLifecycle:
         reference_ok = current() if callable(current) else session.references.spec == session.runner.fixed_spec
         if not reference_ok or not session.runner.session_ready():
             raise RuntimeError("恢复准备后参考或行情失效，保持闭闸")
-        session.manager.save()
+        getattr(session.manager, "commit_restore", session.manager.save)()
         self.resume_ready = True
         session.client.arm_demo(session.client.DEMO_CONFIRMATION)
         session.runner.begin_bars()

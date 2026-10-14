@@ -28,22 +28,39 @@ def main(argv=None):
     try:
         host = build_host(config, resume=args.resume, diagnostics=diagnostics, read_only=True,
                           strategy_processes=True)
+        connected = []
         for item in host.strategies.values():
-            item.session.bar_feed.connect()
-        until = time.monotonic() + 30
+            session = item.session
+            if hasattr(session, "feeds"):
+                for feed in set(session.feeds.values()):
+                    feed.connect(); connected.append(feed)
+            else:
+                session.bar_feed.connect(); connected.append(session.bar_feed)
+        until = time.monotonic() + 180
         while True:
             markets = {sid: {str(i): wire(observation) for i, observation in
                 getattr(item.session.upstream, "depth_observations", {}).items()}
                 for sid, item in host.strategies.items()}
-            if all(markets[sid] and set(markets[sid]) >= set(item.session.client.configuration()["routes"].values())
-                   for sid, item in host.strategies.items()):
+            healthy = []
+            for sid, item in host.strategies.items():
+                if hasattr(item.session, "feeds"):
+                    item.session.runner.poll_features()
+                    checks = [channel.check() for channel in item.session.readiness.channels
+                              if channel.identity.domain == "market"]
+                    markets[sid] = {"sources": [r.as_dict() for r in checks]}
+                    healthy.append(all(r.ready for r in checks))
+                else:
+                    healthy.append(bool(markets[sid] and set(markets[sid]) >= set(
+                        item.session.client.configuration()["routes"].values())))
+            if all(healthy):
                 break
             if time.monotonic() >= until:
                 raise RuntimeError("预检未取得三个策略完整原始深度；查看markets中的实际MD交易日")
             time.sleep(0.2)
         print(f"原始逐合约MD观察：{markets}", flush=True)
         for item in host.strategies.values():
-            stale = item.session.runner.instrument_health.stale_instruments()
+            health = getattr(item.session.runner, "instrument_health", None)
+            stale = health.stale_instruments() if health is not None else {}
             if stale:
                 raise RuntimeError(f"逐合约行情未通过环境/时效检查: {item.strategy_id}: {wire(stale)}")
         status = "prechecked"
@@ -53,8 +70,8 @@ def main(argv=None):
     finally:
         try:
             if host:
-                for item in host.strategies.values():
-                    item.session.bar_feed.disconnect()
+                for feed in reversed(locals().get("connected", [])):
+                    feed.disconnect()
                 host.account.driver.stop()
                 host.resources.close()
         finally:

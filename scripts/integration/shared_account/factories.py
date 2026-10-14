@@ -1,10 +1,11 @@
 """应用层策略工厂；公共框架不反向导入demo。复用原策略和原Runner。"""
 
 from importlib import import_module
+from pathlib import Path
 
 
 ENTRIES = {"main_ema": "demos.01_main_ema.run_live", "cross_section": "demos.04_cross_section.run_live",
-           "calendar_spread": "demos.03_calendar_spread.run_live"}
+           "calendar_spread": "demos.03_calendar_spread.run_live", "option_vega": "demos.08_option_vega.run_live"}
 
 
 def strategy_arguments(row, config, *, resume):
@@ -14,7 +15,7 @@ def strategy_arguments(row, config, *, resume):
         "--seconds", str(config["seconds"]), "--simnow-environment", config["environment"]]
     if config.get("replay_md_trading_day"):
         argv += ["--replay-md-trading-day", config["replay_md_trading_day"]]
-    if resume:
+    if resume and (row["kind"] != "option_vega" or Path(row["state_file"]).is_file()):
         argv += ["--resume"]
     args = entry.parse_args(argv)
     if getattr(args, "run_forever", False) or getattr(args, "history_minutes", 0):
@@ -23,11 +24,31 @@ def strategy_arguments(row, config, *, resume):
 
 
 def instrument_specs(kind, references):
+    if kind == "option_vega":
+        from types import SimpleNamespace
+        return {instrument: SimpleNamespace(tick=references.contracts[key].tick,
+                    multiplier=references.contracts[key].multiplier) if key in references.contracts else
+                SimpleNamespace(tick=references.futures[key]["minChgPriceNum"],
+                    multiplier=references.futures[key]["contMultNum"])
+                for key, instrument in references.instrument_ids.items()}
     if kind == "main_ema":
         return {references.instrument_id: references.spec}
     return {references.instrument_ids[p]: spec for p, spec in references.specs.items()}
 
 
 def assemble_strategy_session(entry, args, inputs, *, service, driver, strategy_id):
-    return entry.assemble(args, inputs.references, driver, inputs.upstream,
+    if hasattr(inputs, "ctp_upstream"):
+        from importlib import import_module
+        session = import_module("demos.08_option_vega.live_runtime").assemble(args, inputs, driver,
+            shared_service=service, strategy_id=strategy_id)
+        session.restore_signal = lambda state: import_module("demos.08_option_vega.rollover").restore_signal(session, state)
+    else:
+        session = entry.assemble(args, inputs.references, driver, inputs.upstream,
                           shared_service=service, strategy_id=strategy_id)
+    from .rollover import validate_strategy_identity
+    session.validate_rollover_identity = validate_strategy_identity
+    return session
+
+
+def reference_identity(session):
+    return getattr(session, "session_identity", None) or str(session.references.spec)

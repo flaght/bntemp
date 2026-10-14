@@ -1,5 +1,7 @@
 # Bomber 校验清单与历史证据索引
 
+2026-10-14新增08共享执行及跨日恢复：[交接](../HANDOFF/live/HANDOFF_OPTION_VEGA_SHARED_ROLLOVER_2026-10-14.md)、[离线证据](live/OPTION_VEGA_SHARED_ROLLOVER_20261014.json)、[部署清单](checksums/OPTION_VEGA_SHARED_ROLLOVER_20261014_SHA256.txt)。原生旧检查点在启动核验后备份转换，后续同一命令按TD日恢复；服务器线上结果待确认。历史REV19和08迁移包保留原版本，不覆盖。
+
 这里集中保存原 HANDOFF 目录中的 50 份 SHA256 清单与 4 份补丁、同步脚本和删除清单。任务实施与运行结果继续查[交接索引](../HANDOFF/README.md)。
 
 ## 2026-10-13 CU静态交易会话与清理证据

@@ -196,6 +196,7 @@ class RuntimeStateManager:
         self.state_components = dict(state_components or {})
         self._ctp_submit_locks: dict[str, Any] = {}
         self._generation = 0
+        self._restore_pending = False
         self._lock = threading.RLock()
 
     @property
@@ -251,6 +252,8 @@ class RuntimeStateManager:
 
     def _save_with_manager_lock(self) -> PersistedState:
         with self._lock:
+            if self._restore_pending:
+                raise StatePersistenceError("跨日恢复尚未完成权威核验，禁止覆盖原检查点")
             driver_checkpoints = {
                 client_id: driver.checkpoint()
                 for client_id, driver in self.ctp_drivers.items()
@@ -306,12 +309,49 @@ class RuntimeStateManager:
             self._generation = persisted.generation
             return persisted
 
-    def restore(self, *, legacy_component_states=None) -> RecoverySummary | None:
+    def commit_restore(self) -> PersistedState:
+        """权威核验后提交暂存恢复；原代备份保留，失败不解除写入门控。"""
+        with ExitStack() as stack:
+            for client_id in sorted(self._ctp_submit_locks):
+                stack.enter_context(self._ctp_submit_locks[client_id])
+            return self._commit_restore_with_submit_locks()
+
+    def _commit_restore_with_submit_locks(self) -> PersistedState:
+        with self._lock:
+            if self._restore_pending:
+                current = self.repository.load()
+                if current is None or current.generation != self._generation:
+                    raise ConcurrentStateWriteError("跨日核验期间检查点代次变化")
+                original = self.repository.path.read_bytes()
+                backup = self.repository.path.with_name(
+                    self.repository.path.name + f".before-rollover-g{self._generation}.json")
+                if backup.exists():
+                    if backup.read_bytes() != original:
+                        raise StatePersistenceError("跨日恢复备份与原代内容不一致")
+                else:
+                    descriptor = os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                    with os.fdopen(descriptor, "wb") as handle:
+                        handle.write(original)
+                        handle.flush()
+                        os.fsync(handle.fileno())
+                    _fsync_directory(backup.parent)
+                self._restore_pending = False
+                try:
+                    return self.save()
+                except Exception:
+                    self._restore_pending = True
+                    raise
+        return self.save()
+
+    def restore(self, *, legacy_component_states=None, payload_transform=None) -> RecoverySummary | None:
         with self._lock:
             persisted = self.repository.load()
             if persisted is None:
                 return None
             payload = persisted.payload
+            if payload_transform is not None:
+                from copy import deepcopy
+                payload = payload_transform(deepcopy(payload))
             component_states = payload.get("component_states", {})
             if not component_states and legacy_component_states is not None:
                 component_states = legacy_component_states
@@ -428,6 +468,7 @@ class RuntimeStateManager:
                     ledger.restore(old_ledgers[key])
                 raise
             self._generation = persisted.generation
+            self._restore_pending = payload_transform is not None
             return RecoverySummary(
                 generation=persisted.generation,
                 saved_at_ns=persisted.saved_at_ns,

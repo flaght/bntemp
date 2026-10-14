@@ -1372,6 +1372,7 @@ class SharedAccountTests(unittest.TestCase):
             # 运行调度不属于策略/账户恢复身份；改变argv仍改变身份。
             original_identity = host.account.manager.state_components["session_identity"].snapshot_state()
             original_strategy_identity = {sid: row.identity for sid, row in host.strategies.items()}
+            host.resources.close()  # 原宿主已停止；释放新增的检查点文件锁后重建。
             config["seconds"] = 600
             config["strategies"][0]["stop_after_seconds"] = 480
             with patch.object(ctp_channel, "build_simnow_transport", return_value=transport), \

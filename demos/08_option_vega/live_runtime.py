@@ -122,6 +122,14 @@ class OptionSessionRunner(UnifiedStrategyRunner):
                 while len(self._feature_log_states) > 64:
                     del self._feature_log_states[next(iter(self._feature_log_states))]
 
+    def poll_live_inputs(self):
+        self.poll_features()
+        if self.accept_bars:
+            stale = self.stale_instruments()
+            if stale:
+                self.close_role_gate(f"必需行情失效: {stale}")
+            self.flush_frames()
+
     def reference_is_current(self):
         return self.references.snapshot().fingerprint == self.references.fingerprint
 
@@ -256,10 +264,11 @@ class OptionSessionRunner(UnifiedStrategyRunner):
                 raise
 
 
-def assemble(args, inputs, driver=None, *, account_routes=()):
+def assemble(args, inputs, driver=None, *, account_routes=(), shared_service=None, strategy_id=None):
     refs, feeds = inputs.references, inputs.feeds
     ids = refs.instrument_ids
-    positions = PositionManager()
+    positions = shared_service.position_manager if shared_service is not None else PositionManager()
+    sid = strategy_id or CLIENT_ID
     runner = OptionSessionRunner(positions=positions, references=refs, sources=inputs.sources,
         labels=inputs.labels, replay=args.simnow_environment == "replay",
         grace_seconds=args.frame_wait_seconds, market_age_seconds=args.max_market_age_seconds,
@@ -273,7 +282,15 @@ def assemble(args, inputs, driver=None, *, account_routes=()):
     limits = risk_limits(args.config, refs.contracts, ids, multipliers, args.max_notional)
     scope = InstrumentPositionScope(ids.values())
     policy = execution_policy_from_args(args)
-    if args.mode == "model":
+    if shared_service is not None:
+        if args.mode != "simnow" or not strategy_id or account_routes:
+            raise ValueError("08共享执行须为具有独立策略ID的SimNow会话")
+        from bomber.framework.trader.execution.shared import SharedRiskBudget
+        port = shared_service.strategy_client(sid, routes={str(i): i for i in ids.values()},
+            budget=SharedRiskBudget(args.config.max_total_option_lots + args.config.max_future_lots * len(refs.futures),
+                args.max_notional), instrument_limits=limits)
+        execution = ExecutionComponents(port, positions, shared_service.prices)
+    elif args.mode == "model":
         execution = build_model_execution(CLIENT_ID, instrument_limits=limits, positions=positions)
     elif args.mode == "recording":
         execution = ExecutionComponents(RecordingExecutionClient(CLIENT_ID), positions, MarketReferencePriceStore())
@@ -327,9 +344,9 @@ def assemble(args, inputs, driver=None, *, account_routes=()):
         contracts=refs.contracts, futures=refs.futures, instruments=ids,
         index_key=args.index_code, index_id=inputs.index_id, trading_days=refs.calendar,
         options_by_day=refs.options_by_day, feeds=feeds, feed_by_key=inputs.sources,
-        final_day=args.flatten_day, strategy_id=CLIENT_ID)
+        final_day=args.flatten_day, strategy_id=sid)
     runner.strategy = strategy
-    binding = StrategyPositionBinding(CLIENT_ID, execution.client.client_id, {str(i): i for i in ids.values()})
+    binding = StrategyPositionBinding(sid, execution.client.client_id, {str(i): i for i in ids.values()})
     session = SimpleNamespace(mode=args.mode, runner=runner, strategy=strategy, client=execution.client,
         driver=driver, ledger=execution.ledger, references=refs, readiness=readiness,
         recovery_binding=binding, position_scope=scope, upstream=inputs.ctp_upstream,
@@ -337,7 +354,7 @@ def assemble(args, inputs, driver=None, *, account_routes=()):
         source_identity=inputs.source_identity)
     if args.state_file is not None:
         import json
-        identity = {"strategy_id": CLIENT_ID, "config": vars(args.config),
+        identity = {"strategy_id": sid, "config": vars(args.config),
             "valuation_day": str(refs.service.valuation_day), "td_day": args.expected_trading_day,
             "reference_fingerprint": refs.fingerprint, "calendar": tuple(map(str, refs.calendar)),
             "calendar_manifest": refs.calendar_manifest,
@@ -347,7 +364,13 @@ def assemble(args, inputs, driver=None, *, account_routes=()):
             "flatten_day": args.flatten_day, "policy": policy.snapshot_state(),
             "max_notional": args.max_notional, "frame_wait_seconds": args.frame_wait_seconds,
             "limit_offset_ticks": args.limit_offset_ticks, "ctp_price_type": args.ctp_price_type}
-        components = {"session_identity": SessionIdentityCheckpoint(json.loads(json.dumps(identity, default=str))),
+        session.session_identity = json.loads(json.dumps(identity, default=str))
+        session.signal_checkpoint = OptionVegaCheckpoint(strategy)
+        if shared_service is not None:
+            # 账户账本由共享服务保存；这里只提供应用的信号/参考身份。
+            session.strategy.restored = True
+            return session
+        components = {"session_identity": SessionIdentityCheckpoint(session.session_identity),
                       "vega_signal": OptionVegaCheckpoint(strategy)}
         attach = attach_ctp_persistence if args.mode == "simnow" else attach_execution_persistence
         session.manager = attach(execution, runner, state_file=args.state_file, state_components=components)

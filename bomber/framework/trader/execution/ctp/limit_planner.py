@@ -57,7 +57,7 @@ class CtpLimitPlanner:
 
 
 class IndependentCtpLimitPlanner:
-    """按单来源归属规划开平；首期只支持空仓起始的同交易日会话。"""
+    """按单来源归属规划开平；CFFEX通用平仓支持经权威核验的跨日总仓。"""
 
     def __init__(self, planner, positions):
         self.planner, self.positions = planner, positions
@@ -80,7 +80,10 @@ class IndependentCtpLimitPlanner:
             if current * delta < 0:
                 quantity = min(quantity, abs(current))
                 snapshot = self.planner._planner.ledger.snapshot(instrument)
-                available = snapshot.short_today if delta > 0 else snapshot.long_today
+                venue = str(instrument).rsplit(".", 1)[-1]
+                overnight = venue == "CFFEX" and venue in self.planner._planner.generic_close_venues
+                available = (snapshot.short_total if delta > 0 else snapshot.long_total) if overnight else (
+                    snapshot.short_today if delta > 0 else snapshot.long_today)
                 if available < abs(current):
                     raise RuntimeError("独立归属缺少同日可平仓量；拒绝接管昨仓或其他来源")
                 effect = (PositionEffect.CLOSE if str(instrument).rsplit(".", 1)[-1] in self.planner._planner.generic_close_venues

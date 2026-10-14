@@ -10,6 +10,7 @@
 | Live Recording | `run_live.py --mode recording` | 在线行情 + 目标记录 | 不连接 TD，不产生成交，不保存交易状态文件 |
 | Live Model | `run_live.py --mode model` | 在线行情 + 参考价模型成交 | 保存独立模型仓位，停机保留仓位 |
 | Live SimNow | `run_live.py --mode simnow` | 在线行情 + 原生 CTP 模拟柜台执行 | 撤销自身活动订单、保存归属仓位，停机保留已成交仓位 |
+| 共享原仓恢复 | `python -m scripts.integration.options.shared` | DolphinDB分钟／指数特征 + 公共账户服务／CTP TD | 日盘收盘或主动停止；保存归属，次日同一命令恢复 |
 
 建议先阅读[回测](#2-文件回测)，再按 [Live 运行方式](#3-live-运行方式)选择执行模式。完整参数分别见回测参数表、[Live 参数表](#4-live-参数说明)；每个代码文件的作用和必要性见[代码职责](#6-代码文件的作用与必要性)。所有命令从 `pro` 根目录执行，使用已安装项目依赖和原生 Bomber 扩展的 Python 环境：
 
@@ -41,7 +42,55 @@ python -m demos.08_option_vega.run_live --help
 
 2026-10-13 已有一次原生 SimNow 开仓成交：08 归属的 `MO2611-C-7400` 空 1 手。2026-10-14 已验证 DolphinDB 行情下的 Recording 非零目标链，但尚无该行情配置下原生 CTP 持续管理的线上通过结果。用户选择恢复并保留已有空仓；它属于本策略，应恢复管理，不能作为外部仓位忽略后另开新仓。仅把 `--account-reconciliation` 改成 `observe`，或者换一个空状态文件，都不能恢复这笔归属。
 
-**当前跨日恢复仍是运行器的限制。** 检查点身份包含交易日、估值日、参考条款和行情来源，旧身份不能直接用于下一交易日或来源切换；本次提供的人工迁移工具是过渡措施，尚未实现正常启动时自动核验、跨日更新和恢复。应由运行器处理已知策略账本的恢复、当日条款与行情就绪、柜台执行条件核验，只在归属冲突、在途状态不明或输入异常时要求人工处理。本节明确正常运行目标及当前差距，不将它登记为已经完成的自动恢复功能。
+**已实现启动时的跨日恢复。** 使用原检查点启动，运行器先核验真实成交归属和已终结订单，再查询当日柜台总仓、今昨仓及成本；核验通过后备份原代，更新当日执行账本并等待新鲜分钟。昨日价格、IV缓存和未完成开仓目标不重放；当天仍按配置的 `option-slot` 选约。本次支持08实时SimNow及CTP市场分钟转DolphinDB；未知活动订单、未决发送、归属冲突、持仓腿条款变化或缺失仍停止并保留原文件。详见下一节，旧的人工迁移步骤保留为历史诊断资料。
+
+### 与本轮多策略仓位管理的关系（2026-10-14）
+
+[GAP10 三策略需求与交付](../../doc/HANDOFF/gaps/GAP10_THREE_STRATEGY_REQUIREMENTS_2026-10-14.md) 已实现统一账户执行服务、逐策略归属，以及显式 `netted` / `independent` 两种模式。`independent` 不跨策略抵消订单，按各自真实成交更新仓位；`netted` 汇总目标并单独审计内部抵消。公共能力包含成交关联、去重、检查点、事件补交和独立停止／同日恢复，可作为 08 后续接入的执行基础，无须另写一套共享账户仓位管理。
+
+REV19原先只接入01/03/04。本次已增加 `kind=option_vega`，08 `assemble` 支持 `shared_service` 和独立策略ID；原DolphinDB分钟与指数特征输入、算法保持。08的信号检查点保存选约日期，防止同日重启重复选约；账户文件保存归属、订单和成交去重历史。同进程 `netted` 和独立进程 `independent` 均可装配08。空仓新共享会话仍核对管理范围；带仓恢复使用原账本，不能从账户净仓推断所有者。
+
+REV19的 [206 项离线验收](../../doc/evidence/live/GAP10_THREE_STRATEGIES_OFFLINE_20261014.json) 是历史基线。本次新增08接入、原生检查点导入、跨日、候选链变化和启动入口的专项回归，结果见 [本次交付](../../doc/HANDOFF/live/HANDOFF_OPTION_VEGA_SHARED_ROLLOVER_2026-10-14.md)。本机未连接真实数据库或柜台，08新共享执行及跨日管理仍须服务器确认，不能把CU/AU历史成交当作本次通过证据。
+
+### 正常启动：原仓恢复、持续管理与停止
+
+日盘使用下列入口；同一命令在下一交易日再次启动即可，TD日由只读登录观察后与日盘日期核对。默认继续管理 `MO2611-C-7400` 空一手，按原策略规则决定当日选约、对冲与退出，不另发固定测试目标。最初状态位于 `pro_new`，可直接指定已找到的原路径，不必手工复制或改写JSON：
+
+```bash
+cd /workspace/worker/pj/Chrono/nautilus_trader_demo/pro || exit 1
+export CTP_TD_ADDRESS=tcp://182.254.243.31:30001
+export CTP_PRODUCTION_MODE=true
+python -u -m scripts.integration.options.shared \
+  --connect --enable-orders --confirm-simnow \
+  --state-file /workspace/worker/pj/Chrono/nautilus_trader_demo/pro_new/tests/results/gap08-realtime-simnow/state-1791869411336135873.json
+```
+
+首次核验通过后，该文件转换为共享账户检查点，旁边自动保存 `.before-rollover-g<原代>.json` 备份和 `.vega-signal.json` 信号文件。后续继续使用同一路径。不要同时运行原08进程或另一个TD写入服务。快捷入口只运行一个08，但使用相同公共账户服务；实际多策略配置使用共享 `run` 或 `server/worker` 入口，由一个TD服务统一执行。
+
+运行至北京时间15:00结束，也可Ctrl+C／SIGTERM停止；撤销自身活动订单、核对并保存，保留成交仓位。午休时停止决策、继续账户维护，下午等待新鲜行情后继续。默认会话最多20笔委托，`--max-session-orders` 可在首次导入时设置，后续恢复保持该账户配置。启动应在日盘可取得新鲜数据时，入口允许09:29—14:56；午休启动须临近13:00，连接等待180秒不会跨整个午休。该入口是每日启动时自动恢复，不是跨夜常驻进程，也不自动完成到期换月或未知漏成交重建。
+
+MO/IM持仓的CFFEX通用平仓根据当日权威总仓规划，按当前今昨桶记账。其他交易所的独立策略昨仓尚未增加逐策略分桶，仍拒绝该范围的跨日独立恢复；不得将08的支持扩大成所有策略跨日均已支持。原08的 `run_live --resume` 也能直接从前日原生文件跨日恢复；转换成共享文件后则继续使用共享入口。
+
+多策略声明示例（加入现有新会话配置的 `strategies` 数组，账户额度须覆盖所有策略）：
+
+```json
+{
+  "strategy_id": "option-vega-live",
+  "kind": "option_vega",
+  "state_file": "option-vega-signal.json",
+  "argv": [
+    "--market-source", "dolphindb", "--market-bar-table", "stream_cffex_1min",
+    "--market-bar-timestamp", "end", "--market-volume-mode", "cumulative",
+    "--reference-source", "dolphindb", "--reference-timeout", "30",
+    "--index-source", "dolphindb-dfs", "--index-database", "dfs://min_bar",
+    "--index-table", "index_1min", "--index-bar-timestamp", "end",
+    "--index-availability", "observed", "--frame-wait-seconds", "20",
+    "--option-slot", "13:36", "--delta-targets", "0.25"
+  ]
+}
+```
+
+账户和策略ID、执行模式及固定配置须一致；恢复已有共享账户不支持直接增加新的策略ID或合并两个已有账户检查点。旧08导入保留原 `option-vega-live` 客户端及策略ID。08候选链跨日可增加／移除零仓路由，持仓或非零旧目标对应的路由不得移除。独立worker的命令与三策略手册相同，只将 `--strategy-id` 和能力文件改为该08策略；指数只绑定行情，不进入账户交易路由。
 
 ## 1. 策略逻辑
 

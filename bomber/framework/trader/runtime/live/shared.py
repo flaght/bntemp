@@ -20,6 +20,7 @@ class SharedStrategySession:
     saved_revision: int | None = None
     stop_requested_at_ns: int | None = None
     stopped_at_ns: int | None = None
+    saved_signal: object = None
 
     @property
     def strategy_id(self):
@@ -28,31 +29,51 @@ class SharedStrategySession:
     def restore(self, service, *, resume):
         """只恢复本策略消费版本；归属仓位及冻结订单永远由账户文件恢复。"""
         persisted = JsonStateStore(self.state_file).load()
-        if bool(persisted) != resume:
+        bootstrap = getattr(service, "bootstrap_signals", {}).get(self.strategy_id)
+        if bool(persisted) != resume and not (resume and persisted is None and bootstrap is not None):
             raise ValueError("策略新会话/恢复与信号检查点存在情况不符")
         source = service.snapshot_state()["sources"].get(self.strategy_id)
         account_revision = source["revision"] if source else 0
         if persisted:
             state = persisted.payload
-            if state.get("version") != 1 or state.get("identity") != self.identity:
+            if state.get("version") != 1:
                 raise ValueError("策略恢复身份或配置不一致")
+            if state.get("identity") != self.identity:
+                validate = getattr(self.session, "validate_rollover_identity", None)
+                if not callable(validate):
+                    raise ValueError("策略恢复身份或配置不一致")
+                validate(state["identity"], self.identity)
             if state["revision"] > account_revision:
                 raise ValueError("策略信号版本领先账户检查点，须对账")
             self.generation = persisted.generation
             self.saved_revision = state["revision"]
+            restore = getattr(self.session, "restore_signal", None)
+            if callable(restore):
+                if "signal" not in state:
+                    raise ValueError("08共享检查点缺少选约去重状态")
+                restore(state["signal"])
+                self.saved_signal = state["signal"]
+            if state["identity"] != self.identity:
+                self.saved_revision = None
         self.session.strategy.restore_target_revision(account_revision)
+        if persisted is None and bootstrap is not None:
+            self.session.restore_signal(bootstrap)
         # 指标按各原Runner重新预热。旧账户目标处于暂停状态，不重放历史交易。
 
     def save(self, service):
         source = service.snapshot_state()["sources"].get(self.strategy_id)
         revision = source["revision"] if source else 0
-        if self.saved_revision == revision and self.failure is None:
+        checkpoint = getattr(self.session, "signal_checkpoint", None)
+        signal = checkpoint.snapshot_state() if checkpoint is not None else None
+        if self.saved_revision == revision and self.failure is None and signal == self.saved_signal:
             return
         persisted = JsonStateStore(self.state_file).save({"version": 1, "identity": self.identity,
             "revision": revision,
-            "signal_recovery": "rewarm", "failure": self.failure}, expected_generation=self.generation)
+            "signal_recovery": "rewarm", "failure": self.failure,
+            **({"signal": signal} if signal is not None else {})}, expected_generation=self.generation)
         self.generation = persisted.generation
         self.saved_revision = revision
+        self.saved_signal = signal
 
 
 class SharedAccountLiveHost:
@@ -64,8 +85,8 @@ class SharedAccountLiveHost:
     def __init__(self, account, service, strategies, *, resources, resume=False, ready_seconds=30):
         self.account, self.service = account, service
         self.strategies = {item.strategy_id: item for item in strategies}
-        if len(self.strategies) != len(strategies) or len(strategies) < 2:
-            raise ValueError("共享宿主须声明至少两个不同策略ID")
+        if len(self.strategies) != len(strategies) or not strategies:
+            raise ValueError("共享宿主须声明至少一个不同策略ID")
         if ready_seconds <= 0:
             raise ValueError("策略就绪等待须为正数")
         self.resources, self.resume, self.ready_seconds = resources, resume, ready_seconds
@@ -91,6 +112,9 @@ class SharedAccountLiveHost:
             while any(not item.session.runner.session_ready() for item in self.strategies.values()):
                 for item in self.strategies.values():
                     item.session.references.refresh()
+                    poll = getattr(item.session.runner, "poll_live_inputs", None)
+                    if callable(poll):
+                        poll()
                 self.account.poll()
                 if time.monotonic() > deadline:
                     raise RuntimeError("共享策略未在期限内取得健康行情/参考/账户")
@@ -152,6 +176,9 @@ class SharedAccountLiveHost:
                 if session.runner.failure:
                     raise RuntimeError(session.runner.failure)
                 session.references.refresh()
+                poll = getattr(session.runner, "poll_live_inputs", None)
+                if callable(poll):
+                    poll()
                 current = getattr(session.runner, "reference_is_current", None)
                 valid_reference = current() if callable(current) else session.references.spec == session.runner.fixed_spec
                 if not valid_reference:
@@ -181,6 +208,9 @@ class SharedAccountLiveHost:
             while not session.runner.session_ready():
                 self.account.poll()
                 session.references.refresh()
+                poll = getattr(session.runner, "poll_live_inputs", None)
+                if callable(poll):
+                    poll()
                 if time.monotonic() > deadline:
                     raise RuntimeError("重启策略未在期限内就绪")
                 time.sleep(0.2)

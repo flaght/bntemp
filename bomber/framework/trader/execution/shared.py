@@ -95,6 +95,7 @@ class SharedAccountExecutionService(AccountExecutionService):
         self._suspended = set()
         self._draining = set()
         self._cancelled = set()
+        self.bootstrap_signals = {}
         self.event_journal = None
         self.client.backend = _SharedAccountBackend(self, client.backend)
         self.client.register_execution_event_handler(self._route_event)
@@ -424,6 +425,8 @@ class SharedAccountExecutionService(AccountExecutionService):
                 state["shared"]["event_journal"] = self.event_journal.snapshot_state()
             if self.instrument_scope is not None:
                 state["shared"]["managed_instruments"] = sorted(self.instrument_scope.instruments)
+            if self.bootstrap_signals:
+                state["shared"]["bootstrap_signals"] = deepcopy(self.bootstrap_signals)
         return state
 
     def validate_owned_state(self):
@@ -455,13 +458,15 @@ class SharedAccountExecutionService(AccountExecutionService):
                 owned = [Decimal(row["quantity"]) for row in self.position_manager.attribution.state()["owned"]
                          if row["instrument_id"] == str(instrument) and row["client_id"] == self.client_id]
                 gross = ledger.snapshot(instrument)
-                if (gross.long_yesterday or gross.short_yesterday
-                        or sum((max(q, Decimal(0)) for q in owned), Decimal(0)) != gross.long_today
-                        or sum((max(-q, Decimal(0)) for q in owned), Decimal(0)) != gross.short_today):
+                generic = str(instrument).rsplit(".", 1)[-1] == "CFFEX"
+                if ((not generic and (gross.long_yesterday or gross.short_yesterday))
+                        or sum((max(q, Decimal(0)) for q in owned), Decimal(0)) != gross.long_total
+                        or sum((max(-q, Decimal(0)) for q in owned), Decimal(0)) != gross.short_total):
                     raise ValueError("独立策略归属总仓与CTP同日账本不一致；禁止净额/昨仓账本混用")
 
     def restore_state(self, state):
         shared = state.get("shared", {})
+        self.bootstrap_signals = deepcopy(shared.get("bootstrap_signals", {}))
         if shared.get("execution_mode", "netted") != self.execution_mode:
             raise ValueError("共享账户恢复执行模式不一致")
         if "event_journal" in shared:

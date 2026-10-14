@@ -9,7 +9,7 @@ import sys
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
-ACCEPTANCE_VERSION = "OPTION_DOLPHIN_PUSH_20261014_REV5"
+ACCEPTANCE_VERSION = "OPTION_SHARED_ROLLOVER_20261014"
 RETIRED_SOURCES = ("bomber/framework/datahub/features/index.py", "bomber/framework/dataprep/features/index.py",
     "bomber/framework/market/stream/dolphin/index.py", "bomber/framework/trader/runtime/live/channels/index.py")
 # 与本次被测代码一起交付；远程代码部署不依赖doc/目录。
@@ -46,7 +46,7 @@ EXPECTED_SOURCE_HASHES = {
     "scripts/integration/features/read_only.py": "f4f591965459151a318e13cd6f2d942584f7911588003895b467464be864349b",
     "tests/test_dolphindb_index_features.py": "72f8107575170d4151131364051c26685a3ea82408cddd0cb3ba53b25216cb62",
     "tests/test_feature_acceptance_entry.py": "45706cff7e93a3a3fa2c74ee54d9f56f390e3c7bc2913ce736229872c95d30b5",
-    "tests/run_cross_section_acceptance.py": "3621a8f58e90c1c239441d47050298d5b18985d33b7c77215e57820ec4f14950",
+    "tests/run_cross_section_acceptance.py": "f526f63e251c87a4dcc102ef94e6a3dbb4b5090c635d77d53e966c62e67229b8",
     "tests/test_feature_datahub.py": "06ea20c4810696711aa16560dbf0fcea7102a23c729d1aea391f60d7f6f1b63a",
     "tests/test_feature_definitions.py": "66336d4061d813c3b55b8f2d84c258f28a0356c51a08089865ee9d2ed41745d2",
 }

@@ -5,6 +5,7 @@ from contextlib import ExitStack
 from pathlib import Path
 import sys
 import time
+import os
 from types import SimpleNamespace
 
 from .config import read_config, validate_budget_increase
@@ -63,7 +64,7 @@ def build_host(config, *, resume, diagnostics=None, read_only=False, strategy_pr
     from bomber.framework.trader.runtime.live.shared import SharedAccountLiveHost, SharedStrategySession
     from bomber.framework.trader.runtime.live.contracts import LiveRunContext
     from bomber.framework.trader.runtime.live.recovery import InstrumentPositionScope
-    from .factories import strategy_arguments, instrument_specs, assemble_strategy_session
+    from .factories import strategy_arguments, instrument_specs, assemble_strategy_session, reference_identity
 
     resources = ExitStack()
     diagnostics = {} if diagnostics is None else diagnostics
@@ -72,10 +73,14 @@ def build_host(config, *, resume, diagnostics=None, read_only=False, strategy_pr
         account_config = config["account"]
         transport = build_simnow_transport(CtpTdApiTransport, client_id=account_config["client_id"],
             flow_path=f"/tmp/{account_config['client_id']}-td", timeout_seconds=15)
-        md_front = required("CTP_MD_ADDRESS")
+        dolphin_only = all(row["kind"] == "option_vega" and "--market-source" in row["argv"] and
+            row["argv"][row["argv"].index("--market-source")+1] == "dolphindb" for row in config["strategies"])
+        md_front = os.getenv("CTP_MD_ADDRESS", "") if dolphin_only else required("CTP_MD_ADDRESS")
         if config["environment"] == "replay":
             validate_replay_environment(md_front, transport.front, transport.production_mode)
         CtpSharedAccountLifecycle.acquire(resources, transport, environment="simnow")
+        from bomber.framework.trader.runtime.live.local import strategy_state_lock
+        resources.enter_context(strategy_state_lock(Path(config["account_state_file"])))
         driver_holder = {}
         def disconnected(reason):
             client = driver_holder.get("client")
@@ -101,10 +106,11 @@ def build_host(config, *, resume, diagnostics=None, read_only=False, strategy_pr
             lifecycle = SimpleNamespace(transport=transport, md_front=md_front)
             # 每个MD拥有独立flow目录；同策略类型也可以多实例。
             inputs = entry.prepare_inputs(args, context, lifecycle)
-            upstream_config = getattr(inputs.upstream, "config", None)
+            upstream = getattr(inputs, "upstream", getattr(inputs, "ctp_upstream", None))
+            upstream_config = getattr(upstream, "config", None)
             if upstream_config is not None:
                 from dataclasses import replace
-                inputs.upstream.config = replace(upstream_config,
+                upstream.config = replace(upstream_config,
                     flow_path=f"/tmp/{account_config['client_id']}-{row['strategy_id']}-md")
             for instrument, spec in instrument_specs(row["kind"], inputs.references).items():
                 if instrument in specs and (spec.tick, spec.multiplier) != (specs[instrument].tick, specs[instrument].multiplier):
@@ -133,7 +139,7 @@ def build_host(config, *, resume, diagnostics=None, read_only=False, strategy_pr
             session_check=lambda: driver.is_simnow_session, orders=True,
             limit_offset_ticks=account_config["limit_offset_ticks"],
             instrument_scope=position_scope,
-            generic_close_venues=("DCE", "CZCE"), generic_close_today_first_venues=("DCE", "CZCE"))
+            generic_close_venues=("DCE", "CZCE", "CFFEX"), generic_close_today_first_venues=("DCE", "CZCE", "CFFEX"))
         driver_holder["client"] = execution.client
         service = SharedAccountExecutionService(execution.client, prices=execution.prices,
             instrument_limits=limits, budget=budget, instrument_scope=position_scope,
@@ -147,16 +153,22 @@ def build_host(config, *, resume, diagnostics=None, read_only=False, strategy_pr
                 identity={"strategy_id": row["strategy_id"], "kind": row["kind"], "argv": row["argv"],
                     "trading_day": config["trading_day"], "environment": config["environment"],
                     "routes": session.client.configuration(),
-                    "reference": str(session.references.spec)}))
+                    "reference": reference_identity(session)}))
         identity = {"trading_day": config["trading_day"], "environment": config["environment"],
             "replay_md_trading_day": config.get("replay_md_trading_day"), "account": account_config,
             "strategies": {item.strategy_id: item.identity for item in sessions}}
         if position_scope is not None:
             identity["managed_instruments"] = sorted(position_scope.instruments)
+        from .rollover import payload_for_day
         account = CtpSharedAccountLifecycle(execution, service, transport=transport,
             state_file=config["account_state_file"], identity=identity, resources=resources,
-            expected_day=config["trading_day"], position_scope=position_scope)
-        host = SharedAccountLiveHost(account, service, sessions, resources=resources, resume=resume)
+            expected_day=config["trading_day"], position_scope=position_scope, rollover_transform=payload_for_day)
+        account.option_sessions = {item.strategy_id: item.session for item in sessions
+                                   if hasattr(item.session, "signal_checkpoint")}
+        ready_seconds = max([30] + [args.ready_timeout for row, entry, args, inputs in prepared
+                                   if row["kind"] == "option_vega"])
+        host = SharedAccountLiveHost(account, service, sessions, resources=resources, resume=resume,
+            ready_seconds=ready_seconds)
         return host
     except BaseException:
         if driver is not None:

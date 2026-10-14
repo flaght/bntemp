@@ -59,7 +59,9 @@ def main(argv=None):
             os.fchmod(descriptor, 0o600)
             with os.fdopen(descriptor, "wb") as output:
                 output.write(encode({"version": 1, "strategy_id": sid, "key": key,
-                    "socket": str(args.socket.resolve()), "configuration": host.service._ports[sid].configuration()}))
+                    "socket": str(args.socket.resolve()), "configuration": host.service._ports[sid].configuration(),
+                    "bootstrap_signal": host.service.bootstrap_signals.get(sid),
+                    "reference": getattr(host.strategies[sid].session, "session_identity", None)}))
         print(f"账户服务就绪：socket={args.socket}；策略客户端文件目录={args.credentials_dir}", flush=True)
         until = time.monotonic() + config["seconds"] + 120  # 给分终端启动和策略先停机留出时间。
         while time.monotonic() < until:
