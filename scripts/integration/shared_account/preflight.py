@@ -7,6 +7,21 @@ import time
 from .config import read_config
 
 
+def connect_session_market(session, connected):
+    """只读原始深度不依赖Runner启动产生的Bar订阅。"""
+    if hasattr(session, "feeds"):
+        for feed in set(session.feeds.values()):
+            connected.append(feed)
+            feed.connect()
+        return
+    from bomber.framework.market.basic.base import DataType
+    upstream = session.upstream
+    for instrument in sorted(set(session.client.routes.values()), key=str):
+        upstream.subscribe(instrument, DataType.QUOTE_TICK)
+    connected.append(upstream)  # connect部分失败也须关闭已建立的资源。
+    upstream.connect()
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, required=True)
@@ -30,12 +45,7 @@ def main(argv=None):
                           strategy_processes=True)
         connected = []
         for item in host.strategies.values():
-            session = item.session
-            if hasattr(session, "feeds"):
-                for feed in set(session.feeds.values()):
-                    feed.connect(); connected.append(feed)
-            else:
-                session.bar_feed.connect(); connected.append(session.bar_feed)
+            connect_session_market(item.session, connected)
         until = time.monotonic() + 180
         while True:
             markets = {sid: {str(i): wire(observation) for i, observation in

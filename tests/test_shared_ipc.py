@@ -9,6 +9,7 @@ from tempfile import TemporaryDirectory
 import threading
 import time
 import unittest
+from types import SimpleNamespace
 
 from tests import test_shared_account as fixtures
 
@@ -30,6 +31,34 @@ class SharedIpcTests(unittest.TestCase):
     native_modules = fixtures.SharedAccountTests.native_modules
     native_account = fixtures.SharedAccountTests.native_account
     request = fixtures.SharedAccountTests.request
+
+    def test_readonly_preflight_connects_raw_depth_without_bar_or_runner_start(self):
+        from scripts.integration.shared_account.preflight import connect_session_market
+        calls = []
+        class RawFeed:
+            def subscribe(self, instrument, data_type):
+                calls.append((str(instrument), data_type.value))
+            def connect(self):
+                if not calls:
+                    raise RuntimeError("缺少订阅")
+                calls.append("connected")
+        class BarFeed:
+            def connect(self):
+                raise AssertionError("只读预检不得连接无Bar订阅的聚合器")
+        upstream = RawFeed()
+        session = SimpleNamespace(upstream=upstream, bar_feed=BarFeed(),
+            client=SimpleNamespace(routes={"main": self.instrument, "alias": self.instrument}))
+        connected = []
+        connect_session_market(session, connected)
+        self.assertEqual(calls, [(str(self.instrument), "quote_tick"), "connected"])
+        self.assertEqual(connected, [upstream])
+        def fail_connect():
+            raise RuntimeError("连接部分失败")
+        upstream.connect = fail_connect
+        cleanup = []
+        with self.assertRaisesRegex(RuntimeError, "部分失败"):
+            connect_session_market(session, cleanup)
+        self.assertEqual(cleanup, [upstream])
 
     def prepare(self, path, *, resume=False, gross=None):
         from bomber.framework.trader.execution.ipc import AccountExecutionProtocol

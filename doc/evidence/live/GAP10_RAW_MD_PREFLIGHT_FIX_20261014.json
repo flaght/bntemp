@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "date": "2026-10-14",
+  "remote_report": "three-replay-independent-20261013/three-readonly-1791976278218070424",
+  "failure": "Bar aggregation feed connected without Bar subscriptions in readonly preflight",
+  "cause": "Readonly preflight assembles sessions but intentionally does not start Runner; Bar subscriptions are attached by Runner.start.",
+  "change": "Subscribe each declared unique instrument to QUOTE_TICK on original upstream and connect original upstream directly. Preserve alternate session.feeds branch. Register cleanup before connect so partial connection failures are cleaned up.",
+  "strategy_started": false,
+  "public_execution_changed": false,
+  "local_verification": {
+    "status": "passed",
+    "group": "shared-ipc",
+    "tests_run": 11,
+    "report": "tests/results/main-ema-acceptance-1791976366758002000",
+    "broker_transport": "substitute",
+    "network_connected": false
+  },
+  "live_replay_verification": "pending Linux readonly preflight rerun",
+  "gap10_closed": false
+}
