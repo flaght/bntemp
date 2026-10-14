@@ -84,20 +84,24 @@ class InstrumentHealthGate:
         self.depth_records = {}
 
     def stale_instruments(self):
-        now, received = self.clock_ns(), self.monotonic_ns()
         observations = getattr(self.upstream, "depth_observations", None)
         if observations is None and self.fallback_events is None:
             return {}  # 非CTP Feed继续由自身健康接口门控。
         if observations is not None:
-            self.depth_records = dict(observations)
+            observations = dict(observations)
+            self.depth_records = observations
+        fallback_events = dict(self.fallback_events or {})
+        fallback_receives = dict(self.fallback_receives or {})
+        # 先冻结输入，再采样检查时间；取深度锁期间的新Tick不能晚于旧检查时钟。
+        now, received = self.clock_ns(), self.monotonic_ns()
         failures = {}
         identity = ChannelIdentity("market", "ctp", getattr(self.upstream, "source_id", "ctp-md"))
         for instrument in self.instruments:
             observation = observations.get(instrument) if observations is not None else None
             event = (observation.ts_event if observation else
-                     self.fallback_events.get(instrument) if observations is None else None)
+                     fallback_events.get(instrument) if observations is None else None)
             receive = (observation.received_monotonic_ns if observation else
-                       (self.fallback_receives or {}).get(instrument) if observations is None else None)
+                       fallback_receives.get(instrument) if observations is None else None)
             day_ok = observations is None or (observation and observation.trading_day == self.expected_day)
             regressed = bool(observation and observation.timestamp_regressed)
             event_age = None if event is None else now - event
