@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "date": "2026-10-14",
+  "status": "offline_passed_linux_readonly_rerun_pending",
+  "remote_failure_report": "shared-mother-probe-1791958758853479920",
+  "observed_day": "20261014",
+  "expected_day": "20261014",
+  "remote_orders_submitted": 0,
+  "remote_original_state_unchanged": true,
+  "cause": "New readonly probe used is_simnow_session, which includes enable_simnow_orders. Disabled-order readonly session was rejected despite correct authenticated identity.",
+  "fix": "Add is_simnow_authenticated for connected matching broker/investor identity; original is_simnow_session keeps identical enable-orders semantics. Probe always verifies authenticated identity/day, and also requires old submission session flag in submit mode.",
+  "new_regression": "Actual native Driver with fake transport readonly login passes preflight, submit remains rejected, wrong TD/closed connection rejected, transport.sent empty.",
+  "report": "tests/results/main-ema-acceptance-1791958839136309000/summary.json",
+  "counts": {
+    "shared-mother-probe": 9,
+    "shared-account": 64,
+    "live-common": 116
+  },
+  "network_connected": false,
+  "real_broker_orders_submitted": 0,
+  "gap10_closed": false
+}

@@ -1,0 +1,83 @@
+{
+  "date": "2026-10-14",
+  "source": "user_returned_td_readonly_and_state_candidate_search_console",
+  "td_readonly": {
+    "front": "tcp://182.254.243.31:30001",
+    "broker_id": "9999",
+    "user_masked": "***61",
+    "trading_day": "20261014",
+    "instruments": 9,
+    "account_revision": 1,
+    "currencies": [
+      "CNY"
+    ],
+    "orders_revision": 1,
+    "active_orders": 0,
+    "net_positions": {
+      "MO2611-C-7400.CFFEX": "-1",
+      "cu2611.SHFE": "0",
+      "au2612.SHFE": "-1",
+      "hc2701.SHFE": "1",
+      "rb2701.SHFE": "0",
+      "sc2611.INE": "1",
+      "ni2611.SHFE": "1",
+      "i2701.DCE": "-1",
+      "ag2612.SHFE": "-1"
+    }
+  },
+  "state_candidates": [
+    {
+      "path": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro_new/tests/results/gap08-realtime-simnow/state-1791869411336135873.json",
+      "generation": 35,
+      "td_day": "20261013",
+      "owned": [
+        {
+          "quantity": "-1",
+          "strategy_id": "option-vega-live",
+          "target_key": "MO2611-C-7400.CFFEX"
+        }
+      ]
+    },
+    {
+      "path": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro_new/demos/08_option_vega/results/replay-ctp-20261012-100826.json",
+      "generation": 15,
+      "td_day": "20261009",
+      "owned": []
+    },
+    {
+      "path": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro_new/demos/08_option_vega/results/replay-ctp-20261012-114149.json",
+      "generation": 15,
+      "td_day": "20261009",
+      "owned": [
+        {
+          "quantity": "-1",
+          "strategy_id": "option-vega-live",
+          "target_key": "MO2610-C-7300.CFFEX"
+        }
+      ]
+    }
+  ],
+  "selected_for_next_readonly_validation": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro_new/tests/results/gap08-realtime-simnow/state-1791869411336135873.json",
+  "selection_basis": "原文件名、原TD日、合约与非零归属吻合原开仓记录，当前柜台净仓相同；不是凭generation选定",
+  "working_directory_for_current_code": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro",
+  "next_command": "python -u -m scripts.integration.options.simnow_preflight --connect --expected-trading-day 20261014 --timeout 30 --state-file /workspace/worker/pj/Chrono/nautilus_trader_demo/pro_new/tests/results/gap08-realtime-simnow/state-1791869411336135873.json",
+  "confirmed": {
+    "state_candidate_located": true,
+    "current_td_login_and_queries_succeeded": true,
+    "reported_net_matches_candidate_owned": true,
+    "current_active_orders_zero": true
+  },
+  "pending": [
+    "公共原文件校验和",
+    "原账户身份一致",
+    "保存总仓与当前总仓一致",
+    "权威今昨仓与资金时效核对",
+    "跨日与来源迁移",
+    "DolphinDB市场的SimNow执行验证"
+  ],
+  "limitations": "本机未读取该远端文件或查询柜台。用户搜索提取身份与归属，未验证校验和；净仓不能代替总仓。其他品种不产生08归属。",
+  "source_state_modified": false,
+  "state_copied_or_migrated": false,
+  "runtime_code_changed": false,
+  "orders_sent_by_this_review": false
+}
