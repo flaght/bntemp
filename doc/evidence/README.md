@@ -22,7 +22,7 @@
 
 ## 2026-10-14 开盘后的原始行情对比准备
 
-[同连接全链／缩减／全链探针](commands/OPTION_VEGA_RAW_ABA_PROBE.py) 重新读取当日 MO/IM 条款，随后关闭参考连接，仅 MD 依次采样三段，每段默认 300 秒；期权 MO2611-C-7400 及 IM2611 连续订阅，不读取昨日检查点、不连接 TD、不报单。分段记录整体和两腿的回调间隔、源时间及源交易日，报告位于运行机 `tests/results/option-vega-raw-aba`。本地无网络边界及回调检查通过；尚无线上返回，不登记诊断根因或运行通过。执行方式及范围见 [08 说明](../../demos/08_option_vega/README.md)。
+[同连接全链／缩减／全链探针](commands/OPTION_VEGA_RAW_ABA_PROBE.py) 重新读取当日 MO/IM 条款，随后关闭参考连接，仅 MD 依次采样三段，每段默认 300 秒；期权 MO2611-C-7400 及 IM2611 连续订阅，不读取昨日检查点、不连接 TD、不报单。分段记录整体和两腿的回调间隔、源时间及源交易日，报告位于运行机 `tests/results/option-vega-raw-aba`。本地无网络边界及回调检查通过。用户已返回 09:51:50—09:56:51 的 FULL_2：107 个合约、ALL 29467 条，整体最大间隔 13.91 秒，期权 17.231 秒、期货 17.667 秒；最终 completed、failure=null、cleanup_errors=[]。该段没有达到 30 秒的原始接收静默，FULL_1/REDUCED 与切换确认仍待提供，不能据此确认订阅负载根因或正式 Feed 通过。见 [精简证据](live/OPTION_VEGA_RAW_ABA_20261014.json) 及 [08 说明](../../demos/08_option_vega/README.md)。
 
 ## 2026-10-11模型运行与恢复证据
 
