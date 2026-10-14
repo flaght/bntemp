@@ -35,7 +35,9 @@
         "--quantity",
         "1",
         "--max-notional",
-        "1000000"
+        "1000000",
+        "--ctp-future-buffer-ms",
+        "100"
       ]
     },
     {
@@ -64,7 +66,9 @@
         "--max-quantity",
         "1",
         "--max-notional",
-        "1000000"
+        "1000000",
+        "--ctp-future-buffer-ms",
+        "100"
       ]
     },
     {
@@ -91,8 +95,11 @@
         "--exit-z",
         "0.25",
         "--max-notional",
-        "1000000"
+        "1000000",
+        "--ctp-future-buffer-ms",
+        "100"
       ]
     }
-  ]
+  ],
+  "existing_position_policy": "preserve_external"
 }

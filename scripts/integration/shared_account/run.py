@@ -129,7 +129,7 @@ def build_host(config, *, resume, diagnostics=None, read_only=False, strategy_pr
             from bomber.framework.trader.runtime.live.channels.ctp import occupied_positions
             diagnostics["managed_instruments"] = sorted(position_scope.instruments)
             diagnostics["external_gross"] = position_scope.external(occupied_positions(transport))
-            if not resume:
+            if not resume and config.get("existing_position_policy", "require_flat") == "require_flat":
                 assert_flat_account(driver, transport, position_scope=position_scope)
             print(f"共享账户管理合约: {diagnostics['managed_instruments']} "
                   f"范围外总仓={diagnostics['external_gross']}；不产生策略归属", flush=True)
@@ -139,11 +139,14 @@ def build_host(config, *, resume, diagnostics=None, read_only=False, strategy_pr
             max_abs_position=budget.max_gross_quantity, max_order_notional=budget.max_gross_notional,
             max_abs_position_notional=budget.max_gross_notional, max_market_age_ns=120_000_000_000,
             contract_multiplier=spec.multiplier) for i, spec in specs.items()}
+        from bomber.framework.trader.execution.policy import AccountReconciliationMode
+        preserve_external = config.get("existing_position_policy") == "preserve_external"
         execution = build_ctp_portfolio_execution(driver, trading_day=config["trading_day"],
             price_increments={i: spec.tick for i, spec in specs.items()},
             multipliers={i: spec.multiplier for i, spec in specs.items()}, instrument_limits=limits,
             session_check=lambda: driver.is_simnow_session, orders=True,
             limit_offset_ticks=account_config["limit_offset_ticks"],
+            account_reconciliation=(AccountReconciliationMode.OBSERVE if preserve_external else AccountReconciliationMode.STRICT),
             instrument_scope=position_scope,
             generic_close_venues=("DCE", "CZCE", "CFFEX"), generic_close_today_first_venues=("DCE", "CZCE", "CFFEX"))
         driver_holder["client"] = execution.client
@@ -165,10 +168,13 @@ def build_host(config, *, resume, diagnostics=None, read_only=False, strategy_pr
             "strategies": {item.strategy_id: item.identity for item in sessions}}
         if position_scope is not None:
             identity["managed_instruments"] = sorted(position_scope.instruments)
+        if preserve_external:
+            identity["existing_position_policy"] = "preserve_external"
         from .rollover import payload_for_day
         account = CtpSharedAccountLifecycle(execution, service, transport=transport,
             state_file=config["account_state_file"], identity=identity, resources=resources,
-            expected_day=config["trading_day"], position_scope=position_scope, rollover_transform=payload_for_day)
+            expected_day=config["trading_day"], position_scope=position_scope, rollover_transform=payload_for_day,
+            preserve_external=preserve_external)
         account.option_sessions = {item.strategy_id: item.session for item in sessions
                                    if hasattr(item.session, "signal_checkpoint")}
         ready_seconds = max([30] + [args.ready_timeout for row, entry, args, inputs in prepared

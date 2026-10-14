@@ -138,9 +138,15 @@ def assemble_minute_market(args, upstream, source_id, profile, instruments, expe
     from bomber.framework.trader.runtime.live.channels.ctp import CtpMarketChannel, InstrumentHealthGate
     from bomber.framework.trader.runtime.live.profiles import build_minute_feed
     config = source_config(args)
+    future_ms = getattr(args, "ctp_future_buffer_ms", 0)
+    if future_ms and (config.source != "ctp" or profile.environment != "realtime"):
+        raise ValueError("CTP未来事件缓冲须为实时CTP行情")
     if config.source == "file":
         raise ValueError("文件行情使用回测Runtime，不进入Live分钟装配")
     if config.source == "ctp":
+        if future_ms:
+            from dataclasses import replace
+            upstream.config = replace(upstream.config, future_buffer_ns=future_ms * 1_000_000)
         gate = InstrumentHealthGate(upstream, instruments, expected_day, policy=profile,
             max_age_seconds=getattr(args, "instrument_max_age_seconds", 10), clock_ns=clock_ns,
             fallback_events=fallback_events, fallback_receives=fallback_receives)

@@ -553,3 +553,13 @@ Unix账户服务/客户端/策略worker、写前请求/同代事件日志/确认
 GAP10_THREE_STRATEGIES_OFFLINE_20261014.json；完整运行手册THREE_STRATEGIES.md。
 北京时间16:00 replay、21:00 realtime由用户Linux执行并回传；实时以验收通过为门槛。
 本地未连接数据库/行情/柜台，保留旧配置/状态。GAP10整体仍开放。
+## 2026-10-14 REV26：四品种独立会话
+
+已交付SHFE/INE同合约原仓基线隔离、保留原成交/游标/OrderRef的同日范围迁移、
+实际盘口预算上界及有界未来Tick等待。原策略算法、请求/回报归属及同代恢复结构
+沿用。配置/实现边界及完整命令见
+[四品种运行流程](../../../scripts/integration/shared_account/FOUR_PRODUCTS_RUNBOOK_20261014.md)。
+215项集中离线通过，报告main-ema-acceptance-1791990691556189000。Linux原生
+calendar-live及实际三个独立worker同时运行/成交/单独停止恢复仍待核验。
+SHFE/INE独立昨仓、旧横截面已有交易历史的扩品种迁移不在本批自动恢复范围内。
+GAP10继续开放。

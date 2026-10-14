@@ -56,11 +56,18 @@ def add_environment_arguments(parser):
     parser.add_argument("--replay-md-trading-day", help="replay必填：原始行情TradingDay，YYYYMMDD")
     parser.add_argument("--instrument-max-age-seconds", type=float, default=10,
                         help="逐合约时效(0,120]秒；realtime检查事件/接收，replay检查接收")
+    parser.add_argument("--ctp-future-buffer-ms", type=int, default=0,
+                        help="realtime小幅超前Tick先等待再发布，范围0至100毫秒；原时间戳不改写")
 
 
 def validate_environment_arguments(args):
     policy = CtpLiveProfile(args.simnow_environment, args.replay_md_trading_day)
     validate_instrument_max_age(args.instrument_max_age_seconds)
+    buffer_ms = getattr(args, "ctp_future_buffer_ms", 0)
+    if isinstance(buffer_ms, bool) or not isinstance(buffer_ms, int) or not 0 <= buffer_ms <= 100:
+        raise ValueError("ctp-future-buffer-ms须为0至100毫秒")
+    if buffer_ms and args.simnow_environment != "realtime":
+        raise ValueError("CTP未来事件缓冲仅用于realtime")
     return policy
 
 

@@ -250,7 +250,8 @@ class SharedAccountTests(unittest.TestCase):
             persistence=import_module("bomber.framework.trader.persistence"),
             events=import_module("bomber.framework.trader.execution.events"))
 
-    def native_account(self, path, modules, *, scoped=False, execution_mode="netted"):
+    def native_account(self, path, modules, *, scoped=False, execution_mode="netted", preserve_external=False,
+                       extra_instruments=()):
         owner = self
         self.timestamp = time.time_ns()
         self.now = self.timestamp
@@ -322,8 +323,8 @@ class SharedAccountTests(unittest.TestCase):
         positions = self.portfolio.PositionManager()
         prices = self.risk.MarketReferencePriceStore()
         prices.update(self.instrument, 3000, self.now)
-        limits = {self.instrument: self.risk.RiskLimits(max_order_quantity=10, max_abs_position=10,
-            max_market_age_ns=120_000_000_000, contract_multiplier=1)}
+        limits = {i: self.risk.RiskLimits(max_order_quantity=10, max_abs_position=10,
+            max_market_age_ns=120_000_000_000, contract_multiplier=1) for i in (self.instrument, *extra_instruments)}
         ledger = modules.ledger.CtpPositionLedger("20261013")
         backend = modules.backend.NautilusLiveExecutionBackend("account", driver)
         client = modules.controlled.ControlledLiveExecutionClient("account",
@@ -333,7 +334,7 @@ class SharedAccountTests(unittest.TestCase):
         backend.register_report_handler(modules.accounting.CtpExecutionAccounting(ledger, {self.instrument: 1}).on_report)
         scope = None
         if scoped:
-            scope = import_module("bomber.framework.trader.runtime.live.recovery").InstrumentPositionScope((self.instrument,))
+            scope = import_module("bomber.framework.trader.runtime.live.recovery").InstrumentPositionScope(limits)
             # 使用实际portfolio builder验证范围绑定和最后一层报单限制。
             ctp_package = sys.modules["bomber.framework.trader.execution.ctp"]
             ctp_package.CtpExecutionAccounting = modules.accounting.CtpExecutionAccounting
@@ -345,9 +346,10 @@ class SharedAccountTests(unittest.TestCase):
             sys.modules["bomber.framework.trader.execution.simulation"].SimulationExecutionClient = import_module(
                 "bomber.framework.trader.execution.simulation.client").SimulationExecutionClient
             execution = import_module("bomber.framework.trader.execution.builders").build_ctp_portfolio_execution(
-                driver, trading_day="20261013", price_increments={self.instrument: 1}, multipliers={self.instrument: 1},
+                driver, trading_day="20261013", price_increments={i: 1 for i in limits}, multipliers={i: 1 for i in limits},
                 instrument_limits=limits, session_check=lambda: driver.is_simnow_session, orders=True,
-                positions=positions, prices=prices, instrument_scope=scope, limit_offset_ticks=0)
+                positions=positions, prices=prices, instrument_scope=scope, limit_offset_ticks=0,
+                account_reconciliation="observe" if preserve_external else "strict")
             client, backend, ledger = execution.client, execution.backend, execution.ledger
         shared = import_module("bomber.framework.trader.execution.shared")
         service = shared.SharedAccountExecutionService(client, prices=prices, instrument_limits=limits,
@@ -360,9 +362,111 @@ class SharedAccountTests(unittest.TestCase):
         execution = NS(driver=driver, client=client, ledger=ledger, positions=positions, backend=backend)
         lifecycle = modules.lifecycle.CtpSharedAccountLifecycle(execution, service, transport=transport,
             state_file=path, identity={"id": "test-shared"}, resources=resources, expected_day="20261013",
-            position_scope=scope)
+            position_scope=scope, preserve_external=preserve_external)
         self.addCleanup(client.stop)
         return lifecycle, service, transport, ports, resources
+
+    def test_independent_same_instrument_external_baseline_never_becomes_owned_or_closed(self):
+        modules = self.native_modules()
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "account.json"
+            account, service, transport, (one, two), _ = self.native_account(path, modules,
+                scoped=True, execution_mode="independent", preserve_external=True)
+            transport.gross = {str(self.instrument): (2, 3), "ag2612.SHFE": (0, 1)}
+            baseline = dict(transport.gross)
+            account.start(resume=False)
+            service.start(); one.start(); two.start(); account.authorize()
+            self.assertEqual(service.position_manager.account_position(service.client_id, self.instrument), 0)
+            self.assertEqual(service.position_manager.position("one", "main"), 0)
+            self.submit(one, 1)
+            self.assertEqual(transport.sent[-1]["CombOffsetFlag"], "0")
+            transport.fill(transport.sent[-1]["OrderRef"])
+            self.assertEqual(transport.gross[str(self.instrument)], (3, 3))
+            self.assertEqual(service.position_manager.position("one", "main"), 1)
+            self.assertEqual(service.position_manager.position("two", "main"), 0)
+            account._validate_account()
+            self.submit(one, 0, revision=2)
+            self.assertEqual(transport.sent[-1]["CombOffsetFlag"], "3")
+            self.assertEqual(transport.sent[-1]["VolumeTotalOriginal"], 1)
+            transport.fill(transport.sent[-1]["OrderRef"])
+            account.stop()
+            self.assertEqual(transport.gross, baseline)
+            restored, service2, transport2, _, _ = self.native_account(path, modules,
+                scoped=True, execution_mode="independent", preserve_external=True)
+            transport2.gross = dict(baseline)
+            restored.start(resume=True)
+            self.assertEqual(restored.external_gross, baseline)
+            self.assertEqual(service2.position_manager.position("one", "main"), 0)
+            self.assertFalse(transport2.sent)
+            restored.stop()
+
+    def test_same_instrument_external_change_with_identical_net_blocks_restore(self):
+        modules = self.native_modules()
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "account.json"
+            account, _, transport, _, _ = self.native_account(path, modules,
+                scoped=True, execution_mode="independent", preserve_external=True)
+            transport.gross = {str(self.instrument): (1, 1)}
+            account.start(resume=False); account.authorize(); account.stop()
+            before = path.read_bytes()
+            restored, _, changed, _, _ = self.native_account(path, modules,
+                scoped=True, execution_mode="independent", preserve_external=True)
+            changed.gross = {str(self.instrument): (2, 2)}
+            with self.assertRaisesRegex(RuntimeError, "总仓"):
+                restored.start(resume=True)
+            self.assertEqual(path.read_bytes(), before)
+            self.assertFalse(changed.sent)
+
+    def test_same_instrument_external_yesterday_is_preserved_while_own_today_closes(self):
+        modules = self.native_modules()
+        with TemporaryDirectory() as directory:
+            account, service, transport, (one, _), _ = self.native_account(Path(directory)/"account.json", modules,
+                scoped=True, execution_mode="independent", preserve_external=True)
+            transport.gross = {str(self.instrument): (0, 2)}
+            original = transport.query_position_details
+            def details():
+                return [{**row, "PositionDate": "2", "TodayPosition": 0}
+                    if row["PosiDirection"] == "3" else row for row in original()]
+            transport.query_position_details = details
+            account.start(resume=False); service.start(); one.start(); account.authorize()
+            self.submit(one, 1); transport.fill(transport.sent[-1]["OrderRef"])
+            self.submit(one, 0, revision=2); transport.fill(transport.sent[-1]["OrderRef"])
+            account.stop()
+            self.assertEqual(transport.gross[str(self.instrument)], (0, 2))
+            self.assertEqual(account.external_buckets[str(self.instrument)], (0, 0, 0, 2))
+
+    def test_external_baseline_query_retries_known_fill_instead_of_assigning_or_halting(self):
+        modules = self.native_modules()
+        with TemporaryDirectory() as directory:
+            account, service, transport, (one, _), _ = self.native_account(Path(directory)/"account.json", modules,
+                scoped=True, execution_mode="independent", preserve_external=True)
+            transport.gross = {str(self.instrument): (0, 1)}
+            account.start(resume=False); service.start(); one.start(); account.authorize()
+            self.submit(one, 1)
+            query = transport.query_position_details
+            def fill_between_queries():
+                transport.query_position_details = query
+                transport.fill(transport.sent[-1]["OrderRef"])
+                return query()
+            transport.query_position_details = fill_between_queries
+            account._validate_account()
+            self.assertTrue(account.client.is_armed)
+            self.assertEqual(service.position_manager.position("one", "main"), 1)
+            self.assertEqual(account.external_gross[str(self.instrument)], (0, 1))
+            account.stop()
+
+    def test_same_instrument_external_baseline_rejects_generic_close_venue(self):
+        modules = self.native_modules()
+        self.instrument = type(self.instrument).from_str("i2701.DCE")
+        with TemporaryDirectory() as directory:
+            path = Path(directory)/"account.json"
+            account, _, transport, _, _ = self.native_account(path, modules,
+                scoped=True, execution_mode="independent", preserve_external=True)
+            transport.gross = {str(self.instrument): (0, 1)}
+            with self.assertRaisesRegex(ValueError, "SHFE/INE"):
+                account.start(resume=False)
+            self.assertFalse(transport.sent)
+            self.assertFalse(path.exists())
 
     def test_native_independent_opposite_orders_open_separately_and_close_only_owner(self):
         modules = self.native_modules()

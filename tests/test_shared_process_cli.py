@@ -50,6 +50,18 @@ class ProcessCliTests(unittest.TestCase):
                 with self.assertRaises(argparse.ArgumentTypeError):
                     prepare_session.parse_cross_products(value)
 
+    def test_observed_budget_counts_shared_contract_twice_and_rounds_limit_up(self):
+        contracts = {"CU": {"main": "cu-main", "secondary": "cu-second", "far": "cu-far"},
+            "AL": {"main": "al"}, "AG": {"main": "ag"}, "AU": {"main": "au"}}
+        specs = {i: {"tick": 1, "multiplier": 10} for i in ("cu-main", "cu-second", "cu-far", "al", "ag", "au")}
+        quotes = {i: {"bid": 100, "ask": 101} for i in specs}
+        result = prepare_session.observed_budget(contracts, specs, quotes, ("CU", "AL", "AG", "AU"))
+        self.assertEqual((result["quantity"], result["notional"], result["rounded_notional_limit"]), (7, "7140", "100000"))
+        self.assertEqual(sum(row["instrument"] == "cu-main" for row in result["legs"]), 2)
+        quotes["au"]["ask"] = "NaN"
+        with self.assertRaises(ValueError):
+            prepare_session.observed_budget(contracts, specs, quotes, ("CU", "AL", "AG", "AU"))
+
     def test_worker_reference_query_allows_market_thread_and_serializes_execution(self):
         lock, progressed, calls = threading.RLock(), threading.Event(), []
         def market_tick():

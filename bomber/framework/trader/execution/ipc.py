@@ -168,6 +168,19 @@ class AccountExecutionProtocol:
                 self.stop_owner(sid)
         self.service.poll()
 
+    def _update_prices(self, port, prices):
+        from bomber.framework.market.basic.base import InstrumentId
+        now, updates = time.time_ns(), []
+        for instrument, row in prices.items():
+            parsed = InstrumentId.from_str(instrument)
+            stamp, price = row["ts_event"], Decimal(row["price"])
+            if (parsed not in port.routes.values() or isinstance(stamp, bool) or not isinstance(stamp, int)
+                    or not 0 <= now - stamp <= 120_000_000_000 or not price.is_finite() or price <= 0):
+                raise ValueError("策略价格路由或时效不符")
+            updates.append((parsed, price, stamp))
+        for instrument, price, stamp in updates:
+            self.service.prices.update(instrument, price, stamp)
+
     def handle(self, message):
         from bomber.framework.market.basic.base import InstrumentId
         from bomber.framework.trader.contracts import ExecutionRequest
@@ -212,6 +225,7 @@ class AccountExecutionProtocol:
         if action == "cancel":
             port.cancel_strategy(sid)
         elif action == "poll":
+            self._update_prices(port, data.get("prices", {}))
             lease["ready"] = bool(data.get("ready", False))
             self.journal.acknowledge(sid, data["cursor"])
             self.service._save()
@@ -220,11 +234,7 @@ class AccountExecutionProtocol:
         elif action in {"submit", "continue"}:
             if not lease["ready"]:
                 raise RuntimeError("策略行情/参考尚未就绪")
-            for instrument, row in data["prices"].items():
-                parsed = InstrumentId.from_str(instrument)
-                if parsed not in port.routes.values() or not 0 <= time.time_ns() - row["ts_event"] <= 120_000_000_000:
-                    raise ValueError("策略价格路由或时效不符")
-                self.service.prices.update(parsed, Decimal(row["price"]), row["ts_event"])
+            self._update_prices(port, data["prices"])
             if action == "continue":
                 port.continue_target(sid, data["target_key"], data["now_ns"],
                     instrument_id=InstrumentId.from_str(data["instrument_id"]))

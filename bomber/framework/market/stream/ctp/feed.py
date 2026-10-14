@@ -22,6 +22,7 @@ from bomber.framework.market.stream.health import StreamHealthConfig
 
 from bomber.framework.market.native.ctp.driver import CtpMdDriver, create_native_driver
 from bomber.framework.market.stream.ctp.converter import CtpTickConverter
+from .time_gate import CtpFutureEventError, wait_for_event_time
 
 
 logger = logging.getLogger("CtpLiveDataFeed")
@@ -35,6 +36,7 @@ class CtpDepthObservation:
     ts_event: int
     received_monotonic_ns: int
     timestamp_regressed: bool = False
+    reference_price: str | None = None
 
 
 @dataclass(frozen=True)
@@ -47,6 +49,12 @@ class CtpMdConfig:
     production_mode: bool = False
     timezone: str = "Asia/Shanghai"
     dce_use_receive_date: bool = False
+    future_buffer_ns: int = 0
+
+    def __post_init__(self):
+        if (isinstance(self.future_buffer_ns, bool) or not isinstance(self.future_buffer_ns, int)
+                or not 0 <= self.future_buffer_ns <= 100_000_000):
+            raise ValueError("CTP未来事件缓冲须为0至100毫秒")
 
 
 class CtpLiveDataFeed(StreamDataFeed):
@@ -242,17 +250,21 @@ class CtpLiveDataFeed(StreamDataFeed):
             logger.warning("忽略缺少 InstrumentMeta 的 CTP 行情: %s", instrument_id)
             return
         try:
+            received_monotonic_ns = time.monotonic_ns()
             events = tuple(self._converter.convert(data, instrument_id, meta))
             trading_day = str(data.get("TradingDay") or "").strip()
             ts_event = (events[0].ts_event if events else
                         self._converter._timestamp_ns(data, meta.exchange))
+            if not wait_for_event_time(ts_event, getattr(self.config, "future_buffer_ns", 0), self._stop_event):
+                return
             with self._lock:
                 self._latest_trading_day = trading_day or None
-                self._latest_receive_monotonic_ns = time.monotonic_ns()
+                self._latest_receive_monotonic_ns = received_monotonic_ns
                 previous = self._depth_observations.get(instrument_id)
                 self._depth_observations[instrument_id] = CtpDepthObservation(
                     trading_day, ts_event, self._latest_receive_monotonic_ns,
-                    previous is not None and (previous.timestamp_regressed or ts_event < previous.ts_event))
+                    previous is not None and (previous.timestamp_regressed or ts_event < previous.ts_event),
+                    self._converter.depth_reference_price(data))
             # Raw depth continues when cumulative volume/quotes are unchanged.
             # Source health cannot depend on a derived TradeTick being emitted.
             if not self._health_monitor.on_observation(ts_event, str(instrument_id), kind="ctp-depth"):
@@ -260,6 +272,9 @@ class CtpLiveDataFeed(StreamDataFeed):
             for event in events:
                 if self._event_is_subscribed(instrument_id, event):
                     self.enqueue_event(event)
+        except CtpFutureEventError as error:
+            self._health_monitor.on_dispatch_error(error)
+            logger.error("CTP事件时钟偏差超限: %s", error)
         except Exception:
             logger.exception("CTP 行情转换失败: symbol=%s", symbol)
 
