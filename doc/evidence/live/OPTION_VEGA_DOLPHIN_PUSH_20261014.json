@@ -6,7 +6,7 @@
     "channel": "dolphindb_push",
     "shared_table": "stream_cffex_1min",
     "min_time_label": null,
-    "volume_mode": null,
+    "volume_mode": "cumulative",
     "screenshot_dfs_table": "dfs://min_bar/cffex_1min",
     "screenshot_is_proof_of_shared_stream": false,
     "required_columns": [
@@ -44,7 +44,10 @@
       "open_interest",
       "prev_open_interest",
       "updateTime"
-    ]
+    ],
+    "volume_mode_basis": "reported consecutive rows and turnover delta",
+    "recording_test_min_time_label": "end",
+    "min_time_label_basis": "inferred from receipt timing; producer definition not independently checked"
   },
   "execution": {
     "ctp_td_supported": true,
@@ -120,6 +123,8 @@
     "failure_evidence": "doc/evidence/live/OPTION_VEGA_DOLPHIN_ACTION_FIX_20261014.json",
     "latest_implementation": "scripts/integration/options/dolphin_stream_probe.py",
     "latest_probe_version": 3,
-    "live_fixed_result_received": false
+    "live_fixed_result_received": true,
+    "live_fixed_scope": "market-only",
+    "live_fixed_evidence": "doc/evidence/live/OPTION_VEGA_DOLPHIN_MARKET_RECEIPT_20261014.json"
   }
 }

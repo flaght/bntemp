@@ -441,7 +441,25 @@ python -u -m scripts.integration.options.dolphin_stream_probe --streams both --s
 python -u -m scripts.integration.options.dolphin_stream_probe --streams market --seconds 180
 ```
 
-上述两条是不同采样范围，任选一条，不要同时运行。market 范围不查询/订阅指数流，报告不把未选择的 000852 当成缺失。both 范围用于补齐指数实际 schema 和原始行。REV3 本地 76 项主回归、111 项相关回归共 187 项通过，包括服务器任务名约束及非 date/minTime 的指数夹具；原生 Driver 离线探针、77 文件部署摘要预检及独立 entry 组通过。尚无修正版真实推送结果。
+上述两条是不同采样范围，任选一条，不要同时运行。market 范围不查询/订阅指数流，报告不把未选择的 000852 当成缺失。both 范围用于补齐指数实际 schema 和原始行。REV3 本地 76 项主回归、111 项相关回归共 187 项通过，包括服务器任务名约束及非 date/minTime 的指数夹具；原生 Driver 离线探针、77 文件部署摘要预检及独立 entry 组通过。该版交付时尚无修正版真实推送结果，随后接收结果见下文。
+
+随后用户返回修正版 market/120 秒结果：11:27:11.704 开始，最终 completed、failure=null、cleanup_errors=[]、missing_monitored_keys=[]，报告为运行机 `tests/results/option-vega-dolphin-stream-probe/sample-1791948431148948591/summary.json`。11:28 和 11:29 分别实际收到 IM2611 与 MO2611-C-7400 两条监控行情，日期均为 2026-10-14，没有此前任务名错误。本次只测市场，不登记指数流或正式 Recording 通过，见 [原始市场推送接收证据](../../doc/evidence/live/OPTION_VEGA_DOLPHIN_MARKET_RECEIPT_20261014.json)。
+
+| 业务分钟 | IM 接收时间 / 累计 volume | MO 接收时间 / 累计 volume |
+| --- | --- | --- |
+| 11:28 | 11:28:01.272 / 19420 | 11:28:01.284 / 1607 |
+| 11:29 | 11:29:00.862 / 19467 | 11:29:02.991 / 1608 |
+
+该样本支持 `cumulative`：IM 增量 47，MO 增量 1；MO turnover 增量 7200，恰好为 72 元 × 100 乘数 × 1 手。minTime 在 SDK 中为 `datetime64[ms]`、显示 `1970-01-01T11:28:00.000`，日期列为 `datetime64[D]` 的 2026-10-14；转换器取前者时分秒与后者日期拼接，不使用 1970 作为估值日。新增真实 NumPy 类型样本回归已验证日期、OHLC、实际接收时间及 47/1 的量差分，77 项主回归通过；未改变运行模块。源码/入口摘要需按后续补充交付同步测试版本。
+
+分钟标记后约 1—3 秒的接收时序与结束标签一致，本轮 Recording 工程验收采用 `end`；该标签是基于样本的推断，发布程序完整分钟定义尚未独立核对。当前宜用已确认市场推送 + 原 DFS 指数验证目标链，午间不启动持续运行测试。10 月 14 日下午可在 13:00 左右执行现有命令，13:06 选约、运行 900 秒：
+
+```bash
+bash doc/evidence/commands/OPTION_VEGA_DOLPHIN_RECORDING.sh \
+  20261014 13:06 stream_cffex_1min end cumulative
+```
+
+若启动已晚于该时点，应另选能留出 ready-timeout+65 秒准备余量且被 900 秒覆盖的未来业务分钟。该 Recording 不连接 CTP MD/TD、不报单、不恢复旧仓位；原市场与指数都必须送达选约同一分钟，源时效及 20 秒接收期限仍校验。返回市场 stream 转换诊断、OptionMarketInputs、entry_audit、frame_audit 与停机结果，再由报告复核确认标准 Bar/目标链；原始推送成功不能替代这些检查。
 
 这些语句不创建或改写共享表。应确认表持续接收当日这两类合约的已完成分钟，并确认 minTime 是起点还是终点、volume 是分钟增量还是日累计量；字段名相同不能证明业务含义相同。若没有分钟共享流表，需要先由数据发布程序提供对应流；客户端不能把 `loadTable(...)` 的查询结果当成实时推送，也不自动创建表、改聚合引擎或定期查询市场 DFS 来冒充推送。推送模型及流表发现依据见 [DolphinDB 流订阅](https://docs.dolphindb.com/zh/api/python/BasicOperations/Subscription/Subscription.html) 与 [流计算状态监控](https://docs.dolphindb.com/zh/stream/str_monitor.html)。
 
@@ -449,10 +467,9 @@ python -u -m scripts.integration.options.dolphin_stream_probe --streams market -
 
 ```text
 --market-source dolphindb --market-bar-table stream_cffex_1min
---market-bar-timestamp <start或end> --market-volume-mode <per-bar或cumulative>
+--market-bar-timestamp end --market-volume-mode cumulative
 --market-bar-max-age-seconds 120
---index-source dolphindb --index-bar-table stream_index_1min
---index-bar-timestamp end
+--index-source dolphindb-dfs --index-bar-timestamp end --index-availability observed
 ```
 
 市场与指数来源独立；本轮第一阶段推荐指数继续使用已验证的 `--index-source dolphindb-dfs --index-bar-timestamp end --index-availability observed`，无须同时更换指数。若也改指数流，再单独确认其共享表与标签。市场流没有默认表名，使用 `--market-bar-table` 或 `DDB_OPTION_BAR_TABLE`；minTime/volume 两项参数在分钟推送模式必需，禁止猜测。客户端在订阅前通过 `schema(objByName(...,true)).colDefs.name` 获取实际列顺序，要求 minTime/date/Code/open/high/low/close/volume 八列；其他列可有可无，包括 updateTime。原固定 15 列的公共模式仍兼容。当前按表订阅并在客户端保留当日参考绑定的认购和同月期货，没有声称已在发布端按 Code 过滤。

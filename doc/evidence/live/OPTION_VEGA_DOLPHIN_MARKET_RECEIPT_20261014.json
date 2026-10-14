@@ -1,0 +1,299 @@
+{
+  "date": "2026-10-14",
+  "scope": "raw_market_minute_push_receipt",
+  "provenance": {
+    "kind": "user_console_output",
+    "source_sha256": "2e9965ebb4cd376ad7256bf3e4f197555f2d06ae39a724d8a7456e067df004d9",
+    "remote_summary_read_locally": false,
+    "local_live_connection_started": false
+  },
+  "remote_summary": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/tests/results/option-vega-dolphin-stream-probe/sample-1791948431148948591/summary.json",
+  "probe_version": 3,
+  "streams": "market",
+  "reported_start": "2026-10-14T11:27:11.703739+08:00",
+  "requested_seconds": 120,
+  "reported_final": {
+    "status": "completed",
+    "failure": null,
+    "cleanup_errors": [],
+    "missing_monitored_keys": []
+  },
+  "schema": [
+    {
+      "table": "stream_cffex_1min",
+      "columns": [
+        "minTime",
+        "date",
+        "Code",
+        "open",
+        "high",
+        "low",
+        "close",
+        "prev_close",
+        "prev_settlement",
+        "volume",
+        "turnover",
+        "pct_change",
+        "open_interest",
+        "prev_open_interest",
+        "updateTime"
+      ]
+    }
+  ],
+  "first_row": [
+    {
+      "table": "stream_cffex_1min",
+      "received_ns": 1791948432833750001,
+      "received_at": "2026-10-14T11:27:12.833750+08:00",
+      "row": {
+        "minTime": "1970-01-01T11:27:00.000",
+        "date": "2026-10-14",
+        "Code": "IO2703-C-4200",
+        "open": 155.4,
+        "high": 155.4,
+        "low": 155.4,
+        "close": 155.4,
+        "prev_close": 167.4,
+        "prev_settlement": 167.4,
+        "volume": 125,
+        "turnover": 1972780.0,
+        "pct_change": 0.0,
+        "open_interest": 840.0,
+        "prev_open_interest": 784.0,
+        "updateTime": "2026-10-14T11:27:12.853"
+      },
+      "python_types": {
+        "minTime": "datetime64[datetime64[ms]]",
+        "date": "datetime64[datetime64[D]]",
+        "Code": "str",
+        "open": "float",
+        "high": "float",
+        "low": "float",
+        "close": "float",
+        "prev_close": "float",
+        "prev_settlement": "float",
+        "volume": "int",
+        "turnover": "float",
+        "pct_change": "float",
+        "open_interest": "float",
+        "prev_open_interest": "float",
+        "updateTime": "datetime64[datetime64[ms]]"
+      }
+    }
+  ],
+  "monitored_rows": [
+    {
+      "table": "stream_cffex_1min",
+      "received_ns": 1791948481272364375,
+      "received_at": "2026-10-14T11:28:01.272364+08:00",
+      "row": {
+        "minTime": "1970-01-01T11:28:00.000",
+        "date": "2026-10-14",
+        "Code": "IM2611",
+        "open": 6941.4,
+        "high": 6942.6,
+        "low": 6938.6,
+        "close": 6940.2,
+        "prev_close": 6960.0,
+        "prev_settlement": 6969.4,
+        "volume": 19420,
+        "turnover": 26931445880.0,
+        "pct_change": -0.00017287578874580767,
+        "open_interest": 51483.0,
+        "prev_open_interest": 50302.0,
+        "updateTime": "2026-10-14T11:28:01.279"
+      },
+      "python_types": {
+        "minTime": "datetime64[datetime64[ms]]",
+        "date": "datetime64[datetime64[D]]",
+        "Code": "str",
+        "open": "float",
+        "high": "float",
+        "low": "float",
+        "close": "float",
+        "prev_close": "float",
+        "prev_settlement": "float",
+        "volume": "int",
+        "turnover": "float",
+        "pct_change": "float",
+        "open_interest": "float",
+        "prev_open_interest": "float",
+        "updateTime": "datetime64[datetime64[ms]]"
+      }
+    },
+    {
+      "table": "stream_cffex_1min",
+      "received_ns": 1791948481284191872,
+      "received_at": "2026-10-14T11:28:01.284192+08:00",
+      "row": {
+        "minTime": "1970-01-01T11:28:00.000",
+        "date": "2026-10-14",
+        "Code": "MO2611-C-7400",
+        "open": 72.4,
+        "high": 72.4,
+        "low": 71.6,
+        "close": 71.6,
+        "prev_close": 82.2,
+        "prev_settlement": 82.2,
+        "volume": 1607,
+        "turnover": 12337560.0,
+        "pct_change": -0.011049723756906271,
+        "open_interest": 3217.0,
+        "prev_open_interest": 2800.0,
+        "updateTime": "2026-10-14T11:28:01.283"
+      },
+      "python_types": {
+        "minTime": "datetime64[datetime64[ms]]",
+        "date": "datetime64[datetime64[D]]",
+        "Code": "str",
+        "open": "float",
+        "high": "float",
+        "low": "float",
+        "close": "float",
+        "prev_close": "float",
+        "prev_settlement": "float",
+        "volume": "int",
+        "turnover": "float",
+        "pct_change": "float",
+        "open_interest": "float",
+        "prev_open_interest": "float",
+        "updateTime": "datetime64[datetime64[ms]]"
+      }
+    },
+    {
+      "table": "stream_cffex_1min",
+      "received_ns": 1791948540862200453,
+      "received_at": "2026-10-14T11:29:00.862200+08:00",
+      "row": {
+        "minTime": "1970-01-01T11:29:00.000",
+        "date": "2026-10-14",
+        "Code": "IM2611",
+        "open": 6940.2,
+        "high": 6943.8,
+        "low": 6936.0,
+        "close": 6936.0,
+        "prev_close": 6960.0,
+        "prev_settlement": 6969.4,
+        "volume": 19467,
+        "turnover": 26996685120.0,
+        "pct_change": -0.0006051698798305027,
+        "open_interest": 51499.0,
+        "prev_open_interest": 50302.0,
+        "updateTime": "2026-10-14T11:29:00.875"
+      },
+      "python_types": {
+        "minTime": "datetime64[datetime64[ms]]",
+        "date": "datetime64[datetime64[D]]",
+        "Code": "str",
+        "open": "float",
+        "high": "float",
+        "low": "float",
+        "close": "float",
+        "prev_close": "float",
+        "prev_settlement": "float",
+        "volume": "int",
+        "turnover": "float",
+        "pct_change": "float",
+        "open_interest": "float",
+        "prev_open_interest": "float",
+        "updateTime": "datetime64[datetime64[ms]]"
+      }
+    },
+    {
+      "table": "stream_cffex_1min",
+      "received_ns": 1791948542991255356,
+      "received_at": "2026-10-14T11:29:02.991255+08:00",
+      "row": {
+        "minTime": "1970-01-01T11:29:00.000",
+        "date": "2026-10-14",
+        "Code": "MO2611-C-7400",
+        "open": 71.6,
+        "high": 72.0,
+        "low": 71.6,
+        "close": 72.0,
+        "prev_close": 82.2,
+        "prev_settlement": 82.2,
+        "volume": 1608,
+        "turnover": 12344760.0,
+        "pct_change": 0.005586592178770999,
+        "open_interest": 3217.0,
+        "prev_open_interest": 2800.0,
+        "updateTime": "2026-10-14T11:29:03.002"
+      },
+      "python_types": {
+        "minTime": "datetime64[datetime64[ms]]",
+        "date": "datetime64[datetime64[D]]",
+        "Code": "str",
+        "open": "float",
+        "high": "float",
+        "low": "float",
+        "close": "float",
+        "prev_close": "float",
+        "prev_settlement": "float",
+        "volume": "int",
+        "turnover": "float",
+        "pct_change": "float",
+        "open_interest": "float",
+        "prev_open_interest": "float",
+        "updateTime": "datetime64[datetime64[ms]]"
+      }
+    }
+  ],
+  "volume_evidence": {
+    "IM2611": {
+      "volume_increment": 47,
+      "turnover_increment": "65239240.0",
+      "multiplier": 200,
+      "implied_trade_price": "6940.344680851063829787234043"
+    },
+    "MO2611-C-7400": {
+      "volume_increment": 1,
+      "turnover_increment": "7200.0",
+      "multiplier": 100,
+      "implied_trade_price": "72.0"
+    }
+  },
+  "assessment": {
+    "market_subscription_and_current_day_receipt_reported": true,
+    "action_name_error_seen": false,
+    "volume_mode": "cumulative",
+    "timestamp_label_for_recording_test": "end",
+    "timestamp_label_basis": "inferred from rows labelled 11:28/11:29 arriving at that minute + 0.86..2.99 seconds; producer contract not independently confirmed",
+    "minTime_epoch_date_handling": "combine date column with time-of-day part; do not use 1970 as valuation date",
+    "actual_standard_bar_conversion_live_verified": false,
+    "actual_recording_target_verified": false,
+    "index_stream_verified": false,
+    "actual_ctp_orders_or_fills_verified_by_this_probe": false
+  },
+  "offline_sample_conversion": {
+    "sdk_values": "numpy datetime64[D] date and datetime64[ms] epoch-labelled minTime",
+    "business_date": "2026-10-14",
+    "first_row_volume": 0,
+    "next_bar_volume": {
+      "IM2611": 47,
+      "MO2611-C-7400": 1
+    },
+    "regression_suite_tests": 77,
+    "status": "passed",
+    "sdk_entity_shim": true
+  },
+  "next_recording_test": {
+    "trading_day": "20261014",
+    "suggested_start": "13:00 Asia/Shanghai",
+    "option_slot": "13:06",
+    "seconds": 900,
+    "market_source": "dolphindb",
+    "market_bar_table": "stream_cffex_1min",
+    "market_bar_timestamp": "end",
+    "market_volume_mode": "cumulative",
+    "index_source": "dolphindb-dfs",
+    "ctp_md_or_td_connections": false,
+    "broker_orders": false
+  },
+  "pending": [
+    "producer complete-minute end-label confirmation",
+    "actual standard Bar/Recording frame and target reception",
+    "index stream actual schema and time-field mapping",
+    "old physical ownership source/day migration before actual trading"
+  ]
+}
