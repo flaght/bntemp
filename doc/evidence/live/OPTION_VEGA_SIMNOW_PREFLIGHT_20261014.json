@@ -1,0 +1,43 @@
+{
+  "date": "2026-10-14",
+  "scope": "readonly_migration_preflight_preparation",
+  "user_request": "请继续验证",
+  "previous_recording_acceptance": "doc/evidence/live/OPTION_VEGA_DOLPHIN_RECORDING_ACCEPTANCE_20261014.json",
+  "original_state": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/tests/results/gap08-realtime-simnow/state-1791869411336135873.json",
+  "last_known_owned_position": {
+    "MO2611-C-7400.CFFEX": "-1"
+  },
+  "constraint": "原状态绑定20261013/CTP，当前为20261014/DolphinDB；不能直接--resume或用新空状态绕过现有总仓",
+  "script": "scripts/integration/options/simnow_preflight.py",
+  "checks": [
+    "原状态公共校验和",
+    "08 SimNow身份与单客户端账本",
+    "旧状态无在途或活动订单",
+    "保存归属/净仓/总仓一致",
+    "同一SimNow账户身份",
+    "账户与状态锁",
+    "当前TD日期",
+    "当前无活动订单与正可用CNY",
+    "权威今昨仓及总仓一致",
+    "当前MO/IM总仓等于原状态",
+    "原文件前后SHA256不变"
+  ],
+  "output_policy": {
+    "status_completed_means": "只读核对完成，不表示可报单",
+    "can_start_orders": false,
+    "external_gross": "非MO/IM账户持仓保持外部事实"
+  },
+  "local_validation": {
+    "specialized_tests": 9,
+    "existing_main_regression_tests": 81,
+    "status": "passed",
+    "scope": "SDK实体替身及柜台查询夹具，无网络，无真实凭据"
+  },
+  "remote_validation": "pending",
+  "migration_created": false,
+  "original_state_modified": false,
+  "orders_or_cancels_sent": false,
+  "existing_runtime_version": "OPTION_VEGA_DOLPHIN_PUSH_20261014_REV5",
+  "existing_runtime_changed": false,
+  "next_required_evidence": "用户运行原仓只读预检后返回summary；据当前柜台事实准备可核对的迁移与执行验证"
+}

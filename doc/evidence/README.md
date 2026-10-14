@@ -44,9 +44,13 @@
 
 13:22 Recording 的 [旧分钟失败证据与修正](live/OPTION_VEGA_DOLPHIN_OLD_MINUTE_20261014.json) 已返回：市场流转换 90 根、无转换错误，指数 13:22 投影成功后又发布 13:21，触发时间倒退；没有消费帧或生成目标。最新 [REV5 包](archives/OPTION_VEGA_DOLPHIN_PUSH_20261014_REV5.tar.gz) / [REV5 摘要](checksums/OPTION_VEGA_DOLPHIN_PUSH_20261014_REV5_SHA256.txt) 修正公共查询 Bar 流跨轮询顺序，旧请求审计 OLDER_THAN_PROJECTED，旧帧缺指数按原期限跳过。保留真实倒退及期限检查；新增实际 Runner/Recording 回归，本地 81 + 111 项及 entry 组通过。完整线上 Recording 仍待复测，旧包保持原版。
 
-后续 [13:40 Recording 复测证据](live/OPTION_VEGA_DOLPHIN_RECORDING_RECEIPT_20261014.json) 已返回 events.txt 和 summary 尾部：运行 passed、市场 1533 根且无转换错误、指数 13:34—13:49 共 16 个分钟投影、缺指数跳过 0；13:40:20.612690 记录 MO2611-C-7300 空 1 手目标，柜台报单 0、清理无错误。107 个合约目标中的 106 个为 0，不是 107 笔订单。未提供完整帧/选约审计，目标的同分钟及接收期限仍待运行机执行既有 --summary 只读复核；本轮没有新运行代码或交易动作，REV5 包及其历史摘要保持原字节。
+后续 [13:40 Recording 复测证据](live/OPTION_VEGA_DOLPHIN_RECORDING_RECEIPT_20261014.json) 已返回 events.txt 和 summary 尾部：运行 passed、市场 1533 根且无转换错误、指数 13:34—13:49 共 16 个分钟投影、缺指数跳过 0；13:40:20.612690 记录 MO2611-C-7300 空 1 手目标，柜台报单 0、清理无错误。107 个合约目标中的 106 个为 0，不是 107 笔订单。初次片段缺完整帧/选约审计，原记录保留当时的待验状态；后续正式复核如下。本轮没有新运行代码或交易动作，REV5 包及其历史摘要保持原字节。
 
-本次只更新 [文档与复测证据摘要](checksums/OPTION_VEGA_DOLPHIN_RECORDING_RECEIPT_20261014_SHA256.txt)，无需重新部署运行模块。
+初次片段状态的 [文档与复测证据摘要](checksums/OPTION_VEGA_DOLPHIN_RECORDING_RECEIPT_20261014_SHA256.txt) 保留原值，无需重新部署运行模块。
+
+用户随后执行原报告 --summary 复核，返回 [Recording 完整目标链通过](live/OPTION_VEGA_DOLPHIN_RECORDING_ACCEPTANCE_20261014.json)：scope=target_chain、status=passed、errors=[]，市场流/指数查询/指数送达/目标链四项均为 true；frames=16、skipped_index_frames=0、runtime_failure=null。13:40 共 49 个候选，目标 MO2611-C-7300 空 1 手、同月期货绑定 IM2611；同分钟、接收期限及实际请求一致性已由公共复核函数核对。只读模式 worker_exit_code=null 正常。没有线上超时样本，也不构成 DolphinDB 市场下的柜台成交、旧仓恢复或运行至收盘验收。最新 [正式验收文档与证据摘要](checksums/OPTION_VEGA_DOLPHIN_RECORDING_ACCEPTANCE_20261014_SHA256.txt) 描述本次状态更新，原片段证据和运行源码包不覆盖。
+
+用户要求继续验证后，补充 [SimNow 原仓只读预检](../../scripts/integration/options/simnow_preflight.py)，核对原状态和同一柜台当前 MO/IM 总仓/今昨仓、资金及活动订单，其他品种保持外部归属；不发单、不撤单、不改原状态、不开闸。原 20261013 / CTP 身份不能直接用于当前 20261014 / DolphinDB 恢复。9 项专项及原 81 项主回归通过，线上预检仍待返回；跨日与来源迁移未实施，SimNow 新来源成交仍待验。[预检补充包](archives/OPTION_VEGA_SIMNOW_PREFLIGHT_20261014.tar.gz)、[摘要](checksums/OPTION_VEGA_SIMNOW_PREFLIGHT_20261014_SHA256.txt)、[范围说明](live/OPTION_VEGA_SIMNOW_PREFLIGHT_20261014.json) 不覆盖既有 REV5 运行包。
 
 ## 2026-10-11模型运行与恢复证据
 

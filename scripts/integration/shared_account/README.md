@@ -250,3 +250,46 @@ python -u -m scripts.integration.shared_account.run \
 是否实际出现部分成交；没有部分成交/拒单的运行不能登记相应验收通过。全部成交
 抢先于撤单或没有符合条件母单时为`not_exercised`，不把正常completed当作专项通过。
 执行完保存完整summary.json及events.txt供逐笔复核；无需重做预算迁移或清理检查点。
+
+自然信号未能形成双来源在途母单时，可使用独立受控入口；先只读预检：
+
+```bash
+python -u -m scripts.integration.shared_account.mother_probe \
+  --connect --trading-day 20261014 --product CU
+```
+
+默认读取原CU/AU和RB/HC共享账户检查点的known_instruments，排除所有原策略合约，
+即使物理净仓为0也不接管；缺检查点拒绝继续。`--protect-state`可显式指定要保护的
+原共享检查点（可多个）。同时要求全账户没有活动订单，候选合约无多空总仓，
+距到期至少7天。基础条款从DolphinDB两次稳定读取取得，交易日来自TD，盘口来自
+原生MD。选择CU未持仓月份合约并输出完整候选列表；可用`--instrument`指定列表中
+其他合约进行只读预检。没有新鲜盘口则拒绝，不猜价格。账户锁和writer lease与
+原入口相同，先停止其他报单宿主再测试。
+
+预检给出买价低于买一（或卖价高于卖一）的10跳建议限价，检查涨跌停、价格步长、
+3秒接收/10秒事件时效和2手总名义预算。默认总名义120万，显式上限不得超过230万。
+不带`--submit --confirm-simnow`绝不发单。拿到本次实际合约和价格后，提交须同时
+明确`--instrument`和`--limit-price`，再次获取行情并验证价格仍被动且在边界内：
+
+```bash
+# 合约和限价使用本次预检结果，不照抄示例数字。
+python -u -m scripts.integration.shared_account.mother_probe \
+  --connect --trading-day 20261014 --product CU \
+  --instrument 实际预检合约 --limit-price 实际预检价格 \
+  --submit --confirm-simnow
+```
+
+此入口在新`shared-mother-probe-<时间戳>`目录使用独立账户和双策略状态文件，
+不启动原EMA/横截面算法，不修改原身份/预算/检查点。两个Observer通过真实共享
+端口各提交1手，首轮规划暂缓，二者均写前持久化后仅推进一次，形成2手OPEN限价
+母单；Driver最多允许发1张，禁止重规划新单。受理后通过原宿主停止非提交者撤单，
+保留对方当时的目标/活动状态作为证据，然后正常结束测试。被动价格不能保证零
+成交；最多2手意外成交归独立测试账本，不自动平仓，不改写原账本。出现意外成交
+时必须保留本目录account.json，先核对新增总仓及原会话范围外基线，再决定后续
+处置，不能删文件后直接恢复旧会话。
+报告包含plan、原检查点哈希及unchanged检查、原生events.txt、冻结母单归属、
+peer_state_after_owner_cancel和unexpected_fill。正式交易状态持久化仍使用原框架，
+不是拼接柜台回报或手工改策略仓位。全部成交抢先撤单为not_exercised，不登记撤单
+通过；真实部分成交和拒单按实际回报分别判断。
+本机/远端受控装配回归可单独运行`python -u -m tests.run_main_ema_acceptance --only shared-mother-probe`；
+该组传输为替身，不能代替此入口在Linux上的只读和SimNow实际验收。

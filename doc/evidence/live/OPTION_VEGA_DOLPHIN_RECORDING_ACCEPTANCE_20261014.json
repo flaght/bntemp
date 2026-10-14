@@ -1,0 +1,91 @@
+{
+  "date": "2026-10-14",
+  "timezone": "Asia/Shanghai",
+  "source": "user_returned_original_summary_readonly_review_console",
+  "prior_evidence": "doc/evidence/live/OPTION_VEGA_DOLPHIN_RECORDING_RECEIPT_20261014.json",
+  "prior_evidence_sha256": "6088ed046335679197563a26bc7cce2c64125ec4f2df87ead21baa7afac716ec",
+  "command": "python -u -m scripts.integration.options.recording --trading-day 20261014 --option-slot 13:40 --summary tests/results/gap08-dolphin-recording/option-vega-recording-1791956075214033439/summary.json",
+  "remote_acceptance_report": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/tests/results/gap08-dolphin-recording/option-vega-recording-1791956075214033439/recording-acceptance.json",
+  "returned_review": {
+    "status": "passed",
+    "scope": "target_chain",
+    "trading_day": "20261014",
+    "option_slot": "13:40",
+    "errors": [],
+    "target_chain_verified": true,
+    "entry_audit": [
+      {
+        "signal_ns": 1791956400000000000,
+        "request_ns": 1791956420612689715,
+        "date": "2026-10-14",
+        "slot": "13:40",
+        "outcome": "TARGET",
+        "candidate_count": 49,
+        "targets": {
+          "MO2611-C-7300": "-1"
+        },
+        "future_bindings": {
+          "MO2611-C-7300": "IM2611"
+        }
+      }
+    ],
+    "runtime_failure": null,
+    "session_readiness": {
+      "ready": true,
+      "sources": [
+        {
+          "domain": "market",
+          "channel": "dolphindb",
+          "source_id": "vega-market"
+        },
+        {
+          "domain": "market",
+          "channel": "dolphindb-raw",
+          "source_id": "vega-index-dfs"
+        },
+        {
+          "domain": "execution",
+          "channel": "recording",
+          "source_id": "option-vega-live"
+        }
+      ],
+      "issues": []
+    },
+    "index_query_verified": true,
+    "index_bar_delivery_verified": true,
+    "market_stream_verified": true,
+    "frames": 16,
+    "skipped_index_frames": 0,
+    "timeout_seen_online": false,
+    "timeout_note": "无线上超时样本时，超时拒绝仅由离线测试覆盖",
+    "runtime_summary": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/tests/results/gap08-dolphin-recording/option-vega-recording-1791956075214033439/summary.json",
+    "worker_exit_code": null
+  },
+  "review_implementation": {
+    "path": "demos/08_option_vega/acceptance.py",
+    "sha256": "a9f39a99fc55b77711ef814ec4def22d40315c7dea17e5b7418880524a24cf88"
+  },
+  "conclusion": {
+    "recording_target_chain": "passed",
+    "verified_by_returned_public_review": [
+      "market_stream",
+      "index_query",
+      "index_bar_delivery",
+      "entry_frame_consumed",
+      "same_minute_index_and_target_and_bound_future",
+      "receipt_deadline",
+      "request_after_deadline",
+      "recorded_target_matches_entry",
+      "recording_no_orders_or_fills_or_physical_account"
+    ],
+    "worker_exit_code_note": "--summary模式不启动子进程，null是正常值；没有独立核对原运行进程退出码",
+    "timeout_seen_online": false,
+    "older_request_branch_seen_online": false,
+    "trading_acceptance": false,
+    "resume_or_source_migration_acceptance": false,
+    "continuous_to_close_acceptance": false,
+    "new_runtime_code_change": false,
+    "broker_actions_by_this_review": false
+  },
+  "provenance_limit": "用户在运行机读取原summary后返回验收输出；本机未连接运行机、未独立读取远端完整summary或重新执行该验收。初次片段证据与旧源码包保持原字节。"
+}
