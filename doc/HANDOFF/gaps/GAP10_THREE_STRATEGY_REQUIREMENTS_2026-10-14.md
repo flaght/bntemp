@@ -76,3 +76,13 @@ worker入口、只读日期观察/预检和新配置生成。独立模式按来�
 仍须验收，不勾选上述在线完成项。用户在16:00同步并执行；21:00实时以replay及新
 只读预检通过为前提，未通过不自动切换。完整命令见scripts/integration/shared_account/
 THREE_STRATEGIES.md。测试使用真实公共组件、实际三进程socket及替身柜台，不冒充联网。
+
+## Linux跨期撤单测试顺序修复（REV20）
+
+用户calendar-live共28项中一项失败：撤单期间api.sent[0]成交，实际归属[0,1]，
+旧测试期待[-1,0]。Coordinator由known_keys集合输出，不承诺双腿发送顺序；旧
+测试把订单数组索引当作角色。修复仅测试：按真实InstrumentID找成交腿，两种
+角色分别子用例，断言归属、剩余在途0、后续平仓同合约与反向方向和CLOSE_TODAY。
+公共执行代码本轮不改。语法/diff通过，共享65及公共116回归通过；本地缺原生Bar，
+完整跨期仍须Linux复测，不宣称已通过。本次先复测calendar-live；通过后继续
+原replay预检流程。新校验清单REV20保留REV19历史，不覆写旧证据。
