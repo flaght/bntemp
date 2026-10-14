@@ -446,6 +446,9 @@ class SharedStrategyExecutionClient:
         self._started = False
         self._events, self._handlers = deque(), []
         self._lock = threading.RLock()
+        self._stopping = self._events_closed = False
+        self._fills_enqueued = self._fills_delivered = 0
+        self._last_fill_enqueued = self._last_fill_delivered = None
 
     @property
     def is_reconciled(self):
@@ -472,12 +475,45 @@ class SharedStrategyExecutionClient:
 
     def start(self):
         if not self._started:
+            if self._events:
+                raise RuntimeError("策略尚有未消费回报，不能重启端口")
             self.service.start()
+            self._stopping = self._events_closed = False
             self._started = True
+
+    def begin_stop(self):
+        """关闭新目标，保留Runner绑定及回调直到冻结订单终结。"""
+        self._stopping = True
+        self.service.suspend_strategy(self.strategy_id)
+
+    def finish_stop_events(self):
+        # 与账户回报入账/归属路由使用同一锁，避免终态已入账但事件尚未入队。
+        # 用户回调在释放账户锁后执行，不阻塞柜台线程或反向等待Runner锁。
+        with self.service.client._submit_lock:
+            if any(not order["released"]
+                    and any(Decimal(leg["filled"]) < Decimal(leg["quantity"]) for leg in order["legs"])
+                    and any(leg["strategy_id"] == self.strategy_id
+                    for leg in order["legs"]) for order in
+                    self.position_manager.attribution.state()["orders"].values()):
+                return False
+            with self._lock:
+                self._events_closed = True
+        self.drain_events()
+        return True
+
+    def event_diagnostics(self):
+        with self._lock:
+            return {"stopping": self._stopping, "closed": self._events_closed,
+                "pending_events": len(self._events),
+                "pending_fills": sum(isinstance(event, FillEvent) for event in self._events),
+                "fills_enqueued": self._fills_enqueued, "fills_delivered": self._fills_delivered,
+                "last_fill_enqueued": self._last_fill_enqueued,
+                "last_fill_delivered": self._last_fill_delivered}
 
     def stop(self):
         if self._started:
-            self.service.suspend_strategy(self.strategy_id)
+            if not self._stopping:
+                self.service.suspend_strategy(self.strategy_id)
             self._started = False
             self._handlers.clear()
             self.service.stop()
@@ -492,6 +528,8 @@ class SharedStrategyExecutionClient:
             self.service._cancel_owner(strategy_id)
 
     def submit_targets(self, request):
+        if self._stopping:
+            raise RuntimeError("策略正在停止，禁止提交新目标")
         if request.strategy_id != self.strategy_id:
             raise ValueError("策略端口请求身份不符")
         # 暂停后的新版本可恢复；旧版本重发不能解除暂停。
@@ -510,6 +548,8 @@ class SharedStrategyExecutionClient:
                 raise
 
     def continue_target(self, strategy_id, target_key, now_ns, *, instrument_id):
+        if self._stopping:
+            return
         if strategy_id != self.strategy_id or self.routes.get(target_key) != instrument_id:
             raise ValueError("续执行路由不属于此策略")
         return self.service.continue_targets(strategy_id, instrument_id, now_ns)
@@ -520,10 +560,16 @@ class SharedStrategyExecutionClient:
 
     def _enqueue(self, event):
         with self._lock:
+            if self._events_closed:
+                self.service._failed = True
+                raise RuntimeError("已关闭策略收到新执行回报，账户须闭闸对账")
             if len(self._events) >= self.service.max_events:
                 self.service._failed = True
                 raise RuntimeError("策略回报队列溢出，账户须闭闸对账")
             self._events.append(event)
+            if isinstance(event, FillEvent):
+                self._fills_enqueued += 1
+                self._last_fill_enqueued = event.event_id
 
     def drain_events(self):
         if not self._started:
@@ -535,6 +581,8 @@ class SharedStrategyExecutionClient:
                     return count
                 event = self._events[0]
             try:
+                if not self._handlers:
+                    raise RuntimeError("策略回报没有处理器，不能静默消费")
                 for handler in tuple(self._handlers):
                     handler(event)
             except Exception:
@@ -544,4 +592,7 @@ class SharedStrategyExecutionClient:
                 raise
             with self._lock:
                 self._events.popleft()
+                if isinstance(event, FillEvent):
+                    self._fills_delivered += 1
+                    self._last_fill_delivered = event.event_id
             count += 1

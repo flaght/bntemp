@@ -1,0 +1,179 @@
+{
+  "version": 1,
+  "date": "2026-10-14",
+  "report": "shared-simnow-1791939620243739079",
+  "input_sha256": "45e958e2339094b2406e18ad8a8ca26eb8335eeae2544efecc361214c41b9e4e",
+  "status": "runtime_completed_ledger_consistent_callback_count_gap_open",
+  "reports": 22,
+  "orders": 11,
+  "filled_contract_quantity": 16,
+  "fills": [
+    {
+      "order_ref": "18",
+      "type": "FILLED",
+      "instrument": "cu2611.SHFE",
+      "side": "BUY",
+      "quantity": 2,
+      "effect": "CLOSE_TODAY",
+      "ts_ns": 1791939901846313686,
+      "owner": "cross-cu-au-delta",
+      "source_revision": 11,
+      "report_id": "CTP-9999-097561-20261014-18:2",
+      "trade_id": "SHFE:      119334"
+    },
+    {
+      "order_ref": "19",
+      "type": "FILLED",
+      "instrument": "au2612.SHFE",
+      "side": "SELL",
+      "quantity": 1,
+      "effect": "CLOSE_TODAY",
+      "ts_ns": 1791939921090187032,
+      "owner": "cross-cu-au-delta",
+      "source_revision": 11,
+      "report_id": "CTP-9999-097561-20261014-19:2",
+      "trade_id": "SHFE:      120123"
+    },
+    {
+      "order_ref": "20",
+      "type": "FILLED",
+      "instrument": "au2612.SHFE",
+      "side": "SELL",
+      "quantity": 1,
+      "effect": "OPEN",
+      "ts_ns": 1791939923586137863,
+      "owner": "cross-cu-au-delta",
+      "source_revision": 11,
+      "report_id": "CTP-9999-097561-20261014-20:2",
+      "trade_id": "SHFE:      120177"
+    },
+    {
+      "order_ref": "21",
+      "type": "FILLED",
+      "instrument": "cu2611.SHFE",
+      "side": "BUY",
+      "quantity": 2,
+      "effect": "OPEN",
+      "ts_ns": 1791939961743917713,
+      "owner": "ema-cu-gamma",
+      "source_revision": 2,
+      "report_id": "CTP-9999-097561-20261014-21:2",
+      "trade_id": "SHFE:      121038"
+    },
+    {
+      "order_ref": "22",
+      "type": "FILLED",
+      "instrument": "au2612.SHFE",
+      "side": "BUY",
+      "quantity": 1,
+      "effect": "CLOSE_TODAY",
+      "ts_ns": 1791939961811565893,
+      "owner": "cross-cu-au-delta",
+      "source_revision": 12,
+      "report_id": "CTP-9999-097561-20261014-22:2",
+      "trade_id": "SHFE:      121050"
+    },
+    {
+      "order_ref": "24",
+      "type": "FILLED",
+      "instrument": "cu2611.SHFE",
+      "side": "SELL",
+      "quantity": 2,
+      "effect": "CLOSE_TODAY",
+      "ts_ns": 1791939962994627428,
+      "owner": "cross-cu-au-delta",
+      "source_revision": 12,
+      "report_id": "CTP-9999-097561-20261014-24:2",
+      "trade_id": "SHFE:      121120"
+    },
+    {
+      "order_ref": "23",
+      "type": "FILLED",
+      "instrument": "au2612.SHFE",
+      "side": "BUY",
+      "quantity": 1,
+      "effect": "OPEN",
+      "ts_ns": 1791940124373662540,
+      "owner": "cross-cu-au-delta",
+      "source_revision": 12,
+      "report_id": "CTP-9999-097561-20261014-23:2",
+      "trade_id": "SHFE:      124003"
+    },
+    {
+      "order_ref": "25",
+      "type": "FILLED",
+      "instrument": "cu2611.SHFE",
+      "side": "SELL",
+      "quantity": 2,
+      "effect": "OPEN",
+      "ts_ns": 1791940141613785973,
+      "owner": "ema-cu-gamma",
+      "source_revision": 3,
+      "report_id": "CTP-9999-097561-20261014-25:2",
+      "trade_id": "SHFE:      124287"
+    },
+    {
+      "order_ref": "26",
+      "type": "FILLED",
+      "instrument": "cu2611.SHFE",
+      "side": "BUY",
+      "quantity": 2,
+      "effect": "CLOSE_TODAY",
+      "ts_ns": 1791940203338902760,
+      "owner": "cross-cu-au-delta",
+      "source_revision": 16,
+      "report_id": "CTP-9999-097561-20261014-26:2",
+      "trade_id": "SHFE:      125268"
+    },
+    {
+      "order_ref": "27",
+      "type": "FILLED",
+      "instrument": "au2612.SHFE",
+      "side": "SELL",
+      "quantity": 1,
+      "effect": "CLOSE_TODAY",
+      "ts_ns": 1791940203565448882,
+      "owner": "cross-cu-au-delta",
+      "source_revision": 16,
+      "report_id": "CTP-9999-097561-20261014-27:2",
+      "trade_id": "SHFE:      125270"
+    },
+    {
+      "order_ref": "28",
+      "type": "FILLED",
+      "instrument": "au2612.SHFE",
+      "side": "SELL",
+      "quantity": 1,
+      "effect": "OPEN",
+      "ts_ns": 1791940205384095291,
+      "owner": "cross-cu-au-delta",
+      "source_revision": 16,
+      "report_id": "CTP-9999-097561-20261014-28:2",
+      "trade_id": "SHFE:      125297"
+    }
+  ],
+  "final_owned": {
+    "ema-cu-gamma": {
+      "cu2611.SHFE": -1
+    },
+    "cross-cu-au-delta": {
+      "cu2611.SHFE": 1,
+      "au2612.SHFE": -1
+    }
+  },
+  "callback_counts_from_stop_report": {
+    "ema-cu-gamma": 1,
+    "cross-cu-au-delta": 9
+  },
+  "broker_fill_counts_by_frozen_owner": {
+    "ema-cu-gamma": 2,
+    "cross-cu-au-delta": 9
+  },
+  "notes": [
+    "EMA order21 and order25 each fully filled2; stop report callback count1 differs from broker fills2. Cause not established; possible stop-boundary queued callback.",
+    "AU order23 accepted-to-filled delay preserves original source_revision12.",
+    "No partial, canceled, rejected, duplicate or out-of-order sequence reported in supplied events.",
+    "Exact EMA stop timestamp absent; order26 after480 seconds from report directory timestamp alone does not prove it was submitted after actual strategy stop."
+  ],
+  "gap10_closed": false
+}

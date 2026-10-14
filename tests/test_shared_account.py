@@ -638,6 +638,122 @@ class SharedAccountTests(unittest.TestCase):
         self.assertEqual(strategies[1].fills, [("two", 2, 2)])
         self.assertTrue(client.backend.running)
 
+    def callback_host(self, root):
+        modules = self.native_modules()
+        contracts = import_module("bomber.framework.trader.contracts")
+        account, service, transport, ports, resources = self.native_account(root / "account.json", modules)
+        class Observer(modules.template.StrategyTemplate):
+            def __init__(self, sid):
+                super().__init__(sid)
+                self.fills = []
+            def on_fill(self, event):
+                self.fills.append((event.event_id, event.quantity, self.position("main")))
+        rows = []
+        for port in ports:
+            runner = modules.runner.UnifiedStrategyRunner("live", position_manager=service.position_manager)
+            runner.add_execution_client(port)
+            strategy = Observer(port.strategy_id)
+            runner.add_strategy(strategy, data_bindings=(), execution_routes=(
+                contracts.ExecutionRoute("main", service.client_id, self.instrument),))
+            runner.failure, runner.fixed_spec, runner.accept_bars = None, "fixed", False
+            runner.session_ready = lambda: True
+            runner.begin_bars = lambda runner=runner: setattr(runner, "accept_bars", True)
+            session = NS(runner=runner, strategy=strategy, client=port,
+                         references=NS(spec="fixed", refresh=lambda: None))
+            rows.append(modules.runtime.SharedStrategySession(session, root / (port.strategy_id + ".json"),
+                {"id": port.strategy_id, "routes": port.configuration()}))
+        host = modules.runtime.SharedAccountLiveHost(account, service, rows, resources=resources)
+        host.start()
+        return host, transport, rows
+
+    def test_host_stop_delivers_fill_already_queued_before_unbinding(self):
+        with ExitStack() as cleanup:
+            directory = cleanup.enter_context(TemporaryDirectory())
+            host, transport, rows = self.callback_host(Path(directory))
+            cleanup.callback(host.stop)
+            strategy = rows[0].session.strategy
+            strategy.set_target("main", 1, self.now)
+            transport.fill(transport.sent[0]["OrderRef"])
+            self.assertFalse(strategy.fills)  # 账户已入账，控制线程尚未消费。
+            host.stop_strategy("one", reason="configured_stop")
+            self.assertEqual([row[1:] for row in strategy.fills], [(1, 1)])
+            self.assertFalse(rows[0].session.client._events)
+            self.assertTrue(rows[1].active)
+            self.assertTrue(rows[1].session.strategy.is_started)
+            host.poll()
+            self.assertEqual(len(strategy.fills), 1)
+            diagnostics = rows[0].session.client.event_diagnostics()
+            self.assertEqual((diagnostics["fills_enqueued"], diagnostics["fills_delivered"],
+                              diagnostics["pending_events"]), (1, 1, 0))
+            self.assertEqual(diagnostics["last_fill_enqueued"], diagnostics["last_fill_delivered"])
+            self.assertTrue(diagnostics["closed"])
+            self.assertLessEqual(rows[0].stop_requested_at_ns, rows[0].stopped_at_ns)
+
+    def test_host_stop_waits_for_late_partial_fill_and_cancel_before_unbinding(self):
+        with ExitStack() as cleanup:
+            directory = cleanup.enter_context(TemporaryDirectory())
+            host, transport, rows = self.callback_host(Path(directory))
+            cleanup.callback(host.stop)
+            strategy = rows[0].session.strategy
+            strategy.set_target("main", 2, self.now)
+            original_cancel = transport.cancel_order
+            pending = []
+            transport.cancel_order = pending.append
+            def deliver(_seconds):
+                self.assertTrue(strategy.is_started)
+                self.assertTrue(rows[0].active)
+                self.assertTrue(pending)
+                ref = pending.pop()
+                transport.fill(ref, 1)
+                original_cancel(ref)
+            module = import_module("bomber.framework.trader.runtime.live.shared")
+            with patch.object(module.time, "sleep", side_effect=deliver):
+                host.stop_strategy("one")
+            self.assertEqual([row[1:] for row in strategy.fills], [(1, 1)])
+            self.assertFalse(rows[0].session.client._events)
+            self.assertFalse(host.service._draining)
+            self.assertTrue(rows[1].active)
+            self.now += 1
+            rows[1].session.strategy.set_target("main", 1, self.now)
+            transport.fill(transport.sent[-1]["OrderRef"])
+            host.poll()
+            self.assertEqual(len(rows[1].session.strategy.fills), 1)
+
+    def test_host_stop_timeout_keeps_runner_bound_and_rejects_new_target(self):
+        with ExitStack() as cleanup:
+            directory = cleanup.enter_context(TemporaryDirectory())
+            host, transport, rows = self.callback_host(Path(directory))
+            cleanup.callback(host.stop)
+            strategy = rows[0].session.strategy
+            strategy.set_target("main", 1, self.now)
+            original_cancel = transport.cancel_order
+            transport.cancel_order = lambda ref: None
+            host.account.cancel_seconds = 0
+            with self.assertRaisesRegex(RuntimeError, "保留绑定及账户锁"):
+                host.stop_strategy("one")
+            self.assertTrue(strategy.is_started)
+            self.assertTrue(rows[0].active)
+            self.assertFalse(rows[0].session.client.event_diagnostics()["closed"])
+            with self.assertRaisesRegex(RuntimeError, "正在停止"):
+                self.submit(rows[0].session.client, 2, 2)
+            original_cancel(transport.sent[0]["OrderRef"])
+            host.stop_strategy("one")
+            self.assertFalse(rows[0].session.client._events)
+
+    def test_callback_failure_keeps_event_pending_and_closes_account(self):
+        service, client, (one, two) = self.service()
+        self.submit(one)
+        client.backend.fill()
+        def fail(event):
+            raise RuntimeError("callback failed")
+        one.register_execution_event_handler(fail)
+        one.begin_stop()
+        with self.assertRaisesRegex(RuntimeError, "callback failed"):
+            one.finish_stop_events()
+        self.assertTrue(service._failed)
+        self.assertEqual(one.event_diagnostics()["fills_delivered"], 0)
+        self.assertEqual(one.event_diagnostics()["pending_fills"], 1)
+
     def test_host_single_strategy_restart_keeps_peer_revision_position_and_td(self):
         modules = self.native_modules()
         contracts = import_module("bomber.framework.trader.contracts")

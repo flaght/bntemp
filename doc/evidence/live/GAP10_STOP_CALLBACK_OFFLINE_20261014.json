@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "date": "2026-10-14",
+  "status": "offline_passed_remote_acceptance_pending",
+  "report": "tests/results/main-ema-acceptance-1791941843551711000/summary.json",
+  "counts": {
+    "shared-account": 58,
+    "live-common": 116
+  },
+  "reproduced_before_fix": "Fill committed and queued; host stop unbound strategy and cleared handlers before delivery. Regression observed no strategy fill despite owned position1.",
+  "historical_remote_cause": "consistent_with_reproduced_gap_but_not_proven_without_consumption_timestamps",
+  "fix": [
+    "Disable new targets while keeping strategy bound.",
+    "Wait for terminal frozen mother orders, including peer remaining shares.",
+    "Close event input under account report transition lock; deliver queued events outside that lock.",
+    "Only then unbind strategy and release its lease.",
+    "Timeout/callback failure retains pending work; no empty-handler silent consumption."
+  ],
+  "new_regressions": [
+    "queued full fill delivered before unbind",
+    "late partial fill then cancel while still bound; peer remains usable",
+    "cancel timeout keeps runner bound and rejects new target",
+    "callback failure keeps event pending and closes account"
+  ],
+  "report_fields": [
+    "execution_events",
+    "stop_requested_at_ns",
+    "stopped_at_ns"
+  ],
+  "remote_acceptance": [
+    "Same-TD resume with original state and config.",
+    "Compare frozen-owner FillEvents with callbacks; enqueued equals delivered; pending events/fills zero.",
+    "Compare peer activity timestamps with actual stopped_at_ns."
+  ],
+  "gap10_closed": false
+}

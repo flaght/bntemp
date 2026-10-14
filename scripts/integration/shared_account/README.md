@@ -197,5 +197,17 @@ python -u -m tests.run_cross_section_acceptance --only shared-account \
 账户回报保存在`events.txt`，摘要包含各策略归属仓位、成交回调计数、源目标、
 独立停止状态及最终账户总仓／活动订单数。验收须逐笔核对来源，再比较归属和账户汇总。
 
+策略停止先禁止新目标，保留Runner绑定，按冻结所有者撤单并等待相关母单结束，
+消费已入账回报后才解绑策略。等待使用账户原`cancel_seconds`；超时或回调失败会
+报告停机未完成，不把未消费队列当作成功退出。用户回调不在柜台线程或账户锁内执行。
+报告中每个策略增加`stop_requested_at_ns`、`stopped_at_ns`和`execution_events`。
+后者的`fills_enqueued`与`fills_delivered`统计本进程该端口收到/派发的归属FillEvent，
+不统计手数；停止成功时两者应相等，`pending_events`和`pending_fills`应为0，
+`closed=true`。01 EMA的`fills_received`还应与当前策略实例收到的FillEvent数一致。
+若同进程重建策略，端口计数仍累计，策略实例计数从新实例开始，须按重建边界核对。
+使用`stopped_at_ns`与另一策略后续订单/成交时间比较，确认独立停止后的继续运行。
+保持原账户及策略检查点、原配置，用`--resume`复测，保存新目录的停机摘要和
+`events.txt`；无需因本次修复重做预算迁移，也不改变交易日、阈值或归属。
+
 本入口是同进程宿主，不提供独立策略进程的RPC接入。跨主机fencing、CTP＋BN联合
 剩余范围及真实两策略并行SimNow成交仍单独验收，不能由本期离线结果关闭GAP10。
