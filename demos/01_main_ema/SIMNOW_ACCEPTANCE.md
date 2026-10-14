@@ -1,5 +1,15 @@
 # 主力 EMA SimNow 接入验收
 
+## 当前启动选择修正（2026-10-14）
+
+用户明确要求独立策略真实向SimNow报单：当前AU使用--mode simnow --strategy-position-source fills --account-reconciliation off，并显式启用enable-orders/confirm-simnow。策略仓位只按自己的归属成交更新，物理持仓不参与策略账本初始化/校准；CTP TD、资金/订单查询、健康检查和账户锁继续使用。此前独立Model解释不符合该需求，Model命令已从当前启动指南替换。
+
+完整命令、独立SimNow状态文件及恢复条件见[README当前启动方式](README.md#当前启动方式独立策略向-simnow-报单2026-10-14)。最近AU MD返回20261015，当前命令要求MD/TD同日并先只读验证source20261014。此次fills/off真实SimNow报单/成交尚无新增通过结果。
+
+前次AU Model反馈：声明20261014/source20261013，实际MD=20261015，被MD_TRADING_DAY_MISMATCH拦截；bars_used=0、model_reports=0、策略仓位0、cleanup_errors=[]，报告standalone_if_model/model-1791989464943840945。保留原Model文件，不能用它恢复SimNow。本次仅修正文档，未自行启动策略、连接数据库/柜台或报单。
+
+本文下方RB模型通过和原生SimNow/strict验收均保留原模式，不代表当前AU fills/off已通过。
+
 ## 2026-10-11独立模型验收
 
 CTP第二套Replay行情配独立reference-price模型、账户仓位政策off的真实在线

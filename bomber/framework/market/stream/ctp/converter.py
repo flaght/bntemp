@@ -6,6 +6,7 @@ import hashlib
 import math
 import time
 from dataclasses import dataclass
+from decimal import Decimal
 from datetime import UTC, datetime, timedelta, timezone, tzinfo
 from typing import Any, Mapping
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -38,6 +39,14 @@ class CtpTickConverter:
 
     def reset(self) -> None:
         self._states.clear()
+
+    @staticmethod
+    def depth_reference_price(data):
+        """每次真实深度的盘口中价；不受派生QuoteTick去重影响。"""
+        bid, ask = _ctp_number(data.get("BidPrice1")), _ctp_number(data.get("AskPrice1"))
+        if bid is None or ask is None or bid > ask:
+            return None
+        return str((Decimal(str(bid)) + Decimal(str(ask))) / 2)
 
     def convert(
         self,

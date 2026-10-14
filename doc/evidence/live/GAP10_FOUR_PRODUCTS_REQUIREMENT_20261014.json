@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "date": "2026-10-14",
+  "requested_cross_products": ["CU", "AL", "AG", "AU"],
+  "preview_config": "scripts/integration/shared_account/three_realtime_cu_al_ag_au.json",
+  "preview_strategy_id": "cross-cu-al-ag-au-three",
+  "existing_checkpoints_modified": false,
+  "account_limits_increased": false,
+  "remote_report": "cross-cu-al-three-1791985745991048257",
+  "confirmed_failure": {
+    "instrument": "cu2611.SHFE",
+    "event_age_seconds": -0.010289871,
+    "receive_age_seconds": 0.013536991,
+    "reference_current": true,
+    "execution_port_reconciled": true,
+    "account_reconciled": true,
+    "source_revision": 0,
+    "fills_received": 0
+  },
+  "remaining": [
+    "Confirm and handle measured future market event timestamps without assuming the broker or local clock is wrong.",
+    "Observe current AG/AU main contracts and price/budget feasibility.",
+    "Existing AG/AU short positions must remain external, including if their contracts join the new strategy routes.",
+    "Existing route identities cannot be changed by editing products then resuming the old checkpoint."
+  ],
+  "local_verification": {"shared_process_cli_tests": 7, "status": "passed", "network_connected": false, "real_broker_orders_submitted": 0},
+  "ready_for_live_execution": false,
+  "gap10_closed": false
+}

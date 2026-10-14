@@ -1,6 +1,7 @@
 """三策略应用配置/离线入口规则；不加载SDK或联网。"""
 
 from contextlib import redirect_stdout, redirect_stderr
+import argparse
 from io import StringIO
 import json
 from pathlib import Path
@@ -14,6 +15,53 @@ from scripts.integration.shared_account import config, prepare_session, server, 
 
 
 class ProcessCliTests(unittest.TestCase):
+    def test_four_product_session_has_separate_books_and_requires_observation_coverage(self):
+        with TemporaryDirectory() as directory:
+            old, updated, observed = (Path(directory) / name for name in ("old.json", "four.json", "observed.json"))
+            common = ["--environment", "realtime", "--execution-mode", "independent",
+                "--trading-day", "20261015", "--source-day", "20261014"]
+            with redirect_stdout(StringIO()):
+                prepare_session.main(["--output", str(old), *common])
+                prepare_session.main(["--output", str(updated), "--cross-products", "CU,AL,AG,AU", *common])
+            before, after = config.read_config(old), config.read_config(updated)
+            cross = next(row for row in after["strategies"] if row["kind"] == "cross_section")
+            self.assertEqual(cross["strategy_id"], "cross-cu-al-ag-au-three")
+            self.assertEqual(cross["argv"][cross["argv"].index("--products") + 1], "CU,AL,AG,AU")
+            self.assertEqual(before["account"], after["account"])
+            self.assertTrue({before["account_state_file"], *(r["state_file"] for r in before["strategies"])}.isdisjoint(
+                {after["account_state_file"], *(r["state_file"] for r in after["strategies"])}))
+            data = {"status": "observed", "orders_submitted": 0,
+                "verification": "readonly_dates_and_contracts", "environment": "realtime",
+                "session_arguments": {"trading_day": "20261015", "source_day": "20261014", "replay_md_trading_day": None},
+                "contracts": {"CU": {"main": "cu2611.SHFE", "secondary": "cu2612.SHFE", "far": "cu2701.SHFE"},
+                              "AL": {"main": "al2611.SHFE"}}}
+            observed.write_text(json.dumps(data))
+            arguments = ["--output", str(Path(directory) / "observed-four.json"),
+                "--environment", "realtime", "--execution-mode", "independent",
+                "--cross-products", "CU,AL,AG,AU", "--observations", str(observed)]
+            with redirect_stderr(StringIO()), self.assertRaises(SystemExit):
+                prepare_session.main(arguments)
+            data["contracts"].update(AG={"main": "ag2612.SHFE"}, AU={"main": "au2612.SHFE"})
+            observed.write_text(json.dumps(data))
+            with redirect_stdout(StringIO()):
+                prepare_session.main(arguments)
+            self.assertEqual(prepare_session.parse_cross_products("cu, al, ag, au"), ("CU", "AL", "AG", "AU"))
+            for value in ("CU", "CU,CU", "CU,", "CU,AU2612"):
+                with self.assertRaises(argparse.ArgumentTypeError):
+                    prepare_session.parse_cross_products(value)
+
+    def test_observed_budget_counts_shared_contract_twice_and_rounds_limit_up(self):
+        contracts = {"CU": {"main": "cu-main", "secondary": "cu-second", "far": "cu-far"},
+            "AL": {"main": "al"}, "AG": {"main": "ag"}, "AU": {"main": "au"}}
+        specs = {i: {"tick": 1, "multiplier": 10} for i in ("cu-main", "cu-second", "cu-far", "al", "ag", "au")}
+        quotes = {i: {"bid": 100, "ask": 101} for i in specs}
+        result = prepare_session.observed_budget(contracts, specs, quotes, ("CU", "AL", "AG", "AU"))
+        self.assertEqual((result["quantity"], result["notional"], result["rounded_notional_limit"]), (7, "7140", "100000"))
+        self.assertEqual(sum(row["instrument"] == "cu-main" for row in result["legs"]), 2)
+        quotes["au"]["ask"] = "NaN"
+        with self.assertRaises(ValueError):
+            prepare_session.observed_budget(contracts, specs, quotes, ("CU", "AL", "AG", "AU"))
+
     def test_worker_reference_query_allows_market_thread_and_serializes_execution(self):
         lock, progressed, calls = threading.RLock(), threading.Event(), []
         def market_tick():

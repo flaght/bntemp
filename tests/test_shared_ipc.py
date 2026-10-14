@@ -32,6 +32,80 @@ class SharedIpcTests(unittest.TestCase):
     native_account = fixtures.SharedAccountTests.native_account
     request = fixtures.SharedAccountTests.request
 
+    def test_poll_publishes_owned_route_prices_before_signals_and_rejects_future_or_foreign(self):
+        with nullcontext(self.enterContext(TemporaryDirectory())) as directory:
+            _, _, service, transport, protocol = self.prepare(Path(directory)/"account.json")
+            lease = self.attach(protocol, "one")
+            stamp = time.time_ns()
+            row = {str(self.instrument): {"price": "3210", "ts_event": stamp}}
+            self.call(protocol, "one", "poll", {"cursor": 0, "ready": False, "prices": row}, lease=lease)
+            self.assertEqual(service.prices.get(self.instrument).price, 3210)
+            self.assertFalse(transport.sent)
+            self.assertFalse(protocol.leases["one"]["ready"])
+            invalid = {**row, "au2612.SHFE": {"price": "1000", "ts_event": stamp}}
+            for prices in (invalid, {str(self.instrument): {"price": "4000", "ts_event": stamp + 1_000_000_000}}):
+                with self.assertRaisesRegex(ValueError, "路由或时效"):
+                    self.call(protocol, "one", "poll", {"cursor": 0, "ready": True, "prices": prices}, lease=lease)
+                self.assertFalse(protocol.leases["one"]["ready"])
+                self.assertEqual(service.prices.get(self.instrument).price, 3210)
+            protocol.stop_owner("one")
+
+    def test_account_valuation_keeps_stopped_owner_contracts_priced_without_running_algorithms(self):
+        from scripts.integration.shared_account.server import connect_valuation_market
+        from contextlib import ExitStack
+        self.native_modules()
+        extra = type(self.instrument).from_str("au2612.SHFE")
+        class Feed:
+            source_id = "raw-risk"
+            config = SimpleNamespace(front="tcp://fake", broker_id="9999", user_id="demo",
+                production_mode=True, timezone="Asia/Shanghai", dce_use_receive_date=True, future_buffer_ns=100_000_000)
+            health_snapshot = SimpleNamespace(state="ready")
+            latest_trading_day = "20261013"
+            def __init__(self, instrument):
+                self.metas = {instrument: SimpleNamespace(instrument_id=instrument)}
+                self.depth_observations = {}
+                self.connected = 0
+                self.subscriptions = []
+            def get_instrument_meta(self, i): return self.metas.get(i)
+            def register_instrument(self, meta): self.metas[meta.instrument_id] = meta
+            def subscribe(self, i, kind): self.subscriptions.append((i, kind.value))
+            def connect(self):
+                self.connected += 1
+                self.latest_receive_monotonic_ns = time.monotonic_ns()
+                self.depth_observations = {i: SimpleNamespace(trading_day="20261013", ts_event=time.time_ns(),
+                    received_monotonic_ns=self.latest_receive_monotonic_ns, timestamp_regressed=False,
+                    reference_price="3210") for i in self.metas}
+            def disconnect(self): pass
+        first, second = Feed(self.instrument), Feed(extra)
+        prices = self.risk.MarketReferencePriceStore()
+        def item(feed, instrument):
+            return SimpleNamespace(session=SimpleNamespace(upstream=feed,
+                client=SimpleNamespace(routes={"main": instrument}),
+                runner=SimpleNamespace(start=lambda: (_ for _ in ()).throw(AssertionError("账户估值不得启动算法")))))
+        with ExitStack() as resources:
+            host = SimpleNamespace(resources=resources, service=SimpleNamespace(prices=prices),
+                strategies={"one": item(first, self.instrument), "two": item(second, extra)})
+            market = connect_valuation_market(host, {"environment": "realtime", "trading_day": "20261013"})
+            self.assertTrue(market.check().ready)
+            self.assertEqual((first.connected, second.connected), (1, 0))
+            self.assertEqual(len(first.subscriptions), 2)
+            self.assertEqual(prices.get(extra).price, 3210)
+            # 原策略停止后，真实深度即使价格未变仍能刷新估值，保持剩余风险约束。
+            previous = prices.get(extra).ts_event
+            first.depth_observations[extra] = SimpleNamespace(trading_day="20261013", ts_event=time.time_ns(),
+                received_monotonic_ns=time.monotonic_ns(), timestamp_regressed=False, reference_price="3210")
+            self.assertTrue(market.check().ready)
+            self.assertGreater(prices.get(extra).ts_event, previous)
+            first.depth_observations[extra].reference_price = None
+            self.assertFalse(market.check().ready)
+            # 无归属、无在途的未运行品种不闭掉其余策略；现有持仓估值仍必须健康。
+            host.service.position_manager = SimpleNamespace(attribution=SimpleNamespace(
+                state=lambda: {"owned": [{"instrument_id": str(self.instrument), "quantity": "1"}]}))
+            host.service._active_instruments = lambda: set()
+            self.assertTrue(market.check().ready)
+            host.service._active_instruments = lambda: {str(extra)}
+            self.assertFalse(market.check().ready)
+
     def test_readonly_preflight_connects_raw_depth_without_bar_or_runner_start(self):
         from scripts.integration.shared_account.preflight import connect_session_market
         calls = []

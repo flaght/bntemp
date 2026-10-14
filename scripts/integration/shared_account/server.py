@@ -8,6 +8,69 @@ import time
 from .config import read_config
 
 
+def connect_valuation_market(host, config):
+    """复用已准备的CTP原始Feed，观察全合约估值；不连接策略Runner或生成Bar。"""
+    if config["environment"] != "realtime":
+        return None
+    feeds = [item.session.upstream for item in host.strategies.values()
+        if hasattr(getattr(item.session, "upstream", None), "depth_observations")]
+    if not feeds:
+        return None
+    from bomber.framework.market.basic.base import DataType
+    from bomber.framework.trader.runtime.live.channels.ctp import CtpMarketChannel, InstrumentHealthGate
+    from bomber.framework.trader.runtime.live.contracts import ReadinessIssue, ReadinessResult
+    from decimal import Decimal
+    feed, instruments = feeds[0], set()
+    for raw in feeds:
+        for key in ("front", "broker_id", "user_id", "production_mode", "timezone", "dce_use_receive_date", "future_buffer_ns"):
+            if getattr(raw.config, key) != getattr(feed.config, key):
+                raise ValueError("账户CTP估值源声明不一致")
+    for item in host.strategies.values():
+        raw = getattr(item.session, "upstream", None)
+        if raw not in feeds:
+            continue
+        for instrument in item.session.client.routes.values():
+            meta = raw.get_instrument_meta(instrument)
+            if meta is None:
+                raise ValueError("账户估值合约缺少原始元数据")
+            feed.register_instrument(meta)
+            instruments.add(instrument)
+    for instrument in sorted(instruments, key=str):
+        feed.subscribe(instrument, DataType.QUOTE_TICK)
+    host.resources.callback(feed.disconnect)
+    feed.connect()
+    gate = InstrumentHealthGate(feed, instruments, config["trading_day"])
+    quote_gate = InstrumentHealthGate(feed, instruments, config["trading_day"])
+    class ValuationChannel(CtpMarketChannel):
+        def check(self):
+            positions = getattr(host.service, "position_manager", None)
+            if positions is None:
+                required = instruments
+            else:
+                owned = {row["instrument_id"] for row in positions.attribution.state()["owned"] if Decimal(row["quantity"])}
+                owned.update(host.service._active_instruments())
+                required = {i for i in instruments if str(i) in owned}
+            self.instrument_health.instruments = frozenset(required)
+            result = super().check()
+            if not result.ready:
+                return result
+            invalid = quote_gate.stale_instruments()
+            observations, updates, issues = dict(quote_gate.depth_records), [], []
+            for instrument in instruments:
+                row = observations.get(instrument)
+                value = getattr(row, "reference_price", None)
+                if value is None or str(instrument) in invalid:
+                    if instrument in required:
+                        issues.append(ReadinessIssue(self.identity, "PRICE_REFERENCE_MISSING", str(instrument)))
+                else:
+                    updates.append((instrument, Decimal(value), row.ts_event))
+            if not issues:
+                for instrument, price, stamp in updates:
+                    host.service.prices.update(instrument, price, stamp)
+            return ReadinessResult(result.sources, tuple(issues))
+    return ValuationChannel(feed, config["trading_day"], instrument_health=gate)
+
+
 def _main(argv):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, required=True)
@@ -56,6 +119,17 @@ def _run(args, config, stop_event):
         if any(row["status"] != "completed" for row in protocol.journal.requests.values()):
             raise RuntimeError("恢复存在未决跨进程请求，须权威核查，拒绝自动重复发单")
         host.service.start()
+        valuation = connect_valuation_market(host, config)
+        until_market = time.monotonic() + 30
+        while valuation is not None and not valuation.check().ready:
+            if stop_event.is_set():
+                raise StopRequested()
+            if time.monotonic() >= until_market:
+                raise RuntimeError(f"账户估值行情未就绪: {valuation.check().as_dict()}")
+            time.sleep(0.05)
+        if valuation is not None:
+            submission_check = host.account.execution.backend.submission_check
+            host.account.execution.backend.submission_check = lambda: submission_check() and valuation.check().ready
         if stop_event.is_set():
             raise StopRequested()
         host.account.authorize()
@@ -83,6 +157,8 @@ def _run(args, config, stop_event):
         print(f"账户服务就绪：socket={args.socket}；策略客户端文件目录={args.credentials_dir}", flush=True)
         until = time.monotonic() + config["seconds"] + 120  # 给分终端启动和策略先停机留出时间。
         while not stop_event.is_set() and time.monotonic() < until:
+            if valuation is not None and not valuation.check().ready:
+                raise RuntimeError(f"账户估值行情失效: {valuation.check().as_dict()}")
             server.poll()
             protocol.poll()
             host.account.poll()

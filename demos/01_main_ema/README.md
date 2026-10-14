@@ -1,5 +1,79 @@
 # 单品种主力 EMA 回测
 
+## 当前启动方式：独立策略向 SimNow 报单（2026-10-14）
+
+当前需求是：**独立进程只启动01_main_ema，直接向SimNow报单，只按自己的归属成交管理策略仓位**。此前Model解释已纠正，Model只模拟成交，不符合当前真实SimNow报单需求。直接运行python -m demos.01_main_ema.run_live，只装配一个MainEmaStrategy，不启动其他demo、共享账户母进程或共享worker。
+
+“无物理账户关联”在这里表示**不将柜台持仓关联/同步到策略账本**，不表示无需交易账户。真实报单仍连接CTP TD，查询资金、关联本策略订单与成交，并保留账户锁和执行门控。
+
+| 配置 | 当前选择与作用 |
+| --- | --- |
+| --mode simnow | 使用原生CTP TD向SimNow提交订单，接收真实柜台回报 |
+| --strategy-position-source fills | 本策略仓位只由本策略已归属的真实成交更新；提交目标/报单不等于成交 |
+| --account-reconciliation off | 不查询柜台持仓来初始化或校准策略账本，不自动接管其他仓位 |
+| --enable-orders --confirm-simnow | 显式启用SimNow报单；仅connect不足以启用报单 |
+| 独立state-file | 保存本策略归属、订单关联和执行账本；不复用Model/其他策略文件 |
+| --product "$EMA_PRODUCT" | 从参考资料解析所选品种当前主力；本次AU，不固定某个月份 |
+
+### 完整启动命令
+
+在已安装Bomber及CTP MD/TD依赖的环境中、pro根目录执行，连接配置沿用项目.env。用户最近一次AU MD实际返回20261015，故本次声明交易日20261015和资料来源日20261014；MD/TD必须均匹配，来源资料须先只读核验。换会话时按实际结果更新日期，不直接使用自然日期。以下命令通过只读后会实际启用SimNow订单。
+
+```bash
+export PYTHONPATH=.
+EMA_PRODUCT=AU
+EMA_TRADING_DAY=20261015
+EMA_SOURCE_DAY=20261014
+EMA_STATE_FILE="demos/01_main_ema/state/simnow/${EMA_PRODUCT}_main_ema_${EMA_TRADING_DAY}_fills_off.json"
+EMA_REPORT_DIR="demos/01_main_ema/results/standalone_${EMA_PRODUCT}_simnow/${EMA_TRADING_DAY}"
+mkdir -p demos/01_main_ema/state/simnow
+
+python -u -m scripts.integration.reference_data.readonly \
+  --connect --products "$EMA_PRODUCT" \
+  --database dfs://bomber_daily \
+  --trading-day "$EMA_TRADING_DAY" \
+  --expected-source-day "$EMA_SOURCE_DAY" \
+  --factor-date-basis source --factor-availability observed-on-read &&
+python -u -m demos.01_main_ema.run_live \
+  --connect \
+  --mode simnow \
+  --product "$EMA_PRODUCT" \
+  --market-source ctp \
+  --simnow-environment realtime \
+  --strategy-position-source fills \
+  --account-reconciliation off \
+  --reference-source dolphindb \
+  --reference-database dfs://bomber_daily \
+  --factor-date-basis source \
+  --factor-availability observed-on-read \
+  --expected-trading-day "$EMA_TRADING_DAY" \
+  --expected-source-day "$EMA_SOURCE_DAY" \
+  --state-file "$EMA_STATE_FILE" \
+  --report-dir "$EMA_REPORT_DIR" \
+  --fast 3 --slow 5 --quantity 1 \
+  --max-notional 3000000 \
+  --max-session-orders 4 \
+  --history-minutes 0 \
+  --seconds 600 \
+  --enable-orders --confirm-simnow
+```
+
+首次启动要求state-file不存在，策略归属初始为0；已有柜台持仓不会自动归给本策略。若该策略已有真实成交和状态，使用原SimNow文件加--resume恢复同一交易日、同一合约和相同执行政策，不能另建文件把已有策略仓位重新当作0。新文件已存在时先核对其身份，不删除或覆盖来绕过校验。Model文件不能用于SimNow恢复，账户既有仓位也不能在off下通过adopt-existing-position接管。
+
+本命令使用当前实时完整Bar完成3/5根EMA预热，不读取DolphinDB历史Bar；数据库仍提供角色、因子及条款。单次运行600秒、最多4笔报单、一手目标；停止时撤销本策略活动订单并保存自己的状态，**不自动平掉已成交仓位**。不能靠off绕过资金、活动订单、会话健康、报单授权或账户锁；同账户多个独立TD写进程仍不能并发启动。独立成交账本不是柜台对同一真实合约的逐策略物理隔离。
+
+### 如何核对真实报单与自己的仓位
+
+报告应为mode=simnow、strategy_position_source=fills、account_reconciliation=off。查看orders_submitted、订单受理/成交回调、strategy_position和last_target；策略仓位必须由实际已归属成交推进。account_position=None/final_gross=None表示本政策未查询物理持仓，不代表账户空仓。出现“独立策略执行，无物理账户关联”或execution_origin=model、model_reports时，是此前的Model运行，不能当作真实柜台成交证据。
+
+本启动路径不运行scripts.integration.shared_account.run/server/continuous，也不传入account_routes/shared_service；只管理自己的目标、订单关联、成交和持久化账本。当前AU属于已支持的SHFE入口；IF原生SimNow报单限制仍保留，不能把本命令的product改成IF来绕过该限制。
+
+### AU 前次Model失败反馈（保留历史证据）
+
+前次命令为AU Model，声明交易日20261014/source20261013，实际MD为20261015，启动被MD_TRADING_DAY_MISMATCH拦截；bars_used=0、model_reports=0、策略仓位0、cleanup_errors=[]，报告standalone_if_model/model-1791989464943840945。该结果只证明日期门控生效。保留if_main_ema.json及之前Model状态，不跨交易日resume，也不改名用作SimNow状态。此前source20261013加载成功不能证明本次source20261014已经发布，需按上面的只读结果判断。
+
+本节按当前run_live、执行政策、CTP构建及生命周期静态核对，命令已做Shell语法检查；仅更新文档，未自行启动策略、连接数据库/柜台或报单。本次fills/off真实SimNow报单与成交尚待运行环境验证。后文Model/Recording及strict空仓/接管验收均保留各自模式，不作为当前启动命令。
+
 ### 会话 Provider 与旧日历清理（2026-10-13）
 
 Live 的会话资料现在由 DolphinDB 时段表、`calendars` 日期 Provider 和独立日期例外组成。实际时段源为 `dfs://bomber_static/fut_trading_session`，文件源为资料目录中的 `fut_trading_session.feather`；DolphinDB 边界处理 `Code → code` 并用 `string(start_time/end_time)` 返回时钟值。正式历史预热、持续运行及恢复预检使用同一服务，默认不读取日历 JSON。品种与时段键、日历标识的绑定仍须明确配置。
@@ -62,7 +136,7 @@ python -u -m demos.01_main_ema.run_live \
 
 IF实际时段从部署的时段表读取，日期从 `china.cffex` Provider 获取。启动必须先取得健康MD/TD。历史预热启用须有实际分钟源配置，源缺失时拒绝；CU的时段对照结果不代表IF行情已读取成功。源码历史预热和接续的假柜台验收与真实在线验收分别记录。
 
-全新EMA策略的成交验收使用空仓SimNow账户和新状态文件，不传接管参数。策略初始持仓0，预热后按真实EMA方向生成目标，成交回报更新策略归属。账户非空会拒绝空仓启动，不自动归给EMA。PF0907固定目标方案已撤回，相关文件和参数已删除。同步、回归及空仓命令见 [PF2026100908交接](../../doc/HANDOFF/live/HANDOFF_FRESH_EMA_2026-10-09.md)。
+以下是原生SimNow/strict成交验收口径：使用空仓SimNow账户和新状态文件，不传接管参数。策略初始持仓0，预热后按真实EMA方向生成目标，成交回报更新策略归属。该模式下账户非空会拒绝空仓启动，不自动归给EMA；不适用于本文顶部的独立Model/off命令。PF0907固定目标方案已撤回，相关文件和参数已删除。同步、回归及空仓命令见 [PF2026100908交接](../../doc/HANDOFF/live/HANDOFF_FRESH_EMA_2026-10-09.md)。
 
 ## 1. 使用方法
 
@@ -291,7 +365,7 @@ GAP-03更新：在线默认dolphindb，一次性Recording／simnow须声明按�
 
 ## 显式接管已有一手仓位（PF2026100901）
 
-默认仍须空仓启动。只有指定`--adopt-existing-position cu2611.SHFE --expected-position -1`时，才尝试将该合约的一手空仓分配给当前唯一策略。首版支持SHFE／INE、单合约单向一手投机仓；指定合约须等于本次主力，账户不能有其他仓位或活动订单。`--expected-position 1`表示多仓。入口要求realtime、明确TD日及参考来源日，并要求一手目标。
+本节仅适用于原生SimNow/strict，默认须空仓启动；顶部Model/off不接管柜台仓位。只有指定`--adopt-existing-position cu2611.SHFE --expected-position -1`时，才尝试将该合约的一手空仓分配给当前唯一策略。首版支持SHFE／INE、单合约单向一手投机仓；指定合约须等于本次主力，账户不能有其他仓位或活动订单。`--expected-position 1`表示多仓。入口要求realtime、明确TD日及参考来源日，并要求一手目标。
 
 预检和正式登录后分别做两轮权威查询，检查净仓、总仓、今昨仓、资金及活动订单一致；从原生`PositionCost`和乘数初始化成本账本。缺字段或仓位变化即拒绝。需要重新编译安装TD扩展，不能只更新Python文件。接管不恢复旧EMA和旧订单，重新收集完整分钟Bar预热。
 
@@ -327,7 +401,7 @@ SimNow还须`--enable-orders --confirm-simnow`及一个不存在的新`--state-f
 
 ## 策略持仓与恢复公共化（PF2026101036）
 
-realtime/Replay均支持显式一手接管与单次同交易日`--resume`；恢复归属/账本/目标版本，EMA重新预热，旧目标在新信号前暂停。新状态含会话身份，旧单次文件缺身份组件不自动恢复。两demo源码不相互引用；行情模式与持仓初始化独立。账户仍单策略独占，失败恢复保留原文件。接管/恢复后新目标等于已有仓位时允许无新增订单，报告区分持仓核验与新成交；空仓新会话仍要求成交验收。
+原生SimNow/strict的realtime/Replay均支持显式一手接管与单次同交易日`--resume`；恢复归属/账本/目标版本，EMA重新预热，旧目标在新信号前暂停。新状态含会话身份，旧单次文件缺身份组件不自动恢复。两demo源码不相互引用；行情模式与持仓初始化独立。strict接管/恢复路径仍要求单策略独占账户，失败恢复保留原文件；本文顶部Model/off不使用柜台仓位。接管/恢复后新目标等于已有仓位时允许无新增订单，报告区分持仓核验与新成交；空仓新会话仍要求成交验收。
 
 69项公共纯Python测试通过，9项新增原生实体装配测试及实际柜台接管/恢复待Linux验收。本例修改清单、同步摘要、回归和当前命令见[持仓恢复交接](../../doc/HANDOFF/live/HANDOFF_LIVE_POSITION_RECOVERY_2026-10-10.md)。
 # 独立策略执行与账户仓位政策（2026-10-11）

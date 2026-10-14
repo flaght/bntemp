@@ -2,8 +2,11 @@
 
 import argparse
 from contextlib import ExitStack
+from copy import deepcopy
 from pathlib import Path
 import time
+
+from .prepare_session import parse_cross_products, observed_budget
 
 
 def main(argv=None):
@@ -12,12 +15,17 @@ def main(argv=None):
     parser.add_argument("--environment", choices=("replay", "realtime"), required=True)
     parser.add_argument("--report-dir", type=Path, default=Path("scripts/integration/shared_account/results"))
     parser.add_argument("--output", type=Path, help="保存本次只读观察摘要，供会话生成器读取")
+    parser.add_argument("--cross-products", type=parse_cross_products, default="CU,AL")
+    parser.add_argument("--ctp-future-buffer-ms", type=int, default=0)
     args = parser.parse_args(argv)
+    if not 0 <= args.ctp_future_buffer_ms <= 100 or (args.ctp_future_buffer_ms and args.environment != "realtime"):
+        parser.error("CTP未来事件缓冲须为realtime的0至100毫秒")
     from dotenv import load_dotenv
     from .run import PROJECT_ROOT
     from bomber.framework.trader.execution.ctp import CtpNativeTraderDriver, CtpTdApiTransport
     from bomber.framework.trader.runtime.live.channels.ctp import (
-        build_simnow_transport, build_md_config, required, validate_replay_environment, occupied_positions)
+        build_simnow_transport, build_md_config, required, validate_replay_environment, occupied_positions,
+        CtpLiveProfile, CtpMarketChannel, InstrumentHealthGate)
     from bomber.framework.trader.runtime.live.channels.ctp_shared import CtpSharedAccountLifecycle
     from bomber.framework.trader.runtime.reports import LiveRunReport
     from bomber.framework.dataprep.live_references import LiveFuturesReferences
@@ -29,7 +37,7 @@ def main(argv=None):
     load_dotenv(PROJECT_ROOT / ".env")
     report = LiveRunReport(args.report_dir, prefix=f"three-discover-{args.environment}")
     report.begin()
-    status, failure, driver, feed, fields = "failed", None, None, None, {}
+    status, failure, driver, feed, fields = "failed", None, None, None, {"cross_products": args.cross_products}
     with ExitStack() as resources:
         try:
             transport = build_simnow_transport(CtpTdApiTransport, client_id="three-discover",
@@ -52,13 +60,16 @@ def main(argv=None):
             resources.enter_context(source)
             references = [LiveFuturesReferences(source, products=(product,), trading_day=driver.trading_day,
                 started_ns=time.time_ns(), roles=roles, factor_roles=(), refresh_seconds=0)
-                for product, roles in (("CU", ("main", "secondary", "far")), ("AL", ("main",)))]
+                for product, roles in [(p, ("main", "secondary", "far") if p == "CU" else ("main",))
+                    for p in dict.fromkeys(("CU", *args.cross_products))]]
             source_days = {r.snapshot(time.time_ns()).source_day.strftime("%Y%m%d") for r in references}
             fields["observed_source_days"] = sorted(source_days)
             if len(source_days) != 1:
-                raise RuntimeError("CU/AL资料来源日不一致，不能生成同一会话")
+                raise RuntimeError("声明品种资料来源日不一致，不能生成同一会话")
             lifecycle = SimpleNamespace(transport=transport, md_front=required("CTP_MD_ADDRESS"))
-            feed = CtpLiveDataFeed(build_md_config(CtpMdConfig, lifecycle, flow_path=str(report.path / "md-flow")))
+            from dataclasses import replace
+            feed = CtpLiveDataFeed(replace(build_md_config(CtpMdConfig, lifecycle, flow_path=str(report.path / "md-flow")),
+                future_buffer_ns=args.ctp_future_buffer_ms * 1_000_000))
             resources.callback(feed.disconnect)
             instruments = {}
             for references_by_product in references:
@@ -67,17 +78,42 @@ def main(argv=None):
                         instrument = InstrumentId.from_str(f"{spec.symbol.lower()}.{spec.venue}")
                         instruments[instrument] = spec
                         fields.setdefault("contracts", {}).setdefault(product, {})[role] = str(instrument)
+                        fields.setdefault("instrument_specs", {})[str(instrument)] = {"tick": str(spec.tick), "multiplier": str(spec.multiplier)}
             for instrument, spec in instruments.items():
                 feed.register_instrument(InstrumentMeta(instrument,
                     price_precision=max(0, -spec.tick.normalize().as_tuple().exponent),
                     price_increment=spec.tick, multiplier=spec.multiplier, exchange=spec.venue, currency="CNY"))
                 feed.subscribe(instrument, DataType.QUOTE_TICK)
+            import threading
+            quote_lock, quotes = threading.RLock(), {}
+            def on_quote(tick):
+                with quote_lock:
+                    quotes[str(tick.instrument_id)] = {"bid": str(tick.bid_price.as_decimal()), "ask": str(tick.ask_price.as_decimal()),
+                        "ts_event": tick.ts_event, "received_monotonic_ns": time.monotonic_ns()}
+            feed.register_quote_tick_handler(on_quote)
             feed.connect()
             until = time.monotonic() + 30
-            while not set(instruments) <= set(feed.depth_observations):
+            while True:
+                with quote_lock:
+                    complete = {str(i) for i in instruments} <= quotes.keys()
+                if set(instruments) <= set(feed.depth_observations) and complete:
+                    observed_days = {row.trading_day for row in feed.depth_observations.values()}
+                    if len(observed_days) == 1:
+                        profile = CtpLiveProfile(args.environment,
+                            next(iter(observed_days)) if args.environment == "replay" else None)
+                        market = CtpMarketChannel(feed, driver.trading_day, profile=profile,
+                            instrument_health=InstrumentHealthGate(feed, instruments, driver.trading_day, policy=profile))
+                        readiness = market.check()
+                        fields["market_readiness"] = readiness.as_dict()
+                        if readiness.ready:
+                            break
                 if time.monotonic() >= until:
-                    raise RuntimeError("只读观察未取得完整CU/AL逐合约MD；保留实际MD观察，不猜测日期")
+                    raise RuntimeError(f"只读观察未取得完整健康声明合约MD；保留实际MD观察: {fields.get('market_readiness')}")
                 time.sleep(0.2)
+            with quote_lock:
+                fields["quotes"] = deepcopy(quotes)
+            fields["budget_upper_bound"] = observed_budget(fields["contracts"], fields["instrument_specs"],
+                fields["quotes"], args.cross_products)
             days = {row.trading_day for row in feed.depth_observations.values()}
             fields["observed_md_trading_days"] = sorted(days)
             if len(days) != 1:

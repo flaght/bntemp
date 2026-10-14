@@ -1,5 +1,7 @@
 # 01／03／04 三策略同账户运行
 
+当前交付以[固定交付与结束条件](../../../doc/audits/ARCHITECTURE_GAP_REVIEW_2026-10-09.md#固定交付与结束条件)及[本批冻结边界](../../../doc/HANDOFF/gaps/GAP10_THREE_STRATEGY_REQUIREMENTS_2026-10-14.md#当前固定交付边界)为准：先跑稳一个EMA，再交付三策略独立进程与同进程版本。DDB历史预热是正式运行条件；下文实时重新预热、900秒窗口及16:00／21:00安排均属历史调试流程，不能代替当前交付验收。最终版本须集中提供配置和完整命令，避免拼接历史步骤。
+
 2026-10-14后续补充：工厂已支持08 `option_vega`；共享宿主/worker支持其DolphinDB
 分钟与指数特征查询、封帧及选约去重检查点。实时CFFEX已终结订单的前日归属账本
 可按当日权威今昨仓/成本核验后恢复。下文REV19的“仅同日”是原交付边界；SHFE等
@@ -7,6 +9,23 @@
 [08共享恢复交接](../../../doc/HANDOFF/live/HANDOFF_OPTION_VEGA_SHARED_ROLLOVER_2026-10-14.md)。
 
 需求见doc/HANDOFF/gaps/GAP10_THREE_STRATEGY_REQUIREMENTS_2026-10-14.md。
+
+2026-10-14需求纠正：正式横截面品种为 **CU、AL、AG、AU**。下文CU/AL为旧两品种
+调试会话，保留历史命令；不得当作正式策略品种全集。discover/prepare_session现可
+显式传入`--cross-products CU,AL,AG,AU`。生成器使用新横截面ID
+`cross-cu-al-ag-au-three`及独立检查点目录，拒绝拿缺少AG/AU的旧观察摘要生成四品种
+会话。旧账户、策略ID、检查点不自动迁移。四品种候选参与排序，按每侧金额分配，
+不足一手的入选品种仍为零目标，不承诺每个品种必有订单。
+
+本地`three_realtime_cu_al_ag_au.json`为TD20261015/资料20261014的配置草案，仍保留
+5手/300万元账户上限，不增加额度。运行前须核对四品种实际主力、资金、行情、
+最大组合归属预算及原账户所有策略状态。REV25观测ag2612/au2612已有各1手空仓，
+当时实现拒绝管理范围内未归属仓位。REV26已替代该限制，但原仓仍不能自动变成新
+策略仓位，也不能仅替换products再resume。
+REV26已完成同日范围迁移及SHFE/INE同合约外部基线隔离；草案仍没有实时预算证据。
+请使用[四品种当前运行流程](FOUR_PRODUCTS_RUNBOOK_20261014.md)生成最终配置、
+只读迁移原账本并分别启动三个worker。下文REV19命令保留为历史调试流程。
+
 execution_mode=netted：同进程净额执行，内部抵消单独记录，不虚构柜台成交。
 execution_mode=independent：一个账户服务及三个独立worker，订单不跨策略抵消。
 账户服务持有唯一TD、写入锁、编号、资金/订单查询和同代检查点；worker只有自己的

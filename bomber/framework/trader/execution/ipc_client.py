@@ -110,15 +110,17 @@ class RemoteStrategyExecutionClient:
         if not self._started:
             return  # begin_stop已排空并确认回报；不能再轮询已关闭的租约。
         result = self.service.connection.call("poll", {"cursor": self.cursor,
-            "ready": bool(not self._stopping and self.ready_check())})
+            "ready": bool(not self._stopping and self.ready_check()), "prices": self.price_state(fresh_only=True)})
         self.sync(result["state"])
         self.deliver(result["events"], completed)
         if result["events"]:
             self.service.connection.call("poll", {"cursor": self.cursor, "ready": bool(not self._stopping and self.ready_check())})
 
-    def price_state(self):
+    def price_state(self, *, fresh_only=False):
+        now = time.time_ns()
         return {str(i): {"price": str(p.price), "ts_event": p.ts_event}
-                for i, p in self.service.prices.snapshot().items() if i in self.routes.values()}
+                for i, p in self.service.prices.snapshot().items() if i in self.routes.values()
+                and (not fresh_only or 0 <= now - p.ts_event <= 120_000_000_000)}
 
     def submit_targets(self, request):
         if self._stopping or request.strategy_id != self.strategy_id:
