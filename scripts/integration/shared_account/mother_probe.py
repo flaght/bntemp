@@ -119,6 +119,7 @@ def price_plan(raw, observation, args, spec):
         "quantity": 2, "per_source_quantity": 1, "limit_price": str(price),
         "tick": str(spec.tick), "multiplier": str(spec.multiplier), "notional": str(notional),
         "quote": {k: str(v) for k, v in values.items()}, "quote_ts_event": observation.ts_event,
+        "observed_md_trading_day": observation.trading_day,
         "unexpected_fill_policy": "最多2手意外成交归独立测试账本；保留持仓，不自动平仓或改原检查点"}
 
 
@@ -213,15 +214,22 @@ def make_feed(transport, spec, resources, report_dir):
             super().__init__(config)
             self.raw_quote = None
         def on_depth_market_data(self, raw):
+            with self._lock:
+                previous = self._depth_observations.get(instrument)
             super().on_depth_market_data(raw)
             with self._lock:
                 observation = self._depth_observations.get(instrument)
-                if (observation is not None and (self.raw_quote is None
-                        or observation.received_monotonic_ns > self.raw_quote[1].received_monotonic_ns)):
+                if (observation is not None and (previous is None
+                        or observation.received_monotonic_ns > previous.received_monotonic_ns)):
                     self.raw_quote = (dict(raw), observation)
+        def on_api_error(self, error):
+            with self._lock:
+                self.raw_quote = None
+            super().on_api_error(error)
         def quote(self):
             with self._lock:
-                if self.raw_quote is None or not self._ready.is_set():
+                if (self.raw_quote is None or not self._ready.is_set()
+                        or self._depth_observations.get(instrument) != self.raw_quote[1]):
                     raise RuntimeError("未取得有效测试行情")
                 return self.raw_quote
     instrument = InstrumentId.from_str(f"{spec.symbol.lower()}.{spec.venue}")
@@ -308,6 +316,7 @@ def main(argv=None):
     resources = ExitStack()
     host = driver = probe = None
     status, failure, shutdown_failure, plan = "failed", None, None, None
+    observed_td_day = None
     raised = False
     try:
         transport = build_simnow_transport(CtpTdApiTransport, client_id=CLIENT_ID,
@@ -324,6 +333,7 @@ def main(argv=None):
             enable_simnow_orders=args.submit, max_session_orders=1, disconnect_handler=disconnected)
         resources.callback(driver.stop)
         driver.start(lambda row: None)
+        observed_td_day = driver.trading_day
         if driver.trading_day != args.trading_day or not driver.is_simnow_session:
             raise RuntimeError("TD交易日或SimNow身份不符")
         if driver.reconcile_active_orders().orders:
@@ -375,6 +385,7 @@ def main(argv=None):
             snapshot = host.snapshot() if host is not None else {}
             events = tuple(host.account.execution.backend.reports) if host else ()
             snapshot.update(plan=plan, failure=failure, shutdown_failure=shutdown_failure,
+                expected_trading_day=args.trading_day, observed_td_trading_day=observed_td_day,
                 protected_state_unchanged=unchanged, protected_hashes=hashes,
                 orders_submitted=driver.submitted_orders if driver else 0,
                 verification="controlled_live_mother_probe" if args.submit else "readonly_plan_no_orders",
