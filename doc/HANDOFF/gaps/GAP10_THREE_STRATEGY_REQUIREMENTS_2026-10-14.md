@@ -86,3 +86,14 @@ THREE_STRATEGIES.md。测试使用真实公共组件、实际三进程socket及�
 公共执行代码本轮不改。语法/diff通过，共享65及公共116回归通过；本地缺原生Bar，
 完整跨期仍须Linux复测，不宣称已通过。本次先复测calendar-live；通过后继续
 原replay预检流程。新校验清单REV20保留REV19历史，不覆写旧证据。
+
+## replay只读订阅修复（REV21）
+
+用户three-readonly-1791976278218070424失败于连接Bar聚合Feed：预检不启动
+Runner，故未建立Bar订阅。改为对策略声明的去重合约在原始upstream订阅
+QUOTE_TICK并直接连接，取得原始深度供原健康门控；不启动策略、不生成交易
+目标、不放宽日期/行情检查。独立session.feeds分支保留。connect之前加入
+cleanup列表，部分连接失败仍关闭资源。新增回归要求不调用Bar聚合器connect、
+订阅去重及连接失败cleanup。shared-ipc共11项通过，报告
+main-ema-acceptance-1791976366758002000；原生replay只读仍须Linux复测。
+新REV21校验清单保留历史文件，不改原配置/持仓/检查点。本机未连接外部柜台。
