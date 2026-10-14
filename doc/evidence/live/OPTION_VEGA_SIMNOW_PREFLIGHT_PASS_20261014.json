@@ -1,0 +1,283 @@
+{
+  "date": "2026-10-14",
+  "source": "user_returned_readonly_preflight_console",
+  "attachment_sha256": "4980f9292e3508b2b807a6fd3f401644aa79d4d68ffc4c9efc1b6bd3f71f11bd",
+  "returned_preflight": {
+    "scope": "readonly_migration_preflight",
+    "status": "completed",
+    "failure": null,
+    "cleanup_errors": [],
+    "state_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro_new/tests/results/gap08-realtime-simnow/state-1791869411336135873.json",
+    "expected_trading_day": "20261014",
+    "orders_enabled": false,
+    "can_start_orders": false,
+    "state_modified": false,
+    "state_sha256": "8e18ffb4e608bd6dbc8af02be37f2b1025a2df1c3572ceb755163b5597b696e1",
+    "checkpoint": {
+      "generation": 35,
+      "saved_at_ns": 1791872517545515131,
+      "identity": {
+        "valuation_day": "2026-10-13",
+        "td_day": "20261013",
+        "mode": "simnow",
+        "environment": "realtime",
+        "config": {
+          "close_remaining_days": 2,
+          "delta_targets": [
+            0.25
+          ],
+          "flatten_slot": "14:50",
+          "hedge_slots": [
+            "10:00",
+            "11:00",
+            "13:30",
+            "14:00",
+            "14:55"
+          ],
+          "max_future_lots": 1,
+          "max_iv_age_seconds": 300,
+          "max_market_age_seconds": 300,
+          "max_option_lots": 1,
+          "max_total_option_lots": 2,
+          "min_remaining_days": 5,
+          "min_time_value": 5,
+          "nav": "40000000",
+          "option_slot": "13:36",
+          "rate": 0.02,
+          "vega_budget": 1.25
+        },
+        "sources": {
+          "index": {
+            "availability": "observed",
+            "channel": "dolphindb-dfs",
+            "database": "dfs://min_bar",
+            "dataset_id": "index.minute",
+            "poll_seconds": 0.2,
+            "price_precision": 4,
+            "query_timeout": 2,
+            "schema_fingerprint": "2a774e029cb0a78d8b3c451a005bbed81d26a570c3e317d78a9e7b31d66692df",
+            "schema_version": 1,
+            "size_precision": 4,
+            "source": "dolphindb-raw:10.200.122.53:8902:dfs://min_bar/index_1min:5f4c946eced08bd3e1d0ebc5b17dc29dca302c38db46ebb4ce4fa786a3163e45",
+            "table": "index_1min",
+            "timestamp_label": "end"
+          },
+          "market": {
+            "channel": "ctp",
+            "front": "tcp://182.254.243.31:30011",
+            "price": "last"
+          }
+        },
+        "labels": {
+          "index-bars": "end",
+          "market-bars": "inclusive-end"
+        },
+        "policy": {
+          "account_reconciliation": "strict",
+          "position_source": "fills",
+          "version": 1
+        }
+      },
+      "ledger_trading_day": "20261013",
+      "saved_managed_gross": {
+        "MO2611-C-7400.CFFEX": [
+          "0",
+          "1"
+        ]
+      },
+      "saved_buckets": {
+        "MO2611-C-7400.CFFEX": [
+          "0",
+          "0",
+          "1",
+          "0"
+        ]
+      },
+      "owned_positions": {
+        "MO2611-C-7400.CFFEX": "-1"
+      },
+      "signal": {
+        "entry_decisions": 1,
+        "flatten_requested": false,
+        "future_goals": {
+          "IM2610": "0",
+          "IM2611": "0",
+          "IM2612": "0",
+          "IM2703": "0"
+        },
+        "option_goals": {
+          "MO2610-C-6200": "0",
+          "MO2610-C-6300": "0",
+          "MO2610-C-6400": "0",
+          "MO2610-C-6500": "0",
+          "MO2610-C-6600": "0",
+          "MO2610-C-6700": "0",
+          "MO2610-C-6800": "0",
+          "MO2610-C-6900": "0",
+          "MO2610-C-7000": "0",
+          "MO2610-C-7100": "0",
+          "MO2610-C-7200": "0",
+          "MO2610-C-7300": "0",
+          "MO2610-C-7400": "0",
+          "MO2610-C-7500": "0",
+          "MO2610-C-7600": "0",
+          "MO2610-C-7700": "0",
+          "MO2610-C-7800": "0",
+          "MO2610-C-7900": "0",
+          "MO2610-C-8000": "0",
+          "MO2610-C-8100": "0",
+          "MO2610-C-8200": "0",
+          "MO2610-C-8300": "0",
+          "MO2610-C-8400": "0",
+          "MO2610-C-8500": "0",
+          "MO2610-C-8600": "0",
+          "MO2610-C-8700": "0",
+          "MO2610-C-8800": "0",
+          "MO2611-C-6400": "0",
+          "MO2611-C-6500": "0",
+          "MO2611-C-6600": "0",
+          "MO2611-C-6700": "0",
+          "MO2611-C-6800": "0",
+          "MO2611-C-6900": "0",
+          "MO2611-C-7000": "0",
+          "MO2611-C-7100": "0",
+          "MO2611-C-7200": "0",
+          "MO2611-C-7300": "0",
+          "MO2611-C-7400": "-1",
+          "MO2611-C-7500": "0",
+          "MO2611-C-7600": "0",
+          "MO2611-C-7700": "0",
+          "MO2611-C-7800": "0",
+          "MO2611-C-7900": "0",
+          "MO2611-C-8000": "0",
+          "MO2611-C-8100": "0",
+          "MO2611-C-8200": "0",
+          "MO2611-C-8300": "0",
+          "MO2611-C-8400": "0",
+          "MO2611-C-8500": "0",
+          "MO2611-C-8600": "0",
+          "MO2612-C-10000": "0",
+          "MO2612-C-6200": "0",
+          "MO2612-C-6400": "0",
+          "MO2612-C-6500": "0",
+          "MO2612-C-6600": "0",
+          "MO2612-C-6700": "0",
+          "MO2612-C-6800": "0",
+          "MO2612-C-6900": "0",
+          "MO2612-C-7000": "0",
+          "MO2612-C-7100": "0",
+          "MO2612-C-7200": "0",
+          "MO2612-C-7300": "0",
+          "MO2612-C-7400": "0",
+          "MO2612-C-7500": "0",
+          "MO2612-C-7600": "0",
+          "MO2612-C-7700": "0",
+          "MO2612-C-7800": "0",
+          "MO2612-C-7900": "0",
+          "MO2612-C-8000": "0",
+          "MO2612-C-8100": "0",
+          "MO2612-C-8200": "0",
+          "MO2612-C-8300": "0",
+          "MO2612-C-8400": "0",
+          "MO2612-C-8500": "0",
+          "MO2612-C-8600": "0",
+          "MO2612-C-8800": "0",
+          "MO2612-C-9000": "0",
+          "MO2612-C-9200": "0",
+          "MO2612-C-9400": "0",
+          "MO2612-C-9600": "0",
+          "MO2612-C-9800": "0",
+          "MO2703-C-10000": "0",
+          "MO2703-C-6200": "0",
+          "MO2703-C-6400": "0",
+          "MO2703-C-6600": "0",
+          "MO2703-C-6800": "0",
+          "MO2703-C-7000": "0",
+          "MO2703-C-7200": "0",
+          "MO2703-C-7400": "0",
+          "MO2703-C-7600": "0",
+          "MO2703-C-7800": "0",
+          "MO2703-C-8000": "0",
+          "MO2703-C-8200": "0",
+          "MO2703-C-8400": "0",
+          "MO2703-C-8600": "0",
+          "MO2703-C-8800": "0",
+          "MO2703-C-9000": "0",
+          "MO2703-C-9200": "0",
+          "MO2703-C-9400": "0",
+          "MO2703-C-9600": "0",
+          "MO2703-C-9800": "0"
+        },
+        "sent_days": [
+          "2026-10-13"
+        ],
+        "submissions": 1,
+        "version": 1
+      }
+    },
+    "account_identity_matches": true,
+    "observed_td_trading_day": "20261014",
+    "active_orders": 0,
+    "managed_gross": {
+      "MO2611-C-7400.CFFEX": [
+        "0",
+        "1"
+      ]
+    },
+    "external_gross": {
+      "au2612.SHFE": [
+        "0",
+        "1"
+      ],
+      "hc2701.SHFE": [
+        "1",
+        "0"
+      ],
+      "sc2611.INE": [
+        "1",
+        "0"
+      ],
+      "ni2611.SHFE": [
+        "1",
+        "0"
+      ],
+      "i2701.DCE": [
+        "0",
+        "1"
+      ],
+      "ag2612.SHFE": [
+        "0",
+        "1"
+      ]
+    },
+    "bucket_order": [
+      "long_today",
+      "long_yesterday",
+      "short_today",
+      "short_yesterday"
+    ],
+    "authoritative_buckets": {
+      "MO2611-C-7400.CFFEX": {
+        "quantities": [
+          "0",
+          "0",
+          "1",
+          "0"
+        ],
+        "position_costs": [
+          "0",
+          "0",
+          "8220.0",
+          "0"
+        ]
+      }
+    },
+    "cny_available_positive": true,
+    "gross_matches_original_state": true,
+    "migration_required": true,
+    "next_step": "验证原归属后准备独立迁移文件；保持交易闭闸，不直接改原身份或新建空仓"
+  },
+  "remote_report": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/tests/results/option-vega-simnow-preflight/sample-1791959088346620719/summary.json",
+  "user_preference": "恢复并保留现有仓位",
+  "scope_note": "原仓只读核对通过；迁移仍需另存新文件并独立恢复，不能直接改原身份。分桶按报告，不从日期推断。"
+}

@@ -21,6 +21,8 @@ from bomber.framework.trader.contracts import TargetPortfolio
 from bomber.framework.trader.portfolio import AccountTargetKey,PortfolioCoordinatorState
 from bomber.framework.trader.execution.ctp.native_driver import CtpNativeTraderDriver,CtpTraderSession
 from bomber.framework.trader.execution.events import AccountStateEvent,ActiveOrderSnapshot,CurrencyBalance
+from bomber.framework.trader.execution.order_state import OrderState,OrderStateCheckpoint,OrderLifecycleStatus
+from bomber.framework.trader.execution.contracts import OrderSide
 from bomber.framework.trader.persistence import JsonStateStore
 from scripts.integration.options import simnow_migrate as migrate
 from tests.test_option_vega_assembly import ReferenceService,Feed
@@ -99,6 +101,9 @@ class MigrationTests(unittest.TestCase):
         old.runner.portfolio_coordinator.restore(PortfolioCoordinatorState(1,{CLIENT:contribution},{CLIENT:1},frozenset(contribution)))
         old.strategy.option_goals["MO2609-C-6600"]=Decimal(-1);old.strategy.sent_days={self.old_day}
         old.strategy.submissions=old.strategy.entry_decisions=1
+        old.client.order_state_machine.restore((OrderStateCheckpoint(OrderState(CLIENT,
+            CLIENT+"-20260813-7",instrument,OrderSide.SELL,Decimal(1),Decimal(1),Decimal(0),
+            OrderLifecycleStatus.FILLED,1,1),("historical-fill-key",)),))
         old_driver.start(lambda r:None);old.manager.save();old_driver.stop()
         self.saved=JsonStateStore(self.source).load();self.before=self.source.read_bytes()
         self.new_transport=Transport("20260814")
@@ -122,6 +127,7 @@ class MigrationTests(unittest.TestCase):
         payload,changes=self.transform()
         self.assertEqual(payload["positions"]["attribution"],self.saved.payload["positions"]["attribution"])
         self.assertEqual(payload["orders"],self.saved.payload["orders"])
+        self.assertEqual(len(payload["orders"][CLIENT]),1)
         self.assertEqual(payload["ctp_drivers"],self.saved.payload["ctp_drivers"])
         ledger=payload["ctp_ledgers"][CLIENT]
         self.assertEqual(ledger["trading_day"],"20260814")

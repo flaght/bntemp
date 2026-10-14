@@ -133,13 +133,15 @@ class LiveAssemblyTests(unittest.TestCase):
         self.addCleanup(lambda: [s.runner.stop() for s in self.sessions])
 
     def build(self, mode="model", *, start=True, driver=None, **changes):
+        shared_service, strategy_id = changes.pop("shared_service", None), changes.pop("strategy_id", None)
         args = Namespace(mode=mode, leg1_role="secondary", leg2_role="far", quantity=Decimal(1),
             lookback=2, entry_z=2., exit_z=.5, rebalance_interval=1,
             simnow_environment="realtime", replay_md_trading_day=None, expected_instruments={},
             instrument_max_age_seconds=10, max_notional=Decimal(1000000),
             limit_offset_ticks=1, state_file=self.path, account_reconciliation=None, strategy_position_source=None)
         vars(args).update(changes)
-        session = runtime.assemble(args, References(), driver, Feed("calendar-fixture"), clock_ns=lambda: self.now)
+        session = runtime.assemble(args, References(), driver, Feed("calendar-fixture"), clock_ns=lambda: self.now,
+                                   shared_service=shared_service, strategy_id=strategy_id)
         self.sessions.append(session)
         # 同步帧用例不声称核验真实深度；单独用例保留真实公共门控。
         session.runner.instrument_health = None
@@ -175,6 +177,34 @@ class LiveAssemblyTests(unittest.TestCase):
         self.frame(s, 3, 0)
         self.assertEqual(s.strategy.direction, 1)
         self.assertEqual([s.strategy.position(str(i)) for i in s.runner.instruments.values()], [1, -1])
+
+    def test_shared_calendar_assembly_uses_declared_strategy_and_account_routes(self):
+        from bomber.framework.trader.execution.builders import build_model_execution
+        from bomber.framework.trader.execution.shared import SharedAccountExecutionService, SharedRiskBudget
+        from bomber.framework.trader.execution.risk import RiskLimits
+        references = References()
+        limits = {i: RiskLimits(max_order_quantity=2, max_abs_position=2, contract_multiplier=Decimal(10))
+                  for i in references.instrument_ids.values()}
+        execution = build_model_execution("shared-calendar-account", instrument_limits=limits)
+        service = SharedAccountExecutionService(execution.client, prices=execution.prices,
+            instrument_limits=limits, budget=SharedRiskBudget(4, 4000000), clock_ns=lambda: self.now)
+        driver = NS(trading_day="20261009", is_simnow_session=True, _connected=True)
+        session = self.build("simnow", start=False, driver=driver, shared_service=service,
+                             strategy_id="calendar-independent-id")
+        self.assertEqual(session.strategy.strategy_id, "calendar-independent-id")
+        self.assertEqual(session.client.client_id, "shared-calendar-account")
+        self.assertIs(session.runner.position_manager, service.position_manager)
+        self.assertIs(session.execution.prices, service.prices)
+        self.assertIsNone(session.manager)
+        self.assertFalse(self.path.exists())
+        self.assertEqual(session.client.routes, {str(i): i for i in references.instrument_ids.values()})
+        first, second = tuple(references.instrument_ids.values())
+        service.position_manager.set_strategy_position(session.strategy.strategy_id, str(first), 1)
+        service.position_manager.set_strategy_position(session.strategy.strategy_id, str(second), -1)
+        self.assertEqual(runtime.restore_direction(session), 1)
+        service.position_manager.set_strategy_position(session.strategy.strategy_id, str(second), 0)
+        with self.assertRaisesRegex(RuntimeError, "不平衡"):
+            runtime.restore_direction(session)
 
     def test_recording_records_targets_without_fills_or_state(self):
         s = self.build("recording", state_file=None)

@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "date": "2026-10-14",
+  "status": "passed",
+  "verification": "controlled_transport_offline",
+  "network_connected": false,
+  "real_broker_orders_submitted": 0,
+  "counts": {
+    "shared_account": 65,
+    "shared_mother_probe": 15,
+    "shared_ipc_and_cli": 10,
+    "live_common": 116,
+    "unique_total": 206
+  },
+  "reports": {
+    "base": "tests/results/main-ema-acceptance-1791964307205323000",
+    "final_ipc": "tests/results/main-ema-acceptance-1791964694051628000"
+  },
+  "real_os_processes_tested": 3,
+  "broker_transport": "substitute",
+  "covered": [
+    "separate opposite OPEN orders; only owner close; staged reversal",
+    "request idempotency/conflict/identity",
+    "partial fill persisted; unacknowledged event replay",
+    "lease expiry cancellation with peer preserved",
+    "account same-day terminal-order restart without resending old target",
+    "native rejection routed only to owner and account gate closes",
+    "own strategy position mirror; final callback drain and acknowledgement",
+    "generated dates from successful readonly observation; CLI authorization boundaries"
+  ],
+  "remaining": [
+    "Linux calendar-live 28 native tests; local fixes.Bar unavailable",
+    "Linux full three original strategy process assembly and live replay",
+    "SimNow real independent-order fills and stop/restart audit",
+    "realtime preflight and acceptance"
+  ],
+  "limitations": [
+    "same host and same user only",
+    "managed instruments flat at fresh start",
+    "same TD day and terminal orders only for automatic recovery",
+    "unknown active orders/pending sends/cross-day refuse automatic recovery",
+    "callback transport at least once; custom external effects require event-ID idempotency"
+  ],
+  "gap10_closed": false
+}

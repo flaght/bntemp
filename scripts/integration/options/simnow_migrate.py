@@ -263,6 +263,8 @@ def main(argv=None):
         (path/"summary.json").write_text(json.dumps(report,ensure_ascii=False,indent=2,default=str)+"\n")
         print("OPTION_VEGA_SIMNOW_MIGRATION:",json.dumps(report,ensure_ascii=False,default=str),flush=True)
         print("报告:",path/"summary.json",flush=True)
+        if report["status"] == "prepared":
+            print("恢复命令:",report["resume_command"],flush=True)
     return int(report["status"]!="prepared")
 
 

@@ -250,7 +250,7 @@ class SharedAccountTests(unittest.TestCase):
             persistence=import_module("bomber.framework.trader.persistence"),
             events=import_module("bomber.framework.trader.execution.events"))
 
-    def native_account(self, path, modules, *, scoped=False):
+    def native_account(self, path, modules, *, scoped=False, execution_mode="netted"):
         owner = self
         self.timestamp = time.time_ns()
         self.now = self.timestamp
@@ -351,7 +351,8 @@ class SharedAccountTests(unittest.TestCase):
             client, backend, ledger = execution.client, execution.backend, execution.ledger
         shared = import_module("bomber.framework.trader.execution.shared")
         service = shared.SharedAccountExecutionService(client, prices=prices, instrument_limits=limits,
-            budget=shared.SharedRiskBudget(10, 100000), clock_ns=lambda: self.now, instrument_scope=scope)
+            budget=shared.SharedRiskBudget(10, 100000), clock_ns=lambda: self.now, instrument_scope=scope,
+            execution_mode=execution_mode)
         ports = [service.strategy_client(sid, routes={"main": self.instrument},
             budget=shared.SharedRiskBudget(5, 50000)) for sid in ("one", "two")]
         resources = ExitStack()
@@ -362,6 +363,52 @@ class SharedAccountTests(unittest.TestCase):
             position_scope=scope)
         self.addCleanup(client.stop)
         return lifecycle, service, transport, ports, resources
+
+    def test_native_independent_opposite_orders_open_separately_and_close_only_owner(self):
+        modules = self.native_modules()
+        with TemporaryDirectory() as directory:
+            account, service, transport, (one, two), _ = self.native_account(
+                Path(directory) / "account.json", modules, scoped=True, execution_mode="independent")
+            account.start(resume=False)
+            service.start()
+            one.start()
+            two.start()
+            account.authorize()
+            self.submit(one, 1)
+            transport.fill(transport.sent[-1]["OrderRef"])
+            self.submit(two, -1)
+            self.assertEqual([row["CombOffsetFlag"] for row in transport.sent], ["0", "0"])
+            transport.fill(transport.sent[-1]["OrderRef"])
+            self.assertEqual(transport.gross[str(self.instrument)], (1, 1))
+            self.assertEqual((service.position_manager.position("one", "main"),
+                              service.position_manager.position("two", "main")), (1, -1))
+            self.assertFalse(service.position_manager.attribution.state()["transfers"])
+            self.submit(one, 0, 2)
+            self.assertEqual(transport.sent[-1]["CombOffsetFlag"], "3")
+            transport.fill(transport.sent[-1]["OrderRef"])
+            self.assertEqual(transport.gross[str(self.instrument)], (0, 1))
+            self.assertEqual((service.position_manager.position("one", "main"),
+                              service.position_manager.position("two", "main")), (0, -1))
+            self.submit(one, -1, 3)
+            self.assertEqual(transport.sent[-1]["CombOffsetFlag"], "0")
+            transport.fill(transport.sent[-1]["OrderRef"])
+            self.submit(one, 1, 4)
+            self.assertEqual(transport.sent[-1]["CombOffsetFlag"], "3")
+            transport.fill(transport.sent[-1]["OrderRef"])
+            service.continue_targets("one", self.instrument, self.now)
+            self.assertEqual(transport.sent[-1]["CombOffsetFlag"], "0")
+            transport.fill(transport.sent[-1]["OrderRef"])
+            self.assertEqual(transport.gross[str(self.instrument)], (1, 1))
+            self.assertEqual((service.position_manager.position("one", "main"),
+                              service.position_manager.position("two", "main")), (1, -1))
+            self.assertFalse(account.client.report_errors)
+            account.stop()
+            state = service.snapshot_state()
+            self.assertEqual(state["shared"]["execution_mode"], "independent")
+            modified = json.loads(json.dumps(state))
+            modified["shared"]["execution_mode"] = "netted"
+            with self.assertRaisesRegex(ValueError, "模式"):
+                service.restore_state(modified)
 
     def test_native_shared_order_cancelled_by_allocation_owner_and_other_target_replanned(self):
         modules = self.native_modules()
@@ -1325,6 +1372,7 @@ class SharedAccountTests(unittest.TestCase):
             # 运行调度不属于策略/账户恢复身份；改变argv仍改变身份。
             original_identity = host.account.manager.state_components["session_identity"].snapshot_state()
             original_strategy_identity = {sid: row.identity for sid, row in host.strategies.items()}
+            host.resources.close()  # 原宿主已停止；释放新增的检查点文件锁后重建。
             config["seconds"] = 600
             config["strategies"][0]["stop_after_seconds"] = 480
             with patch.object(ctp_channel, "build_simnow_transport", return_value=transport), \

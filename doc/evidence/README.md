@@ -1,5 +1,7 @@
 # Bomber 校验清单与历史证据索引
 
+2026-10-14新增08共享执行及跨日恢复：[交接](../HANDOFF/live/HANDOFF_OPTION_VEGA_SHARED_ROLLOVER_2026-10-14.md)、[离线证据](live/OPTION_VEGA_SHARED_ROLLOVER_20261014.json)、[部署清单](checksums/OPTION_VEGA_SHARED_ROLLOVER_20261014_SHA256.txt)。原生旧检查点在启动核验后备份转换，后续同一命令按TD日恢复；服务器线上结果待确认。历史REV19和08迁移包保留原版本，不覆盖。
+
 这里集中保存原 HANDOFF 目录中的 50 份 SHA256 清单与 4 份补丁、同步脚本和删除清单。任务实施与运行结果继续查[交接索引](../HANDOFF/README.md)。
 
 ## 2026-10-13 CU静态交易会话与清理证据
@@ -55,6 +57,8 @@
 首轮 [预检缺失原文件](live/OPTION_VEGA_SIMNOW_PREFLIGHT_MISSING_STATE_20261014.json) 返回：五项部署摘要均 OK，sample-1791958587861857268 的 failure 为指定原 state 文件不存在。读取失败在 TD 连接之前发生，未报单、未改状态；不能推断柜台仓位已平或文件已被删除。下一步用现有 TD 只读探针取得当前账户事实，并查找原文件/08 SimNow 检查点及备份；summary/events 不能代替检查点，不重建空状态绕过归属。当前真实原仓核对、迁移及新来源成交均未通过。本次 [缺失状态文档与证据摘要](checksums/OPTION_VEGA_SIMNOW_PREFLIGHT_MISSING_STATE_20261014_SHA256.txt) 只更新状态记录，不修改运行代码或原补充包。
 
 随后 [原状态定位及当前净仓](live/OPTION_VEGA_SIMNOW_STATE_LOCATED_20261014.json) 返回：原同名文件在 pro_new/tests/results/gap08-realtime-simnow 下，generation=35、td_day=20261013、08 归属 MO2611-C-7400 空 1 手；独立 TD 查询 trading_day=20261014、active_orders=0、该合约净仓 -1。其他两个 20261009 Replay 候选不用于本次核对。继续从当前 pro 运行只读预检，state-file 指向 pro_new 的实际绝对路径，不迁移或重写文件；完整校验和/账户/总仓/今昨仓核对仍待返回。本次 [定位证据与文档摘要](checksums/OPTION_VEGA_SIMNOW_STATE_LOCATED_20261014_SHA256.txt) 不修改运行代码。
+
+[原仓预检通过](live/OPTION_VEGA_SIMNOW_PREFLIGHT_PASS_20261014.json) 已返回 completed：账户匹配、当前总仓 short=1 与原归属一致、当前活动订单 0、有可用资金、原文件不变；公共权威分桶报告 short_today=1、PositionCost=8220.0，不自行改成昨仓。用户明确选择恢复并保留现有仓位。补充 [迁移准备与恢复范围](live/OPTION_VEGA_SIMNOW_MIGRATION_20261014.json)、[源码包](archives/OPTION_VEGA_SIMNOW_MIGRATION_20261014.tar.gz) 与 [摘要](checksums/OPTION_VEGA_SIMNOW_MIGRATION_20261014_SHA256.txt)：禁单准备、独占另存新身份、保留归属/订单/去重历史、当日不重新选约；公共原生恢复后15:00或Ctrl+C正常停机。21 项预检/迁移专项及原81 项主回归通过，既有 REV5 策略/执行/行情模块不改；线上迁移准备、恢复持续运行与新来源成交仍未登记通过。本轮不安排平仓成交测试。
 
 ## 2026-10-11模型运行与恢复证据
 

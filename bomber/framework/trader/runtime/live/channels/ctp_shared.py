@@ -16,10 +16,13 @@ from .ctp import account_lock, assert_flat_account, occupied_positions
 class CtpSharedAccountLifecycle:
     """不管理某个策略的行情、信号或指标；策略宿主与此控制器组合。"""
     def __init__(self, execution, service, *, transport, state_file, identity,
-                 resources, expected_day, reconcile_seconds=10, cancel_seconds=15, position_scope=None):
+                 resources, expected_day, reconcile_seconds=10, cancel_seconds=15, position_scope=None,
+                 rollover_transform=None):
         self.execution, self.service, self.transport = execution, service, transport
         self.driver, self.client, self.ledger = execution.driver, execution.client, execution.ledger
         self.resources, self.expected_day = resources, expected_day
+        self.rollover_transform = rollover_transform
+        self.rollover_audit = None
         self.reconcile_seconds, self.cancel_seconds = reconcile_seconds, cancel_seconds
         if position_scope != service.instrument_scope or (position_scope is not None
                 and position_scope != getattr(execution.backend, "instrument_scope", None)):
@@ -134,7 +137,14 @@ class CtpSharedAccountLifecycle:
         if self._started:
             return
         if resume:
-            if self.manager.restore() is None:
+            saved = self.manager.repository.load()
+            transform = None
+            if saved and ("vega_signal" in saved.payload["component_states"] or
+                    saved.payload["component_states"]["session_identity"]["identity"].get("trading_day", self.expected_day) != self.expected_day):
+                if self.rollover_transform is None:
+                    raise RuntimeError("此共享会话未配置跨日恢复")
+                transform = lambda payload: self.rollover_transform(self, payload)
+            if self.manager.restore(payload_transform=transform) is None:
                 raise RuntimeError("共享账户恢复文件不存在")
             self._restored = True
             if self.service._failed or self.service._pending:
@@ -152,6 +162,8 @@ class CtpSharedAccountLifecycle:
             if any(not state.status.is_terminal for state in self.client.order_state_machine.states()):
                 raise RuntimeError("首期共享恢复要求已结束订单，保留原文件并先对账")
             self._validate_account()
+            if transform is not None:
+                self.manager.commit_restore()
         else:
             assert_flat_account(self.driver, self.transport, position_scope=self.position_scope)
             if self.position_scope is not None:

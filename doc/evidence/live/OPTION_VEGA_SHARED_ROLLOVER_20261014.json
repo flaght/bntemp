@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "date": "2026-10-14",
+  "status": "offline_passed_online_pending",
+  "scope": "option_vega_shared_execution_and_startup_cross_day_resume",
+  "network_connected": false,
+  "real_orders_submitted": 0,
+  "tests": {
+    "option_base": 81,
+    "option_shared_rollover": 15,
+    "existing_migration": 12,
+    "existing_preflight": 9,
+    "deployment_preflight": 9,
+    "shared_account": 65,
+    "ipc_and_cli": 10,
+    "live_common": 116,
+    "state_recovery_public_paths_with_sdk_shim": 6
+  },
+  "local_shared_report": "tests/results/main-ema-acceptance-1791968576224668000",
+  "verification": "public execution/persistence/runtime components; substituted broker/feeds and unavailable SDK entities; actual Unix socket processes in IPC regression",
+  "covered": [
+    "original attributed short preserved when importing native checkpoint to shared account service",
+    "authoritative TD day and quantities/basis; backup plus guarded atomic commit",
+    "same-day signal dedup and next-day option selection",
+    "two option strategies do not inherit each other position; stop preserves peer",
+    "same shared checkpoint next-day resume and zero candidate chain expansion",
+    "CFFEX generic close uses only own attributed quantity",
+    "gross/cost/config/index conflict and final query failure preserve original file",
+    "runtime stops at close; source inputs remain DolphinDB market and index.minute features"
+  ],
+  "limitations": [
+    "same host; fixed strategy set and execution policy",
+    "cross-day support for realtime option-vega/CFFEX with local terminal orders and no unknown active orders",
+    "independent overnight SHFE etc buckets still rejected",
+    "not an overnight daemon, auto contract rollover or reconstruction of missing fills",
+    "Linux native SDK state/recovery groups and actual broker resume still pending"
+  ],
+  "entry": "python -u -m scripts.integration.options.shared --connect --enable-orders --confirm-simnow --state-file <original_or_shared_checkpoint>"
+}

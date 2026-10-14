@@ -1,0 +1,67 @@
+{
+  "date": "2026-10-14",
+  "user_preference": "恢复并保留现有仓位",
+  "source_state": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro_new/tests/results/gap08-realtime-simnow/state-1791869411336135873.json",
+  "source_sha256": "8e18ffb4e608bd6dbc8af02be37f2b1025a2df1c3572ceb755163b5597b696e1",
+  "source_generation": 35,
+  "owned_positions": {
+    "MO2611-C-7400.CFFEX": "-1"
+  },
+  "authority_bucket_order": [
+    "long_today",
+    "long_yesterday",
+    "short_today",
+    "short_yesterday"
+  ],
+  "authority_buckets": {
+    "MO2611-C-7400.CFFEX": {
+      "quantities": [
+        "0",
+        "0",
+        "1",
+        "0"
+      ],
+      "position_costs": [
+        "0",
+        "0",
+        "8220.0",
+        "0"
+      ]
+    }
+  },
+  "target_trading_day": "20261014",
+  "target_market": "DolphinDB stream_cffex_1min/end/cumulative",
+  "preparation_script": "scripts/integration/options/simnow_migrate.py",
+  "resume_script": "scripts/integration/options/simnow_resume.py",
+  "new_state_example": "tests/results/gap08-dolphin-simnow-resume/state-20261014-migrated.json",
+  "policy": [
+    "禁单准备，不启动行情或策略",
+    "原文件SHA锁定、公共归属/目标/订单及去重历史验证",
+    "当前账户总仓及权威分桶二次核对",
+    "独占原子另存，不覆盖原文件或任何已有目标文件",
+    "沿用原策略/风险/指数/strict-fills政策",
+    "非零持仓腿与条款不可删除或更改",
+    "增补/移除零目标路由记录审计",
+    "Driver协议跨日由公共恢复完成，不改原历史订单",
+    "按权威数量/成本建立当前日分桶，不推断昨仓或伪造结算收益",
+    "携带现仓，当日不重新选约，不安排平仓测试",
+    "原规则管理退出、风控与对冲",
+    "15:00或SIGINT/SIGTERM正常停机并保存到新文件",
+    "距收盘须至少ready-timeout+65秒，启动日须匹配"
+  ],
+  "local_validation": {
+    "specialized_migration_tests": 12,
+    "original_preflight_tests": 9,
+    "existing_main_tests": 81,
+    "status": "passed",
+    "scope": "SDK实体替身、参考/柜台传输夹具下的实际NativeDriver/公共存储/恢复/首帧/停机；无真实连接"
+  },
+  "existing_runtime_version": "OPTION_VEGA_DOLPHIN_PUSH_20261014_REV5",
+  "existing_runtime_changed": false,
+  "remote_preparation": "pending",
+  "remote_resume": "pending",
+  "new_source_fill_acceptance": false,
+  "source_state_changed_by_agent": false,
+  "orders_sent_by_agent": false,
+  "delivery_timing": "交付时已收盘；当日只做禁单准备验证，下一交易日按实际TD重新准备新身份后恢复。"
+}

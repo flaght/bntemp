@@ -20,11 +20,13 @@ def read_config(path):
     path = Path(path).resolve()
     config = json.loads(path.read_text(encoding="utf-8"))
     allowed = {"version", "trading_day", "environment", "replay_md_trading_day", "seconds",
-        "account_state_file", "report_dir", "account", "strategies", "position_scope"}
+        "account_state_file", "report_dir", "account", "strategies", "position_scope", "execution_mode"}
     if set(config) - allowed or config.get("version") != 1:
         raise ValueError("共享配置版本无效或存在未知字段")
     if config.get("position_scope", "account") not in {"account", "strategy_instruments"}:
         raise ValueError("position_scope须为account或strategy_instruments")
+    if config.get("execution_mode", "netted") not in {"netted", "independent"}:
+        raise ValueError("execution_mode须为netted或independent")
     day = config["trading_day"]
     if datetime.strptime(day, "%Y%m%d").strftime("%Y%m%d") != day:
         raise ValueError("trading_day须为YYYYMMDD")
@@ -38,8 +40,8 @@ def read_config(path):
     elif replay:
         raise ValueError("原始MD交易日仅用于replay")
     seconds = float(config.get("seconds", 600))
-    if not math.isfinite(seconds) or not 0 < seconds <= 3600:
-        raise ValueError("共享会话时长须为(0,3600]秒")
+    if not math.isfinite(seconds) or not 0 < seconds <= 86400:
+        raise ValueError("共享会话时长须为(0,86400]秒")
     account = config["account"]
     if set(account) != {"client_id", "max_gross_quantity", "max_gross_notional", "max_session_orders", "limit_offset_ticks"}:
         raise ValueError("账户配置须完整声明身份、总量、名义预算及订单上限")
@@ -53,8 +55,8 @@ def read_config(path):
         if isinstance(account[key], bool) or not isinstance(account[key], int) or account[key] < minimum:
             raise ValueError("账户订单上限/跳价偏移无效")
     rows = config["strategies"]
-    if not isinstance(rows, list) or len(rows) < 2:
-        raise ValueError("至少配置两个策略")
+    if not isinstance(rows, list) or not rows:
+        raise ValueError("至少配置一个策略")
     ids, paths = set(), {str((path.parent / config["account_state_file"]).resolve())}
     for row in rows:
         if not {"strategy_id", "kind", "state_file", "argv"} <= set(row) or set(row) - {
@@ -67,8 +69,8 @@ def read_config(path):
         stop_after = row.get("stop_after_seconds")
         if stop_after is not None and (not math.isfinite(float(stop_after)) or not 0 < float(stop_after) < seconds):
             raise ValueError("策略独立停止时间须在会话时长以内")
-        if row["kind"] not in {"main_ema", "cross_section"}:
-            raise ValueError("首期工厂支持main_ema和cross_section")
+        if row["kind"] not in {"main_ema", "cross_section", "calendar_spread", "option_vega"}:
+            raise ValueError("策略工厂支持main_ema、cross_section、calendar_spread和option_vega")
         if not isinstance(row["argv"], list) or any(not isinstance(arg, str) for arg in row["argv"]):
             raise ValueError("策略argv须为字符串数组")
         if any(arg.split("=", 1)[0] in PROTECTED for arg in row["argv"]):

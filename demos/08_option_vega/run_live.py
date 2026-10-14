@@ -367,6 +367,7 @@ def describe(session):
         "market_streams": [feed.manifest for feed in session.feeds.values() if hasattr(feed, "manifest")
             and getattr(feed, "source_id", "") in {"vega-market", "vega-index"}],
         "skipped_index_frames": session.runner.skipped_feature_frames,
+        "rollover": getattr(session, "rollover_audit", None),
         "account_dispatch": getattr(session.client, "dispatch_status", {}),
         "execution_origin": {"model": "model", "simnow": "ctp_native", "recording": "recording"}[session.mode]}
 

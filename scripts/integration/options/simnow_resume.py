@@ -1,6 +1,6 @@
 """从已核验迁移报告恢复08；正常停于15:00或Ctrl+C，保留持仓。"""
 from argparse import ArgumentParser
-from datetime import datetime
+from datetime import datetime,timedelta
 from importlib import import_module
 import hashlib
 import json
@@ -31,6 +31,8 @@ def main(argv=None):
     stop_at=datetime.strptime(live_args.expected_trading_day,"%Y%m%d").replace(hour=15,tzinfo=now.tzinfo)
     if now.date()!=stop_at.date() or now>=stop_at:
         raise ValueError("只恢复声明交易日收盘前会话；跨日须重新核对与迁移")
+    if now+timedelta(seconds=live_args.ready_timeout+65)>=stop_at:
+        raise ValueError("距收盘不足ready-timeout+65秒，不能完成新鲜行情预热；保留迁移文件，不连接")
     logging.basicConfig(level=getattr(logging,live_args.log_level),format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
     runtime=entry.build_runtime(live_args)
     original_poll=runtime.controller.poll

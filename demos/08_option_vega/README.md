@@ -2,7 +2,7 @@
 
 按固定 Vega 预算卖出虚值认购期权，以实际归属成交仓位计算 Delta，再用同月期货对冲。默认组合为 MO / IM / 000852。回测与 Live 共用 `OptionVegaStrategy` 和 `assembly.py`，只替换输入来源、执行组件和生命周期。
 
-本文按当前入口源码及 `doc/` 专项交接整理，更新日期为 **2026-10-13（Asia/Shanghai）**。操作入口如下：
+本文按当前入口源码及 `doc/` 专项交接整理，更新日期为 **2026-10-14（Asia/Shanghai）**。操作入口如下：
 
 | 运行方式 | 入口 | 行情与执行 | 结束行为 |
 | --- | --- | --- | --- |
@@ -10,6 +10,7 @@
 | Live Recording | `run_live.py --mode recording` | 在线行情 + 目标记录 | 不连接 TD，不产生成交，不保存交易状态文件 |
 | Live Model | `run_live.py --mode model` | 在线行情 + 参考价模型成交 | 保存独立模型仓位，停机保留仓位 |
 | Live SimNow | `run_live.py --mode simnow` | 在线行情 + 原生 CTP 模拟柜台执行 | 撤销自身活动订单、保存归属仓位，停机保留已成交仓位 |
+| 共享原仓恢复 | `python -m scripts.integration.options.shared` | DolphinDB分钟／指数特征 + 公共账户服务／CTP TD | 日盘收盘或主动停止；保存归属，次日同一命令恢复 |
 
 建议先阅读[回测](#2-文件回测)，再按 [Live 运行方式](#3-live-运行方式)选择执行模式。完整参数分别见回测参数表、[Live 参数表](#4-live-参数说明)；每个代码文件的作用和必要性见[代码职责](#6-代码文件的作用与必要性)。所有命令从 `pro` 根目录执行，使用已安装项目依赖和原生 Bomber 扩展的 Python 环境：
 
@@ -21,6 +22,75 @@ python -m demos.08_option_vega.run_live --help
 ```
 
 远程运行时将 `cd` 改为部署机器的 `pro` 路径。入口读取 `.env`，环境变量已有值优先；日期、行情表和前置地址必须与实际来源核对。本文提供运行方法，本次文档更新没有连接数据库或柜台。
+
+### 正常运行目标与账户边界
+
+08 的运行目标是启动策略后按规则选约、开仓，持续管理自己的已成交仓位，并在停止后保存归属账本、下次启动继续管理。Recording、只读探针及迁移验收脚本用于部署验证和问题诊断，不应成为每个交易日正常运行前必须人工重复的流程。启动本身不代表立即开仓：当前策略在 `--option-slot` 指定的每日时点选约，还要满足输入就绪、候选有效、配仓非零及风控条件；错过该时点不能宣称已验证当日开仓。
+
+当前采用的输入与执行分工如下：
+
+| 职责 | 08 的来源及用途 |
+| --- | --- |
+| 交易标的行情 | DolphinDB `stream_cffex_1min` 推送 MO 认购和 IM 股指期货的一分钟行情，用于选约、估值与对冲 |
+| 自定义指数特征 | DolphinDB `dfs://min_bar/index_1min` 经声明式 `index.minute` Provider、查询缓存和 DataHub 获取 `000852`；当前再由 `FeatureQueryBarFeed` 投影为 Bar，进入同一分钟决策帧 |
+| 委托与成交 | 原生 CTP TD 提交订单、接收柜台回报；成交回报更新本策略的归属仓位 |
+| 物理账户核对 | CTP 查询实际持仓、资金、活动订单和可平数量，用于执行校验与对账 |
+
+指数只有行情用途，没有交易路由。当前策略还不是直接消费 FeatureSnapshot 的实现；特征到 Bar 的适配位置见 [run_live.py](run_live.py)。切换 DolphinDB 分钟行情是为改善行情输入，不是为了接管账户里的其他仓位，也不要求先实现多策略共享账户调度。
+
+**策略仓位与物理账户仓位须分别保存。** 策略仓位由本策略归属成交及原检查点恢复，用来计算 Delta、决定目标与平仓；账户快照反映所有策略和人工交易的真实结果，用来核验执行条件，不能直接把整个账户净仓当成 08 的持仓。账户中 AU、HC、SC 等其他品种不纳入 08 管理范围。若另一策略或人工交易操作同一 MO / IM 合约，当前 `strict` 核对可能因该合约柜台总仓与 08 成交账本不一致而停止；它尚不等价于完整的共享账户分配机制。相关代码为 [recovery.py](recovery.py) 的管理范围核对，以及公共 `execution/policy.py`、`execution/live/client.py` 的账户观测与成交账本处理。
+
+2026-10-13 已有一次原生 SimNow 开仓成交：08 归属的 `MO2611-C-7400` 空 1 手。2026-10-14 已验证 DolphinDB 行情下的 Recording 非零目标链，但尚无该行情配置下原生 CTP 持续管理的线上通过结果。用户选择恢复并保留已有空仓；它属于本策略，应恢复管理，不能作为外部仓位忽略后另开新仓。仅把 `--account-reconciliation` 改成 `observe`，或者换一个空状态文件，都不能恢复这笔归属。
+
+**已实现启动时的跨日恢复。** 使用原检查点启动，运行器先核验真实成交归属和已终结订单，再查询当日柜台总仓、今昨仓及成本；核验通过后备份原代，更新当日执行账本并等待新鲜分钟。昨日价格、IV缓存和未完成开仓目标不重放；当天仍按配置的 `option-slot` 选约。本次支持08实时SimNow及CTP市场分钟转DolphinDB；未知活动订单、未决发送、归属冲突、持仓腿条款变化或缺失仍停止并保留原文件。详见下一节，旧的人工迁移步骤保留为历史诊断资料。
+
+### 与本轮多策略仓位管理的关系（2026-10-14）
+
+[GAP10 三策略需求与交付](../../doc/HANDOFF/gaps/GAP10_THREE_STRATEGY_REQUIREMENTS_2026-10-14.md) 已实现统一账户执行服务、逐策略归属，以及显式 `netted` / `independent` 两种模式。`independent` 不跨策略抵消订单，按各自真实成交更新仓位；`netted` 汇总目标并单独审计内部抵消。公共能力包含成交关联、去重、检查点、事件补交和独立停止／同日恢复，可作为 08 后续接入的执行基础，无须另写一套共享账户仓位管理。
+
+REV19原先只接入01/03/04。本次已增加 `kind=option_vega`，08 `assemble` 支持 `shared_service` 和独立策略ID；原DolphinDB分钟与指数特征输入、算法保持。08的信号检查点保存选约日期，防止同日重启重复选约；账户文件保存归属、订单和成交去重历史。同进程 `netted` 和独立进程 `independent` 均可装配08。空仓新共享会话仍核对管理范围；带仓恢复使用原账本，不能从账户净仓推断所有者。
+
+REV19的 [206 项离线验收](../../doc/evidence/live/GAP10_THREE_STRATEGIES_OFFLINE_20261014.json) 是历史基线。本次新增08接入、原生检查点导入、跨日、候选链变化和启动入口的专项回归，结果见 [本次交付](../../doc/HANDOFF/live/HANDOFF_OPTION_VEGA_SHARED_ROLLOVER_2026-10-14.md)。本机未连接真实数据库或柜台，08新共享执行及跨日管理仍须服务器确认，不能把CU/AU历史成交当作本次通过证据。
+
+### 正常启动：原仓恢复、持续管理与停止
+
+日盘使用下列入口；同一命令在下一交易日再次启动即可，TD日由只读登录观察后与日盘日期核对。默认继续管理 `MO2611-C-7400` 空一手，按原策略规则决定当日选约、对冲与退出，不另发固定测试目标。最初状态位于 `pro_new`，可直接指定已找到的原路径，不必手工复制或改写JSON：
+
+```bash
+cd /workspace/worker/pj/Chrono/nautilus_trader_demo/pro || exit 1
+export CTP_TD_ADDRESS=tcp://182.254.243.31:30001
+export CTP_PRODUCTION_MODE=true
+python -u -m scripts.integration.options.shared \
+  --connect --enable-orders --confirm-simnow \
+  --state-file /workspace/worker/pj/Chrono/nautilus_trader_demo/pro_new/tests/results/gap08-realtime-simnow/state-1791869411336135873.json
+```
+
+首次核验通过后，该文件转换为共享账户检查点，旁边自动保存 `.before-rollover-g<原代>.json` 备份和 `.vega-signal.json` 信号文件。后续继续使用同一路径。不要同时运行原08进程或另一个TD写入服务。快捷入口只运行一个08，但使用相同公共账户服务；实际多策略配置使用共享 `run` 或 `server/worker` 入口，由一个TD服务统一执行。
+
+运行至北京时间15:00结束，也可Ctrl+C／SIGTERM停止；撤销自身活动订单、核对并保存，保留成交仓位。午休时停止决策、继续账户维护，下午等待新鲜行情后继续。默认会话最多20笔委托，`--max-session-orders` 可在首次导入时设置，后续恢复保持该账户配置。启动应在日盘可取得新鲜数据时，入口允许09:29—14:56；午休启动须临近13:00，连接等待180秒不会跨整个午休。该入口是每日启动时自动恢复，不是跨夜常驻进程，也不自动完成到期换月或未知漏成交重建。
+
+MO/IM持仓的CFFEX通用平仓根据当日权威总仓规划，按当前今昨桶记账。其他交易所的独立策略昨仓尚未增加逐策略分桶，仍拒绝该范围的跨日独立恢复；不得将08的支持扩大成所有策略跨日均已支持。原08的 `run_live --resume` 也能直接从前日原生文件跨日恢复；转换成共享文件后则继续使用共享入口。
+
+多策略声明示例（加入现有新会话配置的 `strategies` 数组，账户额度须覆盖所有策略）：
+
+```json
+{
+  "strategy_id": "option-vega-live",
+  "kind": "option_vega",
+  "state_file": "option-vega-signal.json",
+  "argv": [
+    "--market-source", "dolphindb", "--market-bar-table", "stream_cffex_1min",
+    "--market-bar-timestamp", "end", "--market-volume-mode", "cumulative",
+    "--reference-source", "dolphindb", "--reference-timeout", "30",
+    "--index-source", "dolphindb-dfs", "--index-database", "dfs://min_bar",
+    "--index-table", "index_1min", "--index-bar-timestamp", "end",
+    "--index-availability", "observed", "--frame-wait-seconds", "20",
+    "--option-slot", "13:36", "--delta-targets", "0.25"
+  ]
+}
+```
+
+账户和策略ID、执行模式及固定配置须一致；恢复已有共享账户不支持直接增加新的策略ID或合并两个已有账户检查点。旧08导入保留原 `option-vega-live` 客户端及策略ID。08候选链跨日可增加／移除零仓路由，持仓或非零旧目标对应的路由不得移除。独立worker的命令与三策略手册相同，只将 `--strategy-id` 和能力文件改为该08策略；指数只绑定行情，不进入账户交易路由。
 
 ## 1. 策略逻辑
 
@@ -532,6 +602,31 @@ python -u -m scripts.integration.options.simnow_preflight \
 **原状态已在 pro_new 定位**：用户独立 TD 只读查询返回 trading_day=20261014、active_orders=0、MO2611-C-7400.CFFEX 净仓 -1；搜索在 `/workspace/worker/pj/Chrono/nautilus_trader_demo/pro_new/tests/results/gap08-realtime-simnow/state-1791869411336135873.json` 找到 generation=35、td_day=20261013、策略归属 MO2611-C-7400 空 1 手。文件名、原TD日、合约及数量与原开仓证据相符，因此作为下一轮校验候选，而不是凭 generation 最大选定。另两个候选是 20261009 的旧 Replay 状态，其中一个持有 MO2610-C-7300；不能替代本次原状态。
 
 见 [定位与当前净仓证据](../../doc/evidence/live/OPTION_VEGA_SIMNOW_STATE_LOCATED_20261014.json)。当前运行代码仍从 pro 目录加载，--state-file 使用上述 pro_new 下的实际绝对路径；不切换运行目录、复制旧代码或移动/修改原文件。净仓 -1 一致仍不能代替总仓、今昨仓、原文件校验和与账户身份核对，使用上面的只读预检重新执行；成功前不登记迁移或报单通过。账户其他品种持仓继续保持外部事实。
+
+**原仓预检 completed，准备保留仓位迁移**：用户随后返回 sample-1791959088346620719，原状态 SHA256 为 `8e18ffb4e608bd6dbc8af02be37f2b1025a2df1c3572ceb755163b5597b696e1`，generation=35、state_modified=false。账户身份匹配，当前 TD=20261014、活动订单=0、有正可用 CNY，MO2611-C-7400 总仓 long=0/short=1 与原状态一致；外部 AU/HC/SC/NI/I/AG 仓位保持外部事实。本次公共权威分桶结果为 short_today=1，PositionCost=8220.0，不能凭跨日自行改为昨仓。原文件完整核对通过，migration_required=true；见 [预检通过及用户选择](../../doc/evidence/live/OPTION_VEGA_SIMNOW_PREFLIGHT_PASS_20261014.json)。用户选择“恢复并保留现有仓位”，不安排平仓成交测试。
+
+新增 [simnow_migrate.py](../../scripts/integration/options/simnow_migrate.py) 是迁移准备工具，独立于 run_live 的普通恢复。它固定读取并核对原 SHA256，持有原文件、新文件与账户锁，再次禁单查询柜台。原事实沿公共存储解码、真实合约归属、订单/成交去重和完整目标版本校验；读取当前参考资料后，仅显式转换交易日、日历/参考版本、市场来源及分钟标签，策略配置、风险、strict/fills 政策与指数来源保持一致。非零持仓腿及其条款/对冲绑定不能丢失或变动，合约集合只允许增补/移除零目标；旧未完成目标不续发，新目标以已验证归属持仓为准。
+
+原持仓归属、终结订单和成交去重历史保留，CTP 双向账本按本次权威分桶和成本另存当前日，成本基准用 PositionCost/(数量×合约乘数)；不伪造结算价、变动保证金或收益。Driver 原协议检查点保持至公共无活动订单跨日关联恢复，核对当前账户后才保存当前 Driver 日期及 OrderRef。迁移信号只携带原仓位，并标记当日已经选约，防止本轮再次开新期权；原历史 sent_days 留在迁移审计中。价格、IV及帧缓存仍从当前行情重新预热。未增加主动清仓日，保留原策略常规退出/风控/对冲规则。
+
+准备阶段装配公共恢复组件，但 Driver 禁单、Client 未 arm，行情与策略不启动。候选文件在临时目录通过公共 restore、目标版本、归属及当前总仓/今昨仓二次核对；资源关闭成功后，以独占原子方式发布新文件，禁止覆盖任何既有 output-state，原文件不写。prepared 只证明迁移文件准备成功，真实恢复仍需执行随后打印的命令。两阶段命令示例：
+
+```bash
+python -u -m scripts.integration.options.simnow_migrate \
+  --connect --expected-trading-day 20261014 \
+  --source-state /workspace/worker/pj/Chrono/nautilus_trader_demo/pro_new/tests/results/gap08-realtime-simnow/state-1791869411336135873.json \
+  --source-sha256 8e18ffb4e608bd6dbc8af02be37f2b1025a2df1c3572ceb755163b5597b696e1 \
+  --output-state tests/results/gap08-dolphin-simnow-resume/state-20261014-migrated.json \
+  --market-bar-table stream_cffex_1min --market-bar-timestamp end \
+  --market-volume-mode cumulative
+# prepared 后直接执行输出末尾的“恢复命令”，它引用本次唯一迁移报告。
+```
+
+[simnow_resume.py](../../scripts/integration/options/simnow_resume.py) 读取该迁移报告，检查新文件身份/版本及初始摘要，随后调用原 run_live 的原生恢复流程；不是修改原同日恢复规则。保存的配置/来源/参数全部沿用迁移报告，最多 4 次报单，不要求本次新增成交；当日不重新选约。它在轮询边界响应 SIGINT/SIGTERM，或上海时间 15:00 请求正常停机，公共流程撤销本会话活动订单、核验并保存到新文件，保留已成交仓位。启动必须在声明交易日，并距 15:00 至少 ready-timeout+65 秒；默认 180 秒就绪预算下须早于 14:55:55。超过该准备余量不连接；后续跨日需重新核对和迁移，不能复用今日身份。行情/持仓腿/参考失效仍按原规则停机，未掩盖数据异常。
+
+交付为 [迁移补充包](../../doc/evidence/archives/OPTION_VEGA_SIMNOW_MIGRATION_20261014.tar.gz)。本地 12 项迁移/恢复专项、9 项原预检和81 项原主回归通过；包括真实公共存储/归属/订单历史、原生禁单 Driver 与账户核对、另存文件、原生恢复→首个新鲜帧保留空仓不重复开仓、正常停机，以及 Ctrl+C、收盘/摘要/参数/持仓腿/分桶错误拒绝。SDK 实体、柜台及参考传输为夹具，未连接真实服务器。真实迁移准备与恢复持续运行尚待用户返回，不登记新来源实际成交通过。
+
+迁移工具交付时已过当日 15:00：当日只进行禁单迁移准备，取得 prepared/新文件校验结果；恢复入口会拒绝收盘后启动。下个交易日按当时实际 TD 日重新准备独立文件及身份，再执行该轮打印的恢复命令。原 20261013 文件仍保留且未被本工具修改；未启动的今日准备文件不能直接用于次日 --resume。
 
 ### 3.7 Replay 与工程时间映射
 
