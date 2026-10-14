@@ -18,6 +18,8 @@ class SharedStrategySession:
     failure: str | None = None
     generation: int = 0
     saved_revision: int | None = None
+    stop_requested_at_ns: int | None = None
+    stopped_at_ns: int | None = None
 
     @property
     def strategy_id(self):
@@ -110,14 +112,31 @@ class SharedAccountLiveHost:
         item = self.strategies[strategy_id]
         if not item.active:
             return
-        item.session.runner.accept_bars = False
+        runner, port = item.session.runner, item.session.client
         item.failure = reason
-        # 先暂停源贡献，再关闭本策略行情和租约，其他Runner仍运行。
-        self.service.suspend_strategy(strategy_id)
+        if item.stop_requested_at_ns is None:
+            item.stop_requested_at_ns = time.time_ns()
+        # 与正在发布的Bar串行关闭新目标；撤单期间保持策略上下文供回调查仓。
+        with runner._submit_lock:
+            runner.accept_bars = False
+            if self._prepared:
+                port.begin_stop()
+            else:
+                self.service.suspend_strategy(strategy_id)
         if self._prepared:
+            deadline = time.monotonic() + getattr(self.account, "cancel_seconds", 15)
+            while True:
+                self.service.poll()
+                port.drain_events()
+                if port.finish_stop_events():
+                    break
+                if time.monotonic() >= deadline:
+                    raise RuntimeError(f"策略停机撤单或回报未完成，保留绑定及账户锁: {strategy_id}")
+                time.sleep(0.05)
             item.save(self.service)
-        item.session.runner.stop()
+        runner.stop()
         item.active = False
+        item.stopped_at_ns = time.time_ns()
 
     def poll(self):
         if not self._started or self._stopped:
@@ -210,4 +229,7 @@ class SharedAccountLiveHost:
             "strategies": {sid: {"active": item.active, "failure": item.failure,
                 "failure_readiness": getattr(item.session.runner, "failure_readiness", None),
                 "fills_received": getattr(item.session.strategy, "fills_received", 0),
+                "execution_events": item.session.client.event_diagnostics(),
+                "stop_requested_at_ns": item.stop_requested_at_ns,
+                "stopped_at_ns": item.stopped_at_ns,
                 "state_file": str(item.state_file)} for sid, item in self.strategies.items()}}

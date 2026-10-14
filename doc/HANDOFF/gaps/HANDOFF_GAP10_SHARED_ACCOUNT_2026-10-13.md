@@ -333,3 +333,44 @@ status=reconciled。CU-1/AU+1及范围外持仓保持一致，账户failed/pendi
 文件，保留原全部状态。后续报告据failure_readiness区分EVENT/RECEIVE/TD/版本问题。
 本机集中报告1791908261177042000，shared-account54项/live-common116项均通过，
 共170项；原生04依赖限制仍待Linux组装验证。本轮交付REV10，GAP10整体仍开放。
+
+## 2026-10-14 日盘恢复完成与回调计数待核查
+
+用户报告shared-simnow-1791939620243739079为completed，EMA完成预热后configured_stop，
+横截面host_stop，无故障就绪信息、账户失败、停机异常或活动订单。用户events.txt
+共22条回报、11个订单（18至28），全部成交16手，报告ID与成交ID无重复。冻结归属
+EMA两单共4手、横截面九单共12手。由原EMA CU-1、横截面CU-1/AU+1逐笔累计，
+最终EMA CU-1、横截面CU+1/AU-1，与账户CU净0/AU空1一致，范围外仓位保持不变。
+CU物理平仓2手仅改变触发来源归属，保留对方逻辑仓位；AU反向先平后开符合日志。
+
+不能将此轮登记为所有回调验收通过：EMA订单21、25各有一次FILLED，但停机报告
+fills_received仅1（横截面9与其成交数一致）。源码stop_strategy暂停后runner.stop，
+端口stop清除handlers；待消费事件可能受停止边界影响，但日志缺消费/停止时点，
+尚未证明原因。账户最终归属正确不等于回调完整。实际停止时点未记录，也不能仅凭
+目录时间加480秒断定后续横截面成交已发生在EMA停止之后。保留原状态，继续核查
+停止边界回调；部分成交、撤单、拒单、跨进程与跨主机等原验收要求保持开放。
+逐笔证据：doc/evidence/live/GAP10_CU_AU_COMPLETED_FILL_REVIEW_20261014.json。
+本轮仅补证据与交接，无运行代码变更、未连接柜台或报单。
+
+## 2026-10-14 停止边界回调修复（REV11）
+
+原生账户组件及真实Runner已复现：成交入账并排入策略队列，宿主立即runner.stop，
+先停止/解绑策略再清除handlers，导致归属正确但on_fill未消费。历史EMA两次成交/
+一次回调与此缺口一致，但历史消费时点缺失，尚未证明该轮具体原因。
+
+共享宿主先与Runner发布串行关闭新目标，begin_stop保留绑定并撤销相关母单；
+服务poll推进冻结，持续派发已入账事件，等待相关母单终结，包括对方剩余份额。
+finish_stop_events与账户回报入账共用client._submit_lock确认终结并关闭队列输入，
+释放账户锁后调用策略，清空队列后才runner.stop。不在柜台线程等待Runner锁。
+停止中禁止新目标解除暂停；端口stop不重复开启draining。超时保留绑定及队列并
+报错；回调失败保留事件/关闭账户，无处理器不得静默消费，封闭端口收到新事件
+按异常闭闸。检查点格式、归属、预算、TD日和行情门控不改，同日原状态可resume。
+
+报告增加execution_events的归属FillEvent入队/成功派发数、待处理数、最后事件ID
+和关闭标记，以及stop_requested_at_ns/stopped_at_ns。端口计数本进程累计，单策略
+重建后新实例计数须按重建边界核对。新增四项回归：排队成交、撤单期间迟到部分
+成交、撤单超时保留绑定及禁止新目标、回调失败保留事件。集中报告
+tests/results/main-ema-acceptance-1791941843551711000中shared-account58、
+live-common116共174项通过，详细证据GAP10_STOP_CALLBACK_OFFLINE_20261014.json。
+交付REV11清单，保留REV10。仍须Linux同日原配置resume，核对新摘要和events.txt，
+不需再次预算迁移或手工清状态。本机未连接柜台或报单，GAP10整体保持开放。
