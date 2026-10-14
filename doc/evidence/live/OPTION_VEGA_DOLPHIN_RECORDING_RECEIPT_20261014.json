@@ -1,0 +1,320 @@
+{
+  "date": "2026-10-14",
+  "timezone": "Asia/Shanghai",
+  "source": "user_pasted_events_txt_and_summary_tail",
+  "attachments": [
+    {
+      "name": "已粘贴的文本.txt",
+      "attachment_id": "798835de-af6d-4cda-a8b7-240589455c2d",
+      "sha256": "158409f723b2429d7a484ba2a13c902c155dc790ed7a65350fe8a8ff6fc0ae3f"
+    },
+    {
+      "name": "已粘贴的文本.txt",
+      "attachment_id": "3668a0b0-7770-4166-9400-740e194449e7",
+      "sha256": "0016b7bb105f2358a67502965dcd746b18b375618945f9d02f0bb0abb4f7ae95"
+    }
+  ],
+  "remote_report": "tests/results/gap08-dolphin-recording/option-vega-recording-1791956075214033439/summary.json",
+  "observed_summary_fields": {
+    "market_streams": [
+      {
+        "source_id": "vega-market",
+        "received_bars": 1533,
+        "latest_received_ns": 1791956965236256883,
+        "latest_event_ns": 1791956940000000000,
+        "conversion_errors": 0,
+        "last_conversion_error": null,
+        "resolved_columns": {
+          "stream_cffex_1min": [
+            "minTime",
+            "date",
+            "Code",
+            "open",
+            "high",
+            "low",
+            "close",
+            "prev_close",
+            "prev_settlement",
+            "volume",
+            "turnover",
+            "pct_change",
+            "open_interest",
+            "prev_open_interest",
+            "updateTime"
+          ]
+        }
+      }
+    ],
+    "skipped_index_frames": 0,
+    "execution_origin": "recording",
+    "session_readiness": {
+      "ready": true,
+      "sources": [
+        {
+          "domain": "market",
+          "channel": "dolphindb",
+          "source_id": "vega-market"
+        },
+        {
+          "domain": "market",
+          "channel": "dolphindb-raw",
+          "source_id": "vega-index-dfs"
+        },
+        {
+          "domain": "execution",
+          "channel": "recording",
+          "source_id": "option-vega-live"
+        }
+      ],
+      "issues": []
+    },
+    "cleanup_errors": [],
+    "observed_td_trading_day": null,
+    "observed_md_trading_day": null,
+    "reference_manifest": {
+      "valuation_day": "2026-10-14",
+      "fingerprint": "6d8e86efc59ee4b7e5cfbe38a5ac3c53890d795ff3de7fc5e9ad976cfd93ab41",
+      "observed_at_ns": 1791956973290779876,
+      "source": "DolphinDbReferenceSource",
+      "ready": true,
+      "failure": null,
+      "observation_age_seconds": 3.763206121,
+      "evidence": "content_hash_and_observation_not_publication_version",
+      "options": 103,
+      "futures": 4
+    },
+    "orders_submitted": 0,
+    "status": "passed",
+    "valuation_day": "20261014",
+    "trading_day": "20261014",
+    "latest_projected_ns": 1791956940000000000
+  },
+  "recorded_request": {
+    "strategy_id": "option-vega-live",
+    "client_id": "option-vega-live",
+    "revision": 1,
+    "signal_ns": 1791956400000000000,
+    "signal_time": "2026-10-14T13:40:00.000000+08:00",
+    "request_ns": 1791956420612689715,
+    "request_time": "2026-10-14T13:40:20.612690+08:00",
+    "nonzero_targets": {
+      "MO2611-C-7300.CFFEX": "-1"
+    },
+    "target_count": 107,
+    "zero_target_count": 106,
+    "execution_policy": "DIRECT",
+    "action": "REBALANCE",
+    "interpretation": "完整组合目标快照，不是107笔报单；Recording目标不等于实际仓位"
+  },
+  "index_minute_lookups": [
+    {
+      "valuation_ns": 1791956040000000000,
+      "valuation_time": "2026-10-14T13:34:00.000000+08:00",
+      "checked_ns": 1791956080287313930,
+      "status": "PROJECTED",
+      "event_ns": 1791956040000000000,
+      "source_ns": 1791956040000000000,
+      "available_ns": 1791956075958942508,
+      "received_ns": 1791956075971493757,
+      "receipt_delay_seconds": 35.971493757
+    },
+    {
+      "valuation_ns": 1791956100000000000,
+      "valuation_time": "2026-10-14T13:35:00.000000+08:00",
+      "checked_ns": 1791956114227892124,
+      "status": "PROJECTED",
+      "event_ns": 1791956100000000000,
+      "source_ns": 1791956100000000000,
+      "available_ns": 1791956114214210121,
+      "received_ns": 1791956114227785184,
+      "receipt_delay_seconds": 14.227785184
+    },
+    {
+      "valuation_ns": 1791956160000000000,
+      "valuation_time": "2026-10-14T13:36:00.000000+08:00",
+      "checked_ns": 1791956174288494143,
+      "status": "PROJECTED",
+      "event_ns": 1791956160000000000,
+      "source_ns": 1791956160000000000,
+      "available_ns": 1791956174274087416,
+      "received_ns": 1791956174288380253,
+      "receipt_delay_seconds": 14.288380253
+    },
+    {
+      "valuation_ns": 1791956220000000000,
+      "valuation_time": "2026-10-14T13:37:00.000000+08:00",
+      "checked_ns": 1791956234243421756,
+      "status": "PROJECTED",
+      "event_ns": 1791956220000000000,
+      "source_ns": 1791956220000000000,
+      "available_ns": 1791956234230470148,
+      "received_ns": 1791956234243300845,
+      "receipt_delay_seconds": 14.243300845
+    },
+    {
+      "valuation_ns": 1791956280000000000,
+      "valuation_time": "2026-10-14T13:38:00.000000+08:00",
+      "checked_ns": 1791956294397322549,
+      "status": "PROJECTED",
+      "event_ns": 1791956280000000000,
+      "source_ns": 1791956280000000000,
+      "available_ns": 1791956294385113019,
+      "received_ns": 1791956294397174788,
+      "receipt_delay_seconds": 14.397174788
+    },
+    {
+      "valuation_ns": 1791956340000000000,
+      "valuation_time": "2026-10-14T13:39:00.000000+08:00",
+      "checked_ns": 1791956354295022242,
+      "status": "PROJECTED",
+      "event_ns": 1791956340000000000,
+      "source_ns": 1791956340000000000,
+      "available_ns": 1791956354280302664,
+      "received_ns": 1791956354294906441,
+      "receipt_delay_seconds": 14.294906441
+    },
+    {
+      "valuation_ns": 1791956400000000000,
+      "valuation_time": "2026-10-14T13:40:00.000000+08:00",
+      "checked_ns": 1791956414183264511,
+      "status": "PROJECTED",
+      "event_ns": 1791956400000000000,
+      "source_ns": 1791956400000000000,
+      "available_ns": 1791956414167326158,
+      "received_ns": 1791956414183144681,
+      "receipt_delay_seconds": 14.183144681
+    },
+    {
+      "valuation_ns": 1791956460000000000,
+      "valuation_time": "2026-10-14T13:41:00.000000+08:00",
+      "checked_ns": 1791956474117001438,
+      "status": "PROJECTED",
+      "event_ns": 1791956460000000000,
+      "source_ns": 1791956460000000000,
+      "available_ns": 1791956474102493066,
+      "received_ns": 1791956474116868197,
+      "receipt_delay_seconds": 14.116868197
+    },
+    {
+      "valuation_ns": 1791956520000000000,
+      "valuation_time": "2026-10-14T13:42:00.000000+08:00",
+      "checked_ns": 1791956534091411010,
+      "status": "PROJECTED",
+      "event_ns": 1791956520000000000,
+      "source_ns": 1791956520000000000,
+      "available_ns": 1791956534075803843,
+      "received_ns": 1791956534091291919,
+      "receipt_delay_seconds": 14.091291919
+    },
+    {
+      "valuation_ns": 1791956580000000000,
+      "valuation_time": "2026-10-14T13:43:00.000000+08:00",
+      "checked_ns": 1791956594263498268,
+      "status": "PROJECTED",
+      "event_ns": 1791956580000000000,
+      "source_ns": 1791956580000000000,
+      "available_ns": 1791956594247924839,
+      "received_ns": 1791956594263368488,
+      "receipt_delay_seconds": 14.263368488
+    },
+    {
+      "valuation_ns": 1791956640000000000,
+      "valuation_time": "2026-10-14T13:44:00.000000+08:00",
+      "checked_ns": 1791956654349777395,
+      "status": "PROJECTED",
+      "event_ns": 1791956640000000000,
+      "source_ns": 1791956640000000000,
+      "available_ns": 1791956654338006377,
+      "received_ns": 1791956654349596795,
+      "receipt_delay_seconds": 14.349596795
+    },
+    {
+      "valuation_ns": 1791956700000000000,
+      "valuation_time": "2026-10-14T13:45:00.000000+08:00",
+      "checked_ns": 1791956714286636755,
+      "status": "PROJECTED",
+      "event_ns": 1791956700000000000,
+      "source_ns": 1791956700000000000,
+      "available_ns": 1791956714273567212,
+      "received_ns": 1791956714286454384,
+      "receipt_delay_seconds": 14.286454384
+    },
+    {
+      "valuation_ns": 1791956760000000000,
+      "valuation_time": "2026-10-14T13:46:00.000000+08:00",
+      "checked_ns": 1791956774092165656,
+      "status": "PROJECTED",
+      "event_ns": 1791956760000000000,
+      "source_ns": 1791956760000000000,
+      "available_ns": 1791956774076579293,
+      "received_ns": 1791956774092017915,
+      "receipt_delay_seconds": 14.092017915
+    },
+    {
+      "valuation_ns": 1791956820000000000,
+      "valuation_time": "2026-10-14T13:47:00.000000+08:00",
+      "checked_ns": 1791956834276035042,
+      "status": "PROJECTED",
+      "event_ns": 1791956820000000000,
+      "source_ns": 1791956820000000000,
+      "available_ns": 1791956834260254451,
+      "received_ns": 1791956834275897002,
+      "receipt_delay_seconds": 14.275897002
+    },
+    {
+      "valuation_ns": 1791956880000000000,
+      "valuation_time": "2026-10-14T13:48:00.000000+08:00",
+      "checked_ns": 1791956894197315813,
+      "status": "PROJECTED",
+      "event_ns": 1791956880000000000,
+      "source_ns": 1791956880000000000,
+      "available_ns": 1791956894181821354,
+      "received_ns": 1791956894197181953,
+      "receipt_delay_seconds": 14.197181953
+    },
+    {
+      "valuation_ns": 1791956940000000000,
+      "valuation_time": "2026-10-14T13:49:00.000000+08:00",
+      "checked_ns": 1791956954096372073,
+      "status": "PROJECTED",
+      "event_ns": 1791956940000000000,
+      "source_ns": 1791956940000000000,
+      "available_ns": 1791956954080876231,
+      "received_ns": 1791956954096226822,
+      "receipt_delay_seconds": 14.096226822
+    }
+  ],
+  "index_receipt_timing": {
+    "projected_count": 16,
+    "first_minute": "2026-10-14T13:34:00.000000+08:00",
+    "last_minute": "2026-10-14T13:49:00.000000+08:00",
+    "startup_minute_delay_seconds": 35.971493757,
+    "steady_sample_count": 15,
+    "steady_min_delay_seconds": 14.091291919,
+    "steady_max_delay_seconds": 14.397174788
+  },
+  "review_scope": {
+    "runtime_reported_passed": true,
+    "market_standard_conversion_observed": true,
+    "nonzero_recording_request_observed": true,
+    "full_target_chain_acceptance": "pending_original_summary_review",
+    "missing_from_attachments": [
+      "frame_audit",
+      "entry_audit",
+      "recorded_requests",
+      "frames",
+      "fills_received",
+      "calendar_manifest",
+      "feature_query_failure_and_cache_counts",
+      "market_sources"
+    ],
+    "older_than_projected_seen_in_supplied_lookups": false,
+    "skipped_index_frames": 0,
+    "source_branch_retest_note": "本次正常运行未重现倒退停机；旧请求及超时拒绝仍只有离线分支覆盖",
+    "trading_acceptance": false,
+    "new_code_change": false,
+    "broker_state_modified_by_this_review": false,
+    "limitations": "只解析用户片段，未连接运行机、未独立读取原报告、未执行完整review_recording；不补造缺失字段"
+  },
+  "next_readonly_command": "python -u -m scripts.integration.options.recording --trading-day 20261014 --option-slot 13:40 --summary tests/results/gap08-dolphin-recording/option-vega-recording-1791956075214033439/summary.json"
+}

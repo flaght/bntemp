@@ -44,6 +44,10 @@
 
 13:22 Recording 的 [旧分钟失败证据与修正](live/OPTION_VEGA_DOLPHIN_OLD_MINUTE_20261014.json) 已返回：市场流转换 90 根、无转换错误，指数 13:22 投影成功后又发布 13:21，触发时间倒退；没有消费帧或生成目标。最新 [REV5 包](archives/OPTION_VEGA_DOLPHIN_PUSH_20261014_REV5.tar.gz) / [REV5 摘要](checksums/OPTION_VEGA_DOLPHIN_PUSH_20261014_REV5_SHA256.txt) 修正公共查询 Bar 流跨轮询顺序，旧请求审计 OLDER_THAN_PROJECTED，旧帧缺指数按原期限跳过。保留真实倒退及期限检查；新增实际 Runner/Recording 回归，本地 81 + 111 项及 entry 组通过。完整线上 Recording 仍待复测，旧包保持原版。
 
+后续 [13:40 Recording 复测证据](live/OPTION_VEGA_DOLPHIN_RECORDING_RECEIPT_20261014.json) 已返回 events.txt 和 summary 尾部：运行 passed、市场 1533 根且无转换错误、指数 13:34—13:49 共 16 个分钟投影、缺指数跳过 0；13:40:20.612690 记录 MO2611-C-7300 空 1 手目标，柜台报单 0、清理无错误。107 个合约目标中的 106 个为 0，不是 107 笔订单。未提供完整帧/选约审计，目标的同分钟及接收期限仍待运行机执行既有 --summary 只读复核；本轮没有新运行代码或交易动作，REV5 包及其历史摘要保持原字节。
+
+本次只更新 [文档与复测证据摘要](checksums/OPTION_VEGA_DOLPHIN_RECORDING_RECEIPT_20261014_SHA256.txt)，无需重新部署运行模块。
+
 ## 2026-10-11模型运行与恢复证据
 
 同日08期权Vega源码新增，使用独立清单

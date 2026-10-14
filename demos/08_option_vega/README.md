@@ -491,7 +491,21 @@ Bar 的 ts_init 使用客户端实际接收时间，updateTime 不冒充本机�
 
 不同市场合约可交错送达业务分钟，使待处理集合跨轮询新增旧分钟；原 Feed 已在每次 poll 内排序，但无法保证多次 poll 之间仍向前。REV5 的公共 `FeatureQueryBarFeed` 记录 `latest_projected_ns`：晚于或等于既有流进度的未投影分钟按原精确查询处理；早于已投影分钟的新请求记为 `OLDER_THAN_PROJECTED`，不再发布，不刷新指数行情观测。查询缓存仍保留历史资料，旧帧缺指数则按原接收期限记 `SKIPPED_INDEX`；不会将较新指数放入旧帧，也不会补做旧选约。没有关闭 Runner 的倒退检查、未来时间/年龄检查或帧期限检查。
 
-summary 的 `feature_queries[].minute_lookups` 会记录该状态及 `latest_projected_ns`，`OptionMarketInputs` 同时输出“指数分钟不可用”。真正查询或投影异常改为“指数DFS查询或投影失败”，仍传播并停机。新增回归覆盖跨轮询旧请求、旧指数后补、同轮询排序，以及实际 Runner/帧/Recording：旧帧跳过后新帧仍生成 TARGET，直接倒退发布仍拒绝。同步 [REV5 包](../../doc/evidence/archives/OPTION_VEGA_DOLPHIN_PUSH_20261014_REV5.tar.gz) 和配套摘要/验收入口后，选择留有启动余量的未来分钟重新运行原 Recording 命令；无须调整帧等待来掩盖本次异常。服务器复测未返回前，整体目标链仍标记待验。
+summary 的 `feature_queries[].minute_lookups` 会记录该状态及 `latest_projected_ns`，`OptionMarketInputs` 同时输出“指数分钟不可用”。真正查询或投影异常改为“指数DFS查询或投影失败”，仍传播并停机。新增回归覆盖跨轮询旧请求、旧指数后补、同轮询排序，以及实际 Runner/帧/Recording：旧帧跳过后新帧仍生成 TARGET，直接倒退发布仍拒绝。同步 [REV5 包](../../doc/evidence/archives/OPTION_VEGA_DOLPHIN_PUSH_20261014_REV5.tar.gz) 和配套摘要/验收入口后，选择留有启动余量的未来分钟运行原 Recording 命令；无须调整帧等待来掩盖本次异常。后续实际复测结果如下，完整帧期限复核仍待返回。
+
+**2026-10-14 13:40 Recording 复测返回**：报告目录为 `tests/results/gap08-dolphin-recording/option-vega-recording-1791956075214033439`。用户提供 events.txt 请求和 summary 尾部，status=passed、session_readiness.ready=true、issues=[]、cleanup_errors=[]。市场流实际转换 1533 根 Bar、conversion_errors=0；指数 13:34—13:49 共 16 个业务分钟均为 PROJECTED，skipped_index_frames=0。13:35—13:49 连续分钟的指数接收延迟为 14.091—14.397 秒；启动时的 13:34 缓存样本在分钟后 35.971 秒首次观测，不属于稳态延迟统计。
+
+实际 Recording 请求 revision=1，signal_ts 为 13:40:00、请求时刻为 13:40:20.612690，唯一非零目标为 `MO2611-C-7300.CFFEX = -1`。请求里的 107 个合约构成完整目标快照，其余 106 个目标为 0，不能解释成 107 笔柜台订单。尾部 orders_submitted=0、execution_origin=recording、observed_td_trading_day=null，记录目标没有建立实际空仓或更改昨日柜台持仓。本次正常完成，没有因指数时间倒退停机；提供的 minute_lookups 全是 PROJECTED，没有线上 OLDER_THAN_PROJECTED 或超时样本，因此对应拒绝分支仍由离线用例验证。
+
+接收与非零目标已有真实证据，但附件未包含 entry_audit、frame_audit、recorded_requests 等完整字段，不能将 16 次指数投影当成 16 帧均消费，也尚未独立核对选约同分钟三路输入和接收期限。见 [复测证据及核验范围](../../doc/evidence/live/OPTION_VEGA_DOLPHIN_RECORDING_RECEIPT_20261014.json)。在运行机执行已有只读复核入口；该命令只读原报告并写旁边的 recording-acceptance.json，不启动行情或交易连接：
+
+```bash
+python -u -m scripts.integration.options.recording \
+  --trading-day 20261014 --option-slot 13:40 \
+  --summary tests/results/gap08-dolphin-recording/option-vega-recording-1791956075214033439/summary.json
+```
+
+复核应返回 status=passed、target_chain_verified=true、market_stream_verified=true、errors=[] 才登记完整目标链通过。当前只更新文档与证据，运行代码保持 REV5，无须为本次证据更新重新部署运行模块。
 
 ### 3.7 Replay 与工程时间映射
 
