@@ -204,7 +204,7 @@ def _dolphin_feed(table, source_id, *, max_age_seconds, volume_mode="per-bar"):
     return DolphinDbLiveDataFeed(DolphinDbConfig(host=required("DDB_HOST"),
         port=int(os.getenv("DDB_PORT", "8848")), username=required("DDB_USERNAME"), password=required("DDB_PASSWORD"),
         streaming_port=int(os.getenv("DDB_STREAMING_PORT", "0")),
-        streams=(DolphinDbStreamSpec.bar(table, action_name=f"{source_id}-{os.getpid()}-{time.time_ns()}",
+        streams=(DolphinDbStreamSpec.bar(table, action_name=f"{source_id.replace('-', '_')}_{os.getpid()}_{time.time_ns()}",
             auto_schema=True, volume_mode=volume_mode, local_receipt_time=True),)),
         source_id=source_id, health_config=StreamHealthConfig(startup_grace_seconds=max_age_seconds,
             stale_after_seconds=max_age_seconds))

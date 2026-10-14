@@ -26,6 +26,10 @@ class NativeDolphinSubscription:
     filter: Any = field(default=None, compare=False, hash=False, repr=False)
     required_columns: tuple[str, ...] = ()
 
+    def __post_init__(self):
+        if not isinstance(self.action_name, str) or re.fullmatch(r"[A-Za-z0-9_]+", self.action_name) is None:
+            raise ValueError("DolphinDB action_name只能包含字母、数字和下划线")
+
 
 class DolphinDbDriver(Protocol):
     def start(
@@ -105,9 +109,10 @@ class OfficialDolphinDbDriver:
                 raise ValueError("DolphinDB推送须为共享流表名，不能填写DFS路径或查询表达式")
             columns = tuple(map(str, session.run(
                 f"schema(objByName({json.dumps(subscription.table_name)}, true)).colDefs.name")))
+            self.resolved_columns[subscription.table_name] = columns
             missing = set(subscription.required_columns) - set(columns)
             if not columns or len(set(columns)) != len(columns) or missing:
-                raise ValueError(f"DolphinDB分钟流缺少必需列或结构无效: {sorted(missing)}")
+                raise ValueError(f"DolphinDB分钟流缺少必需列或结构无效: {sorted(missing)}; actual_columns={columns}")
         callback = _make_callback(columns, handler)
         session.subscribe(
             host=self._host,

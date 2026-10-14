@@ -21,7 +21,10 @@ def parse_args(argv=None):
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--reconcile-only", action="store_true", help="同日权威对账并修复已结束订单的检查点；不启动策略、不报单")
     parser.add_argument("--budget-config", type=Path, help="只读迁移至仅上调账户总名义限额的新配置")
+    parser.add_argument("--acceptance-cancel-owner", help="观察自然共享母单，由指定非提交者停止自身触发撤单验收")
     args = parser.parse_args(argv)
+    if args.acceptance_cancel_owner and (not args.connect or args.reconcile_only):
+        parser.error("acceptance-cancel-owner仅用于显式授权的连接交易运行")
     if args.budget_config is not None and not args.reconcile_only:
         parser.error("budget-config仅用于reconcile-only")
     if args.reconcile_only and (not args.connect or not args.resume or args.enable_orders or args.confirm_simnow):
@@ -165,6 +168,9 @@ def main(argv=None):
     new_account_config = None
     try:
         config = read_config(args.config)
+        if args.acceptance_cancel_owner and args.acceptance_cancel_owner not in {
+                row["strategy_id"] for row in config["strategies"]}:
+            raise ValueError("撤单验收所有者须为配置中已声明的策略ID")
         if args.budget_config is not None:
             new_account_config = validate_budget_increase(config, read_config(args.budget_config))
     except FileNotFoundError:
@@ -184,6 +190,8 @@ def main(argv=None):
     failure_execution_diagnostics = None
     status, failure, shutdown_failure = "failed", None, None
     reconciliation = None
+    from .cancel_probe import SharedMotherCancelProbe
+    cancel_probe = SharedMotherCancelProbe(args.acceptance_cancel_owner) if args.acceptance_cancel_owner else None
     try:
         if args.reconcile_only:
             host = build_host(config, resume=True, diagnostics=diagnostics, read_only=True)
@@ -200,11 +208,13 @@ def main(argv=None):
         until = started + config["seconds"]
         while time.monotonic() < until and any(item.active for item in host.strategies.values()):
             host.poll()
+            if cancel_probe is not None:
+                cancel_probe.poll(host)
             for row in config["strategies"]:
                 if row.get("stop_after_seconds") is not None and time.monotonic() - started >= float(row["stop_after_seconds"]):
                     host.stop_strategy(row["strategy_id"], reason="configured_stop")
             time.sleep(0.2)
-        status = "failed" if any(item.failure not in {None, "configured_stop"}
+        status = "failed" if any(item.failure not in {None, "configured_stop", "acceptance_shared_cancel"}
                                  for item in host.strategies.values()) else "completed"
     except BaseException as error:
         failure = str(error)
@@ -230,6 +240,8 @@ def main(argv=None):
             raise
         finally:
             snapshot = host.snapshot() if host is not None else {}
+            if cancel_probe is not None:
+                snapshot["shared_cancel_acceptance"] = cancel_probe.result(host, runtime_status=status)
             report.write(status=status, fields={**snapshot, "failure": failure,
                 "shutdown_failure": shutdown_failure,
                 "failure_execution_diagnostics": failure_execution_diagnostics,

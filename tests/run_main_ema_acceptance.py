@@ -76,6 +76,7 @@ SOURCES = (
     "scripts/integration/shared_account/config.py",
     "scripts/integration/shared_account/factories.py",
     "scripts/integration/shared_account/run.py",
+    "scripts/integration/shared_account/cancel_probe.py",
     "tests/test_shared_account.py",
     "tests/run_shared_account_fault_acceptance.py",
     "bomber/framework/trader/execution/model.py",

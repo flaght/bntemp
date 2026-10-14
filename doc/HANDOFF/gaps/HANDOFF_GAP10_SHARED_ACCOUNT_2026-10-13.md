@@ -418,3 +418,30 @@ Linux同步REV13后运行python -u -m tests.run_shared_account_fault_acceptance�
 贴出summary.json和tests.txt。真实SimNow部分成交/共享母单撤单/拒单仍待柜台证据，
 不通过放大数量或制造非法委托来代替验收；GAP10整体保持开放。本轮未动Dolphin
 行情、08策略等其他任务修改。
+
+## 2026-10-14 真实共享母单撤单观察入口（REV14）
+
+Linux REV13校验48文件及七项受控测试全部通过，十个源摘要与本机最终专项报告
+一致，用户报告目录shared-account-faults-1791947151717659737已归档为
+GAP10_SHARED_MOTHER_FAULTS_LINUX_20261014.json；不当作真实柜台部分成交/拒单。
+
+新增应用层cancel_probe.py，原共享入口增加--acceptance-cancel-owner，须connect
+及双报单授权，不得与reconcile-only组合，未知策略ID在组装/连接前拒绝。正常
+Runner、算法、限价及账户保护不变；在控制线程观察自然产生的已受理、仍在途、
+双来源冻结母单，指定owner须非提交者且所有冻结所有者仍活动。捕获后只调用
+host.stop_strategy(owner, reason=acceptance_shared_cancel)，记录停止时点和其他
+所有者活动，之后正常peer目标继续。验收组件不发新目标、不改变限价/数量/预算。
+
+摘要shared_cancel_acceptance包括捕获计划、撤单报告ID、部分成交/拒单旗标、
+同单peer保持活动、停止后目标/成交计数。passed限于母单CANCELED原生回报及
+peer活动、本轮正常结束。抢先全成交或没有符合条件母单为not_exercised，不制造
+非法委托或扩大交易来凑结果。部分成交/拒单必须另有真实回报，不能因撤单passed
+自动关闭；程序保留原480秒策略停止、600秒宿主时长和原账户检查点身份。
+
+四项新增回归：部分共享母单选择+非提交者撤单+peer重规划；单来源/终结单不
+停止；成交抢先撤单不误登记通过；授权/身份约束。集中报告
+tests/results/main-ema-acceptance-1791947768601573000，64+116共180项通过。
+仅应用验收入口/CLI/文档及相关测试变更，公共交易实现本轮不变。交付REV14，
+用户同步后先跑shared-account组，再于有效交易时段用原230万配置同日resume加
+--acceptance-cancel-owner ema-cu-gamma。保留所有状态、策略ID及预算；保存新
+summary.json/events.txt核对。本机未连接或操作柜台，GAP10整体保持开放。

@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "date": "2026-10-14",
+  "status": "offline_passed_real_broker_probe_pending",
+  "report": "tests/results/main-ema-acceptance-1791947768601573000/summary.json",
+  "tests": {
+    "shared-account": 64,
+    "live-common": 116
+  },
+  "entry": "scripts.integration.shared_account.run --acceptance-cancel-owner <declared-strategy-id>",
+  "behavior": [
+    "Observe accepted working mother with at least two frozen owners.",
+    "Specified owner must differ from submitting strategy; all owners still active.",
+    "Stop only selected owner through existing host; do not submit targets or override prices/budgets.",
+    "Record mother plan, stop times, cancel report IDs and peer activity.",
+    "No eligible mother or fill winning cancel race is not_exercised, not a passed cancel.",
+    "Partial/rejection flags separate; cancel pass does not close those remaining live scenarios."
+  ],
+  "new_regressions": [
+    "partial shared mother selection/non-submitter cancellation/peer replacement",
+    "single-owner and completed orders ignored without stopping",
+    "fill racing cancel does not pass cancellation",
+    "authorization switches required; unknown owner rejected before host construction"
+  ],
+  "network_connected": false,
+  "real_broker_orders_submitted": 0,
+  "state_schema_changed": false,
+  "gap10_closed": false
+}

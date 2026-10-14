@@ -228,3 +228,25 @@ python -u -m tests.run_shared_account_fault_acceptance
 或检查点。其余用例核对停止期间迟到成交、撤单超时及回调失败。
 这些受控回报不登记为SimNow实际部分成交、撤单或拒单。真实柜台验证仍须保存完整
 原生回报、停止时间、每策略归属及最终总仓/活动订单，不能通过篡改回报或策略账本补证。
+
+真实共享母单撤单的观察式验收：
+
+```bash
+python -u -m scripts.integration.shared_account.run \
+  --config scripts/integration/shared_account/session_cu_au_230w.json \
+  --connect --enable-orders --confirm-simnow --resume \
+  --acceptance-cancel-owner ema-cu-gamma
+```
+
+保持原配置/策略ID/状态文件，原Runner及算法照常运行。该开关只观察已受理、仍有
+未成交量、至少两个冻结所有者的母单，并要求指定策略是非提交者、所有相关策略
+仍活动。捕获后提前停止指定策略，复用宿主停止和原生按归属撤单；停止会保留其已
+成交归属，不隐式平仓，另一策略继续原目标推进。它不提交额外目标、不替换限价、
+不扩大数量或预算；原480秒停止及600秒宿主时长仍生效，指定策略正常停止前未捕获
+场景就不进行特殊操作。
+摘要增加`shared_cancel_acceptance`，保存母单及冻结计划、捕获/停止时点、撤单报告ID、
+同单其他策略活动情况和后续目标/成交计数。`passed`只表示捕获母单有撤单回报、
+非提交者停止后其他所有者保持活动且本轮正常结束。`partial_fill_observed`另行记录
+是否实际出现部分成交；没有部分成交/拒单的运行不能登记相应验收通过。全部成交
+抢先于撤单或没有符合条件母单时为`not_exercised`，不把正常completed当作专项通过。
+执行完保存完整summary.json及events.txt供逐笔复核；无需重做预算迁移或清理检查点。
