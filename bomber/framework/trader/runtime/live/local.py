@@ -82,11 +82,17 @@ class LocalExecutionLifecycle:
         session.references.refresh()
         if not session.runner.session_ready():
             raise RuntimeError("独立策略参考或行情失效")
+        prepare_history = getattr(session.runner, "prepare_history", None)
+        if callable(prepare_history):
+            session.runner.mark_history_live_start()
+            prepare_history()
+            if not session.runner.session_ready():
+                raise RuntimeError("历史加载后行情或执行未就绪，保持闭闸")
         if session.manager is not None:
             session.manager.save()
         self.resume_ready = True
         session.runner.begin_bars()
-        print("策略会话就绪：独立参考价模型，无物理账户关联", flush=True)
+        print("策略会话就绪：独立策略执行，无物理账户关联", flush=True)
 
     def poll(self, session):
         if getattr(session.runner, "failure", None) or session.client.report_errors:
@@ -128,6 +134,29 @@ class LocalExecutionLifecycle:
         return {"strategy_position_source": "model", "account_reconciliation": "off",
                 "execution_origin": "model", "model": "reference-price",
                 "trading_day": self.trading_day, "observed_td_trading_day": None,
-                "observed_md_trading_day": None if session is None else session.upstream.latest_trading_day,
+                "observed_md_trading_day": None if session is None else getattr(session.upstream, "latest_trading_day", None),
                 "resume_ready": self.resume_ready,
                 "account_dispatch": {} if session is None else getattr(session.client, "dispatch_status", {})}
+
+
+class RecordingExecutionLifecycle(LocalExecutionLifecycle):
+    """记录标准目标；独立于行情厂商，不创建任何TD或模型成交。"""
+    event_label = "Recording目标"
+
+    def verify(self, session):
+        if session.runner.failure or not session.client.requests:
+            raise RuntimeError(session.runner.failure or "没有取得策略目标，检查行情与窗口预热")
+
+    def events(self, session):
+        return () if session is None else session.client.requests
+
+    def shutdown(self, session, context):
+        if session is not None:
+            session.runner.accept_bars = False
+            session.runner.stop()
+        return {"cleanup_errors": [], "final_gross": None, "final_active_orders": None}
+
+    def snapshot(self, session, context):
+        return {"strategy_position_source": "none", "account_reconciliation": "off",
+            "execution_origin": "recording", "trading_day": self.trading_day,
+            "observed_md_trading_day": None, "observed_td_trading_day": None}

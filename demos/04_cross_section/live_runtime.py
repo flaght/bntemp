@@ -1,5 +1,7 @@
 """04固定多主力会话装配；算法仍由原strategy.py提供。"""
 
+from bomber.framework.market.sources import source_config, assemble_minute_market
+
 from dataclasses import replace
 from types import SimpleNamespace
 import time
@@ -11,12 +13,10 @@ from bomber.framework.trader.assembly import StrategyBindings, assemble_strategy
 from bomber.framework.trader.execution.builders import build_ctp_portfolio_execution, attach_ctp_persistence
 from bomber.framework.trader.runtime.live.channels.ctp import CtpSessionLifecycle
 from bomber.framework.dataprep.live_portfolio import PortfolioRoleReferences as PortfolioReferences
-from bomber.framework.trader.runtime.live.channels.ctp import (InstrumentHealthGate, CtpLiveProfile,
-    CtpMarketChannel, CtpExecutionChannel)
+from bomber.framework.trader.runtime.live.channels.ctp import CtpLiveProfile, CtpExecutionChannel
 from bomber.framework.trader.runtime.live.contracts import SessionReadiness
 from bomber.framework.trader.runtime.live.recovery import StrategyPositionBinding, InstrumentPositionScope
 from bomber.framework.trader.runtime.live.health import validate_instrument_max_age
-from bomber.framework.trader.runtime.live.profiles import build_minute_feed
 from .recovery import ResumeLifecycle
 
 from .strategy import MainCrossSectionMomentumStrategy
@@ -286,24 +286,25 @@ def assemble(args, references, driver, upstream, *, account_routes=(), shared_se
     expected_day = references.trading_day.strftime("%Y%m%d")
     positions = shared_service.position_manager if shared_service is not None else PositionManager()
     client_id = shared_service.client_id if shared_service is not None else CLIENT_ID
-    market_channel = CtpMarketChannel(upstream, expected_day, profile=policy)
     client_holder = {}
-    execution_channel = (LocalExecutionChannel(CLIENT_ID, lambda: bool(client_holder.get("client") and client_holder["client"].is_reconciled))
-                         if model else CtpExecutionChannel(driver, expected_day, require_orders=orders))
-    check = SessionReadiness(market_channel, execution_channel)
+    local_recording = args.mode == "recording" and source_config(args).source != "ctp"
+    execution_channel = (LocalExecutionChannel(CLIENT_ID, lambda: bool(client_holder.get("client") and
+        (client_holder["client"].is_started if local_recording else client_holder["client"].is_reconciled)),
+        channel=args.mode) if model or local_recording else CtpExecutionChannel(driver, expected_day, require_orders=orders))
     runner = CrossSectionSessionRunner(references=references, orders=orders,
         instrument_max_age_seconds=getattr(args, "instrument_max_age_seconds", 10),
         session_metadata={"simnow_environment": policy.environment, "replay_md_trading_day": replay_day,
                           **({"execution_policy": execution_policy.snapshot_state()} if execution_policy != ExecutionPolicy() else {})},
-        position_manager=positions, session_check=check)
+        position_manager=positions, session_check=lambda: False)
     runner.replay_md_trading_day = replay_day  # 旧检查点/报告兼容字段，非策略输入。
     runner.expected_md_day = policy.expected_md_day(expected_day)
     runner.upstream = upstream
-    runner.instrument_health = InstrumentHealthGate(upstream, runner.fixed_ids, expected_day,
-        policy=policy, max_age_seconds=getattr(args, "instrument_max_age_seconds", 10),
-        clock_ns=runner._clock_ns, fallback_events=runner.tick_events,
-        fallback_receives=runner.tick_receives)
-    market_channel.instrument_health = runner.instrument_health
+    feed, market_channel, runner.instrument_health = assemble_minute_market(args, upstream,
+        "CROSS_SECTION_1M", policy, runner.fixed_ids, expected_day,
+        after_tick=runner.continue_on_tick, clock_ns=runner._clock_ns,
+        fallback_events=runner.tick_events, fallback_receives=runner.tick_receives)
+    check = SessionReadiness(market_channel, execution_channel)
+    runner._session_check = check
     ids, specs = references.instrument_ids, references.specs
     position_scope = InstrumentPositionScope(ids.values())
     limits = {ids[p]: RiskLimits(max_order_quantity=args.max_quantity,
@@ -321,6 +322,11 @@ def assemble(args, references, driver, upstream, *, account_routes=(), shared_se
         execution = ExecutionComponents(port, positions, shared_service.prices)
     elif model:
         execution = build_model_execution(CLIENT_ID, instrument_limits=limits, positions=positions)
+    elif local_recording:
+        from bomber.framework.trader.execution.builders import ExecutionComponents
+        from bomber.framework.trader.execution.recording import RecordingExecutionClient
+        from bomber.framework.trader.execution.risk import MarketReferencePriceStore
+        execution = ExecutionComponents(RecordingExecutionClient(CLIENT_ID), positions, MarketReferencePriceStore())
     else:
         execution = build_ctp_portfolio_execution(driver, trading_day=expected_day,
             price_increments={ids[p]: specs[p].tick for p in args.products},
@@ -347,23 +353,26 @@ def assemble(args, references, driver, upstream, *, account_routes=(), shared_se
     runner.strategy, runner.client = strategy, execution.client
     references.publication_lock = runner._submit_lock
     # 先记录各腿Tick新鲜度，再让聚合器分派由新Tick收盘的Bar。
-    upstream.register_trade_tick_handler(runner.observe_tick)
-    feed = build_minute_feed("CROSS_SECTION_1M", upstream,
-        policy, after_tick=runner.continue_on_tick,
-        max_age_seconds=getattr(args, "instrument_max_age_seconds", 10), clock_ns=runner._clock_ns)
+    if source_config(args).source == "ctp":
+        upstream.register_trade_tick_handler(runner.observe_tick)
     for p in args.products:
         feed.register_instrument(references.instrument_meta(p))
+    runner.market_feed_id = "ctp-bars" if source_config(args).source == "ctp" else "market-bars"
     bindings = StrategyBindings(
-        data=tuple(DataBinding(str(i), "ctp-bars", i, DataType.BAR, "1-MINUTE") for i in ids.values()),
+        data=tuple(DataBinding(str(i), runner.market_feed_id, i, DataType.BAR, "1-MINUTE") for i in ids.values()),
         execution=tuple(ExecutionRoute(str(i), client_id, i) for i in ids.values()))
-    assemble_strategy(runner, strategy, feeds={"ctp-bars": feed}, execution=execution, bindings=bindings)
+    assemble_strategy(runner, strategy, feeds={runner.market_feed_id: feed}, execution=execution, bindings=bindings)
     components = {"execution_policy": execution_policy} if execution_policy != ExecutionPolicy() else {}
+    if source_config(args).source != "ctp":
+        from bomber.framework.trader.runtime.live.recovery import SessionIdentityCheckpoint
+        components["market_source"] = SessionIdentityCheckpoint(source_config(args).identity)
     attach = attach_execution_persistence if model else attach_ctp_persistence
     manager = attach(execution, runner, state_file=args.state_file, state_components=components) if orders and shared_service is None else None
     runner.manager = manager
     return SimpleNamespace(runner=runner, strategy=strategy, client=execution.client,
         execution=execution, ledger=execution.ledger, manager=manager, driver=driver,
         references=references, upstream=upstream, bar_feed=feed, market_profile=policy, readiness=check,
+        market_source_identity=source_config(args).identity if source_config(args).source != "ctp" else None,
         position_scope=position_scope,
         recovery_binding=StrategyPositionBinding(strategy.strategy_id, execution.client.client_id,
             {str(i): i for i in ids.values()}))

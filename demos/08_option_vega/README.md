@@ -10,7 +10,7 @@
 | Live Recording | `run_live.py --mode recording` | 在线行情 + 目标记录 | 不连接 TD，不产生成交，不保存交易状态文件 |
 | Live Model | `run_live.py --mode model` | 在线行情 + 参考价模型成交 | 保存独立模型仓位，停机保留仓位 |
 | Live SimNow | `run_live.py --mode simnow` | 在线行情 + 原生 CTP 模拟柜台执行 | 撤销自身活动订单、保存归属仓位，停机保留已成交仓位 |
-| 共享原仓恢复 | `python -m scripts.integration.options.shared` | DolphinDB分钟／指数特征 + 公共账户服务／CTP TD | 日盘收盘或主动停止；保存归属，次日同一命令恢复 |
+| 共享原仓恢复 | `python -m scripts.integration.options.shared` | DolphinDB分钟／指数特征 + 公共账户服务／CTP TD | 按日历运行至收盘；支持休市等待、次日自动恢复与主动停止 |
 
 建议先阅读[回测](#2-文件回测)，再按 [Live 运行方式](#3-live-运行方式)选择执行模式。完整参数分别见回测参数表、[Live 参数表](#4-live-参数说明)；每个代码文件的作用和必要性见[代码职责](#6-代码文件的作用与必要性)。所有命令从 `pro` 根目录执行，使用已安装项目依赖和原生 Bomber 扩展的 Python 环境：
 
@@ -54,20 +54,55 @@ REV19的 [206 项离线验收](../../doc/evidence/live/GAP10_THREE_STRATEGIES_OF
 
 ### 正常启动：原仓恢复、持续管理与停止
 
-日盘使用下列入口；同一命令在下一交易日再次启动即可，TD日由只读登录观察后与日盘日期核对。默认继续管理 `MO2611-C-7400` 空一手，按原策略规则决定当日选约、对冲与退出，不另发固定测试目标。最初状态位于 `pro_new`，可直接指定已找到的原路径，不必手工复制或改写JSON：
+使用下列入口。默认当天最后交易窗口结束后退出；增加 `--run-forever` 即常驻，午休、收盘和非交易日等待，下一窗口重新核验并恢复。TD日由只读登录观察后与公共calendars窗口核对。默认继续管理 `MO2611-C-7400` 空一手，按原策略规则决定当日选约、对冲与退出，不另发固定测试目标。最初状态位于 `pro_new`，可直接指定已找到的原路径，不必手工复制或改写JSON：
 
 ```bash
 cd /workspace/worker/pj/Chrono/nautilus_trader_demo/pro || exit 1
 export CTP_TD_ADDRESS=tcp://182.254.243.31:30001
 export CTP_PRODUCTION_MODE=true
 python -u -m scripts.integration.options.shared \
-  --connect --enable-orders --confirm-simnow \
+  --connect --enable-orders --confirm-simnow --run-forever \
+  --calendar-id china.cffex --hours-code IM --no-session-overrides \
   --state-file /workspace/worker/pj/Chrono/nautilus_trader_demo/pro_new/tests/results/gap08-realtime-simnow/state-1791869411336135873.json
 ```
 
 首次核验通过后，该文件转换为共享账户检查点，旁边自动保存 `.before-rollover-g<原代>.json` 备份和 `.vega-signal.json` 信号文件。后续继续使用同一路径。不要同时运行原08进程或另一个TD写入服务。快捷入口只运行一个08，但使用相同公共账户服务；实际多策略配置使用共享 `run` 或 `server/worker` 入口，由一个TD服务统一执行。
 
-运行至北京时间15:00结束，也可Ctrl+C／SIGTERM停止；撤销自身活动订单、核对并保存，保留成交仓位。午休时停止决策、继续账户维护，下午等待新鲜行情后继续。默认会话最多20笔委托，`--max-session-orders` 可在首次导入时设置，后续恢复保持该账户配置。启动应在日盘可取得新鲜数据时，入口允许09:29—14:56；午休启动须临近13:00，连接等待180秒不会跨整个午休。该入口是每日启动时自动恢复，不是跨夜常驻进程，也不自动完成到期换月或未知漏成交重建。
+删除上面 `--run-forever` 就是每日启动方式；允许提前启动和休市启动，交易窗口外不连接行情或TD、不报单。`--hours-code IM` 明确声明MO采用IM时段；时段经公共Provider从DolphinDB加载，交易日期来自 `NativeCalendarProvider`，不是手写日历JSON或入口写死09:30/15:00。默认时段库/表复用公共参考配置，可用 `--trading-hours-database` / `--trading-hours-table` 指定。`--no-session-overrides` 表示确认该资料范围没有日期例外；若配置了例外表，替换为 `--session-overrides-table 实际表名`，不能把缺失例外当成没有例外。原日历ID必须一致。当前原生日历覆盖至2026-12-31；覆盖不足会停止，需更新规则，不会猜下一年交易日。
+
+每个窗口结束时停止新目标、撤销自身活动单、排空成交回报、对账并保存；保留成交仓位后断开行情和TD。午休后/次日重新读取同一文件最新代，核验真实TD和今昨仓、成本、归属，再等待当日新鲜市场/指数分钟。只有休市阶段免于行情检查，交易窗口内的行情、参考和账户异常仍停止，不自动无限重试。窗口结束后迟到的最后一分钟不再触发交易；本入口不增加固定收盘清仓，常规退出仍由原策略决定。Ctrl+C或SIGTERM执行相同的正常停机；SIGKILL/断电只能依赖下次严格恢复，不能保证停机完成。
+
+`--max-session-orders` 默认20，后续恢复保持原账户配置；从持久化OMS扣除该TD日已用委托，午休及进程重启不重置额度；耗尽时明确停止，不通过重启放大额度。该调度不自动完成合约到期换月或未知漏成交重建。
+
+**持续管理是仓位管理的运行生命周期，不是另一份仓位账本。**
+
+| 组件 | 作用 | 公共/策略专属 |
+| --- | --- | --- |
+| 账户JSON / `JsonStateStore` | 原仓归属、执行账本、订单、成交去重、版本与原子保存；文件本身不运行策略 | 公共 |
+| 信号JSON / `OptionVegaCheckpoint` | 当天是否选约、策略目标与信号恢复；同日不重复选约，跨日按原时点正常选约 | 08策略专属 |
+| `SharedAccountExecutionService` / `PositionManager` | 按strategy_id查仓、分配真实成交、执行目标与对账；外部仓位不变成08归属 | 公共 |
+| [ContinuousPositionRuntime](../../bomber/framework/trader/runtime/live/continuous.py) | calendars窗口内运行、正常停机后休市等待、下一窗口恢复；不复制持仓算法 | 公共 |
+| [08快捷入口](../../scripts/integration/options/shared.py) / [多策略调度入口](../../scripts/integration/shared_account/continuous.py) | 装配行情、指数特征、原策略和共享执行，支持每日/常驻两种运行方式 | 应用装配 |
+
+**多个策略一个进程 / 不同进程均保留。** 已有共享账户配置、账户及各策略信号文件继续使用，不复制原仓检查点来伪造多个归属。08原生文件首次导入使用上面快捷命令；多个策略的已有共享文件使用下列入口（`--config` 换成真实配置路径）：
+
+```bash
+# 同一进程：按原配置netted或independent运行多个08，只有一个TD写入者。
+python -u -m scripts.integration.shared_account.continuous \
+  --config /absolute/path/shared-session.json --process-layout same-process \
+  --connect --enable-orders --confirm-simnow --run-forever \
+  --calendar-id china.cffex --hours-code IM --no-session-overrides
+
+# 不同进程：配置必须是independent；调度器启动唯一server及每个策略worker。
+python -u -m scripts.integration.shared_account.continuous \
+  --config /absolute/path/shared-session.json --process-layout separate-processes \
+  --connect --enable-orders --confirm-simnow --run-forever \
+  --calendar-id china.cffex --hours-code IM --no-session-overrides
+```
+
+两种布局删除 `--run-forever` 都在当日最后窗口后退出。独立进程由父调度器统一响应停止：先各worker撤单、补交回报并保存，再关闭server；子进程独立进程组，Ctrl+C不会先把TD服务关闭。每窗口使用新能力文件和socket，仍复用原账户及逐策略JSON。worker异常退出或停机超时不会自动换窗重启；worker未完成停机时保留账户服务和锁供诊断。
+
+本批跨日调度支持相同日历的08实时MO/IM策略组合。01/03/04仍可通过既有共享run/server/worker按原规则运行；其指标历史预热、其他交易所逐策略昨仓未纳入本批自动跨日，不通过放宽检查冒充支持。不同策略集合、执行模式和固定参数不能在恢复时隐式改变。完整交付及验收边界见 [持续仓位管理交付](../../doc/HANDOFF/live/HANDOFF_OPTION_VEGA_CONTINUOUS_POSITION_2026-10-14.md)。
 
 MO/IM持仓的CFFEX通用平仓根据当日权威总仓规划，按当前今昨桶记账。其他交易所的独立策略昨仓尚未增加逐策略分桶，仍拒绝该范围的跨日独立恢复；不得将08的支持扩大成所有策略跨日均已支持。原08的 `run_live --resume` 也能直接从前日原生文件跨日恢复；转换成共享文件后则继续使用共享入口。
 
@@ -1254,3 +1289,10 @@ OptionMarketInputs日志记录指数DFS轮询启用、分钟MISSING、查询投�
 等待超时跳过及帧必需输入缺失。相同来源/分钟/状态不重复打印，状态记录上限64。
 查询投影完成只表示查到数据并尝试发布，不代表已经通过帧接收期限。
 CTP期权/期货缺失Bar不自动补查DolphinDB；日志不改变查询、等待、决策或定价规则。
+
+
+## M01 公共行情来源配置（2026-10-14）
+
+本入口已接入统一 `--market-config` / `--market-source`。回测使用文件，Live默认CTP，
+可配置DolphinDB共享分钟流；行情选择独立于执行与历史来源。
+参数、BN业务输入限制、共享worker用法及验证见[公共配置说明](../market_sources/README.md)。

@@ -15,6 +15,8 @@ from time import perf_counter
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from bomber.framework.market.sources import (MarketSourceConfig, create_market_feed,
+    add_market_source_arguments, market_config_from_args)
 from dotenv import load_dotenv
 from bomber.framework.dataprep.scenarios.role_futures import prepare_role_research as load_sector_research
 from bomber.framework.dataprep.bars import add_bar_source
@@ -30,7 +32,6 @@ from bomber.model import Venue
 from bomber.model.identifiers import TraderId
 
 from bomber.framework.market.basic.base import DataType
-from bomber.framework.market.replay.base import FileReplayFeed
 
 from bomber.framework.trader import (
     ContractAssignment, CtpFuturesBasicProfile, DataBinding,
@@ -74,7 +75,7 @@ def _write_reports(*, report_dir: Path, backend, backend_result,
                    strategy: MainEmaStrategy, days: tuple[date, ...],
                    product: str, venue: Venue,
                    orders: pd.DataFrame, fills: pd.DataFrame,
-                   positions: pd.DataFrame, tearsheet: bool) -> None:
+                   positions: pd.DataFrame, tearsheet: bool, market_config: MarketSourceConfig | None = None) -> None:
     """把可核对的原始报表与绩效指标保存到本次回测目录。"""
     report_dir = report_dir / str(backend_result.run_id)
     report_dir.mkdir(parents=True, exist_ok=True)
@@ -92,6 +93,8 @@ def _write_reports(*, report_dir: Path, backend, backend_result,
     summary = asdict(backend_result) if is_dataclass(backend_result) else {
         "backend_result": str(backend_result),
     }
+    summary["market_source"] = "file"
+    summary["market_config"] = (market_config or MarketSourceConfig(source="file")).identity
     summary["strategy"] = {
         "product": product,
         "venue": str(venue),
@@ -159,7 +162,7 @@ def run_case(*, product: str, start_day: date, end_day: date, bars_dir: Path,
              log_level: str = "WARNING",
              report_dir: Path = DEFAULT_REPORT_DIR,
              tearsheet: bool = True,
-             max_notional: Decimal = Decimal("1000000"), bar_timestamp: str = "end") -> None:
+             max_notional: Decimal = Decimal("1000000"), bar_timestamp: str = "end", market_config: MarketSourceConfig | None = None) -> None:
     """准备一个品种的主力输入，装配历史运行器，执行模拟回测并输出报表。"""
     case_started_at = perf_counter()
     product = product.strip().upper()
@@ -243,7 +246,7 @@ def run_case(*, product: str, start_day: date, end_day: date, bars_dir: Path,
         commission_per_contract=Decimal(1), venue=venue,
     )
     backend.add_profile(profile)
-    feed = FileReplayFeed(f"{product}_MAIN_EMA_REPLAY")
+    feed = create_market_feed(market_config or MarketSourceConfig(source="file"), f"{product}_MAIN_EMA_REPLAY")
     instruments = {}
     multipliers = {}
     for symbol in sorted(symbols):
@@ -306,7 +309,7 @@ def run_case(*, product: str, start_day: date, end_day: date, bars_dir: Path,
             backend_result=result.backend_result, strategy=strategy, days=days,
             product=product, venue=venue,
             orders=orders, fills=fills, positions=positions_report,
-            tearsheet=tearsheet,
+            tearsheet=tearsheet, market_config=market_config,
         )
         _finish_phase("报表写出及可选绩效图生成", phase_started_at)
     finally:
@@ -322,6 +325,7 @@ def main() -> None:
     # 环境配置只在入口运行时读取，导入／构造积木不读取本机凭据。
     load_dotenv()
     parser = argparse.ArgumentParser(description="CTP 品种动态主力 EMA 离线回测")
+    add_market_source_arguments(parser, backtest=True)
     parser.add_argument("--product", required=True, help="品种代码，例如 RB、I、HC")
     parser.add_argument("--start-day", type=date.fromisoformat, required=True)
     parser.add_argument("--end-day", type=date.fromisoformat, required=True)
@@ -346,6 +350,10 @@ def main() -> None:
     parser.add_argument("--max-notional", type=Decimal, default=Decimal("1000000"),
                         help="模拟风控的单笔与持仓名义金额上限")
     args = parser.parse_args()
+    try:
+        market_config_from_args(args)
+    except (ValueError, TypeError, OSError) as error:
+        parser.error(str(error))
 
     main_started_at = perf_counter()
     phase_started_at = _start_phase("输入路径解析")
@@ -358,7 +366,7 @@ def main() -> None:
     bars_dir = bars = bars_root = paths.fut
     contract_struct = roles = paths.contract_struct
     fut_basic = basic = paths.fut_basic
-    run_case(bar_timestamp=args.bar_timestamp, product=args.product, start_day=args.start_day, end_day=args.end_day,
+    run_case(market_config=args.market_source_config, bar_timestamp=args.bar_timestamp, product=args.product, start_day=args.start_day, end_day=args.end_day,
              bars_dir=bars_dir,
              contract_struct=contract_struct,
              fut_basic=fut_basic,

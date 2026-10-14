@@ -12,6 +12,8 @@ from time import perf_counter
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from bomber.framework.market.sources import (MarketSourceConfig, create_market_feed,
+    add_market_source_arguments, market_config_from_args)
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -65,7 +67,6 @@ def run_case(args):
     from bomber.model import Venue
     from bomber.model.identifiers import InstrumentId, TraderId
     from bomber.framework.market.basic.base import DataType, InstrumentMeta
-    from bomber.framework.market.replay.base import FileReplayFeed
     from bomber.framework.trader import (CtpFuturesBasicProfile, MarketStreamBinding,
         NautilusMarketFeedAdapter, NautilusSimExecutionBackend, RuntimeMode,
         UnifiedHistoricalRuntime, UnifiedStrategyRunner)
@@ -202,7 +203,7 @@ def run_case(args):
     profile = CtpFuturesBasicProfile(profile_id="option-vega-basic", venue=Venue("CFFEX"),
         starting_balance=args.starting_balance, commission_per_contract=args.commission)
     backend.add_profile(profile)
-    feed = FileReplayFeed("OPTION_VEGA_REPLAY")
+    feed = create_market_feed(getattr(args, "market_source_config", None) or MarketSourceConfig(source="file"), "OPTION_VEGA_REPLAY")
     instruments = {}
     multipliers = {}
     try:
@@ -267,7 +268,9 @@ def run_case(args):
             remaining = {key: str(strategy.position(str(item))) for key, item in instruments.items()
                          if strategy.position(str(item)) or strategy.strategy_working_quantity(str(item))}
             errors = [str(value) for value in client.report_errors]
-            summary = {"requested": [str(args.start_day), str(args.end_day)],
+            summary = {"market_source": "file", "market_config":
+                (getattr(args, "market_source_config", None) or MarketSourceConfig(source="file")).identity,
+                "requested": [str(args.start_day), str(args.end_day)],
                 "actual": [str(days[0]), str(days[-1])], "trading_days": len(days),
                 "calendar_source": calendar_source,
                 "skipped_unavailable_hedges": skipped_hedges,
@@ -310,6 +313,7 @@ def run_case(args):
 def main():
     """解析期权组合、数据路径及风险限制后启动回测。"""
     parser = argparse.ArgumentParser(description="认购期权卖方Vega预算与同月期货Delta对冲")
+    add_market_source_arguments(parser, backtest=True)
     parser.add_argument("--start-day", type=date.fromisoformat, required=True)
     parser.add_argument("--end-day", type=date.fromisoformat, required=True)
     parser.add_argument("--data-root", type=Path)
@@ -349,6 +353,10 @@ def main():
     parser.add_argument("--no-tearsheet", action="store_true")
     parser.add_argument("--require-fills", action="store_true")
     args = parser.parse_args()
+    try:
+        market_config_from_args(args)
+    except (ValueError, TypeError, OSError) as error:
+        parser.error(str(error))
     started = perf_counter()
     args.option_product = args.option_product.strip().upper()
     args.future_product = args.future_product.strip().upper()

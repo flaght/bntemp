@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+from bomber.framework.market.sources import (add_market_source_arguments, market_config_from_args,
+    source_config, create_market_feed, assemble_minute_market)
 from datetime import datetime
 from decimal import Decimal
 import math
@@ -18,7 +20,7 @@ from bomber.framework.market.basic.base import InstrumentId
 from bomber.framework.trader.execution.policy import (
     add_execution_policy_arguments, execution_policy_from_args, observed_account_positions)
 from bomber.framework.trader.runtime.live.channels.ctp import (
-    add_environment_arguments, validate_environment_arguments, build_simnow_transport, build_md_config, required)
+    add_environment_arguments, validate_environment_arguments, build_simnow_transport, required)
 from bomber.framework.trader.runtime.live.runtime import ManagedLiveRuntime
 from bomber.framework.trader.runtime.reports import LiveRunReport
 from .live_references import CalendarReferences
@@ -31,6 +33,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
+    add_market_source_arguments(parser)
     parser.add_argument("--connect", action="store_true")
     parser.add_argument("--mode", choices=("recording", "model", "simnow"), default="recording")
     add_execution_policy_arguments(parser)
@@ -64,6 +67,10 @@ def parse_args(argv=None):
     parser.add_argument("--require-fills", action="store_true", help="额外要求本次取得归属成交")
     parser.add_argument("--report-dir", type=Path, default=Path(__file__).with_name("results"))
     args = parser.parse_args(argv)
+    try:
+        market_config_from_args(args, domestic_contracts=True)
+    except (ValueError, TypeError, OSError) as error:
+        parser.error(str(error))
     if not args.connect:
         parser.error("须显式--connect；构造和help不连接")
     args.product = args.product.strip().upper()
@@ -131,8 +138,6 @@ def parse_args(argv=None):
 
 
 def prepare_inputs(args, context, lifecycle):
-    from dataclasses import replace
-    from bomber.framework.market.stream.ctp import CtpLiveDataFeed, CtpMdConfig
     source = ReferenceSourceFactory.create_for(DataSourcePurpose.LIVE_REFERENCE, "dolphindb",
         DolphinDbReferenceConfig.from_env(database=args.reference_database,
             read_timeout_seconds=args.reference_timeout))
@@ -152,8 +157,8 @@ def prepare_inputs(args, context, lifecycle):
     context.references = references
     print(f"跨期参考: product={args.product} legs={references.instrument_ids} "
           f"reference_day={context.trading_day} source_day={references.spec[0]} 因子=不使用", flush=True)
-    config = build_md_config(CtpMdConfig, lifecycle, flow_path="/tmp/bomber-calendar-spread-md")
-    upstream = CtpLiveDataFeed(replace(config, dce_use_receive_date=args.simnow_environment == "realtime"))
+    upstream = create_market_feed(source_config(args), "calendar-spread-market", lifecycle=lifecycle,
+        flow_path="/tmp/bomber-calendar-spread-md", environment=args.simnow_environment)
     return SimpleNamespace(references=references, upstream=upstream)
 
 
@@ -184,7 +189,7 @@ def build_runtime(args, *, account_routes=()):
         from bomber.framework.trader.execution.ctp import CtpTdApiTransport
         transport = build_simnow_transport(CtpTdApiTransport, client_id=CLIENT_ID,
             flow_path="/tmp/bomber-calendar-spread-td", timeout_seconds=args.query_timeout)
-        lifecycle = CalendarCtpLifecycle(transport, md_front=required("CTP_MD_ADDRESS"), orders=True,
+        lifecycle = CalendarCtpLifecycle(transport, md_front=required("CTP_MD_ADDRESS") if source_config(args).source == "ctp" else None, orders=True,
             state_file=args.state_file, resume=args.resume, require_fills=args.require_fills,
             expected_trading_day=args.expected_trading_day, environment=args.simnow_environment,
             replay_md_trading_day=args.replay_md_trading_day, max_session_orders=args.max_session_orders,
@@ -192,9 +197,9 @@ def build_runtime(args, *, account_routes=()):
     else:
         lifecycle = CalendarLocalLifecycle(mode=args.mode, require_fills=args.require_fills,
             expected_trading_day=args.expected_trading_day, environment=args.simnow_environment,
-            replay_md_trading_day=args.replay_md_trading_day, resume=args.resume, state_file=args.state_file)
+            replay_md_trading_day=args.replay_md_trading_day, resume=args.resume, state_file=args.state_file, market_source=source_config(args).source)
     report = LiveRunReport(args.report_dir, prefix=f"calendar-spread-{args.mode}", describe=describe,
-        metadata={"mode": args.mode, "strategy_id": CLIENT_ID, "product": args.product,
+        metadata={"market_source": source_config(args).source, "market_config": source_config(args).identity, "mode": args.mode, "strategy_id": CLIENT_ID, "product": args.product,
             "leg1_role": args.leg1_role, "leg2_role": args.leg2_role,
             "quantity": args.quantity, "lookback": args.lookback, "entry_z": args.entry_z,
             "exit_z": args.exit_z, "rebalance_interval": args.rebalance_interval,

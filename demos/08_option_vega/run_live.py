@@ -18,6 +18,8 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
     __package__ = "demos.08_option_vega"
 
+from bomber.framework.market.sources import (add_market_source_arguments, market_config_from_args,
+    source_config, create_market_feed, assemble_minute_market)
 from .vega_signal import OptionVegaConfig
 
 
@@ -26,7 +28,7 @@ def parse_args(argv=None):
     p.add_argument("--connect", action="store_true")
     p.add_argument("--log-level", choices=("DEBUG", "INFO", "WARNING", "ERROR"), default="INFO")
     p.add_argument("--mode", choices=("recording", "model", "simnow"), default="recording")
-    p.add_argument("--market-source", choices=("ctp", "dolphindb"), default="ctp")
+    add_market_source_arguments(p, table_env="DDB_OPTION_BAR_TABLE")
     p.add_argument("--index-source", choices=("dolphindb", "dolphindb-dfs"), default="dolphindb")
     p.add_argument("--index-feature-config", type=Path, default=Path(__file__).resolve().parents[2] /
         "bomber/framework/dataprep/features/configs/features.json")
@@ -60,13 +62,7 @@ def parse_args(argv=None):
     p.add_argument("--future-product", default="IM")
     p.add_argument("--index-code", default="000852")
     p.add_argument("--index-bar-table", help="DolphinDB指数已收盘分钟流表；也可用DDB_INDEX_BAR_TABLE")
-    p.add_argument("--market-bar-table", help="DolphinDB期权/期货已收盘分钟流表；也可用DDB_OPTION_BAR_TABLE")
     p.add_argument("--index-bar-timestamp", choices=("start", "end"), help="DFS默认沿用配置，流默认end")
-    p.add_argument("--market-bar-timestamp", choices=("start", "end"), help="分钟推送须明确minTime为起点或终点")
-    p.add_argument("--market-volume-mode", choices=("per-bar", "cumulative"),
-        help="分钟推送须明确volume为当分钟量或当日累计量")
-    p.add_argument("--market-bar-max-age-seconds", type=float, default=120,
-        help="DolphinDB分钟流及必需市场腿时效，须大于60秒，默认120")
     p.add_argument("--ctp-price-type", choices=("last", "mid"), default="last",
         help="last成交Bar；mid报价Bar，零成交量，模型不代表盘口可成交性")
     p.add_argument("--frame-wait-seconds", type=float, default=2)
@@ -103,6 +99,10 @@ def parse_args(argv=None):
     p.add_argument("--require-fills", action="store_true", help="必须有本次归属成交才通过验收")
     p.add_argument("--report-dir", type=Path, default=Path(__file__).with_name("results"))
     args = p.parse_args(argv)
+    try:
+        market_config_from_args(args, domestic_contracts=True)
+    except (ValueError, TypeError, OSError) as error:
+        p.error(str(error))
     if not args.connect:
         p.error("须显式--connect")
     try:
@@ -196,18 +196,8 @@ def parse_args(argv=None):
 
 
 def _dolphin_feed(table, source_id, *, max_age_seconds, volume_mode="per-bar"):
-    from bomber.framework.market.stream.dolphin import DolphinDbLiveDataFeed, DolphinDbConfig, DolphinDbStreamSpec
-    from bomber.framework.market.stream.health import StreamHealthConfig
-    from bomber.framework.trader.runtime.live.channels.ctp import required
-    if not table:
-        raise ValueError(f"须配置{source_id}的已收盘分钟流表，禁止猜测表名")
-    return DolphinDbLiveDataFeed(DolphinDbConfig(host=required("DDB_HOST"),
-        port=int(os.getenv("DDB_PORT", "8848")), username=required("DDB_USERNAME"), password=required("DDB_PASSWORD"),
-        streaming_port=int(os.getenv("DDB_STREAMING_PORT", "0")),
-        streams=(DolphinDbStreamSpec.bar(table, action_name=f"{source_id.replace('-', '_')}_{os.getpid()}_{time.time_ns()}",
-            auto_schema=True, volume_mode=volume_mode, local_receipt_time=True),)),
-        source_id=source_id, health_config=StreamHealthConfig(startup_grace_seconds=max_age_seconds,
-            stale_after_seconds=max_age_seconds))
+    from bomber.framework.market.sources import create_dolphin_bar_feed
+    return create_dolphin_bar_feed(table, source_id, max_age_seconds=max_age_seconds, volume_mode=volume_mode)
 
 
 def prepare_inputs(args, context, lifecycle):
@@ -216,9 +206,7 @@ def prepare_inputs(args, context, lifecycle):
     from bomber.framework.dataprep.sources import ReferenceSourceFactory, DolphinDbReferenceConfig
     from bomber.framework.dataprep.sources.base import ReferenceDataset
     from bomber.framework.market.basic.base import InstrumentId, InstrumentMeta
-    from bomber.framework.market.stream.ctp import CtpLiveDataFeed, CtpMdConfig
     from bomber.framework.market.stream.aggregation import TradeTickBarFeed, QuoteMidBarFeed
-    from bomber.framework.trader.runtime.live.channels.ctp import build_md_config
     from .live_runtime import OptionReferences
     from .vega_signal import remaining_trading_days
     valuation_day = datetime.strptime(args.valuation_day, "%Y%m%d").date()
@@ -301,7 +289,8 @@ def prepare_inputs(args, context, lifecycle):
     labels = {"index-bars": "end" if index_query_feed else args.index_bar_timestamp or "end"}
     identity = {"index": index_identity}
     if args.market_source == "ctp":
-        ctp_upstream = CtpLiveDataFeed(build_md_config(CtpMdConfig, lifecycle, flow_path=f"/tmp/bomber-vega-md-{os.getpid()}"))
+        ctp_upstream = create_market_feed(source_config(args), "vega-market", lifecycle=lifecycle,
+            flow_path=f"/tmp/bomber-vega-md-{os.getpid()}", environment=args.simnow_environment)
         cls = TradeTickBarFeed if args.ctp_price_type == "last" else QuoteMidBarFeed
         if args.replay_test_start_time:
             from .replay_test import ReplayTestTimeMap, mapped_bar_feed
@@ -315,8 +304,7 @@ def prepare_inputs(args, context, lifecycle):
         if args.replay_test_start_time:
             identity["market"]["test_time_mapping"] = time_map.identity
     else:
-        market = _dolphin_feed(args.market_bar_table or os.getenv("DDB_OPTION_BAR_TABLE"), "vega-market",
-            max_age_seconds=args.market_bar_max_age_seconds, volume_mode=args.market_volume_mode)
+        market = create_market_feed(source_config(args), "vega-market")
         dolphin_feeds.append(market)
         labels["market-bars"] = args.market_bar_timestamp
         identity["market"] = {"channel": "dolphindb", "table": market.config.streams[0].table_name,
@@ -398,7 +386,7 @@ def build_runtime(args, *, account_routes=()):
         lifecycle.md_credentials = CtpMarketCredentials(os.getenv("CTP_BROKER_ID", "9999"), required("CTP_ACCOUNT_ID"),
             required("CTP_PASSWORD"), os.getenv("CTP_PRODUCTION_MODE", "true").lower() in {"1", "true", "yes", "on"})
     report = LiveRunReport(args.report_dir, prefix=f"option-vega-{args.mode}", describe=describe,
-        metadata={"mode": args.mode, "market_source": args.market_source, "index_source": args.index_source,
+        metadata={"mode": args.mode, "market_config": source_config(args).identity, "market_source": args.market_source, "index_source": args.index_source,
             "index_code": args.index_code, "calendar_id": args.calendar_id,
             "simnow_environment": args.simnow_environment, "state_file": str(args.state_file),
             "account_reconciliation": args.execution_policy.account_reconciliation.value,

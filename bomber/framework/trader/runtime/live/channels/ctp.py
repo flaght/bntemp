@@ -395,7 +395,7 @@ class CtpSessionLifecycle:
         while not session.runner.session_ready():
             if self.lost or time.monotonic() >= deadline:
                 raise RuntimeError(f"{self.ready_seconds:g}秒内未取得要求的健康MD／TD会话："
-                    f"TD={self.driver.trading_day} MD={session.upstream.latest_trading_day} "
+                    f"TD={self.driver.trading_day} MD={getattr(session.upstream, 'latest_trading_day', None)} "
                     f"要求MD={self.replay_md_trading_day or context.trading_day} "
                     f"health={session.upstream.health_snapshot.state} "
                     f"readiness={readiness_details(session)}")
@@ -418,12 +418,12 @@ class CtpSessionLifecycle:
             raise RuntimeError(session.runner.failure or self.lost[-1])
         if not session.runner.session_ready():
             upstream = session.upstream
-            received = upstream.latest_receive_monotonic_ns
+            received = getattr(upstream, "latest_receive_monotonic_ns", None)
             age = None if received is None else (time.monotonic_ns() - received) / 1_000_000_000
             health = upstream.health_snapshot
             raise RuntimeError("MD／TD交易日变化、行情异常或停滞，停止本次运行："
                 f"TD={self.driver.trading_day} expected_TD={session.runner.expected_day} "
-                f"MD={upstream.latest_trading_day} expected_MD={self.replay_md_trading_day or session.runner.expected_day} "
+                f"MD={getattr(upstream, 'latest_trading_day', None)} expected_MD={self.replay_md_trading_day or session.runner.expected_day} "
                 f"health={health.state} reason={getattr(health, 'reason', None)} "
                 f"receive_age_seconds={age} max_receive_age_seconds=10 "
                 f"simnow_session={self.driver.is_simnow_session} "

@@ -1,0 +1,7 @@
+{
+  "source": "dolphindb",
+  "table": null,
+  "timestamp_label": null,
+  "volume_mode": null,
+  "max_age_seconds": 120
+}

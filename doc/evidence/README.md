@@ -154,3 +154,7 @@ sha256sum -c doc/evidence/checksums/DOCUMENTATION_20261010_SHA256.txt
 | [PF2026100908_DELETE_FILES.txt](patches/PF2026100908_DELETE_FILES.txt) | PF0908 撤回固定目标方案时的删除清单 |
 
 补丁、同步脚本和删除清单的原始字节保持不变。它们描述当时的交付操作，使用前须按对应版本核对；本次整理未执行脚本、应用补丁或删除业务源码。
+
+### 2026-10-14：08公共日历与持续仓位管理
+
+每日/常驻两方式、同进程/独立进程两布局，复用原归属JSON与共享账户执行。交付说明见 [持续管理](../HANDOFF/live/HANDOFF_OPTION_VEGA_CONTINUOUS_POSITION_2026-10-14.md)，源码与测试包见 [补充包](archives/OPTION_VEGA_CONTINUOUS_POSITION_20261014.tar.gz)，[校验清单](checksums/OPTION_VEGA_CONTINUOUS_POSITION_20261014_SHA256.txt)。离线验证使用替身柜台与SDK实体，真实服务器跨日仍待验收；不改历史交付包及报告。

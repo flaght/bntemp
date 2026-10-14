@@ -16,6 +16,8 @@ if __package__ in (None, ""):
     # 直接启动脚本时，将项目根目录加入模块搜索路径。
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from bomber.framework.market.sources import (MarketSourceConfig, create_market_feed,
+    add_market_source_arguments, market_config_from_args)
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -33,7 +35,6 @@ from bomber.framework.dataprep.scenarios.role_futures import prepare_role_resear
 from bomber.framework.dataprep.scenarios.fixed_contracts import plan_fixed_contracts, prepare_fixed_contracts
 from strategy import MainCrossSectionMomentumStrategy
 from bomber.framework.market.basic.base import DataType
-from bomber.framework.market.replay.base import FileReplayFeed
 from bomber.framework.trader import (
     CtpFuturesBasicProfile, DataBinding, ExecutionRoute, MarketReferencePriceStore,
     MarketStreamBinding, NautilusMarketFeedAdapter, NautilusSimExecutionBackend,
@@ -72,7 +73,7 @@ def run_case(*, products: tuple[str, ...], start_day: date, end_day: date,
              margin_maint: Decimal = Decimal("0.08"),
              max_notional: Decimal = Decimal("1000000"),
              log_level: str = "WARNING", report_dir: Path | None = None,
-             tearsheet: bool = True, require_fills: bool = False, bar_timestamp: str = "end") -> None:
+             tearsheet: bool = True, require_fills: bool = False, bar_timestamp: str = "end", market_config: MarketSourceConfig | None = None) -> None:
     """准备输入、装配模拟执行、运行回测并输出交易与输入报表。"""
     started = perf_counter()
     if end_day < start_day:
@@ -148,7 +149,7 @@ def run_case(*, products: tuple[str, ...], start_day: date, end_day: date,
             logging=LoggingConfig(log_level=log_level), run_analysis=True,
         ),
     )
-    feed = FileReplayFeed("CROSS_SECTION_REPLAY")
+    feed = create_market_feed(market_config or MarketSourceConfig(source="file"), "CROSS_SECTION_REPLAY")
     profiles = {}
     instruments = {}
     multipliers = {}
@@ -247,6 +248,8 @@ def run_case(*, products: tuple[str, ...], start_day: date, end_day: date,
             account.to_csv(output / f"account_{venue_name}.csv")
         summary = (asdict(result.backend_result) if is_dataclass(result.backend_result)
                    else {"backend_result": str(result.backend_result)})
+        summary["market_source"] = "file"
+        summary["market_config"] = (market_config or MarketSourceConfig(source="file")).identity
         summary["strategy"] = {
             "products": products, "contracts": tuple(selected),
             "lookback": lookback, "rebalance_interval": rebalance_interval,
@@ -285,6 +288,7 @@ def run_case(*, products: tuple[str, ...], start_day: date, end_day: date,
 def main() -> None:
     """解析命令行参数与公共数据路径，启动一次横截面回测。"""
     parser = argparse.ArgumentParser(description="CTP 多品种动态主力截面动量回测")
+    add_market_source_arguments(parser, backtest=True)
     parser.add_argument("--products", required=True, help="逗号分隔的品种，例如 RB,HC,I")
     parser.add_argument("--start-day", required=True, type=date.fromisoformat)
     parser.add_argument("--end-day", required=True, type=date.fromisoformat)
@@ -312,6 +316,10 @@ def main() -> None:
     parser.add_argument("--no-tearsheet", action="store_true")
     parser.add_argument("--require-fills", action="store_true")
     args = parser.parse_args()
+    try:
+        market_config_from_args(args)
+    except (ValueError, TypeError, OSError) as error:
+        parser.error(str(error))
     started = perf_counter()
     phase = _start_phase("输入路径解析")
     try:
@@ -319,7 +327,7 @@ def main() -> None:
     except (ValueError, FileNotFoundError) as exc:
         parser.error(str(exc))
     _finish_phase("输入路径解析", phase)
-    run_case(bar_timestamp=args.bar_timestamp, products=tuple(item.strip() for item in args.products.split(",")),
+    run_case(market_config=args.market_source_config, bar_timestamp=args.bar_timestamp, products=tuple(item.strip() for item in args.products.split(",")),
              start_day=args.start_day, end_day=args.end_day,
              bars_dir=paths.fut, contract_struct=paths.contract_struct, fut_basic=paths.fut_basic,
              factors_path=args.factors, factor_availability=args.factor_availability, lookback=args.lookback,

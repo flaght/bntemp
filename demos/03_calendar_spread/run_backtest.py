@@ -15,6 +15,8 @@ import sys
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from bomber.framework.market.sources import (MarketSourceConfig, create_market_feed,
+    add_market_source_arguments, market_config_from_args)
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -39,7 +41,6 @@ from calendar_signal import ROLE_ORDER, select_roles
 from bomber.framework.dataprep.scenarios.fixed_contracts import plan_fixed_contracts, prepare_fixed_contracts
 from bomber.framework.dataprep.references import load_role_assignments
 from bomber.framework.market.basic.base import DataType
-from bomber.framework.market.replay.base import FileReplayFeed
 from bomber.framework.trader import (
     CtpFuturesBasicProfile, DataBinding, ExecutionRoute, MarketReferencePriceStore,
     MarketStreamBinding, NautilusMarketFeedAdapter, NautilusSimExecutionBackend,
@@ -75,7 +76,7 @@ def run_case(*, product: str, start_day: date, end_day: date, bars_dir: Path,
              max_market_age_seconds: int = 120,
              missing_role_policy: str = "raise",
              log_level: str = "WARNING", report_dir: Path = DEFAULT_REPORT_DIR,
-             tearsheet: bool = True, require_fills: bool = False, bar_timestamp: str = "end") -> None:
+             tearsheet: bool = True, require_fills: bool = False, bar_timestamp: str = "end", market_config: MarketSourceConfig | None = None) -> None:
     started = perf_counter()
     product = product.strip().upper()
     if not product.isalpha() or end_day < start_day:
@@ -177,7 +178,7 @@ def run_case(*, product: str, start_day: date, end_day: date, bars_dir: Path,
         venue=Venue(venue_name),
     )
     backend.add_profile(profile)
-    feed = FileReplayFeed(f"{product}_CALENDAR_REPLAY")
+    feed = create_market_feed(market_config or MarketSourceConfig(source="file"), f"{product}_CALENDAR_REPLAY")
     instruments = {}
     multipliers = {}
     for symbol in sorted({item for _, needed in needed_by_day for item in needed}):
@@ -266,6 +267,8 @@ def run_case(*, product: str, start_day: date, end_day: date, bars_dir: Path,
         account_report.to_csv(output / "account.csv")
         summary = (asdict(result.backend_result) if is_dataclass(result.backend_result)
                    else {"backend_result": str(result.backend_result)})
+        summary["market_source"] = "file"
+        summary["market_config"] = (market_config or MarketSourceConfig(source="file")).identity
         summary["strategy"] = {
             "product": product, "venue": venue_name,
             "missing_role_policy": missing_role_policy,
@@ -304,6 +307,7 @@ def run_case(*, product: str, start_day: date, end_day: date, bars_dir: Path,
 @input_session
 def main() -> None:
     parser = argparse.ArgumentParser(description="单品种两期限价差均值回归回测")
+    add_market_source_arguments(parser, backtest=True)
     parser.add_argument("--product", required=True, help="品种，例如 RB、HC、I、JM")
     parser.add_argument("--start-day", required=True, type=date.fromisoformat)
     parser.add_argument("--end-day", required=True, type=date.fromisoformat)
@@ -337,6 +341,10 @@ def main() -> None:
     parser.add_argument("--no-tearsheet", action="store_true")
     parser.add_argument("--require-fills", action="store_true")
     args = parser.parse_args()
+    try:
+        market_config_from_args(args)
+    except (ValueError, TypeError, OSError) as error:
+        parser.error(str(error))
     started = perf_counter()
     phase = _start_phase("输入路径解析")
     try:
@@ -347,7 +355,7 @@ def main() -> None:
     bars_dir = paths.fut
     contract_struct = paths.contract_struct
     fut_basic = paths.fut_basic
-    run_case(bar_timestamp=args.bar_timestamp, product=args.product, start_day=args.start_day, end_day=args.end_day,
+    run_case(market_config=args.market_source_config, bar_timestamp=args.bar_timestamp, product=args.product, start_day=args.start_day, end_day=args.end_day,
              bars_dir=bars_dir, contract_struct=contract_struct,
              fut_basic=fut_basic, leg1_role=args.leg1_role, leg2_role=args.leg2_role,
              quantity=args.quantity, lookback=args.lookback,

@@ -95,7 +95,36 @@ for suffix, names in exports.items():
  module = import_module(trader.__name__ + '.' + suffix)
  for name in names:
   setattr(trader, name, getattr(module, name))
-suite=unittest.defaultTestLoader.loadTestsFromNames([
- 'tests.test_option_vega_assembly', 'tests.test_position_attribution', 'tests.test_index_query_feed', 'tests.test_option_replay_test', 'tests.test_option_execution_audit', 'tests.test_option_dolphin_stream'])
+import argparse
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--market-sources', action='store_true', help='M01来源装配专项；SDK实体及EMA使用替身，不联网')
+args = parser.parse_args()
+if args.market_sources:
+ # 来源专项复用同一SDK实体夹具；不替换实际Feed、Runner、策略及执行核心。
+ InstrumentId.venue = property(lambda self: self.value.rsplit('.', 1)[1])
+ for name, module in [('CtpTdApiTransport', 'td_transport'), ('CtpNativeTraderDriver', 'native_driver')]:
+  setattr(ctp, name, getattr(import_module(ctp.__name__ + '.' + module), name))
+ for name, module in [('DataBinding', 'contracts'), ('RiskLimits', 'execution.risk')]:
+  setattr(trader, name, getattr(import_module(trader.__name__ + '.' + module), name))
+ stream = sys.modules['bomber.framework.market.stream']
+ for name in ('TradeTickBarFeed', 'ReceiveTimeTradeTickBarFeed'):
+  setattr(stream, name, getattr(import_module(stream.__name__ + '.aggregation'), name))
+ base.make_trade_tick = lambda **kw: types.SimpleNamespace(**{
+  **kw, 'price': Price(kw['price']), 'size': Price(kw['size'])})
+ indicators = types.ModuleType('bomber.indicators')
+ class EmaEntity:
+  def __init__(self, period): self.period, self.count, self.value = period, 0, 0
+  def update_raw(self, value):
+   self.value = value if not self.count else self.value + 2 / (self.period + 1) * (value - self.value)
+   self.count += 1
+  @property
+  def initialized(self): return self.count >= self.period
+ indicators.ExponentialMovingAverage = EmaEntity
+ sys.modules[indicators.__name__] = indicators
+ names = ['tests.test_market_sources']
+else:
+ names = ['tests.test_option_vega_assembly', 'tests.test_position_attribution', 'tests.test_index_query_feed',
+  'tests.test_option_replay_test', 'tests.test_option_execution_audit', 'tests.test_option_dolphin_stream']
+suite=unittest.defaultTestLoader.loadTestsFromNames(names)
 result=unittest.TextTestRunner(verbosity=2).run(suite)
 sys.exit(not result.wasSuccessful())

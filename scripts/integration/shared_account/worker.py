@@ -11,7 +11,13 @@ import time
 from .config import read_config
 
 
-def main(argv=None):
+def session_reference_is_current(session):
+    """沿用共享宿主的固定参考检查，兼容没有专属检查方法的Runner。"""
+    current = getattr(session.runner, "reference_is_current", None)
+    return current() if callable(current) else session.references.spec == session.runner.fixed_spec
+
+
+def _main(argv):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--strategy-id", required=True)
@@ -33,6 +39,14 @@ def main(argv=None):
             parser.error("离线检查不接受授权或恢复")
         print(f"策略进程配置通过：{args.strategy_id}；未连接")
         return
+    from bomber.framework.trader.runtime.live.continuous import StopSignal
+    with StopSignal() as stop_event:
+        return _run(args, config, stop_event)
+
+
+def _run(args, config, stop_event):
+    row = next(row for row in config["strategies"] if row["strategy_id"] == args.strategy_id)
+    from bomber.framework.trader.runtime.live.continuous import StopRequested
     from dotenv import load_dotenv
     from .run import PROJECT_ROOT
     from .factories import strategy_arguments, assemble_strategy_session
@@ -73,15 +87,16 @@ def main(argv=None):
             driver = RemoteTraderSession(service, config["trading_day"])
             entry, strategy_args = strategy_arguments(row, config, resume=args.resume)
             import os
-            lifecycle = SimpleNamespace(md_front=(None if row["kind"] == "option_vega" and
-                strategy_args.market_source == "dolphindb" else required("CTP_MD_ADDRESS")), transport=SimpleNamespace(
+            from bomber.framework.market.sources import source_config
+            lifecycle = SimpleNamespace(md_front=(required("CTP_MD_ADDRESS") if
+                source_config(strategy_args).source == "ctp" else None), transport=SimpleNamespace(
                 investor_id=required("CTP_ACCOUNT_ID"), password=required("CTP_PASSWORD"),
                 production_mode=os.getenv("CTP_PRODUCTION_MODE", "true").lower() in {"1", "true", "yes", "on"}))
             from datetime import datetime
             context = LiveRunContext(resources=resources, trading_day=datetime.strptime(config["trading_day"], "%Y%m%d").date())
             inputs = entry.prepare_inputs(strategy_args, context, lifecycle)
             upstream = getattr(inputs, "upstream", getattr(inputs, "ctp_upstream", None))
-            if getattr(upstream, "config", None) is not None:
+            if getattr(upstream, "config", None) is not None and source_config(strategy_args).source == "ctp":
                 upstream.config = replace(upstream.config,
                     flow_path=f"/tmp/{config['account']['client_id']}-{args.strategy_id}-worker-md")
             session = assemble_strategy_session(entry, strategy_args, inputs,
@@ -112,8 +127,13 @@ def main(argv=None):
             port.completed = save
             port.ready_check = session.runner.session_ready
             session.runner.start()
-            until_ready = time.monotonic() + (strategy_args.ready_timeout if row["kind"] == "option_vega" else 30)
+            ready_seconds = strategy_args.ready_timeout if row["kind"] == "option_vega" else 30
+            if source_config(strategy_args).source != "ctp":
+                ready_seconds = max(ready_seconds, source_config(strategy_args).max_age_seconds)
+            until_ready = time.monotonic() + ready_seconds
             while not session.runner.session_ready():
+                if stop_event.is_set():
+                    raise StopRequested()
                 port.drain_events()
                 session.references.refresh()
                 poll = getattr(session.runner, "poll_live_inputs", None)
@@ -124,19 +144,23 @@ def main(argv=None):
                 time.sleep(0.2)
             port.drain_events()
             save()
+            if stop_event.is_set():
+                raise StopRequested()
             session.runner.begin_bars()
             until = time.monotonic() + min(config["seconds"], row.get("stop_after_seconds", config["seconds"]))
-            while time.monotonic() < until:
+            while not stop_event.is_set() and time.monotonic() < until:
                 with session.runner._submit_lock:
                     port.drain_events()
                     session.references.refresh()
                     poll = getattr(session.runner, "poll_live_inputs", None)
                     if callable(poll):
                         poll()
-                    if session.runner.failure or not session.runner.session_ready() or not session.runner.reference_is_current():
+                    if session.runner.failure or not session.runner.session_ready() or not session_reference_is_current(session):
                         raise RuntimeError(session.runner.failure or "策略行情/参考/账户失效")
                     save()
                 time.sleep(0.2)
+            status = "completed"
+        except StopRequested:
             status = "completed"
         except BaseException as error:
             failure = str(error) or type(error).__name__
@@ -165,6 +189,10 @@ def main(argv=None):
                     "bar_counts": {str(i): n for i, n in getattr(session.runner, "bar_counts", {}).items()} if session else {},
                     "last_processed_ns": getattr(session.strategy, "last_processed_ns", None) if session else None},
                     session=session, events=session.client.received_events if session else ())
+
+
+def main(argv=None):
+    return _main(argv)
 
 
 if __name__ == "__main__":

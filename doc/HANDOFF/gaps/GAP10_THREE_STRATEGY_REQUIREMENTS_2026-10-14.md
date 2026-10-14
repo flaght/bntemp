@@ -97,3 +97,14 @@ cleanup列表，部分连接失败仍关闭资源。新增回归要求不调用B
 订阅去重及连接失败cleanup。shared-ipc共11项通过，报告
 main-ema-acceptance-1791976366758002000；原生replay只读仍须Linux复测。
 新REV21校验清单保留历史文件，不改原配置/持仓/检查点。本机未连接外部柜台。
+
+## 实时横截面worker参考接口兼容修复（REV22）
+
+用户实时discover/preflight确认TD20261015、资料20261014及四合约行情通过。
+横截面worker-1791983112633111626失败于假定所有Runner都有reference_is_current；
+该Runner采用fixed_spec比较。源版本0、成交0、归属0、shutdown_failure=None。
+worker改为专属方法优先、否则references.spec==runner.fixed_spec，与原共享宿主
+政策一致，不放宽检查或修改算法。新增回归分别验证无方法的一致/变更，及方法
+返回True/False优先级。四项应用离线回归通过；完整socket回归权限审核超时未执行，
+未扩大通过声明。Linux只恢复此worker用原文件加resume，不重置账户/其他策略。
+跨期附件只到资料准备，没有完成报告，不宣称运行或成交通过。

@@ -545,3 +545,10 @@ test_calendar_spread_live.py及run_calendar_spread_acceptance.py三个文件后�
 REV6后续Linux验收：27项Live测试全部OK（0.803秒），报告目录
 calendar-spread-acceptance-1791869615627255753。离线撤旧单回归已通过，
 真实柜台目标变化撤单及停机前完成最新双腿目标仍待原文件--resume复验。
+
+
+## M01 公共行情来源配置（2026-10-14）
+
+本入口已接入统一 `--market-config` / `--market-source`。回测使用文件，Live默认CTP，
+可配置DolphinDB共享分钟流；行情选择独立于执行与历史来源。
+参数、BN业务输入限制、共享worker用法及验证见[公共配置说明](../market_sources/README.md)。
