@@ -1,0 +1,207 @@
+{
+  "status": "root_cause_confirmed_session_order_cap_exhausted",
+  "verification": "user_supplied_live_reports_and_checkpoints",
+  "broker_connected_by_reviewer": false,
+  "checkpoint_modified": false,
+  "checkpoint_generation": 8617,
+  "checkpoint_sha256": "fa40f297f99491839d9529d87484652c2e06a19d6cbeca9d32243e84647976ae",
+  "configured_max_session_orders": 20,
+  "actual_persisted_order_count": 20,
+  "all_orders_filled": true,
+  "driver_active_associations": [],
+  "working_quantities": [
+    {
+      "key": {
+        "client_id": "three-realtime-independent",
+        "instrument_id": "ag2612.SHFE"
+      },
+      "quantity": "0"
+    },
+    {
+      "key": {
+        "client_id": "three-realtime-independent",
+        "instrument_id": "al2611.SHFE"
+      },
+      "quantity": "0"
+    },
+    {
+      "key": {
+        "client_id": "three-realtime-independent",
+        "instrument_id": "cu2611.SHFE"
+      },
+      "quantity": "0"
+    }
+  ],
+  "strategy_evidence": {
+    "calendar-cu-three": {
+      "account_fill_events": 0,
+      "worker_fills_received": 0,
+      "events": 0,
+      "account_ack": 0,
+      "worker_cursor": 0,
+      "positions": {
+        "cu2612.SHFE": "0",
+        "cu2701.SHFE": "0"
+      },
+      "failure": "[Errno 111] Connection refused"
+    },
+    "cross-cu-al-ag-au-three": {
+      "account_fill_events": 10,
+      "worker_fills_received": 10,
+      "events": 30,
+      "account_ack": 30,
+      "worker_cursor": 30,
+      "positions": {
+        "ag2612.SHFE": "-1",
+        "al2611.SHFE": "1",
+        "au2612.SHFE": "0",
+        "cu2611.SHFE": "0"
+      },
+      "failure": "CTP本次会话已达到20笔报单上限"
+    },
+    "ema-cu-three": {
+      "account_fill_events": 10,
+      "worker_fills_received": 10,
+      "events": 30,
+      "account_ack": 30,
+      "worker_cursor": 30,
+      "positions": {
+        "cu_main": "0"
+      },
+      "failure": "[Errno 111] Connection refused"
+    }
+  },
+  "failure_execution_diagnostics": {
+    "is_reconciled": true,
+    "is_armed": true,
+    "recovery_required": false,
+    "service_failed": true,
+    "report_errors": [],
+    "portfolio_failure": null,
+    "audit": [
+      {
+        "action": "TARGET_SUBMITTED",
+        "detail": "cross-cu-al-ag-au-three",
+        "ts_ns": 1792070460072381329
+      },
+      {
+        "action": "TARGET_SUBMITTED",
+        "detail": "cross-cu-al-ag-au-three",
+        "ts_ns": 1792070460250931152
+      },
+      {
+        "action": "TARGET_SUBMITTED",
+        "detail": "cross-cu-al-ag-au-three",
+        "ts_ns": 1792070460411894413
+      },
+      {
+        "action": "TARGET_SUBMITTED",
+        "detail": "cross-cu-al-ag-au-three",
+        "ts_ns": 1792070460584820255
+      },
+      {
+        "action": "TARGET_SUBMITTED",
+        "detail": "ema-cu-three",
+        "ts_ns": 1792070460585645992
+      },
+      {
+        "action": "TARGET_SUBMITTED",
+        "detail": "cross-cu-al-ag-au-three",
+        "ts_ns": 1792070460756066814
+      },
+      {
+        "action": "TARGET_SUBMITTED",
+        "detail": "cross-cu-al-ag-au-three",
+        "ts_ns": 1792070460940624332
+      },
+      {
+        "action": "TARGET_SUBMITTED",
+        "detail": "cross-cu-al-ag-au-three",
+        "ts_ns": 1792070461106570727
+      },
+      {
+        "action": "TARGET_SUBMITTED",
+        "detail": "cross-cu-al-ag-au-three",
+        "ts_ns": 1792070461273746482
+      },
+      {
+        "action": "TARGET_SUBMITTED",
+        "detail": "cross-cu-al-ag-au-three",
+        "ts_ns": 1792070461445180361
+      },
+      {
+        "action": "TARGET_SUBMITTED",
+        "detail": "cross-cu-al-ag-au-three",
+        "ts_ns": 1792070461623689619
+      },
+      {
+        "action": "TARGET_SUBMITTED",
+        "detail": "cross-cu-al-ag-au-three",
+        "ts_ns": 1792070461778339572
+      },
+      {
+        "action": "TARGET_SUBMITTED",
+        "detail": "ema-cu-three",
+        "ts_ns": 1792070461819110100
+      },
+      {
+        "action": "REPORT",
+        "detail": "ACCEPTED",
+        "ts_ns": 1792070461916209830
+      },
+      {
+        "action": "REPORT",
+        "detail": "FILLED",
+        "ts_ns": 1792070461987273120
+      },
+      {
+        "action": "TARGET_SUBMITTED",
+        "detail": "cross-cu-al-ag-au-three",
+        "ts_ns": 1792070462117596840
+      },
+      {
+        "action": "TARGET_SUBMITTED",
+        "detail": "cross-cu-al-ag-au-three",
+        "ts_ns": 1792070462295884034
+      },
+      {
+        "action": "TARGET_SUBMITTED",
+        "detail": "cross-cu-al-ag-au-three",
+        "ts_ns": 1792070462465190790
+      },
+      {
+        "action": "TARGET_SUBMITTED",
+        "detail": "cross-cu-al-ag-au-three",
+        "ts_ns": 1792070462594299358
+      },
+      {
+        "action": "ORDER_REJECTED",
+        "detail": "RuntimeError",
+        "ts_ns": 1792070462626338283
+      }
+    ]
+  },
+  "pending_ipc_requests": {
+    "cross-cu-al-ag-au-three:7df693c8f137ae6d6d1235e82e50b0d3": {
+      "digest": "5ae75ca34e47a364d5e3c1d3bfb036f802d2676bc89efb952ff0958b7c22a6bb",
+      "status": "pending"
+    }
+  },
+  "conclusions": [
+    "Native driver rejected an additional order at session cap; cross worker contains exact local exception",
+    "Service failure propagates to all workers via account server exit; not independent quote failure in this run",
+    "EMA and cross fill events fully delivered and acknowledged, 10 each; calendar has no fill evidence",
+    "Local execution ledger has no active orders but failed shutdown omitted final authoritative broker checks",
+    "Account checkpoint and pending IPC request must be preserved; increasing configured limit alone cannot repair",
+    "Cap exhaustion should be an explicit execution-budget stop path with deterministic cleanup; do not silently raise cap or weaken account fault guards"
+  ],
+  "source_reports": {
+    "scripts/integration/shared_account/results/three-realtime-independent-20261016-cu-al-ag-au/shared-account-server-1792069413682416269/summary.json": "517f79ea8466462dc92fe46ce44524ccc8a35e12e4c21f9bb63643f4a34c92fb",
+    "scripts/integration/shared_account/results/three-realtime-independent-20261016-cu-al-ag-au/shared-account-server-1792069413682416269/events.txt": "42201ff4e2d8e773f9c9600d30289a43f1bb93e834e9f2fb27d5447f99eec5dd",
+    "scripts/integration/shared_account/results/three-realtime-independent-20261016-cu-al-ag-au/cross-cu-al-ag-au-three-1792069554436162922/events.txt": "0e1fe5af7204860355614085f0ebffefb3b422eadaca382878429ca2590cdeb4",
+    "scripts/integration/shared_account/results/three-realtime-independent-20261016-cu-al-ag-au/three-readonly-1792069296909138949/events.txt": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+    "scripts/integration/shared_account/results/three-realtime-independent-20261016-cu-al-ag-au/calendar-cu-three-1792070103932168687/events.txt": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+    "scripts/integration/shared_account/results/three-realtime-independent-20261016-cu-al-ag-au/ema-cu-three-1792069535771734481/events.txt": "88ff8ad2568d2982a30017ad5149084001b03eba9e69137a05e21fc1bc2e2ac5",
+    "scripts/integration/shared_account/three_realtime_20261016.json": "fc1a71f8782e10e37da9c0637b1496431cacae16db97f8576f2873d0405f3fe5"
+  }
+}
