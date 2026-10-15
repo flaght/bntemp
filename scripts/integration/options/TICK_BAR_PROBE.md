@@ -31,3 +31,22 @@ python -u scripts/integration/options/dolphin_tick_bar_probe.py --seconds 600
 标准化流可能已经过滤原始CTP回调；若该流也稀疏，仍需核对标准化前的数据或服务端过滤代码。空样本不自动判故障。接收间隔不是网络延迟，接收相邻也不证明触发因果。采样应选连续交易时段；跨午休的长间隔需单独解释。Ctrl+C会尽量清理并保存已采数据。
 
 本地离线测试：`python -m unittest tests.test_dolphin_tick_bar_probe -v`。尚未连接实际DolphinDB采样。
+
+## 原始CTP回调对照
+
+`ctp_raw_tick_probe.py`直接使用项目MD扩展，在Python原始行情回调处记录完整字段。只登录行情前置，不创建TD实例。使用项目根.env的CTP_MD_ADDRESS、CTP_BROKER_ID、CTP_ACCOUNT_ID、CTP_PASSWORD、CTP_PRODUCTION_MODE；账号和密码不写入报告。
+
+```bash
+python -u scripts/integration/options/ctp_raw_tick_probe.py --seconds 600
+```
+
+输出在 `tests/results/option-vega-ctp-raw-probe/sample-*/`，包括 `summary.json`、`observations.jsonl` 和独立 `md-flow/`。分享前两个文件即可。默认监控合约与DDB探针相同。计数包含订阅建立阶段，首次旧快照应按UpdateTime识别；不要把它算成持续实时推送。最大间隔只统计相邻两次回调，只有一条时0不表示每秒都有行情。
+
+在两个终端同时运行CTP探针和上方DDB探针。尽量让CTP_MD_ADDRESS与DDB上游采集器使用同一行情前置，并选连续交易时段。只有同时间段的采样才能逐条对照交易日、InstrumentID/Code、UpdateTime/UpdateMillisec/tradeTime、Volume和买卖一价量。
+
+- 原始CTP持续更新、DDB标准化tick稀疏：检查采集/标准化过滤或队列。
+- 原始CTP和标准化tick均稀疏、各次业务时间一致：支持源行情稀疏解释。
+- 标准化tick与原始CTP一致，旧Bar随下一条tick才出现：重点查服务端分钟聚合触发。
+- CTP连接或订阅失败：本次未形成有效对照，不能据此判定合约无更新。
+
+本地验证仅用假传输检查回调保真、盘口变化计数、订阅失败、断线及清理。Mac当前缺少bomber_ctp_md，未在本地执行真实采样。Python接收时刻在原生扩展工作队列之后，不是C++回调入口时间戳。
