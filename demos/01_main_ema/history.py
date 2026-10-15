@@ -6,11 +6,12 @@ from contextlib import nullcontext
 from pathlib import Path
 
 from bomber.framework.dataprep.history import (
-    HistoryService, DolphinDbHistoryConfig, HistoryError, HistoryBar, ReferenceFactorAdjuster)
+    HistoryService, DolphinDbHistoryConfig, HistoryError, HistoryBar, ReferenceFactorAdjuster,
+    SessionReferenceFactorAdjuster)
 from bomber.framework.dataprep.sources import DolphinDbReferenceConfig
 
 
-def build_history(args):
+def build_history(args, *, calendar=None):
     path = getattr(args, "history_config", None) or os.getenv("EMA_HISTORY_CONFIG")
     config = None
     adjuster = None
@@ -30,8 +31,14 @@ def build_history(args):
                 adjuster = ReferenceFactorAdjuster(
                     DolphinDbReferenceConfig.from_env(database=factor_database, read_timeout_seconds=args.reference_timeout),
                     {date.fromisoformat(day): date.fromisoformat(source) for day, source in source_days.items()})
-            elif factor_database is not None:
-                raise HistoryError("factor_database须配合显式factor_source_days")
+            elif "adjusted_close" not in config.columns:
+                if calendar is None:
+                    raise HistoryError("原始历史价格自动复权需要会话日历")
+                adjuster = SessionReferenceFactorAdjuster(
+                    DolphinDbReferenceConfig.from_env(database=factor_database or getattr(args, "reference_database", None),
+                        read_timeout_seconds=args.reference_timeout), calendar,
+                    factor_date_basis=getattr(args, "factor_date_basis", "source"),
+                    max_source_age_days=getattr(args, "reference_max_source_age_days", 14))
         else:
             config = data  # 新Provider自行校验配置，不更改策略/协调器。
     return HistoryService(database_backend=args.history_db, database_config=config,

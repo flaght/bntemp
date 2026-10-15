@@ -930,7 +930,7 @@ class SharedAccountTests(unittest.TestCase):
         self.assertEqual(strategies[1].fills, [("two", 2, 2)])
         self.assertTrue(client.backend.running)
 
-    def callback_host(self, root):
+    def callback_host(self, root, *, prepare=None):
         modules = self.native_modules()
         contracts = import_module("bomber.framework.trader.contracts")
         account, service, transport, ports, resources = self.native_account(root / "account.json", modules)
@@ -955,8 +955,92 @@ class SharedAccountTests(unittest.TestCase):
             rows.append(modules.runtime.SharedStrategySession(session, root / (port.strategy_id + ".json"),
                 {"id": port.strategy_id, "routes": port.configuration()}))
         host = modules.runtime.SharedAccountLiveHost(account, service, rows, resources=resources)
+        if prepare is not None:
+            prepare(host, transport, rows)
         host.start()
         return host, transport, rows
+
+    def test_host_history_runs_with_bars_closed_before_account_authorization(self):
+        calls = []
+        def configure(host, transport, rows):
+            runner = rows[0].session.runner
+            runner.mark_history_live_start = lambda: calls.append("boundary")
+            def warm():
+                self.assertFalse(runner.accept_bars)
+                self.assertFalse(host.account.client.is_armed)
+                self.assertEqual(transport.sent, [])
+                calls.append("history")
+            runner.prepare_history = warm
+        with TemporaryDirectory() as directory:
+            host, transport, rows = self.callback_host(Path(directory), prepare=configure)
+            try:
+                self.assertEqual(calls, ["boundary", "history"])
+                self.assertTrue(rows[0].session.runner.accept_bars)
+                self.assertTrue(host.account.client.is_armed)
+                self.assertEqual(transport.sent, [])
+            finally:
+                host.stop()
+
+    def test_host_history_failure_or_lost_health_never_authorizes_or_opens_bars(self):
+        for lose_health in (False, True):
+            with self.subTest(lose_health=lose_health), TemporaryDirectory() as directory:
+                captured = []
+                def configure(host, transport, rows):
+                    captured.extend((host, transport, rows))
+                    runner = rows[0].session.runner
+                    runner.mark_history_live_start = lambda: None
+                    def warm():
+                        if lose_health:
+                            runner.session_ready = lambda: False
+                        else:
+                            raise RuntimeError("missing history")
+                    runner.prepare_history = warm
+                with self.assertRaises(RuntimeError):
+                    self.callback_host(Path(directory), prepare=configure)
+                host, transport, rows = captured
+                self.assertFalse(host._prepared)
+                self.assertFalse(host.account.client.is_armed)
+                self.assertEqual(transport.sent, [])
+                self.assertTrue(all(not row.session.runner.accept_bars for row in rows))
+
+    def test_ema_history_updates_real_indicators_without_targets_or_account_orders(self):
+        modules = self.native_modules()
+        history = import_module("demos.01_main_ema.history")
+        checkpoint = import_module("demos.01_main_ema.checkpoint")
+        history_api = import_module("bomber.framework.dataprep.history")
+        from threading import RLock
+        stamps = (60_000_000_000 - 1, 120_000_000_000 - 1, 180_000_000_000 - 1)
+        class Provider:
+            def open(self): pass
+            def close(self): pass
+            def read(self, request):
+                return tuple(history_api.HistoryBar(str(self_instrument), stamp,
+                    adjusted_close=Decimal(price)) for stamp, price in zip(stamps, (100, 102, 104)))
+        self_instrument = self.instrument
+        class Factory:
+            @staticmethod
+            def create_for(purpose, backend, config):
+                return Provider()
+        with TemporaryDirectory() as directory:
+            host, transport, rows = self.callback_host(Path(directory))
+            try:
+                strategy = rows[0].session.strategy
+                strategy.fast = checkpoint.AnchoredEma(2, 0, 0)
+                strategy.slow = checkpoint.AnchoredEma(3, 0, 0)
+                strategy.bars_used, strategy.last_processed_ns = 0, -1
+                service = history_api.HistoryService(database_config={}, factory=Factory)
+                runner = NS(ema_checkpoint=checkpoint.EmaCheckpoint(strategy, self.instrument),
+                    calendar=NS(last_minutes=lambda before, count: stamps), history_service=service,
+                    history_minutes=3, _submit_lock=RLock(), _clients={"one": rows[0].session.client})
+                history.warm_history(runner, 180_000_000_000, phase="recovery")
+                self.assertTrue(strategy.slow.initialized)
+                self.assertEqual(strategy.bars_used, 3)
+                self.assertEqual(strategy._revision, 0)
+                self.assertEqual(transport.sent, [])
+                self.assertEqual(service.last_audit["sources"], ("dolphindb",))
+                self.assertEqual(host.service.position_manager.position("one", "main"), 0)
+            finally:
+                host.stop()
 
     def test_host_stop_delivers_fill_already_queued_before_unbinding(self):
         with ExitStack() as cleanup:
@@ -1154,7 +1238,11 @@ class SharedAccountTests(unittest.TestCase):
             port = service.strategy_client("one", routes={"main": self.instrument},
                 budget=module.SharedRiskBudget(5, 50000))
             fresh = session(port)
+            history_calls = []
+            fresh.runner.mark_history_live_start = lambda: history_calls.append("boundary")
+            fresh.runner.prepare_history = lambda: history_calls.append("history")
             host.restart_strategy("one", fresh)
+            self.assertEqual(history_calls, ["boundary", "history"])
             self.assertEqual(service.snapshot_state()["sources"]["two"], peer)
             self.assertEqual(service.position_manager.position("two", "main"), 2)
             self.assertEqual(transport.starts, 1)
@@ -1534,6 +1622,31 @@ class SharedAccountTests(unittest.TestCase):
 
 
 class SharedConfigTests(unittest.TestCase):
+    def test_factory_allows_ema_history_on_fresh_and_shared_resume_only(self):
+        from scripts.integration.shared_account import factories
+        calls = []
+        parsed = NS(history_minutes=5, history_config=Path("cu-history.json"),
+                    history_file=None, run_forever=False)
+        def parse(argv, **kwargs):
+            calls.append((argv, kwargs))
+            return parsed
+        entry = NS(parse_args=parse)
+        row = {"kind": "main_ema", "argv": ["--history-minutes", "5"], "state_file": "ema.json"}
+        config = {"trading_day": "20261015", "seconds": 60, "environment": "realtime"}
+        with patch.object(factories, "import_module", return_value=entry):
+            for resume in (False, True):
+                self.assertIs(factories.strategy_arguments(row, config, resume=resume)[1], parsed)
+                self.assertEqual(calls[-1][1], {"shared_execution": True})
+                self.assertEqual("--resume" in calls[-1][0], resume)
+            row["kind"] = "calendar_spread"
+            with self.assertRaisesRegex(ValueError, "仅支持01"):
+                factories.strategy_arguments(row, config, resume=False)
+            self.assertEqual(calls[-1][1], {})
+            row["kind"] = "main_ema"
+            parsed.run_forever = True
+            with self.assertRaises(ValueError):
+                factories.strategy_arguments(row, config, resume=False)
+
     def config(self):
         return {"version": 1, "trading_day": "20261013", "account_state_file": "account.json",
             "account": {"client_id": "shared", "max_gross_quantity": "4", "max_gross_notional": "100000",

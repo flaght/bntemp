@@ -17,9 +17,12 @@ def strategy_arguments(row, config, *, resume):
         argv += ["--replay-md-trading-day", config["replay_md_trading_day"]]
     if resume and (row["kind"] != "option_vega" or Path(row["state_file"]).is_file()):
         argv += ["--resume"]
-    args = entry.parse_args(argv)
-    if getattr(args, "run_forever", False) or getattr(args, "history_minutes", 0):
-        raise ValueError("首期共享入口采用各策略实时重新预热")
+    args = (entry.parse_args(argv, shared_execution=True) if row["kind"] == "main_ema"
+            else entry.parse_args(argv))
+    history_enabled = any(getattr(args, name, None) for name in
+        ("history_minutes", "history_config", "history_file"))
+    if getattr(args, "run_forever", False) or (history_enabled and row["kind"] != "main_ema"):
+        raise ValueError("共享入口仅支持01的历史预热；持续模式及其他策略历史预热尚未接入")
     return entry, args
 
 

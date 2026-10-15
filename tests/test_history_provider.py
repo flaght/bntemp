@@ -433,7 +433,8 @@ class HistoryTests(unittest.TestCase):
         provider = DolphinDbHistoryProvider(self.im_config(source_timezone="UTC"))
         script = provider._script(HistoryRequest("IM2611.CFFEX", START, START + MINUTE))
         self.assertNotIn("28800000000000", script)
-        self.assertIn("59999999999", script)
+        self.assertIn("-1l)", script)
+        self.assertNotIn("59999999999", script)
 
     def test_readonly_probe_uses_factory_and_never_promotes_raw_close_to_adjusted(self):
         from scripts.integration.history.readonly import probe

@@ -12,7 +12,7 @@
   "time_column": "minTime",
   "source_timezone": "Asia/Shanghai",
   "time_unit": "ns",
-  "time_label": "start",
+  "time_label": "end",
   "instrument_format": "symbol",
   "venue": "CFFEX"
 }

@@ -96,7 +96,7 @@ class MainEmaSessionLifecycle(CtpResumeLifecycle, CtpSessionLifecycle):
                 if self.resuming or self.adopted_position is not None else "new_signal_and_execution")}
 
 
-def parse_args(argv=None):
+def parse_args(argv=None, *, shared_execution=False):
     parser = argparse.ArgumentParser(description=__doc__)
     add_market_source_arguments(parser)
     parser.add_argument("--connect", action="store_true")
@@ -272,7 +272,7 @@ def parse_args(argv=None):
             parser.error("--resume要求已有检查点")
     elif args.resume_report or args.recovery_bars:
         parser.error("resume-report/recovery-bars仅用于--run-forever")
-    if args.resume and not args.run_forever and (args.history_minutes or args.history_config or args.history_file):
+    if args.resume and not args.run_forever and not shared_execution and (args.history_minutes or args.history_config or args.history_file):
         parser.error("单次恢复使用当前完整分钟重新预热，不同时装配历史预热")
     if args.resume_report and not (args.resume and args.resume_report.is_file()):
         parser.error("旧报告迁移须--resume且summary.json存在")
@@ -417,8 +417,9 @@ def assemble(args, references, driver, upstream, *, positions=None, account_rout
     continuous = getattr(args, "run_forever", False)
     history_enabled = bool(getattr(args, "history_minutes", 0) or getattr(args, "history_config", None)
         or getattr(args, "history_file", None))
+    history_minutes = (getattr(args, "history_minutes", 0) or args.slow) if history_enabled else 0
     print(f"EMA预热配置: history_enabled={history_enabled} "
-          f"history_minutes={getattr(args, 'history_minutes', 0)} "
+          f"history_minutes={history_minutes} "
           f"slow_period={args.slow} "
           f"source={'历史Provider，完成后衔接实时Bar' if history_enabled else '实时完整Bar'}", flush=True)
     if continuous or history_enabled:
@@ -456,8 +457,8 @@ def assemble(args, references, driver, upstream, *, positions=None, account_rout
         runner.history_service = None
         if history_enabled:
             from .history import build_history, warm_history
-            runner.history_service = build_history(args)
-            runner.history_minutes = args.history_minutes
+            runner.history_service = build_history(args, calendar=calendar)
+            runner.history_minutes = history_minutes
             runner.history_buffer = []
             runner.history_buffering = True
             runner.history_stage = getattr(args, "_history_stage", args.history_stage)

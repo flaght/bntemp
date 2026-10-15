@@ -9,6 +9,33 @@ from .local import strategy_state_lock
 from .health import readiness_failure_context
 
 
+def prepare_strategy_history(session):
+    """行情已订阅且决策关闭时准备历史；失败不开放实时交易。"""
+    runner = session.runner
+    prepare = getattr(runner, "prepare_history", None)
+    if not callable(prepare):
+        return
+    if runner.accept_bars:
+        raise RuntimeError("历史准备必须在实时决策关闭时执行")
+    runner.mark_history_live_start()
+    prepare()
+    # 查库可能耗时，重新观测参考及远程账户，不能沿用查询前的健康状态。
+    session.references.refresh()
+    session.client.drain_events()
+    poll = getattr(runner, "poll_live_inputs", None)
+    if callable(poll):
+        poll()
+    if runner.failure or not runner.session_ready():
+        raise RuntimeError(runner.failure or "历史加载后行情/参考/账户未就绪，保持闭闸")
+
+
+def history_snapshot(session):
+    service = getattr(session.runner, "history_service", None)
+    return {"history": service.last_audit if service is not None else None,
+            "history_audit": list(service.audit_history) if service is not None else [],
+            "bars_used": getattr(session.strategy, "bars_used", None)}
+
+
 @dataclass
 class SharedStrategySession:
     session: object
@@ -128,6 +155,8 @@ class SharedAccountLiveHost:
                     raise RuntimeError("共享策略未在期限内取得健康行情/参考/账户")
                 time.sleep(0.2)
             for item in self.strategies.values():
+                self._check_preparation()
+                prepare_strategy_history(item.session)
                 item.save(self.service)
             self._check_preparation()
             self.account.authorize()
@@ -224,6 +253,7 @@ class SharedAccountLiveHost:
                 if time.monotonic() > deadline:
                     raise RuntimeError("重启策略未在期限内就绪")
                 time.sleep(0.2)
+            prepare_strategy_history(session)
             session.runner.begin_bars()
             item.active = True
             self.strategies[strategy_id] = item
@@ -267,6 +297,7 @@ class SharedAccountLiveHost:
                 for (sid, key), q in positions.strategy_positions.items()],
             "execution_positions": {str(key.instrument_id): str(q) for key, q in positions.account_positions.items()},
             "strategies": {sid: {"active": item.active, "failure": item.failure,
+                **history_snapshot(item.session),
                 "failure_readiness": getattr(item.session.runner, "failure_readiness", None),
                 "fills_received": getattr(item.session.strategy, "fills_received", 0),
                 "execution_events": item.session.client.event_diagnostics(),

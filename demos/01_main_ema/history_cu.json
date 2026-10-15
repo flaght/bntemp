@@ -12,7 +12,8 @@
   "time_column": "minTime",
   "source_timezone": "Asia/Shanghai",
   "time_unit": "ns",
-  "time_label": "start",
   "instrument_format": "symbol",
-  "venue": "SHFE"
+  "time_label": "end",
+  "venue": "SHFE",
+  "factor_database": "dfs://bomber_daily"
 }

@@ -76,6 +76,9 @@ def main(argv=None):
     args = parse_args(argv)
     load_dotenv(Path(__file__).resolve().parents[3] / ".env")
     data = json.loads(args.config.read_text())
+    # 只读探针校验原始分钟，不构造EMA复权器。
+    data.pop("factor_database", None)
+    data.pop("factor_source_days", None)
     config = DolphinDbHistoryConfig(
         connection=DolphinDbReferenceConfig.from_env(read_timeout_seconds=args.timeout), **data)
     result = probe(config, args.request, expected_bars=args.expected_bars)
