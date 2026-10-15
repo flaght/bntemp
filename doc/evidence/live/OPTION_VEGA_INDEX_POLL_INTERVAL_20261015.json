@@ -1,0 +1,27 @@
+{
+  "date": "2026-10-15",
+  "status": "offline_passed_online_pending",
+  "scope": "08_runtime_index_poll_interval_override",
+  "network_connected": false,
+  "real_orders_submitted": 0,
+  "tests": {
+    "option_base": 81,
+    "poll_interval": 5,
+    "shared_rollover": 21,
+    "minute_diagnostics": 7
+  },
+  "covered": [
+    "real query frequency gate",
+    "cached data retained",
+    "invalid values rejected",
+    "default no override",
+    "original identity unchanged across actual startup/frame",
+    "runtime manifest effective interval"
+  ],
+  "semantics": "process runtime only; checkpoint declaration and strict restore remain unchanged",
+  "source_sha256": {
+    "bomber/framework/dataprep/features/query.py": "3278ffe2512b9de7de5acc91328a5aba4ff4e9680cd6a809a7d08f9752e73001",
+    "scripts/integration/options/shared.py": "9f6bf79d3d3b016eaf7771f5254009477d51c56dfa07577c0e82f94af52b5206",
+    "tests/test_option_poll_interval.py": "a5129ed3ddfaf3bf1ad03ea357c0e9cee918d7a9287e8818f42afd1a01fd6765"
+  }
+}

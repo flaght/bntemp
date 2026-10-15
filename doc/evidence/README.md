@@ -170,3 +170,7 @@ sha256sum -c doc/evidence/checksums/DOCUMENTATION_20261010_SHA256.txt
 ### 2026-10-15：08同日重启argv漂移修复
 
 快捷入口复用账户检查点保存的原始argv与账户预算，避免从解析后的reference.config重建产生5/5.0等字面差异。公共身份比较保持严格，异常仅新增差异路径。见 [修复说明](../HANDOFF/live/HANDOFF_OPTION_VEGA_RESUME_IDENTITY_FIX_2026-10-15.md)、[补充包](archives/OPTION_VEGA_RESUME_IDENTITY_FIX_20261015.tar.gz)、[SHA清单](checksums/OPTION_VEGA_RESUME_IDENTITY_FIX_20261015_SHA256.txt)。离线81+37及公共117项通过，真实服务器结果待验。
+
+### 2026-10-15：08指数查询频率运行覆盖
+
+快捷入口新增`--index-poll-seconds 1`，公共缓存支持设置实际运行间隔并在manifest展示，原恢复身份/持仓不变。见 [交付说明](../HANDOFF/live/HANDOFF_OPTION_VEGA_INDEX_POLL_INTERVAL_2026-10-15.md)、[补充包](archives/OPTION_VEGA_INDEX_POLL_INTERVAL_20261015.tar.gz)、[SHA清单](checksums/OPTION_VEGA_INDEX_POLL_INTERVAL_20261015_SHA256.txt)。离线81+33通过，服务器生效仍待确认。

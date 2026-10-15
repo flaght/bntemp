@@ -73,8 +73,28 @@ def observe_day():
             driver.stop()
 
 
+def configure_index_polling(host, seconds):
+    """独立的运行频率覆盖，不修改恢复身份/策略argv/数据可见性。"""
+    if seconds is None:
+        return []
+    records = []
+    for sid, item in host.strategies.items():
+        for feed in item.session.runner.feature_query_feeds:
+            cache = feed.cache
+            before = cache.poll_ns / 1e9
+            cache.set_poll_seconds(seconds)
+            row = {"strategy_id": sid, "dataset_id": cache.dataset_id, "key": feed.key,
+                "saved_poll_seconds": before, "effective_poll_seconds": cache.poll_ns / 1e9,
+                "scope": "process_runtime_only"}
+            records.append(row)
+            print("指数轮询运行配置:", json.dumps(row, ensure_ascii=False), flush=True)
+    if not records:
+        raise ValueError("此运行频率覆盖需要已装配的指数查询Feed")
+    return records
+
+
 def run_session(config, *, resume, window, stop_event, clock=None, session_order_budget=None,
-                calendar_provenance=None):
+                calendar_provenance=None, index_poll_seconds=None):
     from scripts.integration.shared_account.run import build_host
     from bomber.framework.trader.runtime.reports import LiveRunReport
     from bomber.framework.trader.runtime.live.continuous import StopRequested
@@ -85,12 +105,14 @@ def run_session(config, *, resume, window, stop_event, clock=None, session_order
                    "start": window.start.isoformat(), "end": window.end.isoformat()}})
     report.begin()
     host, failure, cleanup_error, status = None, None, None, "failed"
+    polling = []
     def check_window():
         if stop_event.is_set() or clock() >= window.end:
             raise StopRequested("主动停止或交易窗口已结束")
     try:
         check_window()
         host = build_host(config, resume=resume, session_order_budget=session_order_budget)
+        polling = configure_index_polling(host, index_poll_seconds)
         host.ready_seconds = min(180, max(0.2, (window.end-clock()).total_seconds()))
         host.preparation_check = check_window
         host.start()
@@ -120,7 +142,7 @@ def run_session(config, *, resume, window, stop_event, clock=None, session_order
             option_reports = {sid: import_module("demos.08_option_vega.run_live").describe(item.session)
                               for sid, item in host.strategies.items()} if host else {}
             report.write(status=status, fields={**snapshot, "failure": failure, "cleanup_error": cleanup_error,
-                "stopped_by_operator": stop_event.is_set(),
+                "stopped_by_operator": stop_event.is_set(), "runtime_index_polling": polling,
                 "rollover": getattr(host.account, "rollover_audit", None) if host else None,
                 "final_gross": host.account.final_gross if host else None,
                 "final_active_orders": host.account.final_active_orders if host else None,
@@ -188,7 +210,8 @@ class OptionWindowRuntime:
             max_orders=self.args.max_session_orders,
             shared_identity=saved_identity if "strategies" in saved_identity else None)
         return run_session(config, resume=True, window=self.window, stop_event=self.stop,
-            session_order_budget=remaining, calendar_provenance=self.calendar.provenance)
+            session_order_budget=remaining, calendar_provenance=self.calendar.provenance,
+            index_poll_seconds=getattr(self.args, "index_poll_seconds", None))
 
 
 def main(argv=None):
@@ -203,7 +226,12 @@ def main(argv=None):
     parser.add_argument("--run-forever", action="store_true", help="休市等待，下一交易日自动恢复；默认当天收盘退出")
     from bomber.framework.dataprep.session_inputs import add_session_arguments
     add_session_arguments(parser)
+    parser.add_argument("--index-poll-seconds", type=float, default=None,
+        help="本进程指数查询间隔(0,30]秒；不改原检查点身份，省略沿用保存值")
     args = parser.parse_args(argv)
+    import math
+    if args.index_poll_seconds is not None and (not math.isfinite(args.index_poll_seconds) or not 0 < args.index_poll_seconds <= 30):
+        parser.error("index-poll-seconds须在(0,30]秒")
     if not args.connect:
         if args.enable_orders or args.confirm_simnow:
             parser.error("离线检查不接受报单授权")

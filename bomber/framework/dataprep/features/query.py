@@ -29,6 +29,13 @@ class FeatureQueryCache:
         self.connected, self.failure, self.last_query_ns = False, None, None
         self._lock = RLock()
 
+    def set_poll_seconds(self, seconds):
+        """调整运行调度频率；不清空缓存、重放数据或修改数据集身份。"""
+        if isinstance(seconds, bool) or not math.isfinite(seconds) or not 0 < seconds <= 30:
+            raise FeatureError("特征查询间隔须在(0,30]秒")
+        with self._lock:
+            self.poll_ns = int(seconds * 1e9)
+
     def open(self):
         with self._lock:
             if self.connected:
@@ -57,6 +64,7 @@ class FeatureQueryCache:
                 and r.key in self.keys and self.start_ns <= r.ts_event <= self.end_ns]
             latest = max(selected, key=lambda r: (r.ts_event, r.revision)) if selected else None
             return {"connected": self.connected, "failure": self.failure, "last_query_ns": self.last_query_ns,
+                "poll_seconds": self.poll_ns / 1e9,
                 "cached_records": count, "generation": generation, "dataset_id": self.dataset_id,
                 "cached_slots": len({(r.key, r.ts_event) for r in selected}),
                 "latest_event_ns": None if latest is None else latest.ts_event,
