@@ -96,6 +96,33 @@ python -u -m scripts.integration.reference_data.session_overrides_export \
 
 ### IF 主力历史预热样例
 
+#### 2026-10-15：01 共享入口历史预热
+
+01 的历史服务现已接入共享同进程宿主、独立 worker 和宿主单策略重启。
+在共享配置中，仅为 `kind=main_ema` 的策略 `argv` 增加以下参数（路径换成部署机实际配置）：
+
+```text
+--history-db dolphindb
+--history-config /absolute/path/to/ema-history.json
+--history-minutes 240
+--history-stage recovery
+--history-missing-policy fail
+```
+
+同时提供该品种已有的会话日历、时段及日期例外参数，格式沿用下方独立入口。
+240 是可配置样例，并非固定要求；默认3/5周期最低初始化门槛为5根。
+仅指定 history-config 或 history-file、未指定非零 history-minutes 时，使用慢EMA周期作为启动请求根数。
+不启用历史参数时仍由实时Bar预热。`recovery`阶段直接读数据库；`preopen`可用文件并由数据库补足。
+
+新启动和共享同日 `--resume` 都先恢复账户归属及目标版本，再重新预热指标；历史只更新EMA，
+不重放旧目标。行情先订阅并缓冲，历史准备和健康复核完成后才开放实时决策。
+单策略独立入口的单次 `--resume` 仍保留原限制；共享恢复由账户服务负责仓位与订单。
+共享宿主summary每个策略及worker summary增加 `history`、`history_audit`、`bars_used`，
+应核对实际 `sources` 含 `dolphindb`、条数及缺口，不能只看配置backend名称。
+
+CU实际历史表、字段、时间标签和历史复权价格/因子映射仍须由部署数据确认；下方IF样例不能当作CU配置。
+本次共享回归使用受控传输及历史Provider，不代表真实DDB/CTP接续已验收。
+
 IF已接入CFFEX单次realtime Recording观察，省略`--expected-instrument`时采用当前参考适配器解析的main真实合约；可显式传入该参数核对合约。主力/因子覆盖规则沿用现有实现，未在本次修正。IF不接受SimNow报单、持续模式或单次交易恢复；Model仍不装配历史参数。
 
 原入口已有运行期`EMA分钟进度/策略目标`，但历史加载只有允许不足时打印。现增加`EMA预热配置`、`历史预热/回补开始`、`完成`和`失败`日志，包含请求根数、实际来源、缺失及不可用来源、EMA初始化状态/数值、有效根数和耗时。未启用历史时，记录每根有效实时Bar的最低预热进度及完成；回测默认不打印。没有缺口的逐分钟历史检查不打印。

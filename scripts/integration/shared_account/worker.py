@@ -192,6 +192,10 @@ def _run(args, config, stop_event):
             save()
             if stop_event.is_set():
                 raise StopRequested()
+            from bomber.framework.trader.runtime.live.shared import prepare_strategy_history
+            prepare_strategy_history(session)
+            if stop_event.is_set():
+                raise StopRequested()
             session.runner.begin_bars()
             until = time.monotonic() + min(config["seconds"], row.get("stop_after_seconds", config["seconds"]))
             while not stop_event.is_set() and time.monotonic() < until:
@@ -221,7 +225,9 @@ def _run(args, config, stop_event):
                 shutdown_failure, status = str(error), "failed"
                 raise
             finally:
+                from bomber.framework.trader.runtime.live.shared import history_snapshot
                 report.write(status=status, fields={"failure": failure, "shutdown_failure": shutdown_failure,
+                    **(history_snapshot(session) if session else {}),
                     "failure_readiness": getattr(session.runner, "failure_readiness", None) if session else None,
                     "verification": "independent_strategy_process", "strategy_id": args.strategy_id,
                     "positions": session.client.state["positions"] if session else None,

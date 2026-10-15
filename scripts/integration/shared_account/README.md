@@ -367,3 +367,13 @@ V5服务的具体首个故障仍须原summary/events确认；不清除失败/未
 账户仍恢复原代，算法不启动、不授权；netted恢复行为不变。
 共享72＋IPC24共96项回归通过。沿用原V5配置重新执行reconcile-only即可，
 不补造worker文件、不删除账本、不更改策略ID。
+
+## 01 历史预热更新（2026-10-15）
+
+`main_ema` 的 `argv` 现可配置 `--history-minutes`、`--history-config`、
+`--history-db`、`--history-stage` 和 `--history-missing-policy`。
+宿主、独立worker及宿主单策略重启均在开放Bar前执行已有历史准备；共享同日resume
+恢复原归属及目标版本后重新预热EMA。历史缺失或加载后健康失效保持闭闸。
+03/04历史预热未在本次接入，08仍无需历史窗口。
+配置及来源审计见 [01说明](../../../demos/01_main_ema/README.md)，
+交付与验证边界见 [交接](../../../doc/HANDOFF/history/HANDOFF_EMA_SHARED_WARMUP_2026-10-15.md)。
