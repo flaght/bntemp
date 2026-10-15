@@ -162,3 +162,7 @@ sha256sum -c doc/evidence/checksums/DOCUMENTATION_20261010_SHA256.txt
 ### 2026-10-15：08时段库启动参数修正
 
 服务器首次持续启动停于DolphinDB trading_hours查询，尚未进入TD/策略。此前命令遗漏已记录的静态时段库/表，须增加`--trading-hours-database dfs://bomber_static --trading-hours-table fut_trading_session`。见 [修正说明](../HANDOFF/live/HANDOFF_OPTION_VEGA_STARTUP_HOURS_FIX_2026-10-15.md)。仅修正文档和启动参数，原代码、检查点与20261014历史包保持；该查询失败不登记为真实跨日通过。
+
+### 2026-10-15：08每分钟行情结构和决策日志
+
+新增分钟心跳、行情汇总、决策汇总，包含恢复等待/缺指数跳过/正常不变/目标提交/异常，保留原交易规则。详见 [分钟诊断交付](../HANDOFF/live/HANDOFF_OPTION_VEGA_MINUTE_DIAGNOSTICS_2026-10-15.md)、[诊断补充包](archives/OPTION_VEGA_MINUTE_DIAGNOSTICS_20261015.tar.gz) 及 [SHA清单](checksums/OPTION_VEGA_MINUTE_DIAGNOSTICS_20261015_SHA256.txt)。离线81+7+19通过，服务器新日志仍待确认。

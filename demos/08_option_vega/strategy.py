@@ -39,6 +39,7 @@ class OptionVegaStrategy(StrategyTemplate):
         self.frames = 0
         self.signals = []
         self.flatten_requested = False
+        self.last_decision = {}
 
     def on_bar(self, data_key, bar):
         """进入新分钟时处理前一完整分钟，确保决策不读取尚未送达的行情。"""
@@ -138,6 +139,14 @@ class OptionVegaStrategy(StrategyTemplate):
         actual = {key: self.position(str(instrument)) for key, instrument in self.instruments.items()}
         working = {key: self.strategy_working_quantity(str(instrument)) for key, instrument in self.instruments.items()}
         current = tuple((key, actual[key]) for key in sorted(self.contracts))
+        self.last_decision = decision = {
+            "status": "EVALUATING", "positions": {k: str(v) for k, v in actual.items() if v},
+            "working": {k: str(v) for k, v in working.items() if v},
+            "entry_slot": self.config.option_slot,
+            "entry": "ALREADY_SELECTED" if day in self.sent_days else
+                     "DUE" if slot == self.config.option_slot else
+                     "WAIT_SLOT" if slot < self.config.option_slot else "SLOT_PASSED",
+            "hedge": "NOT_EVALUATED", "exit_checks": []}
 
         if self.resume_ns is not None:
             # 隔夜/午休恢复时，各腿首Bar可相差一分钟；等待更新，不用上一场次报价。
@@ -152,6 +161,7 @@ class OptionVegaStrategy(StrategyTemplate):
                        or signal_ns - self.latest[key][0] > self.config.max_market_age_seconds * 1_000_000_000]
             if missing:
                 if signal_ns - self.resume_ns <= self.config.max_market_age_seconds * 1_000_000_000:
+                    decision.update(status="RESUME_WAIT", missing=missing)
                     self.signals.append({"signal_ns": signal_ns, "request_ns": request_ns,
                                          "action": "RESUME_WAIT", "missing": missing})
                     return
@@ -170,6 +180,7 @@ class OptionVegaStrategy(StrategyTemplate):
                     self.option_goals = {key: Decimal(0) for key in self.contracts}
                     self.future_goals = {key: Decimal(0) for key in self.futures}
                     self._submit(targets, request_ns, signal_ns, "FINAL_FLAT")
+            decision.update(status="FINAL_FLAT_CHECK" if decision["status"] == "EVALUATING" else decision["status"])
             self.last_actual = current
             return
 
@@ -183,8 +194,13 @@ class OptionVegaStrategy(StrategyTemplate):
             if not working[key]:
                 close = self._price(key, signal_ns)
                 index = self._price(self.index_id, signal_ns)
-                should_close = (self._remaining_days(day, info.last_day, self.config.close_remaining_days + 1) <= self.config.close_remaining_days
-                                or close - max(index - info.strike, 0) <= 0)
+                remaining = self._remaining_days(day, info.last_day, self.config.close_remaining_days + 1)
+                time_value = close - max(index - info.strike, 0)
+                should_close = remaining <= self.config.close_remaining_days or time_value <= 0
+                decision["exit_checks"].append({"key": key, "price": close, "index": index,
+                    "remaining_days": remaining, "close_remaining_days": self.config.close_remaining_days,
+                    "remaining_days_exact": info.last_day <= self.trading_days[-1],
+                    "time_value": time_value, "should_close": should_close})
                 if should_close and self.option_goals[key] != 0:
                     self.option_goals[key] = Decimal(0)
                     changed = True
@@ -231,7 +247,15 @@ class OptionVegaStrategy(StrategyTemplate):
                     self.signals.append({"signal_ns": signal_ns, "request_ns": request_ns,
                                          "action": "NO_VALID_ENTRY", "date": str(day)})
 
+        if self.entry_audit and self.entry_audit[-1]["signal_ns"] == signal_ns:
+            decision["entry_audit"] = dict(self.entry_audit[-1])
+            decision["entry"] = self.entry_audit[-1]["outcome"]
         hedge_due = changed or current != self.last_actual or slot in self.config.hedge_slots
+        decision["hedge_reasons"] = (["TARGET_CHANGED"] if changed else []) + (
+            ["POSITION_CHANGED"] if current != self.last_actual else []) + (
+            ["CONFIGURED_SLOT"] if slot in self.config.hedge_slots else [])
+        decision["hedge"] = ("WAIT_WORKING_ORDERS" if hedge_due and any(working[key] for key in self.futures)
+                             else "EVALUATED" if hedge_due else "NOT_DUE")
         if hedge_due and not any(working[key] for key in self.futures):
             totals = {key: 0.0 for key in self.futures}
             closing_without_iv = set()
@@ -259,6 +283,7 @@ class OptionVegaStrategy(StrategyTemplate):
             self.future_goals = goals
             self.last_actual = current
 
+        decision["status"] = "NO_TARGET_CHANGE"
         if changed:
             targets = {str(self.instruments[key]): value for key, value in
                        {**self.option_goals, **self.future_goals}.items()}
@@ -268,6 +293,9 @@ class OptionVegaStrategy(StrategyTemplate):
     def _submit(self, targets, request_ns, signal_ns, action):
         """提交完整目标，保留信号时间与请求时间以核对决策时序。"""
         self.set_targets(targets, request_ns, metadata={"signal_ts": signal_ns, "action": action})
+        self.last_decision.update(status="TARGET_SUBMITTED", action=action,
+            targets={key: str(value) for key, value in targets.items() if value
+                     or self.last_decision.get("positions", {}).get(key.rsplit(".", 1)[0])})
         self.submissions += 1
         self.signals.append({"signal_ns": signal_ns, "request_ns": request_ns,
                              "action": action, "targets": {key: str(value) for key, value in targets.items() if value}})

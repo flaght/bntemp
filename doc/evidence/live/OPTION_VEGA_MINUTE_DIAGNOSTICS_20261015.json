@@ -1,0 +1,36 @@
+{
+  "date": "2026-10-15",
+  "status": "offline_passed_online_pending",
+  "scope": "08_minute_market_and_decision_diagnostics",
+  "network_connected": false,
+  "real_orders_submitted": 0,
+  "tests": {
+    "existing_option_sdk_shim": 81,
+    "minute_diagnostics": 7,
+    "shared_rollover": 19
+  },
+  "covered": [
+    "complete market frame and no changed target",
+    "entry target with zero recorded fills",
+    "missing index skipped before strategy",
+    "restored held legs wait then receive fresh frame",
+    "original decision failure propagates and closes bar gate",
+    "heartbeat once per wall minute even without closed frame",
+    "logging enabled and disabled produces same targets",
+    "existing attribution, pricing, signal and shared recovery regression"
+  ],
+  "source_sha256": {
+    "demos/08_option_vega/live_runtime.py": "eaa1077b13f4ab7eac1aca33c9cf8abc73f077671ac64cbf94628baa106f109e",
+    "demos/08_option_vega/strategy.py": "c974eeae4d7c7e0aab6eaba27d536ba5fbe33a61daaa57dc3b34eaa56a85b9e4",
+    "demos/08_option_vega/minute_diagnostics.py": "12edae6f40db7ec8efaf72b185ad71eb28b626da63dac29769eaac27dbfd2aed",
+    "tests/test_option_minute_diagnostics.py": "5d8002b351593ea5e931fe374a9c6a51f66d5016b2ab3b237b6cd3d97341f6de",
+    "tests/run_main_ema_acceptance.py": "e6b51b85547b02e692b6ffae148087237ede0dd20613e96dd165c0cb4e55a52e"
+  },
+  "limitations": [
+    "broker/feeds and unavailable SDK entities substituted; actual public strategy/frame/execution/persistence components",
+    "new logs require graceful stop, source sync and resume using same original account/signal files",
+    "no online diagnosis proof until server logs returned; past missing bars not reconstructed",
+    "target submission is not an accepted order or fill",
+    "closed frame can be skipped or resume-wait; heartbeat does not certify market health"
+  ]
+}

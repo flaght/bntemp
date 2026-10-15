@@ -26,6 +26,7 @@ from bomber.framework.trader.runtime.live.channels.ctp import (CtpLiveProfile, C
 from bomber.framework.trader.runtime.live.channels.dolphin import DolphinMarketChannel
 from .assembly import assemble_strategy_components, risk_limits
 from .checkpoint import OptionVegaCheckpoint
+from .minute_diagnostics import timestamp, emit, market_summary, decision_summary
 from .vega_signal import Contract
 
 CLIENT_ID = "option-vega-live"
@@ -86,6 +87,7 @@ class OptionSessionRunner(UnifiedStrategyRunner):
         self.frame_audit = []
         self.bar_time_audit = []
         self.ignored_stale_candidate_bars = 0
+        self._heartbeat_minute = None
         self.fixed_ids = frozenset(references.instrument_ids.values())
 
     def poll_features(self):
@@ -96,7 +98,7 @@ class OptionSessionRunner(UnifiedStrategyRunner):
             for feed in self.feature_query_feeds:
                 if not hasattr(self, "_feature_log_states"):
                     self._feature_log_states = {}
-                    logger.info("指数DFS轮询已启用: 区间查询更新缓存，再查找待完成分钟；CTP缺失Bar不自动补查DolphinDB")
+                    logger.info("指数DFS轮询已启用: 区间查询更新缓存，再查找待完成分钟；市场腿缺失Bar不在此自动补查")
                 try:
                     feed.poll(pending)
                 except Exception:
@@ -125,6 +127,17 @@ class OptionSessionRunner(UnifiedStrategyRunner):
     def poll_live_inputs(self):
         self.poll_features()
         if self.accept_bars:
+            now = self.clock_ns()
+            minute = now // 60_000_000_000
+            if minute != self._heartbeat_minute:
+                self._heartbeat_minute = minute
+                with self._frame_lock:
+                    emit(logger, "分钟运行心跳", {"strategy_id": self.strategy.strategy_id,
+                        "wall_time": timestamp(now), "last_closed_minute": timestamp(
+                            self.frames.last_closed_ns) if self.frames.last_closed_ns >= 0 else None,
+                        "pending_minutes": [timestamp(n) for n in sorted(self.frames.pending)],
+                        "strategy_frames": self.strategy.frames,
+                        "last_decision_status": self.strategy.last_decision.get("status"), "failure": self.failure})
             stale = self.stale_instruments()
             if stale:
                 self.close_role_gate(f"必需行情失效: {stale}")
@@ -230,6 +243,7 @@ class OptionSessionRunner(UnifiedStrategyRunner):
                 if not self.session_ready():
                     raise RuntimeError("分钟决策前参考或行情通道未就绪")
                 for frame in self.frames.close_due(self.clock_ns()):
+                    required = set(self.strategy.required_market_keys())
                     audit = {"valuation_ns": frame.valuation_ns, "request_ns": frame.request_ns,
                         "deadline_ns": min(item.received_ns for item in frame.observations.values()) + self.frames.grace_ns,
                         "observations": {key: {"source_id": item.source_id,
@@ -237,24 +251,38 @@ class OptionSessionRunner(UnifiedStrategyRunner):
                             for key, item in frame.observations.items()}, "status": "DELIVERED"}
                     self.frame_audit.append(audit)
                     del self.frame_audit[:-256]
+                    audit["market_summary"] = market_summary(self, frame, audit["deadline_ns"], required)
+                    emit(logger, "分钟行情汇总", audit["market_summary"])
                     if any(feed.key not in frame.observations for feed in self.feature_query_feeds):
                         # DFS指数通道显式要求同分钟输入；期限后缺失则跳过整次决策。
                         self.skipped_feature_frames += 1
                         audit["status"] = "SKIPPED_INDEX"
+                        audit["decision"] = {"strategy_id": self.strategy.strategy_id,
+                            "minute": timestamp(frame.valuation_ns), "status": "SKIPPED_INDEX",
+                            "missing": [feed.key for feed in self.feature_query_feeds if feed.key not in frame.observations]}
+                        emit(logger, "分钟决策汇总", audit["decision"])
                         logger.warning("分钟等待超时，跳过决策: minute=%s missing_index=%s wait_seconds=%s；迟到数据不追溯决策",
                             datetime.fromtimestamp(frame.valuation_ns / 1e9, ZoneInfo("Asia/Shanghai")).isoformat(),
                             [feed.key for feed in self.feature_query_feeds if feed.key not in frame.observations], self.grace_seconds)
                         continue
                     missing = sorted(set(self.strategy.required_market_keys()) - set(frame.observations))
                     if missing:
-                        logger.warning("分钟帧必需输入缺失: minute=%s keys=%s；CTP缺失Bar不自动补查DolphinDB，交由策略完整性检查",
+                        logger.warning("分钟帧必需输入缺失: minute=%s keys=%s；市场腿缺失Bar不在此自动补查，交由策略完整性检查",
                             datetime.fromtimestamp(frame.valuation_ns / 1e9, ZoneInfo("Asia/Shanghai")).isoformat(), missing)
                     # 每个执行价使用实际接收时刻；策略缓存只加入当前封闭帧。
                     for key, observation in frame.observations.items():
                         instrument = self.references.instrument_ids.get(key)
                         if instrument is not None:
                             self.prices.update(instrument, observation.price, observation.received_ns)
-                    self.strategy.on_market_frame(frame)
+                    try:
+                        self.strategy.on_market_frame(frame)
+                    except Exception as error:
+                        audit["status"] = "FAILED"
+                        audit["decision"] = decision_summary(self.strategy, frame, error=error)
+                        emit(logger, "分钟决策汇总", audit["decision"], error=True)
+                        raise
+                    audit["decision"] = decision_summary(self.strategy, frame)
+                    emit(logger, "分钟决策汇总", audit["decision"])
                     audit["status"] = "CONSUMED"
                     if self.manager is not None:
                         self.manager.save()
