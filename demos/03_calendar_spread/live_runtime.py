@@ -1,6 +1,7 @@
 """固定双腿Live装配；同一分钟两腿到齐才分派原策略。"""
 
 from bomber.framework.market.sources import source_config, assemble_minute_market
+from bomber.framework.dataprep.sources import DataSourcePurpose
 
 from dataclasses import asdict, replace
 from decimal import Decimal
@@ -81,6 +82,16 @@ class CalendarSessionRunner(UnifiedStrategyRunner):
 
     def begin_bars(self):
         with self._submit_lock:
+            if getattr(self, "history_service", None) is not None:
+                self.history_service.flush(self)
+                self._check()
+                pending = sorted(self.history_buffer, key=lambda bar: bar.ts_event)
+                self.history_buffer = []
+                self.history_buffering = False
+                self.accept_bars = True
+                for bar in pending:
+                    self.publish(self.market_feed_id, bar)
+                return
             if self.strategy._revision:
                 session = SimpleNamespace(runner=self, strategy=self.strategy)
                 self.strategy.rewarm_after_restore(restore_direction(session))
@@ -89,6 +100,18 @@ class CalendarSessionRunner(UnifiedStrategyRunner):
             self.first_complete_bar_ns = ((now + MINUTE - 1) // MINUTE + 1) * MINUTE - 1
             self.pending_frames.clear()
             self.accept_bars = True
+
+    def mark_history_live_start(self):
+        with self._submit_lock:
+            if self.strategy._revision and not self.strategy.complete_frames:
+                self.strategy.rewarm_after_restore(restore_direction(
+                    SimpleNamespace(runner=self, strategy=self.strategy)))
+            now = self._clock_ns()
+            self.first_complete_bar_ns = ((now + MINUTE - 1) // MINUTE + 1) * MINUTE - 1
+
+    def _prepare_history(self):
+        if getattr(self, "history_service", None) is not None:
+            self.history_service.warm(self, self._clock_ns())
 
     def close_role_gate(self, reason):
         self.failure, self.accept_bars = str(reason), False
@@ -147,6 +170,17 @@ class CalendarSessionRunner(UnifiedStrategyRunner):
                 self.close_role_gate(str(error))
 
     def publish(self, feed_id, event):
+        if isinstance(event, Bar) and getattr(self, "history_buffering", False):
+            with self._submit_lock:
+                if self.history_buffering:
+                    if feed_id != self.market_feed_id or event.bar_type.instrument_id not in self.fixed_ids:
+                        self.close_role_gate("跨期历史缓冲来源或合约不符")
+                    if event.ts_event > self._clock_ns():
+                        self.close_role_gate("跨期历史缓冲Bar来自未来")
+                    if len(self.history_buffer) >= 10000:
+                        self.close_role_gate("跨期历史加载期间实时缓冲溢出")
+                    self.history_buffer.append(event)
+                    return
         if not isinstance(event, Bar) or not self.accept_bars:
             return
         instrument = event.bar_type.instrument_id
@@ -178,6 +212,8 @@ class CalendarSessionRunner(UnifiedStrategyRunner):
                         continue
                     if set(frame) != self.fixed_ids:
                         continue
+                    if getattr(self, "history_service", None) is not None:
+                        self.history_service.warm(self, pending, phase="recovery")
                     # 先将两腿价格同时更新给执行风控，再发布同步帧。
                     for bar in frame.values():
                         self.prices.on_market_event(bar)
@@ -254,6 +290,20 @@ def assemble(args, references, driver, upstream, *, account_routes=(), clock_ns=
     strategy = CalendarSpreadStrategy(strategy_id or CLIENT_ID, config,
         (CalendarSelection(references.trading_day, 0, *symbols),), dict(zip(symbols, ids.values())))
     runner.strategy, runner.client, runner.prices = strategy, execution.client, execution.prices
+    history_enabled = any(getattr(args, name, None) for name in
+        ("history_minutes", "history_config", "history_file"))
+    if history_enabled:
+        from bomber.framework.dataprep.session_inputs import load_session_inputs, session_inputs_from_args
+        from .history import build_history
+        runner.calendar = getattr(args, "_session_calendar", None) or load_session_inputs(
+            session_inputs_from_args(args, exchange=str(next(iter(ids.values())).venue)),
+            purpose=DataSourcePurpose.LIVE_REFERENCE)
+        if (runner.calendar.product != references.product or
+                (runner.calendar.binding.exchange and runner.calendar.binding.exchange != str(next(iter(ids.values())).venue))):
+            raise ValueError("历史预热会话日历与跨期品种/交易所不一致")
+        runner.history_service = build_history(args, runner.calendar)
+        runner.history_buffer, runner.history_buffering = [], True
+        runner.prepare_history = runner._prepare_history
     references.publication_lock = runner._submit_lock
     if source_config(args).source == "ctp":
         upstream.register_trade_tick_handler(runner.observe_tick)
@@ -273,6 +323,10 @@ def assemble(args, references, driver, upstream, *, account_routes=(), clock_ns=
         "max_notional": str(args.max_notional), "limit_offset_ticks": args.limit_offset_ticks,
         "instrument_max_age_seconds": args.instrument_max_age_seconds,
         "execution_policy": policy.snapshot_state(),
+        **({"history": {"config": str(args.history_config), "minutes": args.history_minutes or args.lookback,
+            "db": args.history_db, "file": str(args.history_file), "stage": args.history_stage,
+            "missing_policy": args.history_missing_policy,
+            "calendar": runner.calendar.provenance["sha256"]}} if history_enabled else {}),
         **({"market_config": source_config(args).identity} if source_config(args).source != "ctp" else {})}
     attach = attach_execution_persistence if model else attach_ctp_persistence
     manager = attach(execution, runner, state_file=args.state_file, state_components={

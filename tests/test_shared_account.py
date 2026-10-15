@@ -1639,6 +1639,9 @@ class SharedConfigTests(unittest.TestCase):
                 self.assertEqual(calls[-1][1], {"shared_execution": True})
                 self.assertEqual("--resume" in calls[-1][0], resume)
             row["kind"] = "calendar_spread"
+            self.assertIs(factories.strategy_arguments(row, config, resume=False)[1], parsed)
+            self.assertEqual(calls[-1][1], {})
+            row["kind"] = "cross_section"
             with self.assertRaisesRegex(ValueError, "仅支持01"):
                 factories.strategy_arguments(row, config, resume=False)
             self.assertEqual(calls[-1][1], {})

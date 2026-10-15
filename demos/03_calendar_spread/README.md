@@ -2,6 +2,61 @@
 
 Live入口已实现，见[第4节](#4-live版本)。当前固定交易日和固定双腿；原生离线及在线验收待Linux运行。
 
+## 2026-10-15：DDB双腿历史预热
+
+独立Recording/Model/SimNow、共享同进程宿主、独立worker及宿主单策略重启已接入历史准备。
+默认不启用历史时保留实时预热。启用history-config/file或非零history-minutes后，
+默认请求lookback个历史同步帧，随后新实时帧按原算法决策；不缩小原120根窗口。
+历史只推进原始close差值窗口，不计算复权因子，不改变交易方向、目标版本、订单或归属仓位。
+恢复时保留原方向及版本后重新预热，不重放历史目标。
+
+复用公共HistoryService和DolphinDB Provider；两腿使用同一截止点，按合约/时间去重后取
+完整帧交集。仅一腿或错位分钟不拼接、不填价。默认fail，allow仅使用真实完整帧并保留缺口；
+连接/查询失败、字段错误及价格冲突不被allow掩盖。加载期间缓冲实时Bar，完整缓冲帧仅预热，
+剩余单腿保留等待对腿；开放实时决策后重复时间不再次推进窗口。
+
+`history_au.json` 读取 `dfs://min_bar/shfe_1min`，`time_label=end`，21:01表示
+已完成的21:00—21:01。AU实际主力/次主力/far由角色服务确定，不写死月份。
+用户只确认该表包含AU，尚未证明默认secondary/far两腿都有历史；缺任一实际合约即明确报告。
+
+同步后先运行受影响的离线验收（不连接真实服务）：
+
+```bash
+python -u -m tests.run_main_ema_acceptance \
+  --only calendar-history --only calendar-live --only shared-account
+```
+
+以下为沿用此前TD=20261016、资料日=20261015的Recording样例；换会话须重新核对日期。
+沿用本次无日期例外的局部范围；有例外时改用实际session-overrides-table。
+在pro根目录及原运行环境中执行，CTP/DDB连接参数读取既有环境配置。
+
+```bash
+python -u -m demos.03_calendar_spread.run_live \
+  --connect --mode recording --product AU \
+  --market-source ctp --simnow-environment realtime \
+  --expected-trading-day 20261016 --expected-source-day 20261015 \
+  --reference-database dfs://bomber_daily \
+  --leg1-role secondary --leg2-role far \
+  --lookback 120 --rebalance-interval 5 --entry-z 2 --exit-z 0.5 \
+  --quantity 1 --max-notional 1000000 \
+  --calendar-id china.sse \
+  --trading-hours-database dfs://bomber_static \
+  --trading-hours-table fut_trading_session --no-session-overrides \
+  --history-db dolphindb --history-config demos/03_calendar_spread/history_au.json \
+  --history-minutes 120 --history-stage recovery --history-missing-policy fail \
+  --ctp-future-buffer-ms 100 --seconds 600 \
+  --report-dir demos/03_calendar_spread/results/AU_ddb_recording
+```
+
+03 Recording不连接TD、不发物理订单、不使用交易状态文件。报告history/history_audit记录
+逐腿覆盖及完整帧数量；complete_frames包含预热帧和实时帧，不能当作实时观察分钟数。
+预热120帧不发布目标；之后真实完整帧才可能触发原价差信号，未触发信号不伪造交易。
+共享配置在本策略argv增加同样的历史/会话参数即可，账户server、worker命令保持原形式。
+新增参数和日历身份参与恢复核对，不给旧检查点静默更换配置。
+
+本机受控回归通过不等于真实DDB接续及双腿成交通过，详见
+[交接说明](../../doc/HANDOFF/history/HANDOFF_CALENDAR_HISTORY_WARMUP_2026-10-15.md)。
+
 ## 1. 使用方法
 
 ### 启动命令

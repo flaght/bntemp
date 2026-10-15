@@ -21,7 +21,9 @@ def prepare_strategy_history(session):
     prepare()
     # 查库可能耗时，重新观测参考及远程账户，不能沿用查询前的健康状态。
     session.references.refresh()
-    session.client.drain_events()
+    drain = getattr(session.client, "drain_events", None)
+    if callable(drain):
+        drain()
     poll = getattr(runner, "poll_live_inputs", None)
     if callable(poll):
         poll()
@@ -33,6 +35,7 @@ def history_snapshot(session):
     service = getattr(session.runner, "history_service", None)
     return {"history": service.last_audit if service is not None else None,
             "history_audit": list(service.audit_history) if service is not None else [],
+            "complete_frames": getattr(session.strategy, "complete_frames", None),
             "bars_used": getattr(session.strategy, "bars_used", None)}
 
 

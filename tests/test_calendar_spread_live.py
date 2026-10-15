@@ -166,6 +166,56 @@ class LiveAssemblyTests(unittest.TestCase):
         for minute, spread in enumerate((0, 2, 4)):
             self.frame(session, minute, spread)
 
+    def test_recording_history_hook_and_buffer_do_not_submit_until_next_live_frame(self):
+        from bomber.framework.dataprep.history import HistoryService, HistoryBar
+        from tests.session_fixtures import declared_day_sessions
+        history = import_module("demos.03_calendar_spread.history")
+        calendar = declared_day_sessions("RB", date(2026, 10, 9), start="09:00", end="11:30")
+        class Factory:
+            @staticmethod
+            def create_for(*args):
+                class Provider:
+                    def open(self): pass
+                    def close(self): pass
+                    def read(self, request):
+                        return tuple(HistoryBar(request.instrument_id, stamp,
+                            close=100 + index if request.instrument_id.startswith("rb2701") else 100)
+                            for index, stamp in enumerate(calendar.last_minutes(request.end_ns, 2)))
+                return Provider()
+        coordinator = history.CalendarHistory(HistoryService(database_config={}, factory=Factory,
+            missing_policy="allow"), calendar, 2)
+        with patch.object(history, "build_history", return_value=coordinator):
+            s = self.build(mode="recording", start=False, history_minutes=2, history_config=None,
+                history_db="dolphindb", history_file=None, history_stage="recovery", history_missing_policy="fail",
+                reference_timeout=15, _session_calendar=calendar)
+        s.runner.start()
+        s.runner.mark_history_live_start()
+        s.runner.prepare_history()
+        self.assertEqual(s.strategy.complete_frames, 2)
+        self.assertEqual(len(s.client.requests), 0)
+        # 查询后的完整实时帧先缓冲为预热，不重放其中的历史交易目标。
+        for role, price in (("secondary", 103), ("far", 100)):
+            s.runner.publish("ctp-bars", self.bar(s, role, -1, price))
+        s.runner.begin_bars()
+        self.assertEqual(s.strategy.complete_frames, 3)
+        self.assertEqual(len(s.client.requests), 0)
+        self.assertFalse(s.runner.history_buffering)
+        self.frame(s, 0, 10)
+        self.assertEqual(s.strategy.complete_frames, 4)
+        self.assertEqual(len(s.client.requests), 1)
+
+    def test_failed_history_local_lifecycle_keeps_decisions_closed(self):
+        from bomber.framework.dataprep.history import HistoryUnavailable
+        s = self.build(mode="recording", start=False)
+        s.runner.mark_history_live_start = lambda: None
+        s.runner.prepare_history = lambda: (_ for _ in ()).throw(HistoryUnavailable("missing leg"))
+        lifecycle = recovery.CalendarLocalLifecycle(mode="recording", expected_trading_day="20261009",
+            environment="realtime", replay_md_trading_day=None, resume=False, state_file=None, market_source="ctp")
+        with self.assertRaises(HistoryUnavailable):
+            lifecycle.start(s, NS())
+        self.assertFalse(s.runner.accept_bars)
+        self.assertEqual(s.client.requests, ())
+
     def test_model_shared_signal_and_equal_opposite_attributed_fills(self):
         s = self.build()
         self.warm_and_enter(s)
@@ -455,6 +505,16 @@ class CliTests(unittest.TestCase):
         args = entry.parse_args(self.common)
         self.assertEqual((args.mode, args.leg1_role, args.leg2_role), ("recording", "secondary", "far"))
         self.assertEqual(args.execution_policy.account_reconciliation.value, "off")
+
+    def test_history_configuration_requires_calendar_and_accepts_completed_au_source(self):
+        config = Path(__file__).resolve().parents[1] / "demos/03_calendar_spread/history_au.json"
+        argv = self.common + ["--history-config", str(config), "--history-minutes", "120",
+            "--calendar-id", "china.sse", "--no-session-overrides"]
+        args = entry.parse_args(argv)
+        self.assertEqual(args.history_minutes, 120)
+        self.assertEqual(args.history_missing_policy, "fail")
+        with redirect_stderr(StringIO()), self.assertRaises(SystemExit):
+            entry.parse_args(self.common + ["--history-minutes", "-1"])
 
     def test_invalid_roles_dates_quantities_and_authorization(self):
         cases = [["--leg2-role", "secondary"], ["--quantity", "1.5"], ["--entry-z", "nan"],

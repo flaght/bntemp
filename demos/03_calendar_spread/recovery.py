@@ -12,6 +12,7 @@ from bomber.framework.trader.runtime.live.readiness import wait_for_session_read
 from bomber.framework.trader.runtime.live.recovery import (
     validate_finished_orders, validate_owned_positions, restored_target_revision)
 from .live_runtime import restore_direction
+from bomber.framework.trader.runtime.live.shared import prepare_strategy_history
 
 
 class CalendarControl:
@@ -86,6 +87,7 @@ class CalendarLocalLifecycle(CalendarControl, CtpMarketSessionLifecycle):
             restore_direction(session)
         session.runner.start()
         wait_for_session_ready(session, self.ready_seconds)
+        prepare_strategy_history(session)
         if session.manager is not None:
             session.manager.save()
         self.resume_ready = True
@@ -154,6 +156,7 @@ class CalendarCtpLifecycle(CalendarControl, CtpResumeLifecycle, CtpSessionLifecy
             raise RuntimeError("装配期间TD交易日或连接变化")
         session.runner.start()
         wait_for_session_ready(session, self.ready_seconds, lost=lambda: bool(self.lost))
+        prepare_strategy_history(session)
         session.manager.save()
         session.client.arm_demo(session.client.DEMO_CONFIRMATION)
         self.resume_ready = True

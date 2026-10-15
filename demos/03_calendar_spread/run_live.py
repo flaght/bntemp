@@ -38,6 +38,8 @@ def parse_args(argv=None):
     parser.add_argument("--mode", choices=("recording", "model", "simnow"), default="recording")
     add_execution_policy_arguments(parser)
     add_environment_arguments(parser)
+    from bomber.framework.dataprep.session_inputs import add_session_arguments
+    add_session_arguments(parser)
     parser.add_argument("--product", required=True)
     parser.add_argument("--leg1-role", "--near-role", dest="leg1_role", choices=("main", "secondary"), default="secondary")
     parser.add_argument("--leg2-role", "--far-role", dest="leg2_role", choices=("secondary", "far"), default="far")
@@ -52,6 +54,13 @@ def parse_args(argv=None):
     parser.add_argument("--reference-max-refresh-duration-seconds", type=int, default=30)
     parser.add_argument("--quantity", type=Decimal, default=Decimal(1))
     parser.add_argument("--lookback", type=int, default=120)
+    parser.add_argument("--history-minutes", type=int, default=0,
+        help="历史同步帧窗口；仅启用历史配置时默认lookback；未启用时实时预热")
+    parser.add_argument("--history-db", choices=("dolphindb",), default="dolphindb")
+    parser.add_argument("--history-config", type=Path)
+    parser.add_argument("--history-file", type=Path, help="盘前可选双腿原始分钟JSONL缓存")
+    parser.add_argument("--history-stage", choices=("auto", "preopen", "recovery"), default="auto")
+    parser.add_argument("--history-missing-policy", choices=("fail", "allow"), default="fail")
     parser.add_argument("--entry-z", type=float, default=2.0)
     parser.add_argument("--exit-z", type=float, default=0.5)
     parser.add_argument("--rebalance-interval", type=int, default=5)
@@ -132,6 +141,13 @@ def parse_args(argv=None):
             if args.mode == "model" and (args.enable_orders or args.confirm_simnow):
                 raise ValueError("Model不接受物理账户报单授权")
         args.execution_policy = execution_policy_from_args(args)
+        if not 0 <= args.history_minutes <= 10000:
+            raise ValueError("history-minutes须在0至10000")
+        if args.history_config is not None and not args.history_config.is_file():
+            raise ValueError("历史配置文件不存在")
+        if args.history_minutes or args.history_config or args.history_file:
+            from bomber.framework.dataprep.session_inputs import validate_session_arguments
+            validate_session_arguments(args, purpose=DataSourcePurpose.LIVE_REFERENCE)
     except (ValueError, TypeError) as error:
         parser.error(str(error))
     return args
@@ -168,6 +184,8 @@ def describe(session):
     strategy, runner = session.strategy, session.runner
     positions = runner.position_manager
     return {"complete_frames": strategy.complete_frames, "lookback": strategy.config.lookback,
+        "history": getattr(getattr(runner, "history_service", None), "last_audit", None),
+        "history_audit": getattr(getattr(runner, "history_service", None), "audit_history", []),
         "submissions": strategy.submissions, "last_frame_ns": strategy.last_frame_ns,
         "direction": strategy.direction, "last_z": strategy.last_z,
         "active_pair": strategy.active_pair, "last_targets": dict(strategy.last_targets or {}),
@@ -209,7 +227,7 @@ def build_runtime(args, *, account_routes=()):
             "execution_policy": args.execution_policy.snapshot_state(),
             "state_file": str(args.state_file) if args.state_file else None,
             "initial_position_mode": "resume" if args.resume else "fresh",
-            "history_minutes": 0, "session_scope": "fixed_pair_fixed_trading_day"})
+            "history_minutes": getattr(args, "history_minutes", 0), "session_scope": "fixed_pair_fixed_trading_day"})
     return ManagedLiveRuntime(CLIENT_ID, controller=lifecycle,
         prepare_inputs=lambda context: prepare_inputs(args, context, lifecycle),
         assemble_session=lambda inputs, context: assemble(args, inputs.references, lifecycle.driver,

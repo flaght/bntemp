@@ -99,6 +99,22 @@ class CalendarSpreadStrategy(StrategyTemplate):
     def on_order(self, event) -> None:
         self.order_updates_received += 1
 
+    def warm_closed(self, timestamp, leg1_close, leg2_close, pair):
+        """仅推进同一真实双腿的历史价差窗口，不回放方向或交易目标。"""
+        pair = tuple(symbol.lower() for symbol in pair)
+        prices = tuple(Decimal(str(value)) for value in (leg1_close, leg2_close))
+        if (timestamp <= self.last_frame_ns or any(not p.is_finite() or p <= 0 for p in prices)
+                or len(pair) != 2 or pair[0] == pair[1] or any(p not in self.instruments for p in pair)
+                or self._old_pair is not None or self.active_pair not in (None, pair)):
+            raise ValueError("历史价差帧时间、价格或固定双腿身份无效")
+        spread = float(prices[0] - prices[1])
+        if not isfinite(spread):
+            raise ValueError("历史价差须为有限数")
+        self.signal.update(spread, self.direction)
+        self.active_pair = pair
+        self.last_frame_ns = timestamp
+        self.complete_frames += 1
+
     def on_fill(self, event) -> None:
         self.fills_received += 1
 
