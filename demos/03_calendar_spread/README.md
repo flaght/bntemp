@@ -51,6 +51,9 @@ python -u -m demos.03_calendar_spread.run_live \
 03 Recording不连接TD、不发物理订单、不使用交易状态文件。报告history/history_audit记录
 逐腿覆盖及完整帧数量；complete_frames包含预热帧和实时帧，不能当作实时观察分钟数。
 预热120帧不发布目标；之后真实完整帧才可能触发原价差信号，未触发信号不伪造交易。
+2026-10-16补充：独立入口启动打印实际lookback、历史请求量及seconds；运行中每15秒及新帧时
+打印history_frames/live_frames、窗口长度、双腿Bar计数、最近完成分钟及等待腿。
+历史覆盖报告增加load_seconds，区分数据库读取耗时与等待实时输入。无新目标不再静默。
 共享配置在本策略argv增加同样的历史/会话参数即可，账户server、worker命令保持原形式。
 新增参数和日历身份参与恢复核对，不给旧检查点静默更换配置。
 

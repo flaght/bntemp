@@ -65,6 +65,7 @@ class CalendarSessionRunner(UnifiedStrategyRunner):
         self.first_complete_bar_ns = 0
         self.pending_frames = {}
         self.bar_counts = {i: 0 for i in self.fixed_ids}
+        self.history_frame_count = self.live_frame_count = 0
         self.tick_events, self.tick_receives = {}, {}
         self.expired_frame_count = 0
         self.strategy = self.client = self.manager = None
@@ -220,6 +221,7 @@ class CalendarSessionRunner(UnifiedStrategyRunner):
                     for current in self.instruments.values():
                         self._check()
                         super().publish(feed_id, frame[current])
+                    self.live_frame_count += 1
                     del self.pending_frames[pending]
                     if (getattr(self, "market_feed_id", "ctp-bars") != "ctp-bars"
                             and self.orders and self.strategy.last_targets is not None):

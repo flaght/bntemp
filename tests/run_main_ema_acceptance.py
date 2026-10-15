@@ -106,6 +106,7 @@ SOURCES = (
     "bomber/framework/trader/execution/ctp/limit_planner.py",
     "demos/03_calendar_spread/live_runtime.py",
     "demos/03_calendar_spread/history.py", "demos/03_calendar_spread/history_au.json",
+    "demos/03_calendar_spread/progress.py",
     "tests/test_calendar_spread_history.py",
     "tests/test_shared_ipc.py",
     "tests/test_shared_process_cli.py",

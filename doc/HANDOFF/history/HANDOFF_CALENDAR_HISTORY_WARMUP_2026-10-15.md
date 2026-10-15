@@ -49,3 +49,16 @@ python -u -m tests.run_main_ema_acceptance --only calendar-history --only calend
 随后使用03 README的AU Recording命令验证。表目前有AU不等于secondary/far两腿齐全；
 必须核对实际两合约的历史覆盖，缺数据不改角色或缩小lookback制造通过。
 Recording通过后，真实订单、双腿成交归属和同日恢复另行验证。
+
+## 2026-10-16：远程进度与运行日志
+
+用户远程calendar-live修正假环境变量及旧InstrumentHealthGate引用后31/31通过。
+真实AU Recording已确认secondary=au2702、far=au2704，两腿DDB各20帧、缺口0；
+进入实时阶段后又实际回补两腿各6帧、缺口0。仅登记这两个窗口读取成功，
+不登记120根预热、完整600秒Recording或真实成交通过，仍缺终态报告及实际参数核对。
+
+独立入口新增progress.py，每15秒或新帧打印窗口/历史帧/实时帧/双腿Bar/缺腿等待及目标数；
+历史与实时分别计数并进入最终报告，启动打印实际lookback/history_minutes/seconds，
+历史报告增加load_seconds。不改变信号、窗口或运行期限。
+同步03的progress.py、run_live.py、live_runtime.py、history.py及中央验收清单。
+本次历史回归12项通过，进度输出的节流/新帧/窗口及缺腿显示手工检查通过；语法与diff检查通过。

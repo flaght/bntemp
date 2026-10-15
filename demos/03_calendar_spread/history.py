@@ -1,6 +1,7 @@
 """固定双腿历史准备；复用公共历史Provider，只以完整同步原始价差预热。"""
 import json
 import math
+import time
 from pathlib import Path
 
 from bomber.framework.dataprep.history import (
@@ -22,6 +23,7 @@ class CalendarHistory:
         stamps = tuple(stamps)
         if not stamps:
             return
+        started = time.monotonic()
         print(f"跨期历史预热开始: required={len(stamps)} first_ns={stamps[0]} last_ns={stamps[-1]} "
               f"instruments={[str(i) for i in runner.instruments.values()]}", flush=True)
         # 每腿显式保留覆盖，最后按时间交集组帧；不跨分钟或复制缺失腿。
@@ -44,7 +46,8 @@ class CalendarHistory:
             "missing": len(missing), "first_missing_ns": missing[0] if missing else None,
             "last_missing_ns": missing[-1] if missing else None,
             "sources": sorted({s for row in coverage.values() for s in row["sources"]}),
-            "allowed_missing": self.missing_policy == "allow", "legs": coverage}
+            "allowed_missing": self.missing_policy == "allow", "legs": coverage,
+            "load_seconds": round(time.monotonic() - started, 3)}
         self.last_audit = audit
         self.audit_history = (self.audit_history + [audit])[-50:]
         print(f"跨期历史预热: {audit}", flush=True)
@@ -62,6 +65,7 @@ class CalendarHistory:
         with runner._submit_lock:
             for stamp, first, second in prices:
                 strategy.warm_closed(stamp, first, second, pair)
+                runner.history_frame_count = getattr(runner, "history_frame_count", 0) + 1
 
     def flush(self, runner):
         groups = {}

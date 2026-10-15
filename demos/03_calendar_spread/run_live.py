@@ -184,6 +184,7 @@ def describe(session):
     strategy, runner = session.strategy, session.runner
     positions = runner.position_manager
     return {"complete_frames": strategy.complete_frames, "lookback": strategy.config.lookback,
+        "history_frames": runner.history_frame_count, "live_frames": runner.live_frame_count,
         "history": getattr(getattr(runner, "history_service", None), "last_audit", None),
         "history_audit": getattr(getattr(runner, "history_service", None), "audit_history", []),
         "submissions": strategy.submissions, "last_frame_ns": strategy.last_frame_ns,
@@ -228,16 +229,23 @@ def build_runtime(args, *, account_routes=()):
             "state_file": str(args.state_file) if args.state_file else None,
             "initial_position_mode": "resume" if args.resume else "fresh",
             "history_minutes": getattr(args, "history_minutes", 0), "session_scope": "fixed_pair_fixed_trading_day"})
+    from .progress import CalendarProgress
     return ManagedLiveRuntime(CLIENT_ID, controller=lifecycle,
         prepare_inputs=lambda context: prepare_inputs(args, context, lifecycle),
         assemble_session=lambda inputs, context: assemble(args, inputs.references, lifecycle.driver,
-            inputs.upstream, account_routes=account_routes), report=report, seconds=args.seconds)
+            inputs.upstream, account_routes=account_routes), report=report, seconds=args.seconds,
+        progress=CalendarProgress())
 
 
 def main(argv=None):
     args = parse_args(argv)
     load_dotenv(PROJECT_ROOT / ".env")
     print(f"Calendar Live source={Path(__file__).resolve()}", flush=True)
+    history_enabled = bool(args.history_minutes or args.history_config or args.history_file)
+    print(f"跨期运行配置: lookback={args.lookback} "
+          f"history_enabled={history_enabled} "
+          f"history_minutes={(args.history_minutes or args.lookback) if history_enabled else 0} "
+          f"history_config={args.history_config} seconds={args.seconds}", flush=True)
     runtime = build_runtime(args)
     try:
         runtime.run()
