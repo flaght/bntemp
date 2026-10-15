@@ -381,7 +381,8 @@ class LiveTests(unittest.TestCase):
             with patch.dict("os.environ", {"DDB_HOST": "fake", "DDB_USERNAME": "fake",
                                         "DDB_PASSWORD": "fake"}), \
                     patch.object(live.ReferenceSourceFactory, "create_for", return_value=source), \
-                    patch.object(live, "CtpLiveDataFeed", side_effect=AssertionError("不应启动MD")):
+                    patch("bomber.framework.market.stream.ctp.CtpLiveDataFeed",
+                          side_effect=AssertionError("不应启动MD")):
                 with self.assertRaisesRegex(SectorDataUnavailable,
                         "expected=2026-09-20 actual=2026-09-21"):
                     live.prepare_inputs(args, context, lifecycle)
@@ -1113,7 +1114,7 @@ class LiveTests(unittest.TestCase):
         with patch.dict("os.environ", environment, clear=True), \
                 patch.object(live, "build_runtime", side_effect=build_runtime), \
                 patch.object(live, "CtpTdApiTransport", side_effect=td_factory), \
-                patch.object(live, "CtpLiveDataFeed", return_value=upstream), \
+                patch("bomber.framework.market.stream.ctp.CtpLiveDataFeed", return_value=upstream), \
                 patch("time.sleep", side_effect=pump), \
                 (patch.object(live.ReferenceSourceFactory, "create_for", return_value=database_source)
                  if database else nullcontext()), \
