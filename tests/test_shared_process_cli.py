@@ -15,6 +15,23 @@ from scripts.integration.shared_account import config, prepare_session, server, 
 
 
 class ProcessCliTests(unittest.TestCase):
+    def test_server_fault_capture_uses_original_gate_and_diagnostic_failure_is_separate(self):
+        from scripts.integration.shared_account.server import capture_execution_failure
+        diagnostics = {"is_reconciled": False, "service_failed": True,
+            "recovery_required": True, "report_errors": ["conflicting fill"],
+            "portfolio_failure": "portfolio send failed", "audit": []}
+        host = SimpleNamespace(snapshot=lambda: {"execution_diagnostics": dict(diagnostics)})
+        captured = capture_execution_failure(host)
+        diagnostics.update(service_failed=False, is_reconciled=True)
+        self.assertTrue(captured["service_failed"])
+        self.assertFalse(captured["is_reconciled"])
+        self.assertEqual(captured["report_errors"], ["conflicting fill"])
+        self.assertIsNone(capture_execution_failure(None))
+        def failed_snapshot():
+            raise ValueError("diagnostic unavailable")
+        self.assertEqual(capture_execution_failure(SimpleNamespace(snapshot=failed_snapshot)),
+            {"diagnostic_error": "diagnostic unavailable"})
+
     def test_assembly_refreshes_expired_prepared_reference_before_runner_binding(self):
         from bomber.framework.dataprep.live_cache import LiveReferenceCache
         from scripts.integration.shared_account.factories import assemble_strategy_session

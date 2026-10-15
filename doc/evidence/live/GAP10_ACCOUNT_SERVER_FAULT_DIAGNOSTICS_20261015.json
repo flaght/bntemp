@@ -1,0 +1,28 @@
+{
+  "revision": "REV28",
+  "status": "diagnostic_fix_offline_passed_root_cause_pending",
+  "remote_server_report": "shared-account-server-1791995438534311731",
+  "observed_primary_failure": "共享账户执行状态不明，保持闭闸",
+  "observed_shutdown_failure": "Same service.poll guard invoked during protocol.stop_owner",
+  "guard_candidates": [
+    "service._failed",
+    "client.report_errors",
+    "not client.is_reconciled",
+    "position_manager recovery_required",
+    "client.portfolio_failure"
+  ],
+  "cross_worker_symptom": "Connection refused in poll and stop; cached readiness does not prove current availability",
+  "implemented": "Use existing SharedAccountLiveHost.snapshot execution_diagnostics before shutdown; persist in failure_execution_diagnostics; diagnostic capture error remains separate from primary failure",
+  "test_report": "tests/results/main-ema-acceptance-1791996234031334000",
+  "tests_run": 24,
+  "actual_local_three_process_unix_socket": true,
+  "broker_connected": false,
+  "checkpoint_modified": false,
+  "root_cause_proven": false,
+  "required_next_input": "Existing remote server summary.json and events.txt; no new run required",
+  "sources": {
+    "scripts/integration/shared_account/server.py": "872c21c1bb777d284689552b2447380b2350dda384429df0e72c74728d07bf75",
+    "tests/test_shared_process_cli.py": "e90192a37e542cc261c42521aa5daf7d89282f705dc6f63ae82f4f1ff5a0b785",
+    "bomber/framework/trader/runtime/live/shared.py": "217563c37070cc24f2084dad14f1daa6d794a6a9740f992ad12f85ea2553168b"
+  }
+}

@@ -8,6 +8,16 @@ import time
 from .config import read_config
 
 
+def capture_execution_failure(host):
+    """复用宿主诊断，在停机操作改变账户状态前保存首个故障。"""
+    if host is None:
+        return None
+    try:
+        return host.snapshot()["execution_diagnostics"]
+    except Exception as error:
+        return {"diagnostic_error": str(error)}
+
+
 def connect_valuation_market(host, config):
     """复用已准备的CTP原始Feed，观察全合约估值；不连接策略Runner或生成Bar。"""
     if config["environment"] != "realtime":
@@ -108,6 +118,7 @@ def _run(args, config, stop_event):
     report.begin()
     host = server = None
     diagnostics, failure, shutdown_failure, status = {}, None, None, "failed"
+    failure_execution_diagnostics = None
     try:
         if args.socket.exists():
             raise RuntimeError("执行socket已存在；禁止接管其他账户服务")
@@ -168,6 +179,7 @@ def _run(args, config, stop_event):
         status = "completed"
     except BaseException as error:
         failure = str(error) or type(error).__name__
+        failure_execution_diagnostics = capture_execution_failure(host)
         raise
     finally:
         try:
@@ -185,6 +197,7 @@ def _run(args, config, stop_event):
             raise
         finally:
             report.write(status=status, fields={"failure": failure, "shutdown_failure": shutdown_failure,
+                "failure_execution_diagnostics": failure_execution_diagnostics,
                 "td_preflight": diagnostics, "account": host.service.snapshot_state() if host else None,
                 "final_gross": host.account.final_gross if host else None,
                 "final_active_orders": host.account.final_active_orders if host else None,

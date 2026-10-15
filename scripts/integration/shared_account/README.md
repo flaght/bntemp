@@ -338,3 +338,13 @@ V3预检失败于EMA Runner构造：首个策略的缓存被后续输入准备�
 和`doc/evidence/live/GAP10_PREASSEMBLY_REFERENCE_REFRESH_20261015.json`。
 同步后只复验shared-ipc及原V3只读preflight，通过后启动原V3服务及三个worker。
 不重跑discover/prepare，不改名字、不加resume；本次失败未创建交易检查点。
+
+## REV28：账户服务首个故障诊断（2026-10-15）
+
+服务在protocol.poll触发执行状态闭闸时，停止所有者可能再次触发同一错误。
+服务报告现在复用宿主snapshot，在停机前保存failure_execution_diagnostics，
+包含service_failed、is_reconciled、report_errors、recovery_required、
+portfolio_failure及最近audit；采集失败单独记录，不替换首个故障。
+闭闸/撤单/锁保留及账本恢复政策不改变。本机shared-ipc 24项通过。
+当前V4根因仍须原shared-account-server-1791995438534311731的summary/events；
+不通过重复启动或新增V5会话补造根因证据。
