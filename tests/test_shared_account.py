@@ -41,6 +41,47 @@ class SharedAccountTests(unittest.TestCase):
         port.submit_targets(replace(self.request(port.client_id, strategy=port.strategy_id,
             quantity=quantity, revision=revision, timestamp=self.now), **kwargs))
 
+    def test_retained_target_checks_prices_at_send_time_not_older_trigger_time(self):
+        modules = self.native_modules()
+        for mode in ("independent", "netted"):
+            with self.subTest(mode=mode), TemporaryDirectory() as directory:
+                account, service, transport, (one, _), _ = self.native_account(
+                    Path(directory) / "account.json", modules, execution_mode=mode)
+                self.addCleanup(account.driver.stop)
+                account.start(resume=False)
+                service.start(); one.start(); account.authorize()
+                with patch.object(account.client.planner, "plan", return_value=()):
+                    self.submit(one)
+                source_stamp = service._sources["one"]["ts_event"]
+                self.now += 2_000_000_000
+                trigger_stamp = self.now - 1_000_000_000
+                service.prices.update(self.instrument, 3000, self.now)
+                self.assertTrue(service.continue_targets("one", self.instrument, trigger_stamp))
+                self.assertEqual(len(transport.sent), 1)
+                intent = next(iter(account.driver._orders.values()))[1]
+                self.assertEqual(intent.metadata["actual_send_ts_ns"], self.now)
+                self.assertEqual(intent.metadata["execution_trigger_ns"], trigger_stamp)
+                self.assertEqual(service._sources["one"]["ts_event"], source_stamp)
+                self.assertFalse(service._failed)
+                transport.fill(transport.sent[0]["OrderRef"])
+                one.stop(); account.stop()
+
+    def test_retained_target_still_rejects_price_actually_future_at_send_time(self):
+        modules = self.native_modules()
+        with TemporaryDirectory() as directory:
+            account, service, transport, (one, _), _ = self.native_account(
+                Path(directory) / "account.json", modules, execution_mode="independent")
+            self.addCleanup(account.driver.stop)
+            account.start(resume=False)
+            service.start(); one.start(); account.authorize()
+            with patch.object(account.client.planner, "plan", return_value=()):
+                self.submit(one)
+            service.prices.update(self.instrument, 3000, self.now + 1_000_000_000)
+            with self.assertRaisesRegex(RuntimeError, "行情时间差-1000000000ns"):
+                service.continue_targets("one", self.instrument, self.now)
+            self.assertFalse(transport.sent)
+            self.assertTrue(service._failed)
+
     def test_real_fills_route_only_to_owner_and_duplicate_is_ignored(self):
         service, client, (one, two) = self.service()
         events = [[], []]

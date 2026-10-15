@@ -261,6 +261,8 @@ class SharedAccountExecutionService(AccountExecutionService):
             "position_attribution": tuple(row for row in request.metadata["position_attribution"]
                                            if row["instrument_id"] in scope),
             "actual_send_deadline_ns": deadline,
+            "execution_trigger_ns": request.ts_event,
+            "actual_send_ts_ns": now,
             "market_health_mode": "REDUCE_ONLY" if reduce_only else "NORMAL"}
         if self.execution_mode == "independent":
             self.validate_owned_state()
@@ -273,11 +275,12 @@ class SharedAccountExecutionService(AccountExecutionService):
                                  for row in rows}
                 if not owned_targets:
                     continue
-                self.client.submit_targets(replace(request, strategy_id=sid, targets=owned_targets,
+                self.client.submit_targets(replace(request, strategy_id=sid, targets=owned_targets, ts_event=now,
                     metadata={**metadata, "position_attribution": rows,
                               "shared_execution_mode": "independent"}))
             return
-        self.client.submit_targets(replace(request, targets=targets, metadata=metadata, deadline_ns=deadline))
+        self.client.submit_targets(replace(request, targets=targets, ts_event=now,
+            metadata=metadata, deadline_ns=deadline))
 
     def suspend_strategy(self, strategy_id):
         """停止新增风险，撤销涉及本策略的母单，等待回报后冻结在实际归属量。"""

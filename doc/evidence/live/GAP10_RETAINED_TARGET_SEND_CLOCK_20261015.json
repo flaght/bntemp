@@ -1,0 +1,33 @@
+{
+  "revision": "REV29",
+  "status": "offline_passed_remote_root_cause_confirmation_pending",
+  "remote_calendar_failure": "行情时间差-1000000000ns超出允许范围120000000000ns",
+  "local_reproduction_before_fix": "Both independent and netted retained-target continuation fail with exactly -1000000000ns when latest valid reference is newer than trigger timestamp",
+  "cause": "Shared _send retained request.ts_event as old triggering event time; backend risk compares that time against newer valid references",
+  "fix": "Use account send clock for outgoing execution request ts_event; keep execution_trigger_ns and actual_send_ts_ns in audit metadata; strategy source timestamps/revisions/deadlines unchanged",
+  "tests_run": 96,
+  "modules": {
+    "shared-account": 72,
+    "shared-ipc": 24
+  },
+  "report": "tests/results/main-ema-acceptance-1792027027424445000",
+  "real_broker_orders_submitted": 0,
+  "tests_use_controlled_transport": true,
+  "new_regressions": [
+    "Actual native/shared components in independent and netted modes accept valid newer reference using send time",
+    "Reference actually 1 second ahead of send time remains rejected; no broker send and service failure retained"
+  ],
+  "remaining": [
+    "Exact V5 account first failure requires full summary/events and checkpoint; error can set service_failed but trace alone does not prove server shares calendar cause",
+    "Readonly reconciliation required for failed/pending checkpoints; no automatic reset or resend",
+    "Remote diagnostics patch version must be checked; pasted server traceback remains old line layout"
+  ],
+  "source_hashes": {
+    "bomber/framework/trader/execution/shared.py": "33c225153a9c0fe6cd0369c0892e297372fe8be375332bcde517c32b816b8735",
+    "scripts/integration/shared_account/server.py": "872c21c1bb777d284689552b2447380b2350dda384429df0e72c74728d07bf75",
+    "scripts/integration/shared_account/run.py": "cd2ed410b56deac5d3b03ba91b8164958a311ec1f6ca92bcf25b71911df6753d",
+    "scripts/integration/shared_account/factories.py": "98dac78e1e984e263badde3dd14b4939c1c30829123beb0cae5b9c95b19bb6a6",
+    "tests/test_shared_account.py": "798dc33fe633e66b58a59554fbd75b2550399d5f6872ddf91c9ed0dcc96dd33f",
+    "tests/test_shared_process_cli.py": "e90192a37e542cc261c42521aa5daf7d89282f705dc6f63ae82f4f1ff5a0b785"
+  }
+}

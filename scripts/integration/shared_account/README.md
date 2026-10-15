@@ -348,3 +348,13 @@ portfolio_failure及最近audit；采集失败单独记录，不替换首个故�
 闭闸/撤单/锁保留及账本恢复政策不改变。本机shared-ipc 24项通过。
 当前V4根因仍须原shared-account-server-1791995438534311731的summary/events；
 不通过重复启动或新增V5会话补造根因证据。
+
+## REV29：保留目标续单使用发送时钟（2026-10-15）
+
+续单触发Tick较旧，而账户估值/另一腿参考价较新时，原请求时间被当成风控
+检查时钟，可误报行情时间差-1000000000ns并使账户service_failed。
+_send现在以账户发送时刻构造执行请求，保留execution_trigger_ns及
+actual_send_ts_ns审计字段；来源版本/时间、原目标、期限和价格时间不变。
+真实未来价格仍拒绝，不放宽行情年龄；independent/netted两模式确定性复现
+及修复回归通过。本机shared-account 72、shared-ipc 24，共96项通过。
+V5服务的具体首个故障仍须原summary/events确认；不清除失败/未决记录重发。
