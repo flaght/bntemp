@@ -41,9 +41,9 @@ class DolphinDbHistoryConfig:
             raise HistoryError("组合时间须同时提供安全date_column/time_column，不能同时映射ts_event")
         if self.source_timezone not in {"UTC", "Asia/Shanghai"}:
             raise HistoryError("历史源时区仅支持UTC或Asia/Shanghai，不能猜测偏移")
-        if composite and (self.time_label != "start" or self.time_unit != "ns"):
-            raise HistoryError("组合date/time当前仅支持分钟开始标签，统一转为纳秒")
-        if self.time_unit not in {"ns", "ms", "s"} or self.time_label not in {"start", "end_ns"}:
+        if composite and (self.time_label not in {"start", "end"} or self.time_unit != "ns"):
+            raise HistoryError("组合date/time须声明分钟开始或完成标签，统一转为纳秒")
+        if self.time_unit not in {"ns", "ms", "s"} or self.time_label not in {"start", "end", "end_ns"}:
             raise HistoryError("须声明时间单位及分钟起点/末尾口径")
         if self.instrument_format not in {"full", "symbol"} or (self.instrument_format == "symbol"
                 and (self.venue is None or re.fullmatch(r"[A-Z0-9]+", self.venue) is None)):
@@ -95,12 +95,16 @@ class DolphinDbHistoryProvider(HistoryProvider):
             end = f"({end}-{8 * 3600 * 1000000000}l)"
         if c.time_label == "start":
             end = f"({end}+{MINUTE_NS - 1}l)"
+        elif c.time_label == "end":
+            end = f"({end}-1l)"
         fields = ",".join(f"{physical} as {logical}" for logical, physical in c.columns.items() if logical != "ts_event")
         partition_filter = ""
         if c.date_column is not None:
             zone = timezone(timedelta(hours=8 if c.source_timezone == "Asia/Shanghai" else 0))
-            start = datetime.fromtimestamp(request.start_ns // 1000000000, zone).strftime("%Y.%m.%d")
-            last = datetime.fromtimestamp((request.end_ns - 1) // 1000000000, zone).strftime("%Y.%m.%d")
+            # 完成标签00:00存于次日分区，框架时间则为前日23:59:59.999999999。
+            label_offset = 1 if c.time_label == "end" else 0
+            start = datetime.fromtimestamp((request.start_ns + label_offset) // 1000000000, zone).strftime("%Y.%m.%d")
+            last = datetime.fromtimestamp((request.end_ns - 1 + label_offset) // 1000000000, zone).strftime("%Y.%m.%d")
             partition_filter = f"{c.date_column}>={start},{c.date_column}<={last},"
         # 只使用已验证名称、整数和合约字符串；读取多一行检测截断，禁止截断后当完整窗口。
         return (f'select top {request.max_rows + 1} {fields},{end} as ts_event '

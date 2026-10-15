@@ -55,3 +55,44 @@ python -u -m tests.run_main_ema_acceptance --only history-provider --only shared
 本次完成源码接入和上述离线验证，不登记M06实际场景完成。
 CU真实分钟表、字段、时间标签及历史复权价/因子映射尚待部署资料确认，不能使用IF样例冒充CU来源。
 原生历史组、真实DDB覆盖、加载期间实时接续及D1交易闭环仍需运行环境验收。
+
+## 后续修正：完成标签与自动复权（同日）
+
+本节替代上文“CU表及字段待确认”的状态。用户远程证据确认
+`dfs://min_bar/shfe_1min` 存储原始OHLC，没有adjusted_close；CU2611的
+2026-10-14/15累计因子均为1.484671。用户明确shfe_1min、cffex_1min及index_1min
+的minTime均表示已完成分钟，与原来的start假设不同。
+
+实现新增time_label=end：21:01转为21:00:59.999999999；午夜00:00标签的分区过滤
+使用次日date，标准事件仍为前日最后一纳秒，避免漏读。start及end_ns原契约继续支持。
+新增history_cu.json，三份已有CFFEX历史配置改为end；旧start证据不自动视为新口径通过。
+
+01读取原始历史时默认接SessionReferenceFactorAdjuster。每根分钟由已有SessionCalendar
+确定交易日，包含夜盘、跨午夜、周末；source模式选择该交易日前最新角色来源日，
+再按该来源日和固定真实合约读取唯一pcr_cumfactor。trading模式使用交易日。
+历史close乘因子得到指标输入，原始Bar不修改；缺失、重复、身份错误、显式未来发布时间
+或读取期间版本变化均拒绝，不手填逐日映射、不默认因子为1。
+
+自动模式为Live指标预热，缺历史发布时间时明确标记当前读取版本，
+不宣称历史时刻可见；实际available_ns仍约束历史分钟。保留显式映射旧模式及预复权字段模式。
+这不改变回测的时间可见性政策，也不把当前因子无条件套用于全部历史。
+
+当前修改需同步：history/{__init__,dolphindb,factors}.py，01的history.py、run_live.py、
+history_cu.json及三份已有历史JSON，scripts/integration/history/readonly.py，
+tests/test_history_session_factors.py、tests/test_history_provider.py及tests/run_main_ema_acceptance.py。
+
+离线通过135项（去重）：新增会话因子/完成时间9项、旧因子独立于原生扩展的16项、
+历史Provider/Service/只读探针34项、共享账户76项。Provider组仅隔离trader包初始化，
+实际加载原Provider、服务与日历；没有伪装Bar/指标原生扩展可用。
+完整history-adjustment组本机尝试32项、15项因缺原生Bar或indicators无法执行；
+未将该组登记完整通过。AST与diff检查通过，真实库/柜台未连接。
+
+远程同步后先离线运行：
+
+```bash
+python -u -m tests.run_main_ema_acceptance --only history-provider --only history-adjustment --only shared-account --only entry
+```
+
+使用新版history_cu.json，不保留错误adjusted_close映射或旧start标签。
+原失败运行的检查点和报告继续保留；不要删除状态后重复报单启动。
+实际DDB窗口覆盖、实时接续、D1成交闭环仍待远程证据。

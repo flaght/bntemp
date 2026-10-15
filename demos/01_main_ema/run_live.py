@@ -457,7 +457,7 @@ def assemble(args, references, driver, upstream, *, positions=None, account_rout
         runner.history_service = None
         if history_enabled:
             from .history import build_history, warm_history
-            runner.history_service = build_history(args)
+            runner.history_service = build_history(args, calendar=calendar)
             runner.history_minutes = history_minutes
             runner.history_buffer = []
             runner.history_buffering = True
