@@ -209,10 +209,12 @@ class LiveAssemblyTests(unittest.TestCase):
         s = self.build(mode="recording", start=False)
         s.runner.mark_history_live_start = lambda: None
         s.runner.prepare_history = lambda: (_ for _ in ()).throw(HistoryUnavailable("missing leg"))
-        lifecycle = recovery.CalendarLocalLifecycle(mode="recording", expected_trading_day="20261009",
-            environment="realtime", replay_md_trading_day=None, resume=False, state_file=None, market_source="ctp")
-        with self.assertRaises(HistoryUnavailable):
-            lifecycle.start(s, NS())
+        with patch.dict("os.environ", {"CTP_MD_ADDRESS": "tcp://fixture:1",
+                "CTP_ACCOUNT_ID": "fixture", "CTP_PASSWORD": "fixture"}, clear=True):
+            lifecycle = recovery.CalendarLocalLifecycle(mode="recording", expected_trading_day="20261009",
+                environment="realtime", replay_md_trading_day=None, resume=False, state_file=None, market_source="ctp")
+            with self.assertRaises(HistoryUnavailable):
+                lifecycle.start(s, NS())
         self.assertFalse(s.runner.accept_bars)
         self.assertEqual(s.client.requests, ())
 
@@ -291,8 +293,9 @@ class LiveAssemblyTests(unittest.TestCase):
         self.assertFalse(s.runner.target_store.all())
 
     def test_real_instrument_gate_requires_both_depths(self):
+        from bomber.framework.trader.runtime.live.channels.ctp import InstrumentHealthGate
         s = self.build()
-        s.readiness.channels[0].instrument_health = runtime.InstrumentHealthGate(
+        s.readiness.channels[0].instrument_health = InstrumentHealthGate(
             s.upstream, s.runner.fixed_ids, "20261009", clock_ns=lambda: self.now)
         s.upstream.depth_observations = {}
         self.assertFalse(s.readiness())
