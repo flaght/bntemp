@@ -158,3 +158,7 @@ sha256sum -c doc/evidence/checksums/DOCUMENTATION_20261010_SHA256.txt
 ### 2026-10-14：08公共日历与持续仓位管理
 
 每日/常驻两方式、同进程/独立进程两布局，复用原归属JSON与共享账户执行。交付说明见 [持续管理](../HANDOFF/live/HANDOFF_OPTION_VEGA_CONTINUOUS_POSITION_2026-10-14.md)，源码与测试包见 [补充包](archives/OPTION_VEGA_CONTINUOUS_POSITION_20261014.tar.gz)，[校验清单](checksums/OPTION_VEGA_CONTINUOUS_POSITION_20261014_SHA256.txt)。离线验证使用替身柜台与SDK实体，真实服务器跨日仍待验收；不改历史交付包及报告。
+
+### 2026-10-15：08时段库启动参数修正
+
+服务器首次持续启动停于DolphinDB trading_hours查询，尚未进入TD/策略。此前命令遗漏已记录的静态时段库/表，须增加`--trading-hours-database dfs://bomber_static --trading-hours-table fut_trading_session`。见 [修正说明](../HANDOFF/live/HANDOFF_OPTION_VEGA_STARTUP_HOURS_FIX_2026-10-15.md)。仅修正文档和启动参数，原代码、检查点与20261014历史包保持；该查询失败不登记为真实跨日通过。

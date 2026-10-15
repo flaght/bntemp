@@ -62,13 +62,15 @@ export CTP_TD_ADDRESS=tcp://182.254.243.31:30001
 export CTP_PRODUCTION_MODE=true
 python -u -m scripts.integration.options.shared \
   --connect --enable-orders --confirm-simnow --run-forever \
-  --calendar-id china.cffex --hours-code IM --no-session-overrides \
+  --calendar-id china.cffex --hours-code IM \
+  --trading-hours-database dfs://bomber_static \
+  --trading-hours-table fut_trading_session --no-session-overrides \
   --state-file /workspace/worker/pj/Chrono/nautilus_trader_demo/pro_new/tests/results/gap08-realtime-simnow/state-1791869411336135873.json
 ```
 
 首次核验通过后，该文件转换为共享账户检查点，旁边自动保存 `.before-rollover-g<原代>.json` 备份和 `.vega-signal.json` 信号文件。后续继续使用同一路径。不要同时运行原08进程或另一个TD写入服务。快捷入口只运行一个08，但使用相同公共账户服务；实际多策略配置使用共享 `run` 或 `server/worker` 入口，由一个TD服务统一执行。
 
-删除上面 `--run-forever` 就是每日启动方式；允许提前启动和休市启动，交易窗口外不连接行情或TD、不报单。`--hours-code IM` 明确声明MO采用IM时段；时段经公共Provider从DolphinDB加载，交易日期来自 `NativeCalendarProvider`，不是手写日历JSON或入口写死09:30/15:00。默认时段库/表复用公共参考配置，可用 `--trading-hours-database` / `--trading-hours-table` 指定。`--no-session-overrides` 表示确认该资料范围没有日期例外；若配置了例外表，替换为 `--session-overrides-table 实际表名`，不能把缺失例外当成没有例外。原日历ID必须一致。当前原生日历覆盖至2026-12-31；覆盖不足会停止，需更新规则，不会猜下一年交易日。
+删除上面 `--run-forever` 就是每日启动方式；允许提前启动和休市启动，交易窗口外不连接行情或TD、不报单。`--hours-code IM` 明确声明MO采用IM时段；时段经公共Provider从DolphinDB加载，交易日期来自 `NativeCalendarProvider`，不是手写日历JSON或入口写死09:30/15:00。服务器已记录的时段库/表是 `dfs://bomber_static/fut_trading_session`，必须按上面显式指定；MO/IM基础资料仍使用日表库。省略时段参数会沿用参考库和默认 `trading_hours` 表，可能导致查询失败。`--no-session-overrides` 表示确认该资料范围没有日期例外；若配置了例外表，替换为 `--session-overrides-table 实际表名`，不能把缺失例外当成没有例外。原日历ID必须一致。当前原生日历覆盖至2026-12-31；覆盖不足会停止，需更新规则，不会猜下一年交易日。
 
 每个窗口结束时停止新目标、撤销自身活动单、排空成交回报、对账并保存；保留成交仓位后断开行情和TD。午休后/次日重新读取同一文件最新代，核验真实TD和今昨仓、成本、归属，再等待当日新鲜市场/指数分钟。只有休市阶段免于行情检查，交易窗口内的行情、参考和账户异常仍停止，不自动无限重试。窗口结束后迟到的最后一分钟不再触发交易；本入口不增加固定收盘清仓，常规退出仍由原策略决定。Ctrl+C或SIGTERM执行相同的正常停机；SIGKILL/断电只能依赖下次严格恢复，不能保证停机完成。
 
@@ -91,13 +93,17 @@ python -u -m scripts.integration.options.shared \
 python -u -m scripts.integration.shared_account.continuous \
   --config /absolute/path/shared-session.json --process-layout same-process \
   --connect --enable-orders --confirm-simnow --run-forever \
-  --calendar-id china.cffex --hours-code IM --no-session-overrides
+  --calendar-id china.cffex --hours-code IM \
+  --trading-hours-database dfs://bomber_static \
+  --trading-hours-table fut_trading_session --no-session-overrides
 
 # 不同进程：配置必须是independent；调度器启动唯一server及每个策略worker。
 python -u -m scripts.integration.shared_account.continuous \
   --config /absolute/path/shared-session.json --process-layout separate-processes \
   --connect --enable-orders --confirm-simnow --run-forever \
-  --calendar-id china.cffex --hours-code IM --no-session-overrides
+  --calendar-id china.cffex --hours-code IM \
+  --trading-hours-database dfs://bomber_static \
+  --trading-hours-table fut_trading_session --no-session-overrides
 ```
 
 两种布局删除 `--run-forever` 都在当日最后窗口后退出。独立进程由父调度器统一响应停止：先各worker撤单、补交回报并保存，再关闭server；子进程独立进程组，Ctrl+C不会先把TD服务关闭。每窗口使用新能力文件和socket，仍复用原账户及逐策略JSON。worker异常退出或停机超时不会自动换窗重启；worker未完成停机时保留账户服务和锁供诊断。

@@ -1763,10 +1763,20 @@ class SharedConfigTests(unittest.TestCase):
                     redirect_stdout(StringIO()):
                 run.main(["--config", str(path), "--connect", "--resume", "--reconcile-only"])
         self.assertTrue(build.call_args.kwargs["read_only"])
+        self.assertFalse(build.call_args.kwargs["strategy_processes"])
         host.start.assert_not_called()
         account.authorize.assert_not_called()
         self.assertEqual(reported["status"], "reconciled")
         self.assertEqual(reported["fields"]["verification"], "checkpoint_reconciled_no_strategy_no_orders")
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "session.json"
+            path.write_text(json.dumps({**self.config(), "execution_mode": "independent"}))
+            with patch.dict(sys.modules, replacements), patch.object(run, "build_host", return_value=host) as build, \
+                    redirect_stdout(StringIO()):
+                run.main(["--config", str(path), "--connect", "--resume", "--reconcile-only"])
+        self.assertTrue(build.call_args.kwargs["strategy_processes"])
+        host.start.assert_not_called()
+        account.authorize.assert_not_called()
 
 
 if __name__ == "__main__":

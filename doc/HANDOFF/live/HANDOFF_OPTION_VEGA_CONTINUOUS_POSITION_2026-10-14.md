@@ -44,11 +44,13 @@ export CTP_TD_ADDRESS=tcp://182.254.243.31:30001
 export CTP_PRODUCTION_MODE=true
 python -u -m scripts.integration.options.shared \
   --connect --enable-orders --confirm-simnow --run-forever \
-  --calendar-id china.cffex --hours-code IM --no-session-overrides \
+  --calendar-id china.cffex --hours-code IM \
+  --trading-hours-database dfs://bomber_static \
+  --trading-hours-table fut_trading_session --no-session-overrides \
   --state-file /workspace/worker/pj/Chrono/nautilus_trader_demo/pro_new/tests/results/gap08-realtime-simnow/state-1791869411336135873.json
 ```
 
-时段由DolphinDB公共参考配置提供，必要时指定`--trading-hours-database`/`--trading-hours-table`。`--hours-code IM`显式声明MO的时段继承。`--no-session-overrides`须对应确认没有日期例外的资料范围；若有例外表，则替换成`--session-overrides-table 实际表名`。不因表缺失猜无例外。凭据继续读取项目.env，不打到日志。
+2026-10-15启动修正：服务器时段来自`dfs://bomber_static/fut_trading_session`，须显式传入上面两项参数；省略会错误地沿用日表参考库及默认`trading_hours`表。MO/IM基础资料继续读取原日表库，不要把`DDB_REFERENCE_DATABASE`全局改成静态库。`--hours-code IM`显式声明MO的时段继承。`--no-session-overrides`须对应确认没有日期例外的资料范围；若有例外表，则替换成`--session-overrides-table 实际表名`。不因表缺失猜无例外。凭据继续读取项目.env，不打到日志。
 
 已有多08共享配置采用：
 
@@ -57,7 +59,9 @@ python -u -m scripts.integration.shared_account.continuous \
   --config /absolute/path/shared-session.json \
   --process-layout same-process \
   --connect --enable-orders --confirm-simnow --run-forever \
-  --calendar-id china.cffex --hours-code IM --no-session-overrides
+  --calendar-id china.cffex --hours-code IM \
+  --trading-hours-database dfs://bomber_static \
+  --trading-hours-table fut_trading_session --no-session-overrides
 ```
 
 不同进程将`--process-layout`改为`separate-processes`，配置须为independent；不要同时手动启动另一套server/worker。两种布局均支持省略`--run-forever`。配置内策略argv不能固定`--valuation-day`，日期由窗口与TD确定；账户、策略集合、来源和参数保持原恢复身份。不能隐式增加策略或更改执行模式。

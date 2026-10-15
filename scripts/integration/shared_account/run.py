@@ -225,7 +225,8 @@ def main(argv=None):
     cancel_probe = SharedMotherCancelProbe(args.acceptance_cancel_owner) if args.acceptance_cancel_owner else None
     try:
         if args.reconcile_only:
-            host = build_host(config, resume=True, diagnostics=diagnostics, read_only=True)
+            host = build_host(config, resume=True, diagnostics=diagnostics, read_only=True,
+                strategy_processes=config.get("execution_mode") == "independent")
             from bomber.framework.trader.runtime.live.local import strategy_state_lock
             for item in host.strategies.values():
                 host.resources.enter_context(strategy_state_lock(item.state_file))

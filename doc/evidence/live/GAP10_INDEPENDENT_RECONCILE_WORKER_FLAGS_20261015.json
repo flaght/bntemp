@@ -1,0 +1,17 @@
+{
+  "revision": "REV30",
+  "status": "offline_passed_remote_reconcile_pending",
+  "remote_report": "shared-simnow-1792027635310604116",
+  "failure": "SystemExit 2 before TD preflight",
+  "cause": "Reconcile build_host used account resume flag for all demo parsers; missing main_ema worker file rejects --resume",
+  "fix": "Independent reconcile uses existing strategy_processes per-worker file rule, same as server; account resume remains True",
+  "test_report": "tests/results/main-ema-acceptance-1792027733773800000",
+  "tests_run": 96,
+  "modules": {
+    "shared-account": 72,
+    "shared-ipc": 24
+  },
+  "broker_connected": false,
+  "checkpoint_modified": false,
+  "new_validation": "CLI test covers netted and independent assembly choice, no strategy start or account authorization"
+}

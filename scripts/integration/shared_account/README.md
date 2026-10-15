@@ -358,3 +358,12 @@ actual_send_ts_ns审计字段；来源版本/时间、原目标、期限和价�
 真实未来价格仍拒绝，不放宽行情年龄；independent/netted两模式确定性复现
 及修复回归通过。本机shared-account 72、shared-ipc 24，共96项通过。
 V5服务的具体首个故障仍须原summary/events确认；不清除失败/未决记录重发。
+
+## REV30：独立模式只读对账的worker恢复标志（2026-10-15）
+
+只读对账恢复账户检查点，但未运行过的worker可能没有自己的文件。原入口
+把账户resume=True传给全部策略解析器，会让缺EMA文件的独立会话以SystemExit2
+提前退出。现复用server已有strategy_processes逐worker文件存在性规则，
+账户仍恢复原代，算法不启动、不授权；netted恢复行为不变。
+共享72＋IPC24共96项回归通过。沿用原V5配置重新执行reconcile-only即可，
+不补造worker文件、不删除账本、不更改策略ID。
