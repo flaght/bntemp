@@ -46,6 +46,32 @@ class StrategyPositionBinding:
         object.__setattr__(self, "targets", MappingProxyType(targets))
 
 
+def identity_difference_paths(previous, current, *, limit=12):
+    """仅报告字段路径，不将身份里可能存在的凭据值打印出来。"""
+    paths = []
+    def visit(old, new, path):
+        if len(paths) >= limit or old == new:
+            return
+        if isinstance(old, dict) and isinstance(new, dict):
+            for key in sorted(old.keys() | new.keys(), key=str):
+                child = f"{path}.{key}"
+                if key not in old or key not in new:
+                    paths.append(child)
+                else:
+                    visit(old[key], new[key], child)
+                if len(paths) >= limit:
+                    break
+        elif isinstance(old, (list, tuple)) and isinstance(new, (list, tuple)):
+            if len(old) != len(new):
+                paths.append(path+".length")
+            for index, (before, after) in enumerate(zip(old, new)):
+                visit(before, after, f"{path}[{index}]")
+        else:
+            paths.append(path)
+    visit(previous, current, "session")
+    return paths[:limit]
+
+
 class SessionIdentityCheckpoint:
     """保存入口声明的会话身份；恢复不能偷偷改变路由、时间语义或策略参数。"""
     def __init__(self, identity):
@@ -56,7 +82,8 @@ class SessionIdentityCheckpoint:
 
     def restore_state(self, state):
         if state != self.snapshot_state():
-            raise ValueError("恢复会话身份、合约、参考版本或策略参数不一致")
+            raise ValueError("恢复会话身份、合约、参考版本或策略参数不一致；差异字段="
+                + ", ".join(identity_difference_paths(state, self.snapshot_state())))
 
 
 def validate_owned_positions(positions, binding, *, account_scope=None):

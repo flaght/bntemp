@@ -166,3 +166,7 @@ sha256sum -c doc/evidence/checksums/DOCUMENTATION_20261010_SHA256.txt
 ### 2026-10-15：08每分钟行情结构和决策日志
 
 新增分钟心跳、行情汇总、决策汇总，包含恢复等待/缺指数跳过/正常不变/目标提交/异常，保留原交易规则。详见 [分钟诊断交付](../HANDOFF/live/HANDOFF_OPTION_VEGA_MINUTE_DIAGNOSTICS_2026-10-15.md)、[诊断补充包](archives/OPTION_VEGA_MINUTE_DIAGNOSTICS_20261015.tar.gz) 及 [SHA清单](checksums/OPTION_VEGA_MINUTE_DIAGNOSTICS_20261015_SHA256.txt)。离线81+7+19通过，服务器新日志仍待确认。
+
+### 2026-10-15：08同日重启argv漂移修复
+
+快捷入口复用账户检查点保存的原始argv与账户预算，避免从解析后的reference.config重建产生5/5.0等字面差异。公共身份比较保持严格，异常仅新增差异路径。见 [修复说明](../HANDOFF/live/HANDOFF_OPTION_VEGA_RESUME_IDENTITY_FIX_2026-10-15.md)、[补充包](archives/OPTION_VEGA_RESUME_IDENTITY_FIX_20261015.tar.gz)、[SHA清单](checksums/OPTION_VEGA_RESUME_IDENTITY_FIX_20261015_SHA256.txt)。离线81+37及公共117项通过，真实服务器结果待验。

@@ -1,0 +1,33 @@
+{
+  "date": "2026-10-15",
+  "status": "offline_passed_online_pending",
+  "scope": "08_shortcut_exact_persisted_argv_same_day_resume",
+  "network_connected": false,
+  "real_orders_submitted": 0,
+  "tests": {
+    "existing_option": 81,
+    "option_shared_rollover": 21,
+    "minute_diagnostics": 7,
+    "shared_continuous": 9,
+    "live_common": 117
+  },
+  "verification": "actual public account/ownership/persistence and 08 factory with broker/feeds/SDK entity fixtures",
+  "covered": [
+    "native import then same day stop/resume",
+    "old regenerated argv fails and original checkpoint unchanged",
+    "exact persisted argv restores short1 with no order",
+    "actual slot change rejects without file modification",
+    "budget change rejects",
+    "identity diff paths omit values"
+  ],
+  "live_common_report": "tests/results/main-ema-acceptance-1792029044367139000/summary.json",
+  "source_sha256": {
+    "scripts/integration/options/shared.py": "51b44d59effcd47e817d0242dfdeb646441d67de45178b818c7db2be6efa3510",
+    "bomber/framework/trader/runtime/live/recovery.py": "2780da1d81d5c945f1f18f61be145c610886487a1bb70f6d45e76a859acc1236",
+    "tests/test_option_shared_rollover.py": "c43bb9f485979f74cb2204b12150f3b7fc31bbb9d8a1da27237617553299a1da"
+  },
+  "limitations": [
+    "server saved/new identity not available locally; other actual field differences may remain",
+    "no global normalization or bypass of identity checks; original JSON preserved"
+  ]
+}

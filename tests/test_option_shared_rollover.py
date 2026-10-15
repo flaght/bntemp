@@ -304,6 +304,71 @@ class OptionSharedRolloverTests(unittest.TestCase):
         self.assertFalse(transport.sent)
         host.stop()
 
+    def test_fast_entry_same_day_reuses_persisted_argv_without_numeric_drift(self):
+        from scripts.integration.options.shared import session_config, load_identity
+        from scripts.integration.shared_account import run
+        import sys
+        package = sys.modules["bomber.framework.trader.execution.ctp"]
+        def build(config):
+            with patch.object(package, "CtpNativeTraderDriver", CtpNativeTraderDriver, create=True), \
+                    patch.object(package, "CtpTdApiTransport", object, create=True), \
+                    patch("bomber.framework.trader.runtime.live.channels.ctp.build_simnow_transport",
+                          return_value=DetailsTransport("20260814")), \
+                    patch.object(entry, "prepare_inputs", return_value=self.current):
+                return run.build_host(config, resume=True)
+        first = session_config(self.identity, day="20260814", account_state=self.source,
+            signal_state=self.root/"exact-signal.json", report_dir=self.root/"reports")
+        host = build(first); self.addCleanup(host.resources.close)
+        host.start(); host.stop()
+        saved, reference = load_identity(self.source)
+        stored_identity = saved.payload["component_states"]["session_identity"]["identity"]
+        rebuilt = session_config(reference, day="20260814", account_state=self.source,
+            signal_state=self.root/"exact-signal.json", report_dir=self.root/"reports")
+        # 原缺陷：值相同，但显式CLI解析将整数默认值5变成浮点5.0。
+        self.assertNotEqual(rebuilt["strategies"][0]["argv"], first["strategies"][0]["argv"])
+        original_bytes = self.source.read_bytes()
+        rejected = build(rebuilt); self.addCleanup(rejected.resources.close)
+        with self.assertRaisesRegex(ValueError, "差异字段.*argv"):
+            rejected.start()
+        self.assertEqual(self.source.read_bytes(), original_bytes)
+        self.assertFalse(rejected.account.driver.submitted_orders)
+
+        fixed = session_config(reference, day="20260814", account_state=self.source,
+            signal_state=self.root/"exact-signal.json", report_dir=self.root/"reports",
+            shared_identity=stored_identity)
+        self.assertEqual(fixed["strategies"][0]["argv"], first["strategies"][0]["argv"])
+        self.assertEqual(fixed["account"], stored_identity["account"])
+        again = build(fixed); self.addCleanup(again.resources.close)
+        again.start()
+        self.assertEqual(again.service.position_manager.position(CLIENT, OPTION), -1)
+        self.assertTrue(again.service.client.is_armed)
+        self.assertFalse(again.account.driver.submitted_orders)
+        again.stop()
+        original_bytes = self.source.read_bytes()
+        altered = deepcopy(fixed)
+        argv = altered["strategies"][0]["argv"]
+        argv[argv.index("--option-slot")+1] = "13:37"
+        wrong = build(altered); self.addCleanup(wrong.resources.close)
+        with self.assertRaisesRegex(ValueError, "差异字段"):
+            wrong.start()
+        self.assertEqual(self.source.read_bytes(), original_bytes)
+        self.assertFalse(wrong.account.driver.submitted_orders)
+        # 保持预算约束；参数漂移修复不是放宽账户身份。
+        with self.assertRaisesRegex(ValueError, "订单上限"):
+            session_config(reference, day="20260814", account_state=self.source,
+                signal_state=self.root/"exact-signal.json", report_dir=self.root/"reports", max_orders=21,
+                shared_identity=stored_identity)
+
+    def test_identity_error_names_paths_but_does_not_disclose_values(self):
+        from bomber.framework.trader.runtime.live.recovery import SessionIdentityCheckpoint
+        check = SessionIdentityCheckpoint({"password": "new_secret", "strategies": {CLIENT: {"argv": ["5.0"]}}})
+        with self.assertRaisesRegex(ValueError, "差异字段") as caught:
+            check.restore_state({"version": 1, "identity": {"password": "old_secret", "strategies": {CLIENT: {"argv": ["5"]}}}})
+        self.assertIn(".password", str(caught.exception))
+        self.assertIn("argv[0]", str(caught.exception))
+        self.assertNotIn("new_secret", str(caught.exception))
+        self.assertNotIn("old_secret", str(caught.exception))
+
     def test_shared_fast_entry_stops_at_calendar_close_and_finally_saves(self):
         from scripts.integration.options import shared as fast
         from bomber.framework.calendars.sessions import TradingWindow

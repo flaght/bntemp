@@ -9,8 +9,22 @@ import time
 ROOT = Path(__file__).resolve().parents[3]
 
 
-def session_config(identity, *, day, account_state, signal_state, report_dir, max_orders=20):
+def session_config(identity, *, day, account_state, signal_state, report_dir, max_orders=20, shared_identity=None):
     """原策略/风险参数保持；日期不进入argv，下一交易日由TD登录确定。"""
+    if shared_identity is not None:
+        from copy import deepcopy
+        sid = identity["strategy_id"]
+        declarations = shared_identity["strategies"]
+        if set(declarations) != {sid} or declarations[sid]["kind"] != "option_vega":
+            raise ValueError("共享恢复须保留原单个08策略声明")
+        account = deepcopy(shared_identity["account"])
+        if account["client_id"] != sid or account["max_session_orders"] != max_orders:
+            raise ValueError("共享恢复须保留原账户ID及订单上限")
+        return {"version": 1, "trading_day": day, "environment": "realtime", "execution_mode": "independent",
+            "position_scope": "strategy_instruments", "seconds": 86400,
+            "account_state_file": str(account_state), "report_dir": str(report_dir), "account": account,
+            "strategies": [{"strategy_id": sid, "kind": "option_vega", "state_file": str(signal_state),
+                "argv": deepcopy(declarations[sid]["argv"])}]}
     from .simnow_migrate import runtime_argv
     from scripts.integration.shared_account.config import PROTECTED
     argv = runtime_argv(identity, day, signal_state, "stream_cffex_1min", "end", "cumulative", report_dir)
@@ -168,9 +182,11 @@ class OptionWindowRuntime:
         remaining = self.args.max_session_orders - orders_for_day(saved.payload, day)
         if remaining <= 0:
             raise RuntimeError("本交易日报单额度已用完；停止并保存，不重启刷新额度")
+        saved_identity = saved.payload["component_states"]["session_identity"]["identity"]
         config = session_config(identity, day=day, account_state=self.args.state_file,
             signal_state=self.args.signal_state, report_dir=self.args.report_dir,
-            max_orders=self.args.max_session_orders)
+            max_orders=self.args.max_session_orders,
+            shared_identity=saved_identity if "strategies" in saved_identity else None)
         return run_session(config, resume=True, window=self.window, stop_event=self.stop,
             session_order_budget=remaining, calendar_provenance=self.calendar.provenance)
 
