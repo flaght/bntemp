@@ -1,0 +1,53 @@
+{
+  "verification": "review_of_user_supplied_simnow_server_worker_and_checkpoints",
+  "status": "eligible_for_explicit_same_day_readonly_reconciliation_subject_to_current_broker_facts",
+  "generation": 615,
+  "account_flags": {
+    "failed": true,
+    "pending": true
+  },
+  "orders": {
+    "count": 4,
+    "all_filled": true,
+    "driver_active_associations": 0,
+    "next_ref": 5
+  },
+  "own_positions": [
+    {
+      "quantity": "0",
+      "strategy_id": "calendar-cu-fresh-v5",
+      "target_key": "cu2612.SHFE"
+    },
+    {
+      "quantity": "0",
+      "strategy_id": "calendar-cu-fresh-v5",
+      "target_key": "cu2701.SHFE"
+    }
+  ],
+  "journal": {
+    "requests_all_completed": true,
+    "calendar_events": 12,
+    "calendar_ack": 9,
+    "unacknowledged_sequences": [
+      10,
+      11,
+      12
+    ],
+    "worker_fills_received": 3,
+    "account_fill_events": 4
+  },
+  "external_baseline_includes_hedged_CU_legs": true,
+  "failure_diagnostics_present_in_remote_server_report": false,
+  "interpretation": "Worker failure matches reproduced retained-target timestamp bug; server failed/pending consistent with failed continuation. Historical server lacks pre-shutdown diagnostics, so exclude other simultaneous causes only after current authority checks. Unacknowledged last fill is durable in journal, not proven lost.",
+  "required_next_step": "After syncing REV29, run original V5 config with --connect --resume --reconcile-only; full gross/today-yesterday baseline/funds/active-orders checks, backup and freeze contributions via existing lifecycle; no manual flag edits or new session",
+  "checkpoint_modified": false,
+  "reviewer_broker_connected": false,
+  "source_files": {
+    "scripts/integration/shared_account/results/three-fresh-v5-20261015-1792026346085402863/account.json": "c1ab270cbed442e7f277010aab1ad2fc0c82f79c0ff2c7c99ff18c4af395348d",
+    "scripts/integration/shared_account/results/three-fresh-v5-20261015-1792026346085402863/calendar_spread.json": "8265efc91afccedd6b16d61f4739879db9f1994d6e05178f5c83d86122cd6d22",
+    "scripts/integration/shared_account/results/three-fresh-v5-20261015-1792026346085402863/cross_section.json": "8bafbae5a4e4bceb8967c5d1992eb003ea6c4acd501d4ac67ec2bc576bd1478e",
+    "scripts/integration/shared_account/results/three-fresh-v5-20261015-1792026346085402863/shared-account-server-1792026432654881687/summary.json": "083e8e6950964fbe8149b007a68cf899fac08fb5c9d53fd7bca6da1f531b7b7c",
+    "scripts/integration/shared_account/results/three-fresh-v5-20261015-1792026346085402863/shared-account-server-1792026432654881687/events.txt": "72eaf8bd76735ec1b70e25fe65039bb50b45020ebe80f9937cf053de92a2b710",
+    "scripts/integration/shared_account/results/three-fresh-v5-20261015-1792026346085402863/calendar-cu-fresh-v5-1792026526581043806/summary.json": "bb25148dd34f38d3c17107a597bfc7587959f2545b76859120a6251f526f36d9"
+  }
+}
