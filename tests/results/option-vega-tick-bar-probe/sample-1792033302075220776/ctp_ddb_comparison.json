@@ -1,0 +1,99 @@
+{
+  "overlap_start": "2026-10-15T11:01:42.658556+08:00",
+  "overlap_start_ns": 1792033302658555620,
+  "overlap_end_ns": 1792033896826041186,
+  "matching": "same 8 market fields, nearest unused receipt within 3s; timestamps excluded",
+  "contracts": {
+    "MO2610-C-8600": {
+      "ctp_ticks": 0,
+      "ddb_ticks": 0,
+      "matched": 0,
+      "ctp_unmatched": 0,
+      "ddb_unmatched": 0,
+      "ctp_minus_ddb_event_seconds": {}
+    },
+    "MO2610-C-8500": {
+      "ctp_ticks": 12,
+      "ddb_ticks": 12,
+      "matched": 12,
+      "ctp_unmatched": 0,
+      "ddb_unmatched": 0,
+      "ctp_minus_ddb_event_seconds": {
+        "0.4": 12
+      },
+      "bar_count": 6,
+      "bar_nearest_tick_max_ms": 13.205227
+    },
+    "MO2610-C-8400": {
+      "ctp_ticks": 9,
+      "ddb_ticks": 9,
+      "matched": 9,
+      "ctp_unmatched": 0,
+      "ddb_unmatched": 0,
+      "ctp_minus_ddb_event_seconds": {
+        "0.4": 9
+      },
+      "bar_count": 4,
+      "bar_nearest_tick_max_ms": 13.705361
+    },
+    "MO2610-C-8200": {
+      "ctp_ticks": 11,
+      "ddb_ticks": 11,
+      "matched": 11,
+      "ctp_unmatched": 0,
+      "ddb_unmatched": 0,
+      "ctp_minus_ddb_event_seconds": {
+        "0.4": 11
+      },
+      "bar_count": 4,
+      "bar_nearest_tick_max_ms": 13.388038
+    },
+    "MO2610-C-8100": {
+      "ctp_ticks": 11,
+      "ddb_ticks": 11,
+      "matched": 11,
+      "ctp_unmatched": 0,
+      "ddb_unmatched": 0,
+      "ctp_minus_ddb_event_seconds": {
+        "0.4": 11
+      },
+      "bar_count": 7,
+      "bar_nearest_tick_max_ms": 13.764302
+    },
+    "MO2611-C-7400": {
+      "ctp_ticks": 643,
+      "ddb_ticks": 642,
+      "matched": 642,
+      "ctp_unmatched": 1,
+      "ddb_unmatched": 0,
+      "ctp_minus_ddb_event_seconds": {
+        "0.4": 640,
+        "-0.6": 1,
+        "1.4": 1
+      },
+      "bar_count": 10,
+      "bar_nearest_tick_max_ms": 9.184691
+    },
+    "IM2611": {
+      "ctp_ticks": 1140,
+      "ddb_ticks": 1141,
+      "matched": 1139,
+      "ctp_unmatched": 1,
+      "ddb_unmatched": 2,
+      "ctp_minus_ddb_event_seconds": {
+        "0.4": 1139
+      },
+      "bar_count": 10,
+      "bar_nearest_tick_max_ms": 6.483054
+    }
+  },
+  "overlap_end": "2026-10-15T11:11:36.826041+08:00",
+  "limitations": [
+    "Matched by identical 8 market fields and nearest receipt within 3s; not a transport sequence-number audit.",
+    "Active contract unmatched rows occur at sample boundaries; do not infer packet loss.",
+    "A systematic 400ms business-time difference is observed; cannot locate its origin without upstream collection configuration."
+  ],
+  "unique_market_state_time_offsets_ctp_minus_ddb_seconds": {
+    "0.4": 1592
+  }
+}
