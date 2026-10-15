@@ -123,6 +123,9 @@ python -u -m scripts.integration.reference_data.session_overrides_export \
 2026-10-15用户确认：`shfe_1min`、`cffex_1min`、`index_1min` 的 minTime 为已完成分钟标签。
 历史配置使用 `time_label=end`：例如21:01转换为21:00:59.999999999，不再按起点多移一分钟。
 对应CU原始分钟配置为 `history_cu.json`，行情库 `dfs://min_bar/shfe_1min`，只读原始OHLC。
+用户随后确认该表目前只有AU，实际历史预热验收改用 `--product AU` 和 `history_au.json`；
+CU配置仅保留字段模板，不表示库中已有CU数据。AU主力合约及因子由参考服务自动解析，
+不固定为截图中的au2612；历史窗口仍须覆盖运行时实际主力。
 不映射不存在的adjusted_close；01默认按会话交易日自动选择角色来源日及固定合约累计因子，
 计算close×pcr_cumfactor。夜盘、跨午夜、周末归属由同一会话日历确定，不手写逐日映射。
 因子日期口径与入口factor-date-basis一致；source使用交易日前最新角色资料日期，trading使用交易日。
