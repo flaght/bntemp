@@ -1,0 +1,207 @@
+{
+  "config": {
+    "version": 1,
+    "trading_day": "20261016",
+    "environment": "realtime",
+    "position_scope": "strategy_instruments",
+    "execution_mode": "independent",
+    "seconds": 3600.0,
+    "account_state_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/three-realtime-independent-20261016-cu-al-ag-au/account.json",
+    "report_dir": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/three-realtime-independent-20261016-cu-al-ag-au",
+    "account": {
+      "client_id": "three-realtime-independent",
+      "max_gross_quantity": "7",
+      "max_gross_notional": "3400000",
+      "max_session_orders": 20,
+      "limit_offset_ticks": 1
+    },
+    "strategies": [
+      {
+        "strategy_id": "ema-cu-three",
+        "kind": "main_ema",
+        "state_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/three-realtime-independent-20261016-cu-al-ag-au/ema.json",
+        "argv": [
+          "--product",
+          "CU",
+          "--expected-source-day",
+          "20261015",
+          "--factor-date-basis",
+          "source",
+          "--factor-availability",
+          "observed-on-read",
+          "--fast",
+          "3",
+          "--slow",
+          "5",
+          "--quantity",
+          "1",
+          "--max-notional",
+          "1000000",
+          "--ctp-future-buffer-ms",
+          "100"
+        ]
+      },
+      {
+        "strategy_id": "cross-cu-al-ag-au-three",
+        "kind": "cross_section",
+        "state_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/three-realtime-independent-20261016-cu-al-ag-au/cross.json",
+        "argv": [
+          "--products",
+          "CU,AL,AG,AU",
+          "--expected-source-day",
+          "20261015",
+          "--factor-date-basis",
+          "source",
+          "--factor-availability",
+          "observed-on-read",
+          "--lookback",
+          "3",
+          "--rebalance-interval",
+          "1",
+          "--group-fraction",
+          "0.5",
+          "--target-notional",
+          "1000000",
+          "--target-quantity-cap",
+          "1",
+          "--max-quantity",
+          "1",
+          "--max-notional",
+          "1000000",
+          "--ctp-future-buffer-ms",
+          "100"
+        ]
+      },
+      {
+        "strategy_id": "calendar-cu-three",
+        "kind": "calendar_spread",
+        "state_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/three-realtime-independent-20261016-cu-al-ag-au/calendar.json",
+        "argv": [
+          "--product",
+          "CU",
+          "--expected-source-day",
+          "20261015",
+          "--leg1-role",
+          "secondary",
+          "--leg2-role",
+          "far",
+          "--quantity",
+          "1",
+          "--lookback",
+          "3",
+          "--rebalance-interval",
+          "1",
+          "--entry-z",
+          "1",
+          "--exit-z",
+          "0.25",
+          "--max-notional",
+          "1000000",
+          "--ctp-future-buffer-ms",
+          "100"
+        ]
+      }
+    ],
+    "existing_position_policy": "preserve_external"
+  },
+  "failure": null,
+  "td_preflight": {
+    "environment": "realtime",
+    "expected_td_trading_day": "20261016",
+    "observed_td_trading_day": "20261016",
+    "md_front": "tcp://182.254.243.31:30011",
+    "td_front": "tcp://182.254.243.31:30001",
+    "preflight_orders_submitted": 0,
+    "position_scope_policy": "strategy_instruments",
+    "managed_instruments": [
+      "ag2612.SHFE",
+      "al2611.SHFE",
+      "au2612.SHFE",
+      "cu2611.SHFE",
+      "cu2612.SHFE",
+      "cu2701.SHFE"
+    ],
+    "external_gross": {
+      "MO2611-C-7200.CFFEX": [
+        "0",
+        "1"
+      ],
+      "sc2611.INE": [
+        "1",
+        "0"
+      ],
+      "ni2611.SHFE": [
+        "1",
+        "0"
+      ],
+      "i2701.DCE": [
+        "0",
+        "1"
+      ],
+      "hc2701.SHFE": [
+        "1",
+        "0"
+      ]
+    }
+  },
+  "markets": {
+    "ema-cu-three": {
+      "cu2611.SHFE": {
+        "trading_day": "20261016",
+        "ts_event": 1792069369000000000,
+        "received_monotonic_ns": 15035344330535662,
+        "timestamp_regressed": false,
+        "reference_price": "108855.0"
+      }
+    },
+    "cross-cu-al-ag-au-three": {
+      "ag2612.SHFE": {
+        "trading_day": "20261016",
+        "ts_event": 1792069369000000000,
+        "received_monotonic_ns": 15035344357530860,
+        "timestamp_regressed": false,
+        "reference_price": "13802.5"
+      },
+      "al2611.SHFE": {
+        "trading_day": "20261016",
+        "ts_event": 1792069369000000000,
+        "received_monotonic_ns": 15035344357975362,
+        "timestamp_regressed": false,
+        "reference_price": "23042.5"
+      },
+      "au2612.SHFE": {
+        "trading_day": "20261016",
+        "ts_event": 1792069369000000000,
+        "received_monotonic_ns": 15035344622248102,
+        "timestamp_regressed": false,
+        "reference_price": "896.99"
+      },
+      "cu2611.SHFE": {
+        "trading_day": "20261016",
+        "ts_event": 1792069369000000000,
+        "received_monotonic_ns": 15035344622523874,
+        "timestamp_regressed": false,
+        "reference_price": "108855.0"
+      }
+    },
+    "calendar-cu-three": {
+      "cu2612.SHFE": {
+        "trading_day": "20261016",
+        "ts_event": 1792069369000000000,
+        "received_monotonic_ns": 15035344389929133,
+        "timestamp_regressed": false,
+        "reference_price": "108205.0"
+      },
+      "cu2701.SHFE": {
+        "trading_day": "20261016",
+        "ts_event": 1792069369000000000,
+        "received_monotonic_ns": 15035344390214594,
+        "timestamp_regressed": false,
+        "reference_price": "107655.0"
+      }
+    }
+  },
+  "verification": "readonly_no_strategy_no_orders",
+  "orders_submitted": 0,
+  "status": "prechecked"
+}
