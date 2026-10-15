@@ -1,0 +1,1377 @@
+{
+  "config": {
+    "version": 1,
+    "trading_day": "20261015",
+    "environment": "realtime",
+    "position_scope": "strategy_instruments",
+    "execution_mode": "independent",
+    "seconds": 3600.0,
+    "account_state_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/three-fresh-v5-20261015-1792026346085402863/account.json",
+    "report_dir": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/three-fresh-v5-20261015-1792026346085402863",
+    "account": {
+      "client_id": "three-fresh-realtime-v5",
+      "max_gross_quantity": "7",
+      "max_gross_notional": "3500000",
+      "max_session_orders": 20,
+      "limit_offset_ticks": 1
+    },
+    "strategies": [
+      {
+        "strategy_id": "ema-cu-fresh-v5",
+        "kind": "main_ema",
+        "state_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/three-fresh-v5-20261015-1792026346085402863/main_ema.json",
+        "argv": [
+          "--product",
+          "CU",
+          "--expected-source-day",
+          "20261014",
+          "--factor-date-basis",
+          "source",
+          "--factor-availability",
+          "observed-on-read",
+          "--fast",
+          "3",
+          "--slow",
+          "5",
+          "--quantity",
+          "1",
+          "--max-notional",
+          "1000000",
+          "--ctp-future-buffer-ms",
+          "100"
+        ]
+      },
+      {
+        "strategy_id": "cross-cu-al-ag-au-fresh-v5",
+        "kind": "cross_section",
+        "state_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/three-fresh-v5-20261015-1792026346085402863/cross_section.json",
+        "argv": [
+          "--products",
+          "CU,AL,AG,AU",
+          "--expected-source-day",
+          "20261014",
+          "--factor-date-basis",
+          "source",
+          "--factor-availability",
+          "observed-on-read",
+          "--lookback",
+          "3",
+          "--rebalance-interval",
+          "1",
+          "--group-fraction",
+          "0.5",
+          "--target-notional",
+          "1000000",
+          "--target-quantity-cap",
+          "1",
+          "--max-quantity",
+          "1",
+          "--max-notional",
+          "1000000",
+          "--ctp-future-buffer-ms",
+          "100"
+        ]
+      },
+      {
+        "strategy_id": "calendar-cu-fresh-v5",
+        "kind": "calendar_spread",
+        "state_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/three-fresh-v5-20261015-1792026346085402863/calendar_spread.json",
+        "argv": [
+          "--product",
+          "CU",
+          "--expected-source-day",
+          "20261014",
+          "--leg1-role",
+          "secondary",
+          "--leg2-role",
+          "far",
+          "--quantity",
+          "1",
+          "--lookback",
+          "3",
+          "--rebalance-interval",
+          "1",
+          "--entry-z",
+          "1",
+          "--exit-z",
+          "0.25",
+          "--max-notional",
+          "1000000",
+          "--ctp-future-buffer-ms",
+          "100"
+        ]
+      }
+    ],
+    "existing_position_policy": "preserve_external"
+  },
+  "failure": "共享账户执行状态不明，保持闭闸",
+  "shutdown_failure": "共享账户执行状态不明，保持闭闸",
+  "td_preflight": {
+    "environment": "realtime",
+    "expected_td_trading_day": "20261015",
+    "observed_td_trading_day": "20261015",
+    "md_front": "tcp://182.254.243.31:30011",
+    "td_front": "tcp://182.254.243.31:30001",
+    "preflight_orders_submitted": 0,
+    "position_scope_policy": "strategy_instruments",
+    "managed_instruments": [
+      "ag2612.SHFE",
+      "al2611.SHFE",
+      "au2612.SHFE",
+      "cu2611.SHFE",
+      "cu2612.SHFE",
+      "cu2701.SHFE"
+    ],
+    "external_gross": {
+      "MO2611-C-7400.CFFEX": [
+        "0",
+        "1"
+      ],
+      "sc2611.INE": [
+        "1",
+        "0"
+      ],
+      "ni2611.SHFE": [
+        "1",
+        "0"
+      ],
+      "i2701.DCE": [
+        "0",
+        "1"
+      ],
+      "hc2701.SHFE": [
+        "1",
+        "0"
+      ]
+    }
+  },
+  "account": {
+    "version": 1,
+    "client_id": "three-fresh-realtime-v5",
+    "account_id": "097561",
+    "failed": true,
+    "pending": true,
+    "portfolio_revision": 2,
+    "strategy_revisions": {
+      "calendar-cu-fresh-v5": 2
+    },
+    "known_instruments": [
+      "cu2612.SHFE",
+      "cu2701.SHFE"
+    ],
+    "sources": {
+      "calendar-cu-fresh-v5": {
+        "revision": 2,
+        "ts_event": 1792026841611319643,
+        "targets": {
+          "cu2612.SHFE": "-1",
+          "cu2701.SHFE": "1"
+        },
+        "rows": [
+          {
+            "instrument_id": "cu2612.SHFE",
+            "quantity": "-1",
+            "strategy_id": "calendar-cu-fresh-v5",
+            "target_key": "cu2612.SHFE",
+            "source_revision": 2,
+            "source_deadline_ns": null
+          },
+          {
+            "instrument_id": "cu2701.SHFE",
+            "quantity": "1",
+            "strategy_id": "calendar-cu-fresh-v5",
+            "target_key": "cu2701.SHFE",
+            "source_revision": 2,
+            "source_deadline_ns": null
+          }
+        ],
+        "deadline_ns": null,
+        "execution_policy": "DIRECT",
+        "metadata": {
+          "active_pair": [
+            "cu2612",
+            "cu2701"
+          ],
+          "leg1_role": "secondary",
+          "leg2_role": "far",
+          "market_health_feeds": [],
+          "market_health_mode": "NORMAL",
+          "market_health_state": "READY",
+          "portfolio_revision": 2,
+          "position_attribution": [
+            {
+              "instrument_id": "cu2612.SHFE",
+              "quantity": "-1",
+              "strategy_id": "calendar-cu-fresh-v5",
+              "target_key": "cu2612.SHFE",
+              "source_revision": 2,
+              "source_deadline_ns": null
+            },
+            {
+              "instrument_id": "cu2701.SHFE",
+              "quantity": "1",
+              "strategy_id": "calendar-cu-fresh-v5",
+              "target_key": "cu2701.SHFE",
+              "source_revision": 2,
+              "source_deadline_ns": null
+            }
+          ],
+          "reason": "SIGNAL",
+          "replay_md_trading_day": null,
+          "signal_bar_ns": 1792026839999999999,
+          "simnow_environment": "realtime",
+          "z_score": 1.3363062095621188
+        }
+      }
+    },
+    "shared": {
+      "version": 1,
+      "budget": {
+        "max_gross_quantity": "7",
+        "max_gross_notional": "3500000"
+      },
+      "routes": {
+        "ema-cu-fresh-v5": {
+          "routes": {
+            "cu_main": "cu2611.SHFE"
+          },
+          "budget": {
+            "max_gross_quantity": "1",
+            "max_gross_notional": "1000000"
+          },
+          "limits": {
+            "cu2611.SHFE": {
+              "max_order_quantity": "1",
+              "max_abs_position": "1",
+              "max_order_notional": "1000000",
+              "max_abs_position_notional": "1000000",
+              "max_market_age_ns": "120000000000",
+              "contract_multiplier": "5.0"
+            }
+          }
+        },
+        "cross-cu-al-ag-au-fresh-v5": {
+          "routes": {
+            "cu2611.SHFE": "cu2611.SHFE",
+            "al2611.SHFE": "al2611.SHFE",
+            "ag2612.SHFE": "ag2612.SHFE",
+            "au2612.SHFE": "au2612.SHFE"
+          },
+          "budget": {
+            "max_gross_quantity": "4",
+            "max_gross_notional": "4000000"
+          },
+          "limits": {
+            "cu2611.SHFE": {
+              "max_order_quantity": "1",
+              "max_abs_position": "1",
+              "max_order_notional": "1000000",
+              "max_abs_position_notional": "1000000",
+              "max_market_age_ns": "120000000000",
+              "contract_multiplier": "5.0"
+            },
+            "al2611.SHFE": {
+              "max_order_quantity": "1",
+              "max_abs_position": "1",
+              "max_order_notional": "1000000",
+              "max_abs_position_notional": "1000000",
+              "max_market_age_ns": "120000000000",
+              "contract_multiplier": "5.0"
+            },
+            "ag2612.SHFE": {
+              "max_order_quantity": "1",
+              "max_abs_position": "1",
+              "max_order_notional": "1000000",
+              "max_abs_position_notional": "1000000",
+              "max_market_age_ns": "120000000000",
+              "contract_multiplier": "15.0"
+            },
+            "au2612.SHFE": {
+              "max_order_quantity": "1",
+              "max_abs_position": "1",
+              "max_order_notional": "1000000",
+              "max_abs_position_notional": "1000000",
+              "max_market_age_ns": "120000000000",
+              "contract_multiplier": "1000.0"
+            }
+          }
+        },
+        "calendar-cu-fresh-v5": {
+          "routes": {
+            "cu2612.SHFE": "cu2612.SHFE",
+            "cu2701.SHFE": "cu2701.SHFE"
+          },
+          "budget": {
+            "max_gross_quantity": "2",
+            "max_gross_notional": "2000000"
+          },
+          "limits": {
+            "cu2612.SHFE": {
+              "max_order_quantity": "2",
+              "max_abs_position": "1",
+              "max_order_notional": "1000000",
+              "max_abs_position_notional": "1000000",
+              "max_market_age_ns": "120000000000",
+              "contract_multiplier": "5.0"
+            },
+            "cu2701.SHFE": {
+              "max_order_quantity": "2",
+              "max_abs_position": "1",
+              "max_order_notional": "1000000",
+              "max_abs_position_notional": "1000000",
+              "max_market_age_ns": "120000000000",
+              "contract_multiplier": "5.0"
+            }
+          }
+        }
+      },
+      "suspended": [
+        "calendar-cu-fresh-v5"
+      ],
+      "draining": [
+        "calendar-cu-fresh-v5"
+      ],
+      "execution_mode": "independent",
+      "event_journal": {
+        "version": 1,
+        "events": {
+          "cross-cu-al-ag-au-fresh-v5": [],
+          "calendar-cu-fresh-v5": [
+            {
+              "sequence": 1,
+              "type": "OrderUpdateEvent",
+              "event": {
+                "identity": {
+                  "client_id": "three-fresh-realtime-v5",
+                  "account_id": "097561",
+                  "strategy_id": "calendar-cu-fresh-v5",
+                  "client_order_id": "CTP-9999-097561-20261015-2",
+                  "instrument_id": "cu2612.SHFE",
+                  "venue_order_id": "199754"
+                },
+                "event_id": "CTP-9999-097561-20261015-2:1:calendar-cu-fresh-v5:cu2612.SHFE",
+                "status": "ACCEPTED",
+                "side": "BUY",
+                "order_quantity": "1",
+                "cumulative_filled": "0",
+                "ts_event": 1792026784616421650,
+                "sequence": 1,
+                "reason": null,
+                "metadata": {
+                  "active_pair": [
+                    "cu2612",
+                    "cu2701"
+                  ],
+                  "leg1_role": "secondary",
+                  "leg2_role": "far",
+                  "market_health_feeds": [],
+                  "market_health_mode": "NORMAL",
+                  "market_health_state": "READY",
+                  "portfolio_revision": 1,
+                  "position_attribution": [
+                    {
+                      "instrument_id": "cu2612.SHFE",
+                      "quantity": "1",
+                      "strategy_id": "calendar-cu-fresh-v5",
+                      "target_key": "cu2612.SHFE",
+                      "source_revision": 1,
+                      "source_deadline_ns": null
+                    },
+                    {
+                      "instrument_id": "cu2701.SHFE",
+                      "quantity": "-1",
+                      "strategy_id": "calendar-cu-fresh-v5",
+                      "target_key": "cu2701.SHFE",
+                      "source_revision": 1,
+                      "source_deadline_ns": null
+                    }
+                  ],
+                  "reason": "SIGNAL",
+                  "replay_md_trading_day": null,
+                  "signal_bar_ns": 1792026779999999999,
+                  "simnow_environment": "realtime",
+                  "z_score": -2.449489742783178,
+                  "actual_send_deadline_ns": null,
+                  "shared_execution_mode": "independent",
+                  "target": "1",
+                  "owned_position": "0",
+                  "request_revision": 1,
+                  "allocation_token": "0c83bf359b13483c9bf2c26fe1cded5a",
+                  "allocation_legs": [
+                    {
+                      "strategy_id": "calendar-cu-fresh-v5",
+                      "target_key": "cu2612.SHFE",
+                      "quantity": "1",
+                      "filled": "0",
+                      "target_revision": 1,
+                      "deadline_ns": null
+                    }
+                  ],
+                  "strategy_id": "calendar-cu-fresh-v5",
+                  "position_effect": "OPEN",
+                  "order_ref": "2",
+                  "front_id": "1",
+                  "session_id": "663691464",
+                  "venue_order_id": "199754",
+                  "attributed_target_key": "cu2612.SHFE",
+                  "account_event_id": "CTP-9999-097561-20261015-2:1",
+                  "attributed_target_revision": 1
+                }
+              }
+            },
+            {
+              "sequence": 2,
+              "type": "OrderUpdateEvent",
+              "event": {
+                "identity": {
+                  "client_id": "three-fresh-realtime-v5",
+                  "account_id": "097561",
+                  "strategy_id": "calendar-cu-fresh-v5",
+                  "client_order_id": "CTP-9999-097561-20261015-2",
+                  "instrument_id": "cu2612.SHFE",
+                  "venue_order_id": "199754"
+                },
+                "event_id": "CTP-9999-097561-20261015-2:2:calendar-cu-fresh-v5:cu2612.SHFE",
+                "status": "FILLED",
+                "side": "BUY",
+                "order_quantity": "1",
+                "cumulative_filled": "1",
+                "ts_event": 1792026784668884937,
+                "sequence": 2,
+                "reason": null,
+                "metadata": {
+                  "active_pair": [
+                    "cu2612",
+                    "cu2701"
+                  ],
+                  "leg1_role": "secondary",
+                  "leg2_role": "far",
+                  "market_health_feeds": [],
+                  "market_health_mode": "NORMAL",
+                  "market_health_state": "READY",
+                  "portfolio_revision": 1,
+                  "position_attribution": [
+                    {
+                      "instrument_id": "cu2612.SHFE",
+                      "quantity": "1",
+                      "strategy_id": "calendar-cu-fresh-v5",
+                      "target_key": "cu2612.SHFE",
+                      "source_revision": 1,
+                      "source_deadline_ns": null
+                    },
+                    {
+                      "instrument_id": "cu2701.SHFE",
+                      "quantity": "-1",
+                      "strategy_id": "calendar-cu-fresh-v5",
+                      "target_key": "cu2701.SHFE",
+                      "source_revision": 1,
+                      "source_deadline_ns": null
+                    }
+                  ],
+                  "reason": "SIGNAL",
+                  "replay_md_trading_day": null,
+                  "signal_bar_ns": 1792026779999999999,
+                  "simnow_environment": "realtime",
+                  "z_score": -2.449489742783178,
+                  "actual_send_deadline_ns": null,
+                  "shared_execution_mode": "independent",
+                  "target": "1",
+                  "owned_position": "0",
+                  "request_revision": 1,
+                  "allocation_token": "0c83bf359b13483c9bf2c26fe1cded5a",
+                  "allocation_legs": [
+                    {
+                      "strategy_id": "calendar-cu-fresh-v5",
+                      "target_key": "cu2612.SHFE",
+                      "quantity": "1",
+                      "filled": "0",
+                      "target_revision": 1,
+                      "deadline_ns": null
+                    }
+                  ],
+                  "strategy_id": "calendar-cu-fresh-v5",
+                  "position_effect": "OPEN",
+                  "order_ref": "2",
+                  "front_id": "",
+                  "session_id": "",
+                  "venue_order_id": "199754",
+                  "trade_id": "SHFE:      132969",
+                  "attributed_target_key": "cu2612.SHFE",
+                  "account_event_id": "CTP-9999-097561-20261015-2:2",
+                  "attributed_target_revision": 1
+                }
+              }
+            },
+            {
+              "sequence": 3,
+              "type": "FillEvent",
+              "event": {
+                "identity": {
+                  "client_id": "three-fresh-realtime-v5",
+                  "account_id": "097561",
+                  "strategy_id": "calendar-cu-fresh-v5",
+                  "client_order_id": "CTP-9999-097561-20261015-2",
+                  "instrument_id": "cu2612.SHFE",
+                  "venue_order_id": "199754"
+                },
+                "event_id": "CTP-9999-097561-20261015-2:2:fill:calendar-cu-fresh-v5:cu2612.SHFE",
+                "trade_id": "SHFE:      132969",
+                "side": "BUY",
+                "quantity": "1",
+                "price": "109120.0",
+                "commission": null,
+                "commission_currency": null,
+                "ts_event": 1792026784668884937,
+                "cumulative_filled": "1",
+                "sequence": 2,
+                "position_effect": "OPEN",
+                "metadata": {
+                  "active_pair": [
+                    "cu2612",
+                    "cu2701"
+                  ],
+                  "leg1_role": "secondary",
+                  "leg2_role": "far",
+                  "market_health_feeds": [],
+                  "market_health_mode": "NORMAL",
+                  "market_health_state": "READY",
+                  "portfolio_revision": 1,
+                  "position_attribution": [
+                    {
+                      "instrument_id": "cu2612.SHFE",
+                      "quantity": "1",
+                      "strategy_id": "calendar-cu-fresh-v5",
+                      "target_key": "cu2612.SHFE",
+                      "source_revision": 1,
+                      "source_deadline_ns": null
+                    },
+                    {
+                      "instrument_id": "cu2701.SHFE",
+                      "quantity": "-1",
+                      "strategy_id": "calendar-cu-fresh-v5",
+                      "target_key": "cu2701.SHFE",
+                      "source_revision": 1,
+                      "source_deadline_ns": null
+                    }
+                  ],
+                  "reason": "SIGNAL",
+                  "replay_md_trading_day": null,
+                  "signal_bar_ns": 1792026779999999999,
+                  "simnow_environment": "realtime",
+                  "z_score": -2.449489742783178,
+                  "actual_send_deadline_ns": null,
+                  "shared_execution_mode": "independent",
+                  "target": "1",
+                  "owned_position": "0",
+                  "request_revision": 1,
+                  "allocation_token": "0c83bf359b13483c9bf2c26fe1cded5a",
+                  "allocation_legs": [
+                    {
+                      "strategy_id": "calendar-cu-fresh-v5",
+                      "target_key": "cu2612.SHFE",
+                      "quantity": "1",
+                      "filled": "0",
+                      "target_revision": 1,
+                      "deadline_ns": null
+                    }
+                  ],
+                  "strategy_id": "calendar-cu-fresh-v5",
+                  "position_effect": "OPEN",
+                  "order_ref": "2",
+                  "front_id": "",
+                  "session_id": "",
+                  "venue_order_id": "199754",
+                  "trade_id": "SHFE:      132969",
+                  "attributed_target_key": "cu2612.SHFE",
+                  "account_event_id": "CTP-9999-097561-20261015-2:2:fill",
+                  "attributed_target_revision": 1
+                }
+              }
+            },
+            {
+              "sequence": 4,
+              "type": "OrderUpdateEvent",
+              "event": {
+                "identity": {
+                  "client_id": "three-fresh-realtime-v5",
+                  "account_id": "097561",
+                  "strategy_id": "calendar-cu-fresh-v5",
+                  "client_order_id": "CTP-9999-097561-20261015-3",
+                  "instrument_id": "cu2701.SHFE",
+                  "venue_order_id": "199756"
+                },
+                "event_id": "CTP-9999-097561-20261015-3:1:calendar-cu-fresh-v5:cu2701.SHFE",
+                "status": "ACCEPTED",
+                "side": "SELL",
+                "order_quantity": "1",
+                "cumulative_filled": "0",
+                "ts_event": 1792026784781173907,
+                "sequence": 1,
+                "reason": null,
+                "metadata": {
+                  "active_pair": [
+                    "cu2612",
+                    "cu2701"
+                  ],
+                  "leg1_role": "secondary",
+                  "leg2_role": "far",
+                  "market_health_feeds": [],
+                  "market_health_mode": "NORMAL",
+                  "market_health_state": "READY",
+                  "portfolio_revision": 1,
+                  "position_attribution": [
+                    {
+                      "instrument_id": "cu2612.SHFE",
+                      "quantity": "1",
+                      "strategy_id": "calendar-cu-fresh-v5",
+                      "target_key": "cu2612.SHFE",
+                      "source_revision": 1,
+                      "source_deadline_ns": null
+                    },
+                    {
+                      "instrument_id": "cu2701.SHFE",
+                      "quantity": "-1",
+                      "strategy_id": "calendar-cu-fresh-v5",
+                      "target_key": "cu2701.SHFE",
+                      "source_revision": 1,
+                      "source_deadline_ns": null
+                    }
+                  ],
+                  "reason": "SIGNAL",
+                  "replay_md_trading_day": null,
+                  "signal_bar_ns": 1792026779999999999,
+                  "simnow_environment": "realtime",
+                  "z_score": -2.449489742783178,
+                  "actual_send_deadline_ns": null,
+                  "shared_execution_mode": "independent",
+                  "target": "-1",
+                  "owned_position": "0",
+                  "request_revision": 1,
+                  "allocation_token": "63e216de40ca4f3493d468d081befc7e",
+                  "allocation_legs": [
+                    {
+                      "strategy_id": "calendar-cu-fresh-v5",
+                      "target_key": "cu2701.SHFE",
+                      "quantity": "1",
+                      "filled": "0",
+                      "target_revision": 1,
+                      "deadline_ns": null
+                    }
+                  ],
+                  "strategy_id": "calendar-cu-fresh-v5",
+                  "position_effect": "OPEN",
+                  "order_ref": "3",
+                  "front_id": "1",
+                  "session_id": "663691464",
+                  "venue_order_id": "199756",
+                  "attributed_target_key": "cu2701.SHFE",
+                  "account_event_id": "CTP-9999-097561-20261015-3:1",
+                  "attributed_target_revision": 1
+                }
+              }
+            },
+            {
+              "sequence": 5,
+              "type": "OrderUpdateEvent",
+              "event": {
+                "identity": {
+                  "client_id": "three-fresh-realtime-v5",
+                  "account_id": "097561",
+                  "strategy_id": "calendar-cu-fresh-v5",
+                  "client_order_id": "CTP-9999-097561-20261015-3",
+                  "instrument_id": "cu2701.SHFE",
+                  "venue_order_id": "199756"
+                },
+                "event_id": "CTP-9999-097561-20261015-3:2:calendar-cu-fresh-v5:cu2701.SHFE",
+                "status": "FILLED",
+                "side": "SELL",
+                "order_quantity": "1",
+                "cumulative_filled": "1",
+                "ts_event": 1792026784833282629,
+                "sequence": 2,
+                "reason": null,
+                "metadata": {
+                  "active_pair": [
+                    "cu2612",
+                    "cu2701"
+                  ],
+                  "leg1_role": "secondary",
+                  "leg2_role": "far",
+                  "market_health_feeds": [],
+                  "market_health_mode": "NORMAL",
+                  "market_health_state": "READY",
+                  "portfolio_revision": 1,
+                  "position_attribution": [
+                    {
+                      "instrument_id": "cu2612.SHFE",
+                      "quantity": "1",
+                      "strategy_id": "calendar-cu-fresh-v5",
+                      "target_key": "cu2612.SHFE",
+                      "source_revision": 1,
+                      "source_deadline_ns": null
+                    },
+                    {
+                      "instrument_id": "cu2701.SHFE",
+                      "quantity": "-1",
+                      "strategy_id": "calendar-cu-fresh-v5",
+                      "target_key": "cu2701.SHFE",
+                      "source_revision": 1,
+                      "source_deadline_ns": null
+                    }
+                  ],
+                  "reason": "SIGNAL",
+                  "replay_md_trading_day": null,
+                  "signal_bar_ns": 1792026779999999999,
+                  "simnow_environment": "realtime",
+                  "z_score": -2.449489742783178,
+                  "actual_send_deadline_ns": null,
+                  "shared_execution_mode": "independent",
+                  "target": "-1",
+                  "owned_position": "0",
+                  "request_revision": 1,
+                  "allocation_token": "63e216de40ca4f3493d468d081befc7e",
+                  "allocation_legs": [
+                    {
+                      "strategy_id": "calendar-cu-fresh-v5",
+                      "target_key": "cu2701.SHFE",
+                      "quantity": "1",
+                      "filled": "0",
+                      "target_revision": 1,
+                      "deadline_ns": null
+                    }
+                  ],
+                  "strategy_id": "calendar-cu-fresh-v5",
+                  "position_effect": "OPEN",
+                  "order_ref": "3",
+                  "front_id": "",
+                  "session_id": "",
+                  "venue_order_id": "199756",
+                  "trade_id": "SHFE:      132970",
+                  "attributed_target_key": "cu2701.SHFE",
+                  "account_event_id": "CTP-9999-097561-20261015-3:2",
+                  "attributed_target_revision": 1
+                }
+              }
+            },
+            {
+              "sequence": 6,
+              "type": "FillEvent",
+              "event": {
+                "identity": {
+                  "client_id": "three-fresh-realtime-v5",
+                  "account_id": "097561",
+                  "strategy_id": "calendar-cu-fresh-v5",
+                  "client_order_id": "CTP-9999-097561-20261015-3",
+                  "instrument_id": "cu2701.SHFE",
+                  "venue_order_id": "199756"
+                },
+                "event_id": "CTP-9999-097561-20261015-3:2:fill:calendar-cu-fresh-v5:cu2701.SHFE",
+                "trade_id": "SHFE:      132970",
+                "side": "SELL",
+                "quantity": "1",
+                "price": "108590.0",
+                "commission": null,
+                "commission_currency": null,
+                "ts_event": 1792026784833282629,
+                "cumulative_filled": "1",
+                "sequence": 2,
+                "position_effect": "OPEN",
+                "metadata": {
+                  "active_pair": [
+                    "cu2612",
+                    "cu2701"
+                  ],
+                  "leg1_role": "secondary",
+                  "leg2_role": "far",
+                  "market_health_feeds": [],
+                  "market_health_mode": "NORMAL",
+                  "market_health_state": "READY",
+                  "portfolio_revision": 1,
+                  "position_attribution": [
+                    {
+                      "instrument_id": "cu2612.SHFE",
+                      "quantity": "1",
+                      "strategy_id": "calendar-cu-fresh-v5",
+                      "target_key": "cu2612.SHFE",
+                      "source_revision": 1,
+                      "source_deadline_ns": null
+                    },
+                    {
+                      "instrument_id": "cu2701.SHFE",
+                      "quantity": "-1",
+                      "strategy_id": "calendar-cu-fresh-v5",
+                      "target_key": "cu2701.SHFE",
+                      "source_revision": 1,
+                      "source_deadline_ns": null
+                    }
+                  ],
+                  "reason": "SIGNAL",
+                  "replay_md_trading_day": null,
+                  "signal_bar_ns": 1792026779999999999,
+                  "simnow_environment": "realtime",
+                  "z_score": -2.449489742783178,
+                  "actual_send_deadline_ns": null,
+                  "shared_execution_mode": "independent",
+                  "target": "-1",
+                  "owned_position": "0",
+                  "request_revision": 1,
+                  "allocation_token": "63e216de40ca4f3493d468d081befc7e",
+                  "allocation_legs": [
+                    {
+                      "strategy_id": "calendar-cu-fresh-v5",
+                      "target_key": "cu2701.SHFE",
+                      "quantity": "1",
+                      "filled": "0",
+                      "target_revision": 1,
+                      "deadline_ns": null
+                    }
+                  ],
+                  "strategy_id": "calendar-cu-fresh-v5",
+                  "position_effect": "OPEN",
+                  "order_ref": "3",
+                  "front_id": "",
+                  "session_id": "",
+                  "venue_order_id": "199756",
+                  "trade_id": "SHFE:      132970",
+                  "attributed_target_key": "cu2701.SHFE",
+                  "account_event_id": "CTP-9999-097561-20261015-3:2:fill",
+                  "attributed_target_revision": 1
+                }
+              }
+            },
+            {
+              "sequence": 7,
+              "type": "OrderUpdateEvent",
+              "event": {
+                "identity": {
+                  "client_id": "three-fresh-realtime-v5",
+                  "account_id": "097561",
+                  "strategy_id": "calendar-cu-fresh-v5",
+                  "client_order_id": "CTP-9999-097561-20261015-4",
+                  "instrument_id": "cu2612.SHFE",
+                  "venue_order_id": "200912"
+                },
+                "event_id": "CTP-9999-097561-20261015-4:1:calendar-cu-fresh-v5:cu2612.SHFE",
+                "status": "ACCEPTED",
+                "side": "SELL",
+                "order_quantity": "1",
+                "cumulative_filled": "0",
+                "ts_event": 1792026842015303118,
+                "sequence": 1,
+                "reason": null,
+                "metadata": {
+                  "active_pair": [
+                    "cu2612",
+                    "cu2701"
+                  ],
+                  "leg1_role": "secondary",
+                  "leg2_role": "far",
+                  "market_health_feeds": [],
+                  "market_health_mode": "NORMAL",
+                  "market_health_state": "READY",
+                  "portfolio_revision": 2,
+                  "position_attribution": [
+                    {
+                      "instrument_id": "cu2612.SHFE",
+                      "quantity": "-1",
+                      "strategy_id": "calendar-cu-fresh-v5",
+                      "target_key": "cu2612.SHFE",
+                      "source_revision": 2,
+                      "source_deadline_ns": null
+                    },
+                    {
+                      "instrument_id": "cu2701.SHFE",
+                      "quantity": "1",
+                      "strategy_id": "calendar-cu-fresh-v5",
+                      "target_key": "cu2701.SHFE",
+                      "source_revision": 2,
+                      "source_deadline_ns": null
+                    }
+                  ],
+                  "reason": "SIGNAL",
+                  "replay_md_trading_day": null,
+                  "signal_bar_ns": 1792026839999999999,
+                  "simnow_environment": "realtime",
+                  "z_score": 1.3363062095621188,
+                  "actual_send_deadline_ns": null,
+                  "shared_execution_mode": "independent",
+                  "target": "-1",
+                  "owned_position": "1",
+                  "request_revision": 2,
+                  "allocation_token": "03718036793044d08076b09b33c66629",
+                  "allocation_legs": [
+                    {
+                      "strategy_id": "calendar-cu-fresh-v5",
+                      "target_key": "cu2612.SHFE",
+                      "quantity": "1",
+                      "filled": "0",
+                      "target_revision": 2,
+                      "deadline_ns": null
+                    }
+                  ],
+                  "strategy_id": "calendar-cu-fresh-v5",
+                  "position_effect": "CLOSE_TODAY",
+                  "order_ref": "4",
+                  "front_id": "1",
+                  "session_id": "663691464",
+                  "venue_order_id": "200912",
+                  "attributed_target_key": "cu2612.SHFE",
+                  "account_event_id": "CTP-9999-097561-20261015-4:1",
+                  "attributed_target_revision": 2
+                }
+              }
+            },
+            {
+              "sequence": 8,
+              "type": "OrderUpdateEvent",
+              "event": {
+                "identity": {
+                  "client_id": "three-fresh-realtime-v5",
+                  "account_id": "097561",
+                  "strategy_id": "calendar-cu-fresh-v5",
+                  "client_order_id": "CTP-9999-097561-20261015-4",
+                  "instrument_id": "cu2612.SHFE",
+                  "venue_order_id": "200912"
+                },
+                "event_id": "CTP-9999-097561-20261015-4:2:calendar-cu-fresh-v5:cu2612.SHFE",
+                "status": "FILLED",
+                "side": "SELL",
+                "order_quantity": "1",
+                "cumulative_filled": "1",
+                "ts_event": 1792026842112634960,
+                "sequence": 2,
+                "reason": null,
+                "metadata": {
+                  "active_pair": [
+                    "cu2612",
+                    "cu2701"
+                  ],
+                  "leg1_role": "secondary",
+                  "leg2_role": "far",
+                  "market_health_feeds": [],
+                  "market_health_mode": "NORMAL",
+                  "market_health_state": "READY",
+                  "portfolio_revision": 2,
+                  "position_attribution": [
+                    {
+                      "instrument_id": "cu2612.SHFE",
+                      "quantity": "-1",
+                      "strategy_id": "calendar-cu-fresh-v5",
+                      "target_key": "cu2612.SHFE",
+                      "source_revision": 2,
+                      "source_deadline_ns": null
+                    },
+                    {
+                      "instrument_id": "cu2701.SHFE",
+                      "quantity": "1",
+                      "strategy_id": "calendar-cu-fresh-v5",
+                      "target_key": "cu2701.SHFE",
+                      "source_revision": 2,
+                      "source_deadline_ns": null
+                    }
+                  ],
+                  "reason": "SIGNAL",
+                  "replay_md_trading_day": null,
+                  "signal_bar_ns": 1792026839999999999,
+                  "simnow_environment": "realtime",
+                  "z_score": 1.3363062095621188,
+                  "actual_send_deadline_ns": null,
+                  "shared_execution_mode": "independent",
+                  "target": "-1",
+                  "owned_position": "1",
+                  "request_revision": 2,
+                  "allocation_token": "03718036793044d08076b09b33c66629",
+                  "allocation_legs": [
+                    {
+                      "strategy_id": "calendar-cu-fresh-v5",
+                      "target_key": "cu2612.SHFE",
+                      "quantity": "1",
+                      "filled": "0",
+                      "target_revision": 2,
+                      "deadline_ns": null
+                    }
+                  ],
+                  "strategy_id": "calendar-cu-fresh-v5",
+                  "position_effect": "CLOSE_TODAY",
+                  "order_ref": "4",
+                  "front_id": "",
+                  "session_id": "",
+                  "venue_order_id": "200912",
+                  "trade_id": "SHFE:      133568",
+                  "attributed_target_key": "cu2612.SHFE",
+                  "account_event_id": "CTP-9999-097561-20261015-4:2",
+                  "attributed_target_revision": 2
+                }
+              }
+            },
+            {
+              "sequence": 9,
+              "type": "FillEvent",
+              "event": {
+                "identity": {
+                  "client_id": "three-fresh-realtime-v5",
+                  "account_id": "097561",
+                  "strategy_id": "calendar-cu-fresh-v5",
+                  "client_order_id": "CTP-9999-097561-20261015-4",
+                  "instrument_id": "cu2612.SHFE",
+                  "venue_order_id": "200912"
+                },
+                "event_id": "CTP-9999-097561-20261015-4:2:fill:calendar-cu-fresh-v5:cu2612.SHFE",
+                "trade_id": "SHFE:      133568",
+                "side": "SELL",
+                "quantity": "1",
+                "price": "109220.0",
+                "commission": null,
+                "commission_currency": null,
+                "ts_event": 1792026842112634960,
+                "cumulative_filled": "1",
+                "sequence": 2,
+                "position_effect": "CLOSE_TODAY",
+                "metadata": {
+                  "active_pair": [
+                    "cu2612",
+                    "cu2701"
+                  ],
+                  "leg1_role": "secondary",
+                  "leg2_role": "far",
+                  "market_health_feeds": [],
+                  "market_health_mode": "NORMAL",
+                  "market_health_state": "READY",
+                  "portfolio_revision": 2,
+                  "position_attribution": [
+                    {
+                      "instrument_id": "cu2612.SHFE",
+                      "quantity": "-1",
+                      "strategy_id": "calendar-cu-fresh-v5",
+                      "target_key": "cu2612.SHFE",
+                      "source_revision": 2,
+                      "source_deadline_ns": null
+                    },
+                    {
+                      "instrument_id": "cu2701.SHFE",
+                      "quantity": "1",
+                      "strategy_id": "calendar-cu-fresh-v5",
+                      "target_key": "cu2701.SHFE",
+                      "source_revision": 2,
+                      "source_deadline_ns": null
+                    }
+                  ],
+                  "reason": "SIGNAL",
+                  "replay_md_trading_day": null,
+                  "signal_bar_ns": 1792026839999999999,
+                  "simnow_environment": "realtime",
+                  "z_score": 1.3363062095621188,
+                  "actual_send_deadline_ns": null,
+                  "shared_execution_mode": "independent",
+                  "target": "-1",
+                  "owned_position": "1",
+                  "request_revision": 2,
+                  "allocation_token": "03718036793044d08076b09b33c66629",
+                  "allocation_legs": [
+                    {
+                      "strategy_id": "calendar-cu-fresh-v5",
+                      "target_key": "cu2612.SHFE",
+                      "quantity": "1",
+                      "filled": "0",
+                      "target_revision": 2,
+                      "deadline_ns": null
+                    }
+                  ],
+                  "strategy_id": "calendar-cu-fresh-v5",
+                  "position_effect": "CLOSE_TODAY",
+                  "order_ref": "4",
+                  "front_id": "",
+                  "session_id": "",
+                  "venue_order_id": "200912",
+                  "trade_id": "SHFE:      133568",
+                  "attributed_target_key": "cu2612.SHFE",
+                  "account_event_id": "CTP-9999-097561-20261015-4:2:fill",
+                  "attributed_target_revision": 2
+                }
+              }
+            },
+            {
+              "sequence": 10,
+              "type": "OrderUpdateEvent",
+              "event": {
+                "identity": {
+                  "client_id": "three-fresh-realtime-v5",
+                  "account_id": "097561",
+                  "strategy_id": "calendar-cu-fresh-v5",
+                  "client_order_id": "CTP-9999-097561-20261015-5",
+                  "instrument_id": "cu2701.SHFE",
+                  "venue_order_id": "200913"
+                },
+                "event_id": "CTP-9999-097561-20261015-5:1:calendar-cu-fresh-v5:cu2701.SHFE",
+                "status": "ACCEPTED",
+                "side": "BUY",
+                "order_quantity": "1",
+                "cumulative_filled": "0",
+                "ts_event": 1792026842153199574,
+                "sequence": 1,
+                "reason": null,
+                "metadata": {
+                  "active_pair": [
+                    "cu2612",
+                    "cu2701"
+                  ],
+                  "leg1_role": "secondary",
+                  "leg2_role": "far",
+                  "market_health_feeds": [],
+                  "market_health_mode": "NORMAL",
+                  "market_health_state": "READY",
+                  "portfolio_revision": 2,
+                  "position_attribution": [
+                    {
+                      "instrument_id": "cu2612.SHFE",
+                      "quantity": "-1",
+                      "strategy_id": "calendar-cu-fresh-v5",
+                      "target_key": "cu2612.SHFE",
+                      "source_revision": 2,
+                      "source_deadline_ns": null
+                    },
+                    {
+                      "instrument_id": "cu2701.SHFE",
+                      "quantity": "1",
+                      "strategy_id": "calendar-cu-fresh-v5",
+                      "target_key": "cu2701.SHFE",
+                      "source_revision": 2,
+                      "source_deadline_ns": null
+                    }
+                  ],
+                  "reason": "SIGNAL",
+                  "replay_md_trading_day": null,
+                  "signal_bar_ns": 1792026839999999999,
+                  "simnow_environment": "realtime",
+                  "z_score": 1.3363062095621188,
+                  "actual_send_deadline_ns": null,
+                  "shared_execution_mode": "independent",
+                  "target": "1",
+                  "owned_position": "-1",
+                  "request_revision": 2,
+                  "allocation_token": "fb28cd8ab19c485989620fa7c796838b",
+                  "allocation_legs": [
+                    {
+                      "strategy_id": "calendar-cu-fresh-v5",
+                      "target_key": "cu2701.SHFE",
+                      "quantity": "1",
+                      "filled": "0",
+                      "target_revision": 2,
+                      "deadline_ns": null
+                    }
+                  ],
+                  "strategy_id": "calendar-cu-fresh-v5",
+                  "position_effect": "CLOSE_TODAY",
+                  "order_ref": "5",
+                  "front_id": "1",
+                  "session_id": "663691464",
+                  "venue_order_id": "200913",
+                  "attributed_target_key": "cu2701.SHFE",
+                  "account_event_id": "CTP-9999-097561-20261015-5:1",
+                  "attributed_target_revision": 2
+                }
+              }
+            },
+            {
+              "sequence": 11,
+              "type": "OrderUpdateEvent",
+              "event": {
+                "identity": {
+                  "client_id": "three-fresh-realtime-v5",
+                  "account_id": "097561",
+                  "strategy_id": "calendar-cu-fresh-v5",
+                  "client_order_id": "CTP-9999-097561-20261015-5",
+                  "instrument_id": "cu2701.SHFE",
+                  "venue_order_id": "200913"
+                },
+                "event_id": "CTP-9999-097561-20261015-5:2:calendar-cu-fresh-v5:cu2701.SHFE",
+                "status": "FILLED",
+                "side": "BUY",
+                "order_quantity": "1",
+                "cumulative_filled": "1",
+                "ts_event": 1792026842186496735,
+                "sequence": 2,
+                "reason": null,
+                "metadata": {
+                  "active_pair": [
+                    "cu2612",
+                    "cu2701"
+                  ],
+                  "leg1_role": "secondary",
+                  "leg2_role": "far",
+                  "market_health_feeds": [],
+                  "market_health_mode": "NORMAL",
+                  "market_health_state": "READY",
+                  "portfolio_revision": 2,
+                  "position_attribution": [
+                    {
+                      "instrument_id": "cu2612.SHFE",
+                      "quantity": "-1",
+                      "strategy_id": "calendar-cu-fresh-v5",
+                      "target_key": "cu2612.SHFE",
+                      "source_revision": 2,
+                      "source_deadline_ns": null
+                    },
+                    {
+                      "instrument_id": "cu2701.SHFE",
+                      "quantity": "1",
+                      "strategy_id": "calendar-cu-fresh-v5",
+                      "target_key": "cu2701.SHFE",
+                      "source_revision": 2,
+                      "source_deadline_ns": null
+                    }
+                  ],
+                  "reason": "SIGNAL",
+                  "replay_md_trading_day": null,
+                  "signal_bar_ns": 1792026839999999999,
+                  "simnow_environment": "realtime",
+                  "z_score": 1.3363062095621188,
+                  "actual_send_deadline_ns": null,
+                  "shared_execution_mode": "independent",
+                  "target": "1",
+                  "owned_position": "-1",
+                  "request_revision": 2,
+                  "allocation_token": "fb28cd8ab19c485989620fa7c796838b",
+                  "allocation_legs": [
+                    {
+                      "strategy_id": "calendar-cu-fresh-v5",
+                      "target_key": "cu2701.SHFE",
+                      "quantity": "1",
+                      "filled": "0",
+                      "target_revision": 2,
+                      "deadline_ns": null
+                    }
+                  ],
+                  "strategy_id": "calendar-cu-fresh-v5",
+                  "position_effect": "CLOSE_TODAY",
+                  "order_ref": "5",
+                  "front_id": "",
+                  "session_id": "",
+                  "venue_order_id": "200913",
+                  "trade_id": "SHFE:      133569",
+                  "attributed_target_key": "cu2701.SHFE",
+                  "account_event_id": "CTP-9999-097561-20261015-5:2",
+                  "attributed_target_revision": 2
+                }
+              }
+            },
+            {
+              "sequence": 12,
+              "type": "FillEvent",
+              "event": {
+                "identity": {
+                  "client_id": "three-fresh-realtime-v5",
+                  "account_id": "097561",
+                  "strategy_id": "calendar-cu-fresh-v5",
+                  "client_order_id": "CTP-9999-097561-20261015-5",
+                  "instrument_id": "cu2701.SHFE",
+                  "venue_order_id": "200913"
+                },
+                "event_id": "CTP-9999-097561-20261015-5:2:fill:calendar-cu-fresh-v5:cu2701.SHFE",
+                "trade_id": "SHFE:      133569",
+                "side": "BUY",
+                "quantity": "1",
+                "price": "108720.0",
+                "commission": null,
+                "commission_currency": null,
+                "ts_event": 1792026842186496735,
+                "cumulative_filled": "1",
+                "sequence": 2,
+                "position_effect": "CLOSE_TODAY",
+                "metadata": {
+                  "active_pair": [
+                    "cu2612",
+                    "cu2701"
+                  ],
+                  "leg1_role": "secondary",
+                  "leg2_role": "far",
+                  "market_health_feeds": [],
+                  "market_health_mode": "NORMAL",
+                  "market_health_state": "READY",
+                  "portfolio_revision": 2,
+                  "position_attribution": [
+                    {
+                      "instrument_id": "cu2612.SHFE",
+                      "quantity": "-1",
+                      "strategy_id": "calendar-cu-fresh-v5",
+                      "target_key": "cu2612.SHFE",
+                      "source_revision": 2,
+                      "source_deadline_ns": null
+                    },
+                    {
+                      "instrument_id": "cu2701.SHFE",
+                      "quantity": "1",
+                      "strategy_id": "calendar-cu-fresh-v5",
+                      "target_key": "cu2701.SHFE",
+                      "source_revision": 2,
+                      "source_deadline_ns": null
+                    }
+                  ],
+                  "reason": "SIGNAL",
+                  "replay_md_trading_day": null,
+                  "signal_bar_ns": 1792026839999999999,
+                  "simnow_environment": "realtime",
+                  "z_score": 1.3363062095621188,
+                  "actual_send_deadline_ns": null,
+                  "shared_execution_mode": "independent",
+                  "target": "1",
+                  "owned_position": "-1",
+                  "request_revision": 2,
+                  "allocation_token": "fb28cd8ab19c485989620fa7c796838b",
+                  "allocation_legs": [
+                    {
+                      "strategy_id": "calendar-cu-fresh-v5",
+                      "target_key": "cu2701.SHFE",
+                      "quantity": "1",
+                      "filled": "0",
+                      "target_revision": 2,
+                      "deadline_ns": null
+                    }
+                  ],
+                  "strategy_id": "calendar-cu-fresh-v5",
+                  "position_effect": "CLOSE_TODAY",
+                  "order_ref": "5",
+                  "front_id": "",
+                  "session_id": "",
+                  "venue_order_id": "200913",
+                  "trade_id": "SHFE:      133569",
+                  "attributed_target_key": "cu2701.SHFE",
+                  "account_event_id": "CTP-9999-097561-20261015-5:2:fill",
+                  "attributed_target_revision": 2
+                }
+              }
+            }
+          ],
+          "ema-cu-fresh-v5": []
+        },
+        "ack": {
+          "cross-cu-al-ag-au-fresh-v5": 0,
+          "calendar-cu-fresh-v5": 9,
+          "ema-cu-fresh-v5": 0
+        },
+        "requests": {
+          "calendar-cu-fresh-v5:3da2d7b6eb7ff221bed6aa7f71e9a8d6": {
+            "digest": "7a38388d70bcfdee7023e0b9436d7a8487a2e2b9904f8dd678ec357c7cde3954",
+            "status": "completed"
+          },
+          "calendar-cu-fresh-v5:3aabd39f371465da9e6a39a24db8d5ad": {
+            "digest": "19eb23429b7c13716df654a37c7627c4be6bc739ee604e8fd12017b044158ff6",
+            "status": "completed"
+          }
+        }
+      },
+      "managed_instruments": [
+        "ag2612.SHFE",
+        "al2611.SHFE",
+        "au2612.SHFE",
+        "cu2611.SHFE",
+        "cu2612.SHFE",
+        "cu2701.SHFE"
+      ]
+    }
+  },
+  "final_gross": null,
+  "final_active_orders": null,
+  "verification": "independent_process_account_service",
+  "status": "failed"
+}

@@ -1,0 +1,86 @@
+{
+  "strategy_id": "ema-cu-fresh-v3",
+  "kind": "main_ema",
+  "argv": [
+    "--product",
+    "CU",
+    "--expected-source-day",
+    "20261014",
+    "--factor-date-basis",
+    "source",
+    "--factor-availability",
+    "observed-on-read",
+    "--fast",
+    "3",
+    "--slow",
+    "5",
+    "--quantity",
+    "1",
+    "--max-notional",
+    "1000000",
+    "--ctp-future-buffer-ms",
+    "100"
+  ],
+  "trading_day": "20261015",
+  "environment": "realtime",
+  "replay_md_trading_day": null,
+  "execution_mode": "independent",
+  "failure": null,
+  "shutdown_failure": null,
+  "failure_readiness": null,
+  "verification": "independent_strategy_process",
+  "positions": {
+    "cu_main": "0"
+  },
+  "cursor": 0,
+  "fills_received": 0,
+  "source_revision": 0,
+  "last_targets": null,
+  "reference_manifest": {
+    "backend": "DolphinDbReferenceSource",
+    "trading_day": "2026-10-15",
+    "factor_date_basis": "source",
+    "factor_date": "2026-10-14",
+    "factor_availability": "observed-on-read",
+    "factor_publication_policy": "observed-on-read",
+    "role_source_day": "2026-10-14",
+    "freshness_policy": {
+      "expected_source_day": "2026-10-14",
+      "role_and_factor_max_source_age_days": 14,
+      "basic_age_basis": "contract_lifecycle_and_successful_observation_not_listing_date",
+      "max_observation_age_seconds": 30,
+      "max_refresh_duration_seconds": 30,
+      "source_day_evidence": "operator_declared_day"
+    },
+    "reference_date_selection": "latest_role_source_before_td_requires_upstream_completeness",
+    "role_date_basis": "previous_source_day",
+    "fingerprint": "7b0cda9aee7e6ead984bc2604b26c880496564f9eff0e7296e25fb5df9244cb3",
+    "observed_at_ns": 1791994907833109000,
+    "first_observed_ns": 1791994891353640642,
+    "effective_ns": 1791994888300535401,
+    "available_ns": 1791994891353640642,
+    "evidence": "stable_read_observation_not_publication_version",
+    "sources": {
+      "contract_structure": {
+        "source": "dolphindb:dfs://bomber_daily/fut_contract",
+        "sha256": "0e9ab1238da8dba8424a091687ed6ed1750c6a3d6b2a61146127a2dcf74ab971",
+        "rows": 1651
+      },
+      "adjustment_factors": {
+        "source": "dolphindb:dfs://bomber_daily/fut_adjustment_factors",
+        "sha256": "b05e8918b82fa70c244a64359a475b458f9b98c9b4f2b30ce0bdec77aaafaf41",
+        "rows": 1
+      },
+      "futures_basic": {
+        "source": "dolphindb:dfs://bomber_daily/fut_basic",
+        "sha256": "5c979f39f186f47d171684c99ca5009084932c11b46c03d579066af2ca7e6c5d",
+        "rows": 12
+      }
+    },
+    "ready": true,
+    "failure": null
+  },
+  "bar_counts": {},
+  "last_processed_ns": -1,
+  "status": "completed"
+}

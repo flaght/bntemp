@@ -1,0 +1,290 @@
+{
+  "config": {
+    "version": 1,
+    "trading_day": "20261015",
+    "environment": "realtime",
+    "position_scope": "strategy_instruments",
+    "execution_mode": "independent",
+    "seconds": 3600.0,
+    "account_state_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/three-fresh-v3-20261015-1791993996435433606/account.json",
+    "report_dir": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/three-fresh-v3-20261015-1791993996435433606",
+    "account": {
+      "client_id": "three-fresh-realtime-v3",
+      "max_gross_quantity": "7",
+      "max_gross_notional": "3400000",
+      "max_session_orders": 20,
+      "limit_offset_ticks": 1
+    },
+    "strategies": [
+      {
+        "strategy_id": "ema-cu-fresh-v3",
+        "kind": "main_ema",
+        "state_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/three-fresh-v3-20261015-1791993996435433606/main_ema.json",
+        "argv": [
+          "--product",
+          "CU",
+          "--expected-source-day",
+          "20261014",
+          "--factor-date-basis",
+          "source",
+          "--factor-availability",
+          "observed-on-read",
+          "--fast",
+          "3",
+          "--slow",
+          "5",
+          "--quantity",
+          "1",
+          "--max-notional",
+          "1000000",
+          "--ctp-future-buffer-ms",
+          "100"
+        ]
+      },
+      {
+        "strategy_id": "cross-cu-al-ag-au-fresh-v3",
+        "kind": "cross_section",
+        "state_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/three-fresh-v3-20261015-1791993996435433606/cross_section.json",
+        "argv": [
+          "--products",
+          "CU,AL,AG,AU",
+          "--expected-source-day",
+          "20261014",
+          "--factor-date-basis",
+          "source",
+          "--factor-availability",
+          "observed-on-read",
+          "--lookback",
+          "3",
+          "--rebalance-interval",
+          "1",
+          "--group-fraction",
+          "0.5",
+          "--target-notional",
+          "1000000",
+          "--target-quantity-cap",
+          "1",
+          "--max-quantity",
+          "1",
+          "--max-notional",
+          "1000000",
+          "--ctp-future-buffer-ms",
+          "100"
+        ]
+      },
+      {
+        "strategy_id": "calendar-cu-fresh-v3",
+        "kind": "calendar_spread",
+        "state_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/three-fresh-v3-20261015-1791993996435433606/calendar_spread.json",
+        "argv": [
+          "--product",
+          "CU",
+          "--expected-source-day",
+          "20261014",
+          "--leg1-role",
+          "secondary",
+          "--leg2-role",
+          "far",
+          "--quantity",
+          "1",
+          "--lookback",
+          "3",
+          "--rebalance-interval",
+          "1",
+          "--entry-z",
+          "1",
+          "--exit-z",
+          "0.25",
+          "--max-notional",
+          "1000000",
+          "--ctp-future-buffer-ms",
+          "100"
+        ]
+      }
+    ],
+    "existing_position_policy": "preserve_external"
+  },
+  "failure": "共享账户新会话不能覆盖原文件",
+  "shutdown_failure": null,
+  "td_preflight": {
+    "environment": "realtime",
+    "expected_td_trading_day": "20261015",
+    "observed_td_trading_day": "20261015",
+    "md_front": "tcp://182.254.243.31:30011",
+    "td_front": "tcp://182.254.243.31:30001",
+    "preflight_orders_submitted": 0,
+    "position_scope_policy": "strategy_instruments",
+    "managed_instruments": [
+      "ag2612.SHFE",
+      "al2611.SHFE",
+      "au2612.SHFE",
+      "cu2611.SHFE",
+      "cu2612.SHFE",
+      "cu2701.SHFE"
+    ],
+    "external_gross": {
+      "MO2611-C-7400.CFFEX": [
+        "0",
+        "1"
+      ],
+      "sc2611.INE": [
+        "1",
+        "0"
+      ],
+      "ni2611.SHFE": [
+        "1",
+        "0"
+      ],
+      "i2701.DCE": [
+        "0",
+        "1"
+      ],
+      "hc2701.SHFE": [
+        "1",
+        "0"
+      ]
+    }
+  },
+  "account": {
+    "version": 1,
+    "client_id": "three-fresh-realtime-v3",
+    "account_id": "097561",
+    "failed": false,
+    "pending": false,
+    "portfolio_revision": 0,
+    "strategy_revisions": {},
+    "known_instruments": [],
+    "sources": {},
+    "shared": {
+      "version": 1,
+      "budget": {
+        "max_gross_quantity": "7",
+        "max_gross_notional": "3400000"
+      },
+      "routes": {
+        "ema-cu-fresh-v3": {
+          "routes": {
+            "cu_main": "cu2611.SHFE"
+          },
+          "budget": {
+            "max_gross_quantity": "1",
+            "max_gross_notional": "1000000"
+          },
+          "limits": {
+            "cu2611.SHFE": {
+              "max_order_quantity": "1",
+              "max_abs_position": "1",
+              "max_order_notional": "1000000",
+              "max_abs_position_notional": "1000000",
+              "max_market_age_ns": "120000000000",
+              "contract_multiplier": "5.0"
+            }
+          }
+        },
+        "cross-cu-al-ag-au-fresh-v3": {
+          "routes": {
+            "cu2611.SHFE": "cu2611.SHFE",
+            "al2611.SHFE": "al2611.SHFE",
+            "ag2612.SHFE": "ag2612.SHFE",
+            "au2612.SHFE": "au2612.SHFE"
+          },
+          "budget": {
+            "max_gross_quantity": "4",
+            "max_gross_notional": "4000000"
+          },
+          "limits": {
+            "cu2611.SHFE": {
+              "max_order_quantity": "1",
+              "max_abs_position": "1",
+              "max_order_notional": "1000000",
+              "max_abs_position_notional": "1000000",
+              "max_market_age_ns": "120000000000",
+              "contract_multiplier": "5.0"
+            },
+            "al2611.SHFE": {
+              "max_order_quantity": "1",
+              "max_abs_position": "1",
+              "max_order_notional": "1000000",
+              "max_abs_position_notional": "1000000",
+              "max_market_age_ns": "120000000000",
+              "contract_multiplier": "5.0"
+            },
+            "ag2612.SHFE": {
+              "max_order_quantity": "1",
+              "max_abs_position": "1",
+              "max_order_notional": "1000000",
+              "max_abs_position_notional": "1000000",
+              "max_market_age_ns": "120000000000",
+              "contract_multiplier": "15.0"
+            },
+            "au2612.SHFE": {
+              "max_order_quantity": "1",
+              "max_abs_position": "1",
+              "max_order_notional": "1000000",
+              "max_abs_position_notional": "1000000",
+              "max_market_age_ns": "120000000000",
+              "contract_multiplier": "1000.0"
+            }
+          }
+        },
+        "calendar-cu-fresh-v3": {
+          "routes": {
+            "cu2612.SHFE": "cu2612.SHFE",
+            "cu2701.SHFE": "cu2701.SHFE"
+          },
+          "budget": {
+            "max_gross_quantity": "2",
+            "max_gross_notional": "2000000"
+          },
+          "limits": {
+            "cu2612.SHFE": {
+              "max_order_quantity": "2",
+              "max_abs_position": "1",
+              "max_order_notional": "1000000",
+              "max_abs_position_notional": "1000000",
+              "max_market_age_ns": "120000000000",
+              "contract_multiplier": "5.0"
+            },
+            "cu2701.SHFE": {
+              "max_order_quantity": "2",
+              "max_abs_position": "1",
+              "max_order_notional": "1000000",
+              "max_abs_position_notional": "1000000",
+              "max_market_age_ns": "120000000000",
+              "contract_multiplier": "5.0"
+            }
+          }
+        }
+      },
+      "suspended": [],
+      "draining": [],
+      "execution_mode": "independent",
+      "event_journal": {
+        "version": 1,
+        "events": {
+          "calendar-cu-fresh-v3": [],
+          "cross-cu-al-ag-au-fresh-v3": [],
+          "ema-cu-fresh-v3": []
+        },
+        "ack": {
+          "calendar-cu-fresh-v3": 0,
+          "cross-cu-al-ag-au-fresh-v3": 0,
+          "ema-cu-fresh-v3": 0
+        },
+        "requests": {}
+      },
+      "managed_instruments": [
+        "ag2612.SHFE",
+        "al2611.SHFE",
+        "au2612.SHFE",
+        "cu2611.SHFE",
+        "cu2612.SHFE",
+        "cu2701.SHFE"
+      ]
+    }
+  },
+  "final_gross": null,
+  "final_active_orders": null,
+  "verification": "independent_process_account_service",
+  "status": "failed"
+}

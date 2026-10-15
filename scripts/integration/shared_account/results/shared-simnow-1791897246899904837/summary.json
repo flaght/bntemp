@@ -1,0 +1,69 @@
+{
+  "config": {
+    "version": 1,
+    "trading_day": "20261013",
+    "environment": "realtime",
+    "seconds": 600.0,
+    "account_state_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/shared-account.json",
+    "report_dir": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results",
+    "account": {
+      "client_id": "shared-simnow",
+      "max_gross_quantity": "4",
+      "max_gross_notional": "2000000",
+      "max_session_orders": 20,
+      "limit_offset_ticks": 1
+    },
+    "strategies": [
+      {
+        "strategy_id": "ema-rb-alpha",
+        "kind": "main_ema",
+        "state_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/ema-rb-alpha.json",
+        "stop_after_seconds": 300,
+        "argv": [
+          "--product",
+          "RB",
+          "--expected-source-day",
+          "20261012",
+          "--fast",
+          "3",
+          "--slow",
+          "5",
+          "--quantity",
+          "1",
+          "--max-notional",
+          "100000"
+        ]
+      },
+      {
+        "strategy_id": "cross-rb-hc-beta",
+        "kind": "cross_section",
+        "state_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/cross-rb-hc-beta.json",
+        "argv": [
+          "--products",
+          "RB,HC",
+          "--expected-source-day",
+          "20261012",
+          "--lookback",
+          "3",
+          "--rebalance-interval",
+          "1",
+          "--group-fraction",
+          "0.5",
+          "--target-notional",
+          "100000",
+          "--target-quantity-cap",
+          "1",
+          "--max-quantity",
+          "1",
+          "--max-notional",
+          "100000"
+        ]
+      }
+    ]
+  },
+  "failure": "TD交易日与共享配置不一致",
+  "verification": "runtime_completed_real_fill_acceptance_separate",
+  "final_gross": null,
+  "final_active_orders": null,
+  "status": "failed"
+}

@@ -1,0 +1,207 @@
+{
+  "config": {
+    "version": 1,
+    "trading_day": "20261015",
+    "environment": "realtime",
+    "position_scope": "strategy_instruments",
+    "execution_mode": "independent",
+    "seconds": 3600.0,
+    "account_state_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/three-fresh-v5-20261015-1792026346085402863/account.json",
+    "report_dir": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/three-fresh-v5-20261015-1792026346085402863",
+    "account": {
+      "client_id": "three-fresh-realtime-v5",
+      "max_gross_quantity": "7",
+      "max_gross_notional": "3500000",
+      "max_session_orders": 20,
+      "limit_offset_ticks": 1
+    },
+    "strategies": [
+      {
+        "strategy_id": "ema-cu-fresh-v5",
+        "kind": "main_ema",
+        "state_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/three-fresh-v5-20261015-1792026346085402863/main_ema.json",
+        "argv": [
+          "--product",
+          "CU",
+          "--expected-source-day",
+          "20261014",
+          "--factor-date-basis",
+          "source",
+          "--factor-availability",
+          "observed-on-read",
+          "--fast",
+          "3",
+          "--slow",
+          "5",
+          "--quantity",
+          "1",
+          "--max-notional",
+          "1000000",
+          "--ctp-future-buffer-ms",
+          "100"
+        ]
+      },
+      {
+        "strategy_id": "cross-cu-al-ag-au-fresh-v5",
+        "kind": "cross_section",
+        "state_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/three-fresh-v5-20261015-1792026346085402863/cross_section.json",
+        "argv": [
+          "--products",
+          "CU,AL,AG,AU",
+          "--expected-source-day",
+          "20261014",
+          "--factor-date-basis",
+          "source",
+          "--factor-availability",
+          "observed-on-read",
+          "--lookback",
+          "3",
+          "--rebalance-interval",
+          "1",
+          "--group-fraction",
+          "0.5",
+          "--target-notional",
+          "1000000",
+          "--target-quantity-cap",
+          "1",
+          "--max-quantity",
+          "1",
+          "--max-notional",
+          "1000000",
+          "--ctp-future-buffer-ms",
+          "100"
+        ]
+      },
+      {
+        "strategy_id": "calendar-cu-fresh-v5",
+        "kind": "calendar_spread",
+        "state_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/three-fresh-v5-20261015-1792026346085402863/calendar_spread.json",
+        "argv": [
+          "--product",
+          "CU",
+          "--expected-source-day",
+          "20261014",
+          "--leg1-role",
+          "secondary",
+          "--leg2-role",
+          "far",
+          "--quantity",
+          "1",
+          "--lookback",
+          "3",
+          "--rebalance-interval",
+          "1",
+          "--entry-z",
+          "1",
+          "--exit-z",
+          "0.25",
+          "--max-notional",
+          "1000000",
+          "--ctp-future-buffer-ms",
+          "100"
+        ]
+      }
+    ],
+    "existing_position_policy": "preserve_external"
+  },
+  "failure": null,
+  "td_preflight": {
+    "environment": "realtime",
+    "expected_td_trading_day": "20261015",
+    "observed_td_trading_day": "20261015",
+    "md_front": "tcp://182.254.243.31:30011",
+    "td_front": "tcp://182.254.243.31:30001",
+    "preflight_orders_submitted": 0,
+    "position_scope_policy": "strategy_instruments",
+    "managed_instruments": [
+      "ag2612.SHFE",
+      "al2611.SHFE",
+      "au2612.SHFE",
+      "cu2611.SHFE",
+      "cu2612.SHFE",
+      "cu2701.SHFE"
+    ],
+    "external_gross": {
+      "MO2611-C-7400.CFFEX": [
+        "0",
+        "1"
+      ],
+      "sc2611.INE": [
+        "1",
+        "0"
+      ],
+      "ni2611.SHFE": [
+        "1",
+        "0"
+      ],
+      "i2701.DCE": [
+        "0",
+        "1"
+      ],
+      "hc2701.SHFE": [
+        "1",
+        "0"
+      ]
+    }
+  },
+  "markets": {
+    "ema-cu-fresh-v5": {
+      "cu2611.SHFE": {
+        "trading_day": "20261015",
+        "ts_event": 1792026419500000000,
+        "received_monotonic_ns": 14992394044534101,
+        "timestamp_regressed": false,
+        "reference_price": "109945.0"
+      }
+    },
+    "cross-cu-al-ag-au-fresh-v5": {
+      "ag2612.SHFE": {
+        "trading_day": "20261015",
+        "ts_event": 1792026419500000000,
+        "received_monotonic_ns": 14992393777024817,
+        "timestamp_regressed": false,
+        "reference_price": "13656.5"
+      },
+      "al2611.SHFE": {
+        "trading_day": "20261015",
+        "ts_event": 1792026419500000000,
+        "received_monotonic_ns": 14992393777432745,
+        "timestamp_regressed": false,
+        "reference_price": "23037.5"
+      },
+      "au2612.SHFE": {
+        "trading_day": "20261015",
+        "ts_event": 1792026419500000000,
+        "received_monotonic_ns": 14992393777649524,
+        "timestamp_regressed": false,
+        "reference_price": "896.08"
+      },
+      "cu2611.SHFE": {
+        "trading_day": "20261015",
+        "ts_event": 1792026419500000000,
+        "received_monotonic_ns": 14992393777835424,
+        "timestamp_regressed": false,
+        "reference_price": "109945.0"
+      }
+    },
+    "calendar-cu-fresh-v5": {
+      "cu2612.SHFE": {
+        "trading_day": "20261015",
+        "ts_event": 1792026419500000000,
+        "received_monotonic_ns": 14992393812231703,
+        "timestamp_regressed": false,
+        "reference_price": "109385.0"
+      },
+      "cu2701.SHFE": {
+        "trading_day": "20261015",
+        "ts_event": 1792026419500000000,
+        "received_monotonic_ns": 14992393812705811,
+        "timestamp_regressed": false,
+        "reference_price": "108865.0"
+      }
+    }
+  },
+  "verification": "readonly_no_strategy_no_orders",
+  "orders_submitted": 0,
+  "status": "prechecked"
+}

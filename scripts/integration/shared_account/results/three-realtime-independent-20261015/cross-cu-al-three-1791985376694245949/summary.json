@@ -1,0 +1,91 @@
+{
+  "strategy_id": "cross-cu-al-three",
+  "kind": "cross_section",
+  "argv": [
+    "--products",
+    "CU,AL",
+    "--expected-source-day",
+    "20261014",
+    "--factor-date-basis",
+    "source",
+    "--factor-availability",
+    "observed-on-read",
+    "--lookback",
+    "3",
+    "--rebalance-interval",
+    "1",
+    "--group-fraction",
+    "0.5",
+    "--target-notional",
+    "1000000",
+    "--target-quantity-cap",
+    "1",
+    "--max-quantity",
+    "1",
+    "--max-notional",
+    "1000000"
+  ],
+  "trading_day": "20261015",
+  "environment": "realtime",
+  "replay_md_trading_day": null,
+  "execution_mode": "independent",
+  "failure": "策略行情/参考/账户失效",
+  "shutdown_failure": null,
+  "failure_readiness": null,
+  "verification": "independent_strategy_process",
+  "positions": {
+    "al2611.SHFE": "0",
+    "cu2611.SHFE": "0"
+  },
+  "cursor": 0,
+  "fills_received": 0,
+  "source_revision": 0,
+  "last_targets": null,
+  "reference_manifest": {
+    "backend": "DolphinDbReferenceSource",
+    "trading_day": "2026-10-15",
+    "factor_date_basis": "source",
+    "factor_date": "2026-10-14",
+    "factor_availability": "observed-on-read",
+    "factor_publication_policy": "observed-on-read",
+    "role_source_day": "2026-10-14",
+    "freshness_policy": {
+      "expected_source_day": "2026-10-14",
+      "role_and_factor_max_source_age_days": 14,
+      "basic_age_basis": "contract_lifecycle_and_successful_observation_not_listing_date",
+      "max_observation_age_seconds": 30,
+      "max_refresh_duration_seconds": 30,
+      "source_day_evidence": "operator_declared_day"
+    },
+    "reference_date_selection": "latest_role_source_before_td_requires_upstream_completeness",
+    "role_date_basis": "previous_source_day",
+    "fingerprint": "2011d467ca7dba310108df74827610f272f609fb1886341b9b4b826d7b00a427",
+    "observed_at_ns": 1791985394044581262,
+    "first_observed_ns": 1791985382981229505,
+    "effective_ns": 1791985376898814956,
+    "available_ns": 1791985382981229505,
+    "evidence": "stable_read_observation_not_publication_version",
+    "sources": {
+      "contract_structure": {
+        "source": "dolphindb:dfs://bomber_daily/fut_contract",
+        "sha256": "840520f954218b5709e8311e079131fd9f3deacf3df5b6e7df284fb248df8d4b",
+        "rows": 3302
+      },
+      "adjustment_factors": {
+        "source": "dolphindb:dfs://bomber_daily/fut_adjustment_factors",
+        "sha256": "463d4edfdb2189734a18ed8304913a2f88832bc9d74be3fce61ac2cbbb108889",
+        "rows": 2
+      },
+      "futures_basic": {
+        "source": "dolphindb:dfs://bomber_daily/fut_basic",
+        "sha256": "f2bb20f4f9052f221b0815d68e3034272f1a315e05f97106efca5ee94dcb943c",
+        "rows": 24
+      }
+    },
+    "ready": true,
+    "failure": null
+  },
+  "bar_counts": {},
+  "last_processed_ns": null,
+  "status": "failed"
+}

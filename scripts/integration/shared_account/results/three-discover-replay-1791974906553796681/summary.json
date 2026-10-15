@@ -1,0 +1,65 @@
+{
+  "observed_td_trading_day": "20261013",
+  "gross_positions": {
+    "ag2612.SHFE": [
+      "0",
+      "1"
+    ],
+    "sc2611.INE": [
+      "1",
+      "0"
+    ]
+  },
+  "observed_source_days": [
+    "20261012"
+  ],
+  "contracts": {
+    "CU": {
+      "main": "cu2611.SHFE",
+      "secondary": "cu2612.SHFE",
+      "far": "cu2701.SHFE"
+    },
+    "AL": {
+      "main": "al2611.SHFE"
+    }
+  },
+  "observed_md_trading_days": [
+    "20261013"
+  ],
+  "session_arguments": {
+    "trading_day": "20261013",
+    "source_day": "20261012",
+    "replay_md_trading_day": "20261013"
+  },
+  "markets": {
+    "al2611.SHFE": {
+      "trading_day": "20261013",
+      "ts_event": 1791802570000000000,
+      "received_monotonic_ns": 14940901708976242,
+      "timestamp_regressed": false
+    },
+    "cu2611.SHFE": {
+      "trading_day": "20261013",
+      "ts_event": 1791802570500000000,
+      "received_monotonic_ns": 14940901763866982,
+      "timestamp_regressed": false
+    },
+    "cu2612.SHFE": {
+      "trading_day": "20261013",
+      "ts_event": 1791802570000000000,
+      "received_monotonic_ns": 14940901709515620,
+      "timestamp_regressed": false
+    },
+    "cu2701.SHFE": {
+      "trading_day": "20261013",
+      "ts_event": 1791802569000000000,
+      "received_monotonic_ns": 14940901709668640,
+      "timestamp_regressed": false
+    }
+  },
+  "failure": null,
+  "environment": "replay",
+  "verification": "readonly_dates_and_contracts",
+  "orders_submitted": 0,
+  "status": "observed"
+}

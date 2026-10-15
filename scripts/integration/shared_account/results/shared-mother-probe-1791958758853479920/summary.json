@@ -1,0 +1,25 @@
+{
+  "plan": null,
+  "failure": "TD交易日或SimNow身份不符",
+  "shutdown_failure": null,
+  "expected_trading_day": "20261014",
+  "observed_td_trading_day": "20261014",
+  "protected_state_unchanged": true,
+  "protected_hashes": {
+    "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/shared-account-cu-au.json": "a008f531725dc1cd52baf061abedabbb59e2cc3e0f8037cc2400947e6f579df8",
+    "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/shared-account.json": "f18816b79a820fbe9a3bdfeea0776f7dc3ea53c463bbc58c0224060236d17b6f"
+  },
+  "orders_submitted": 0,
+  "verification": "readonly_plan_no_orders",
+  "shared_cancel_acceptance": null,
+  "unexpected_fill": false,
+  "final_gross": null,
+  "final_active_orders": null,
+  "new_state_file": null,
+  "controlled_sources_submitted": 0,
+  "original_strategy_signals_overridden": false,
+  "reference_evidence": null,
+  "eligible_instruments": [],
+  "peer_state_after_owner_cancel": null,
+  "status": "failed"
+}

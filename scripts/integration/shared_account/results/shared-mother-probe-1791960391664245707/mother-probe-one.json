@@ -1,0 +1,1 @@
+{"checksum":"6fd9bd9873612bcca2107e4d2f68fa554ce45dd75d531c4d54758d6f916d8677","generation":2,"payload":{"failure":"host_stop","identity":{"id":"mother-probe-one","instrument":"cu2612.SHFE"},"revision":1,"signal_recovery":"rewarm","version":1},"saved_at_ns":1791960422566646981,"schema_version":2}

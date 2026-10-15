@@ -1,0 +1,115 @@
+{
+  "config": {
+    "version": 1,
+    "trading_day": "20261013",
+    "environment": "replay",
+    "position_scope": "strategy_instruments",
+    "execution_mode": "independent",
+    "seconds": 900.0,
+    "account_state_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/three-replay-independent-20261013/account.json",
+    "report_dir": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/three-replay-independent-20261013",
+    "account": {
+      "client_id": "three-replay-independent",
+      "max_gross_quantity": "5",
+      "max_gross_notional": "3000000",
+      "max_session_orders": 20,
+      "limit_offset_ticks": 1
+    },
+    "strategies": [
+      {
+        "strategy_id": "ema-cu-three",
+        "kind": "main_ema",
+        "state_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/three-replay-independent-20261013/ema.json",
+        "argv": [
+          "--product",
+          "CU",
+          "--expected-source-day",
+          "20261012",
+          "--factor-date-basis",
+          "source",
+          "--factor-availability",
+          "source-day-end",
+          "--fast",
+          "3",
+          "--slow",
+          "5",
+          "--quantity",
+          "1",
+          "--max-notional",
+          "1000000"
+        ]
+      },
+      {
+        "strategy_id": "cross-cu-al-three",
+        "kind": "cross_section",
+        "state_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/three-replay-independent-20261013/cross.json",
+        "argv": [
+          "--products",
+          "CU,AL",
+          "--expected-source-day",
+          "20261012",
+          "--factor-date-basis",
+          "source",
+          "--factor-availability",
+          "source-day-end",
+          "--lookback",
+          "3",
+          "--rebalance-interval",
+          "1",
+          "--group-fraction",
+          "0.5",
+          "--target-notional",
+          "1000000",
+          "--target-quantity-cap",
+          "1",
+          "--max-quantity",
+          "1",
+          "--max-notional",
+          "1000000"
+        ]
+      },
+      {
+        "strategy_id": "calendar-cu-three",
+        "kind": "calendar_spread",
+        "state_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/three-replay-independent-20261013/calendar.json",
+        "argv": [
+          "--product",
+          "CU",
+          "--expected-source-day",
+          "20261012",
+          "--leg1-role",
+          "secondary",
+          "--leg2-role",
+          "far",
+          "--quantity",
+          "1",
+          "--lookback",
+          "3",
+          "--rebalance-interval",
+          "1",
+          "--entry-z",
+          "1",
+          "--exit-z",
+          "0.25",
+          "--max-notional",
+          "1000000"
+        ]
+      }
+    ],
+    "replay_md_trading_day": "20261013"
+  },
+  "failure": "",
+  "td_preflight": {
+    "environment": "replay",
+    "expected_td_trading_day": "20261013",
+    "observed_td_trading_day": "20261013",
+    "md_front": "tcp://182.254.243.31:40011",
+    "td_front": "tcp://182.254.243.31:40001",
+    "preflight_orders_submitted": 0,
+    "position_scope_policy": "strategy_instruments"
+  },
+  "markets": {},
+  "verification": "readonly_no_strategy_no_orders",
+  "orders_submitted": 0,
+  "status": "failed"
+}

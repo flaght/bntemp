@@ -1,0 +1,519 @@
+{
+  "config": {
+    "version": 1,
+    "trading_day": "20261014",
+    "environment": "realtime",
+    "position_scope": "strategy_instruments",
+    "seconds": 600.0,
+    "account_state_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/shared-account-cu-au.json",
+    "report_dir": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results",
+    "account": {
+      "client_id": "shared-simnow-cu-au",
+      "max_gross_quantity": "4",
+      "max_gross_notional": "2300000",
+      "max_session_orders": 20,
+      "limit_offset_ticks": 1
+    },
+    "strategies": [
+      {
+        "strategy_id": "ema-cu-gamma",
+        "kind": "main_ema",
+        "state_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/ema-cu-gamma.json",
+        "stop_after_seconds": 480,
+        "argv": [
+          "--product",
+          "CU",
+          "--expected-source-day",
+          "20261013",
+          "--fast",
+          "3",
+          "--slow",
+          "5",
+          "--quantity",
+          "1",
+          "--max-notional",
+          "2000000",
+          "--factor-date-basis",
+          "source",
+          "--factor-availability",
+          "observed-on-read"
+        ]
+      },
+      {
+        "strategy_id": "cross-cu-au-delta",
+        "kind": "cross_section",
+        "state_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/cross-cu-au-delta.json",
+        "argv": [
+          "--products",
+          "CU,AU",
+          "--expected-source-day",
+          "20261013",
+          "--lookback",
+          "3",
+          "--rebalance-interval",
+          "1",
+          "--group-fraction",
+          "0.5",
+          "--target-notional",
+          "2000000",
+          "--target-quantity-cap",
+          "1",
+          "--max-quantity",
+          "1",
+          "--max-notional",
+          "2000000",
+          "--factor-date-basis",
+          "source",
+          "--factor-availability",
+          "observed-on-read"
+        ]
+      }
+    ]
+  },
+  "account": {
+    "version": 1,
+    "client_id": "shared-simnow-cu-au",
+    "account_id": "097561",
+    "failed": false,
+    "pending": false,
+    "portfolio_revision": 48,
+    "strategy_revisions": {
+      "cross-cu-au-delta": 36,
+      "ema-cu-gamma": 12
+    },
+    "known_instruments": [
+      "au2612.SHFE",
+      "cu2611.SHFE"
+    ],
+    "sources": {
+      "cross-cu-au-delta": {
+        "revision": 28,
+        "ts_event": 1791943921151825460,
+        "targets": {
+          "au2612.SHFE": "1",
+          "cu2611.SHFE": "-1"
+        },
+        "rows": [
+          {
+            "instrument_id": "cu2611.SHFE",
+            "quantity": "-1",
+            "source_deadline_ns": null,
+            "source_revision": 28,
+            "strategy_id": "cross-cu-au-delta",
+            "target_key": "cu2611.SHFE"
+          },
+          {
+            "instrument_id": "au2612.SHFE",
+            "quantity": "1",
+            "source_deadline_ns": null,
+            "source_revision": 28,
+            "strategy_id": "cross-cu-au-delta",
+            "target_key": "au2612.SHFE"
+          }
+        ],
+        "deadline_ns": null,
+        "execution_policy": "DIRECT",
+        "metadata": {
+          "group_fraction": "0.5",
+          "group_size": 1,
+          "incomplete_group_products": [],
+          "long_products": [
+            "AU"
+          ],
+          "main_contracts": {
+            "AU": "au2612",
+            "CU": "cu2611"
+          },
+          "market_health_feeds": [],
+          "market_health_mode": "NORMAL",
+          "market_health_state": "READY",
+          "portfolio_revision": 6,
+          "position_attribution": [
+            {
+              "instrument_id": "au2612.SHFE",
+              "quantity": "1",
+              "source_deadline_ns": null,
+              "source_revision": 28,
+              "strategy_id": "cross-cu-au-delta",
+              "target_key": "au2612.SHFE"
+            },
+            {
+              "instrument_id": "cu2611.SHFE",
+              "quantity": "-1",
+              "source_deadline_ns": null,
+              "source_revision": 28,
+              "strategy_id": "cross-cu-au-delta",
+              "target_key": "cu2611.SHFE"
+            }
+          ],
+          "product_targets": {
+            "AU": "1",
+            "CU": "-1"
+          },
+          "replay_md_trading_day": null,
+          "require_full_groups": false,
+          "scores": {
+            "AU": "0.001067235859124866595517609",
+            "CU": "0.000270270270270270270270270"
+          },
+          "short_products": [
+            "CU"
+          ],
+          "side_target_notional": "2000000",
+          "signal_bar_ns": 1791943919999999999,
+          "simnow_environment": "realtime",
+          "synchronized_frame": 9,
+          "target_quantity_cap": "1"
+        }
+      },
+      "ema-cu-gamma": {
+        "revision": 6,
+        "ts_event": 1791943679999999999,
+        "targets": {
+          "cu2611.SHFE": "1"
+        },
+        "rows": [
+          {
+            "instrument_id": "cu2611.SHFE",
+            "quantity": "1",
+            "source_deadline_ns": null,
+            "source_revision": 6,
+            "strategy_id": "ema-cu-gamma",
+            "target_key": "cu_main"
+          }
+        ],
+        "deadline_ns": null,
+        "execution_policy": "DIRECT",
+        "metadata": {
+          "adjusted_close": "164768.787580",
+          "fast_ema": "164745.589595625",
+          "market_health_feeds": [],
+          "market_health_mode": "NORMAL",
+          "market_health_state": "READY",
+          "portfolio_revision": 1,
+          "position_attribution": [
+            {
+              "instrument_id": "cu2611.SHFE",
+              "quantity": "1",
+              "source_deadline_ns": null,
+              "source_revision": 6,
+              "strategy_id": "ema-cu-gamma",
+              "target_key": "cu_main"
+            }
+          ],
+          "research_main": "cu2611",
+          "signal": "LONG",
+          "signal_source": "ema",
+          "signal_ts": 1791943679999999999,
+          "slow_ema": "164705.36830024695"
+        }
+      }
+    },
+    "shared": {
+      "version": 1,
+      "budget": {
+        "max_gross_quantity": "4",
+        "max_gross_notional": "2300000"
+      },
+      "routes": {
+        "ema-cu-gamma": {
+          "routes": {
+            "cu_main": "cu2611.SHFE"
+          },
+          "budget": {
+            "max_gross_quantity": "1",
+            "max_gross_notional": "2000000"
+          },
+          "limits": {
+            "cu2611.SHFE": {
+              "max_order_quantity": "1",
+              "max_abs_position": "1",
+              "max_order_notional": "2000000",
+              "max_abs_position_notional": "2000000",
+              "max_market_age_ns": "120000000000",
+              "contract_multiplier": "5.0"
+            }
+          }
+        },
+        "cross-cu-au-delta": {
+          "routes": {
+            "cu2611.SHFE": "cu2611.SHFE",
+            "au2612.SHFE": "au2612.SHFE"
+          },
+          "budget": {
+            "max_gross_quantity": "2",
+            "max_gross_notional": "4000000"
+          },
+          "limits": {
+            "cu2611.SHFE": {
+              "max_order_quantity": "1",
+              "max_abs_position": "1",
+              "max_order_notional": "2000000",
+              "max_abs_position_notional": "2000000",
+              "max_market_age_ns": "120000000000",
+              "contract_multiplier": "5.0"
+            },
+            "au2612.SHFE": {
+              "max_order_quantity": "1",
+              "max_abs_position": "1",
+              "max_order_notional": "2000000",
+              "max_abs_position_notional": "2000000",
+              "max_market_age_ns": "120000000000",
+              "contract_multiplier": "1000.0"
+            }
+          }
+        }
+      },
+      "suspended": [
+        "cross-cu-au-delta",
+        "ema-cu-gamma"
+      ],
+      "draining": [
+        "cross-cu-au-delta",
+        "ema-cu-gamma"
+      ],
+      "managed_instruments": [
+        "au2612.SHFE",
+        "cu2611.SHFE"
+      ]
+    }
+  },
+  "execution_diagnostics": {
+    "is_reconciled": false,
+    "is_armed": false,
+    "recovery_required": false,
+    "service_failed": false,
+    "report_errors": [],
+    "portfolio_failure": null,
+    "audit": [
+      {
+        "action": "ACTIVE_ORDERS_RECOVERED",
+        "detail": "revision=2 count=0",
+        "ts_ns": 1791944852168838543
+      },
+      {
+        "action": "RECONCILED",
+        "detail": "position_and_account_revision=2",
+        "ts_ns": 1791944852181053865
+      },
+      {
+        "action": "ACCOUNT_REFRESHED",
+        "detail": "3",
+        "ts_ns": 1791944865440153564
+      },
+      {
+        "action": "ACCOUNT_REFRESHED",
+        "detail": "4",
+        "ts_ns": 1791944878738912118
+      },
+      {
+        "action": "ACCOUNT_REFRESHED",
+        "detail": "5",
+        "ts_ns": 1791944892073749693
+      },
+      {
+        "action": "DISARMED",
+        "detail": "shared_host_stop",
+        "ts_ns": 1791944892101397828
+      },
+      {
+        "action": "DISARMED",
+        "detail": "stop",
+        "ts_ns": 1791944892101408938
+      }
+    ]
+  },
+  "strategy_positions": [
+    {
+      "strategy_id": "cross-cu-au-delta",
+      "target_key": "au2612.SHFE",
+      "quantity": "1"
+    },
+    {
+      "strategy_id": "cross-cu-au-delta",
+      "target_key": "cu2611.SHFE",
+      "quantity": "-1"
+    },
+    {
+      "strategy_id": "ema-cu-gamma",
+      "target_key": "cu_main",
+      "quantity": "1"
+    }
+  ],
+  "execution_positions": {
+    "MO2611-C-7400.CFFEX": "-1",
+    "ag2612.SHFE": "-1",
+    "au2612.SHFE": "1",
+    "cu2611.SHFE": "0",
+    "hc2701.SHFE": "1",
+    "i2701.DCE": "-1",
+    "ni2611.SHFE": "1",
+    "rb2701.SHFE": "0",
+    "sc2611.INE": "1"
+  },
+  "strategies": {
+    "ema-cu-gamma": {
+      "active": false,
+      "failure": "host_stop",
+      "failure_readiness": null,
+      "fills_received": 0,
+      "execution_events": {
+        "stopping": false,
+        "closed": false,
+        "pending_events": 0,
+        "pending_fills": 0,
+        "fills_enqueued": 0,
+        "fills_delivered": 0,
+        "last_fill_enqueued": null,
+        "last_fill_delivered": null
+      },
+      "stop_requested_at_ns": 1791944892096966856,
+      "stopped_at_ns": 1791944892099375776,
+      "state_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/ema-cu-gamma.json"
+    },
+    "cross-cu-au-delta": {
+      "active": false,
+      "failure": "host_stop",
+      "failure_readiness": null,
+      "fills_received": 0,
+      "execution_events": {
+        "stopping": false,
+        "closed": false,
+        "pending_events": 0,
+        "pending_fills": 0,
+        "fills_enqueued": 0,
+        "fills_delivered": 0,
+        "last_fill_enqueued": null,
+        "last_fill_delivered": null
+      },
+      "stop_requested_at_ns": 1791944892099382676,
+      "stopped_at_ns": 1791944892101389528,
+      "state_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/cross-cu-au-delta.json"
+    }
+  },
+  "failure": "共享策略未在期限内取得健康行情/参考/账户",
+  "shutdown_failure": null,
+  "failure_execution_diagnostics": {
+    "is_reconciled": false,
+    "is_armed": false,
+    "recovery_required": false,
+    "service_failed": false,
+    "report_errors": [],
+    "portfolio_failure": null,
+    "audit": [
+      {
+        "action": "ACTIVE_ORDERS_RECOVERED",
+        "detail": "revision=2 count=0",
+        "ts_ns": 1791944852168838543
+      },
+      {
+        "action": "RECONCILED",
+        "detail": "position_and_account_revision=2",
+        "ts_ns": 1791944852181053865
+      },
+      {
+        "action": "ACCOUNT_REFRESHED",
+        "detail": "3",
+        "ts_ns": 1791944865440153564
+      },
+      {
+        "action": "ACCOUNT_REFRESHED",
+        "detail": "4",
+        "ts_ns": 1791944878738912118
+      },
+      {
+        "action": "ACCOUNT_REFRESHED",
+        "detail": "5",
+        "ts_ns": 1791944892073749693
+      },
+      {
+        "action": "DISARMED",
+        "detail": "shared_host_stop",
+        "ts_ns": 1791944892101397828
+      },
+      {
+        "action": "DISARMED",
+        "detail": "stop",
+        "ts_ns": 1791944892101408938
+      }
+    ]
+  },
+  "reconciliation": null,
+  "td_preflight": {
+    "environment": "realtime",
+    "expected_td_trading_day": "20261014",
+    "observed_td_trading_day": "20261014",
+    "md_front": "tcp://182.254.243.31:30011",
+    "td_front": "tcp://182.254.243.31:30001",
+    "preflight_orders_submitted": 0,
+    "position_scope_policy": "strategy_instruments",
+    "managed_instruments": [
+      "au2612.SHFE",
+      "cu2611.SHFE"
+    ],
+    "external_gross": {
+      "MO2611-C-7400.CFFEX": [
+        "0",
+        "1"
+      ],
+      "hc2701.SHFE": [
+        "1",
+        "0"
+      ],
+      "sc2611.INE": [
+        "1",
+        "0"
+      ],
+      "ni2611.SHFE": [
+        "1",
+        "0"
+      ],
+      "i2701.DCE": [
+        "0",
+        "1"
+      ],
+      "ag2612.SHFE": [
+        "0",
+        "1"
+      ]
+    }
+  },
+  "verification": "runtime_completed_real_fill_acceptance_separate",
+  "final_gross": null,
+  "position_scope": {
+    "policy": "strategy_instruments",
+    "managed_instruments": [
+      "au2612.SHFE",
+      "cu2611.SHFE"
+    ],
+    "external_gross": {
+      "MO2611-C-7400.CFFEX": [
+        "0",
+        "1"
+      ],
+      "ag2612.SHFE": [
+        "0",
+        "1"
+      ],
+      "hc2701.SHFE": [
+        "1",
+        "0"
+      ],
+      "i2701.DCE": [
+        "0",
+        "1"
+      ],
+      "ni2611.SHFE": [
+        "1",
+        "0"
+      ],
+      "sc2611.INE": [
+        "1",
+        "0"
+      ]
+    },
+    "final_managed_gross": null
+  },
+  "final_active_orders": null,
+  "status": "failed"
+}

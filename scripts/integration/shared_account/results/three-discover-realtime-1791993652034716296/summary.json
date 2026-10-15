@@ -1,0 +1,266 @@
+{
+  "cross_products": [
+    "CU",
+    "AL",
+    "AG",
+    "AU"
+  ],
+  "observed_td_trading_day": "20261015",
+  "gross_positions": {
+    "MO2611-C-7400.CFFEX": [
+      "0",
+      "1"
+    ],
+    "au2612.SHFE": [
+      "0",
+      "2"
+    ],
+    "cu2612.SHFE": [
+      "1",
+      "1"
+    ],
+    "cu2701.SHFE": [
+      "1",
+      "1"
+    ],
+    "cu2611.SHFE": [
+      "1",
+      "0"
+    ],
+    "sc2611.INE": [
+      "1",
+      "0"
+    ],
+    "ni2611.SHFE": [
+      "1",
+      "0"
+    ],
+    "i2701.DCE": [
+      "0",
+      "1"
+    ],
+    "hc2701.SHFE": [
+      "1",
+      "0"
+    ],
+    "ag2612.SHFE": [
+      "0",
+      "1"
+    ]
+  },
+  "observed_source_days": [
+    "20261014"
+  ],
+  "contracts": {
+    "CU": {
+      "main": "cu2611.SHFE",
+      "secondary": "cu2612.SHFE",
+      "far": "cu2701.SHFE"
+    },
+    "AL": {
+      "main": "al2611.SHFE"
+    },
+    "AG": {
+      "main": "ag2612.SHFE"
+    },
+    "AU": {
+      "main": "au2612.SHFE"
+    }
+  },
+  "instrument_specs": {
+    "cu2611.SHFE": {
+      "tick": "10.0",
+      "multiplier": "5.0"
+    },
+    "cu2612.SHFE": {
+      "tick": "10.0",
+      "multiplier": "5.0"
+    },
+    "cu2701.SHFE": {
+      "tick": "10.0",
+      "multiplier": "5.0"
+    },
+    "al2611.SHFE": {
+      "tick": "5.0",
+      "multiplier": "5.0"
+    },
+    "ag2612.SHFE": {
+      "tick": "1.0",
+      "multiplier": "15.0"
+    },
+    "au2612.SHFE": {
+      "tick": "0.02",
+      "multiplier": "1000.0"
+    }
+  },
+  "market_readiness": {
+    "ready": true,
+    "sources": [
+      {
+        "domain": "market",
+        "channel": "ctp",
+        "source_id": "CTP_LIVE_SOURCE"
+      }
+    ],
+    "issues": []
+  },
+  "quotes": {
+    "ag2612.SHFE": {
+      "bid": "13542",
+      "ask": "13543",
+      "ts_event": 1791993690000000000,
+      "received_monotonic_ns": 14959664431463428
+    },
+    "al2611.SHFE": {
+      "bid": "23145",
+      "ask": "23150",
+      "ts_event": 1791993690000000000,
+      "received_monotonic_ns": 14959664431512188
+    },
+    "au2612.SHFE": {
+      "bid": "883.06",
+      "ask": "883.18",
+      "ts_event": 1791993690000000000,
+      "received_monotonic_ns": 14959664431530748
+    },
+    "cu2611.SHFE": {
+      "bid": "110050",
+      "ask": "110060",
+      "ts_event": 1791993686000000000,
+      "received_monotonic_ns": 14959664431543637
+    },
+    "cu2612.SHFE": {
+      "bid": "109520",
+      "ask": "109530",
+      "ts_event": 1791993688500000000,
+      "received_monotonic_ns": 14959664431555588
+    },
+    "cu2701.SHFE": {
+      "bid": "109020",
+      "ask": "109040",
+      "ts_event": 1791993687500000000,
+      "received_monotonic_ns": 14959664431566768
+    }
+  },
+  "budget_upper_bound": {
+    "quantity": 7,
+    "notional": "3395785.000",
+    "rounded_notional_limit": "3400000",
+    "price_basis": "observed_ask_plus_one_tick",
+    "legs": [
+      {
+        "strategy": "ema",
+        "instrument": "cu2611.SHFE",
+        "quantity": 1,
+        "reference_price": "110070.0",
+        "multiplier": "5.0",
+        "notional": "550350.00"
+      },
+      {
+        "strategy": "cross",
+        "instrument": "cu2611.SHFE",
+        "quantity": 1,
+        "reference_price": "110070.0",
+        "multiplier": "5.0",
+        "notional": "550350.00"
+      },
+      {
+        "strategy": "cross",
+        "instrument": "al2611.SHFE",
+        "quantity": 1,
+        "reference_price": "23155.0",
+        "multiplier": "5.0",
+        "notional": "115775.00"
+      },
+      {
+        "strategy": "cross",
+        "instrument": "ag2612.SHFE",
+        "quantity": 1,
+        "reference_price": "13544.0",
+        "multiplier": "15.0",
+        "notional": "203160.00"
+      },
+      {
+        "strategy": "cross",
+        "instrument": "au2612.SHFE",
+        "quantity": 1,
+        "reference_price": "883.20",
+        "multiplier": "1000.0",
+        "notional": "883200.000"
+      },
+      {
+        "strategy": "calendar",
+        "instrument": "cu2612.SHFE",
+        "quantity": 1,
+        "reference_price": "109540.0",
+        "multiplier": "5.0",
+        "notional": "547700.00"
+      },
+      {
+        "strategy": "calendar",
+        "instrument": "cu2701.SHFE",
+        "quantity": 1,
+        "reference_price": "109050.0",
+        "multiplier": "5.0",
+        "notional": "545250.00"
+      }
+    ]
+  },
+  "observed_md_trading_days": [
+    "20261015"
+  ],
+  "session_arguments": {
+    "trading_day": "20261015",
+    "source_day": "20261014",
+    "replay_md_trading_day": null
+  },
+  "markets": {
+    "ag2612.SHFE": {
+      "trading_day": "20261015",
+      "ts_event": 1791993690000000000,
+      "received_monotonic_ns": 14959664429032563,
+      "timestamp_regressed": false,
+      "reference_price": "13542.5"
+    },
+    "al2611.SHFE": {
+      "trading_day": "20261015",
+      "ts_event": 1791993690000000000,
+      "received_monotonic_ns": 14959664430456640,
+      "timestamp_regressed": false,
+      "reference_price": "23147.5"
+    },
+    "au2612.SHFE": {
+      "trading_day": "20261015",
+      "ts_event": 1791993690000000000,
+      "received_monotonic_ns": 14959664430699570,
+      "timestamp_regressed": false,
+      "reference_price": "883.1200000000001"
+    },
+    "cu2611.SHFE": {
+      "trading_day": "20261015",
+      "ts_event": 1791993686000000000,
+      "received_monotonic_ns": 14959664430905429,
+      "timestamp_regressed": false,
+      "reference_price": "110055.0"
+    },
+    "cu2612.SHFE": {
+      "trading_day": "20261015",
+      "ts_event": 1791993688500000000,
+      "received_monotonic_ns": 14959664431086649,
+      "timestamp_regressed": false,
+      "reference_price": "109525.0"
+    },
+    "cu2701.SHFE": {
+      "trading_day": "20261015",
+      "ts_event": 1791993687500000000,
+      "received_monotonic_ns": 14959664431251528,
+      "timestamp_regressed": false,
+      "reference_price": "109030.0"
+    }
+  },
+  "failure": null,
+  "environment": "realtime",
+  "verification": "readonly_dates_and_contracts",
+  "orders_submitted": 0,
+  "status": "observed"
+}

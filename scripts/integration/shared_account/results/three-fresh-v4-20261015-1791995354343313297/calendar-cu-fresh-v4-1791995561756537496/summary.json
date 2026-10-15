@@ -1,0 +1,116 @@
+{
+  "strategy_id": "calendar-cu-fresh-v4",
+  "kind": "calendar_spread",
+  "argv": [
+    "--product",
+    "CU",
+    "--expected-source-day",
+    "20261014",
+    "--leg1-role",
+    "secondary",
+    "--leg2-role",
+    "far",
+    "--quantity",
+    "1",
+    "--lookback",
+    "3",
+    "--rebalance-interval",
+    "1",
+    "--entry-z",
+    "1",
+    "--exit-z",
+    "0.25",
+    "--max-notional",
+    "1000000",
+    "--ctp-future-buffer-ms",
+    "100"
+  ],
+  "trading_day": "20261015",
+  "environment": "realtime",
+  "replay_md_trading_day": null,
+  "execution_mode": "independent",
+  "failure": "策略行情或账户未就绪: {'observed_at_ns': 1791995756855027740, 'channel_readiness': None, 'runner_failure': None, 'stale_instruments': {'cu2701.SHFE': {'event_age_seconds': 14.35503613, 'receive_age_seconds': 14.276169447, 'trading_day': '20261015', 'max_age_seconds': 10.0, 'timestamp_regressed': False}}, 'reference_current': True, 'execution_port': {'started': True, 'stopping': False, 'reconciled': True, 'account_reconciled': True, 'observation_age_seconds': 0.0006447453051805496}}",
+  "shutdown_failure": null,
+  "failure_readiness": {
+    "observed_at_ns": 1791995756855027740,
+    "channel_readiness": null,
+    "runner_failure": null,
+    "stale_instruments": {
+      "cu2701.SHFE": {
+        "event_age_seconds": 14.35503613,
+        "receive_age_seconds": 14.276169447,
+        "trading_day": "20261015",
+        "max_age_seconds": 10.0,
+        "timestamp_regressed": false
+      }
+    },
+    "reference_current": true,
+    "execution_port": {
+      "started": true,
+      "stopping": false,
+      "reconciled": true,
+      "account_reconciled": true,
+      "observation_age_seconds": 0.0006447453051805496
+    }
+  },
+  "verification": "independent_strategy_process",
+  "positions": {
+    "cu2612.SHFE": "0",
+    "cu2701.SHFE": "0"
+  },
+  "cursor": 0,
+  "fills_received": 0,
+  "source_revision": 0,
+  "last_targets": null,
+  "reference_manifest": {
+    "backend": "DolphinDbReferenceSource",
+    "trading_day": "2026-10-15",
+    "factor_date_basis": "source",
+    "factor_date": "2026-10-14",
+    "factor_availability": "source-day-end",
+    "factor_publication_policy": "source-day-end",
+    "role_source_day": "2026-10-14",
+    "freshness_policy": {
+      "expected_source_day": "2026-10-14",
+      "role_and_factor_max_source_age_days": 14,
+      "basic_age_basis": "contract_lifecycle_and_successful_observation_not_listing_date",
+      "max_observation_age_seconds": 30,
+      "max_refresh_duration_seconds": 30,
+      "source_day_evidence": "operator_declared_day"
+    },
+    "reference_date_selection": "latest_role_source_before_td_requires_upstream_completeness",
+    "role_date_basis": "previous_source_day",
+    "fingerprint": "22391dd1d71cbf27c327daa4e83786cac340524bb7a1c44a518f193d7ba83297",
+    "observed_at_ns": 1791995755173221355,
+    "first_observed_ns": 1791995565430712387,
+    "effective_ns": 1791995561956736075,
+    "available_ns": 1791995561956736075,
+    "evidence": "content_hash_not_publication_version",
+    "sources": {
+      "contract_structure": {
+        "source": "dolphindb:dfs://bomber_daily/fut_contract",
+        "sha256": "0e9ab1238da8dba8424a091687ed6ed1750c6a3d6b2a61146127a2dcf74ab971",
+        "rows": 1651
+      },
+      "futures_basic": {
+        "source": "dolphindb:dfs://bomber_daily/fut_basic",
+        "sha256": "5c979f39f186f47d171684c99ca5009084932c11b46c03d579066af2ca7e6c5d",
+        "rows": 12
+      }
+    },
+    "ready": true,
+    "failure": null,
+    "signal_price_basis": "raw_contract_close",
+    "requested_roles": [
+      "secondary",
+      "far"
+    ],
+    "adjustment_factors_used": false
+  },
+  "bar_counts": {
+    "cu2612.SHFE": 2,
+    "cu2701.SHFE": 1
+  },
+  "last_processed_ns": null,
+  "status": "failed"
+}

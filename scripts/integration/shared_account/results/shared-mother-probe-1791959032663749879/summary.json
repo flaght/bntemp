@@ -1,0 +1,425 @@
+{
+  "account": {
+    "version": 1,
+    "client_id": "shared-mother-probe",
+    "account_id": "097561",
+    "failed": false,
+    "pending": false,
+    "portfolio_revision": 4,
+    "strategy_revisions": {
+      "mother-probe-one": 2,
+      "mother-probe-two": 2
+    },
+    "known_instruments": [
+      "cu2612.SHFE"
+    ],
+    "sources": {
+      "mother-probe-one": {
+        "revision": 1,
+        "ts_event": 1791959038705696243,
+        "targets": {
+          "cu2612.SHFE": "0"
+        },
+        "rows": [
+          {
+            "strategy_id": "mother-probe-one",
+            "target_key": "main",
+            "instrument_id": "cu2612.SHFE",
+            "quantity": "0",
+            "source_revision": 1,
+            "source_deadline_ns": null
+          }
+        ],
+        "deadline_ns": null,
+        "execution_policy": "DIRECT",
+        "metadata": {
+          "signal_source": "controlled_shared_mother_cancel_acceptance",
+          "position_attribution": [
+            {
+              "strategy_id": "mother-probe-one",
+              "target_key": "main",
+              "instrument_id": "cu2612.SHFE",
+              "quantity": "1",
+              "source_revision": 1,
+              "source_deadline_ns": 1791959068705696243
+            }
+          ]
+        }
+      },
+      "mother-probe-two": {
+        "revision": 1,
+        "ts_event": 1791959038734862454,
+        "targets": {
+          "cu2612.SHFE": "0"
+        },
+        "rows": [
+          {
+            "strategy_id": "mother-probe-two",
+            "target_key": "main",
+            "instrument_id": "cu2612.SHFE",
+            "quantity": "0",
+            "source_revision": 1,
+            "source_deadline_ns": null
+          }
+        ],
+        "deadline_ns": null,
+        "execution_policy": "DIRECT",
+        "metadata": {
+          "signal_source": "controlled_shared_mother_cancel_acceptance",
+          "position_attribution": [
+            {
+              "strategy_id": "mother-probe-two",
+              "target_key": "main",
+              "instrument_id": "cu2612.SHFE",
+              "quantity": "1",
+              "source_revision": 1,
+              "source_deadline_ns": 1791959068734862454
+            }
+          ]
+        }
+      }
+    },
+    "shared": {
+      "version": 1,
+      "budget": {
+        "max_gross_quantity": "2",
+        "max_gross_notional": "1200000"
+      },
+      "routes": {
+        "mother-probe-one": {
+          "routes": {
+            "main": "cu2612.SHFE"
+          },
+          "budget": {
+            "max_gross_quantity": "1",
+            "max_gross_notional": "600000"
+          },
+          "limits": {
+            "cu2612.SHFE": {
+              "max_order_quantity": "2",
+              "max_abs_position": "2",
+              "max_order_notional": "1200000",
+              "max_abs_position_notional": "1200000",
+              "max_market_age_ns": "10000000000",
+              "contract_multiplier": "5.0"
+            }
+          }
+        },
+        "mother-probe-two": {
+          "routes": {
+            "main": "cu2612.SHFE"
+          },
+          "budget": {
+            "max_gross_quantity": "1",
+            "max_gross_notional": "600000"
+          },
+          "limits": {
+            "cu2612.SHFE": {
+              "max_order_quantity": "2",
+              "max_abs_position": "2",
+              "max_order_notional": "1200000",
+              "max_abs_position_notional": "1200000",
+              "max_market_age_ns": "10000000000",
+              "contract_multiplier": "5.0"
+            }
+          }
+        }
+      },
+      "suspended": [
+        "mother-probe-one",
+        "mother-probe-two"
+      ],
+      "draining": [],
+      "managed_instruments": [
+        "cu2612.SHFE"
+      ]
+    }
+  },
+  "execution_diagnostics": {
+    "is_reconciled": false,
+    "is_armed": false,
+    "recovery_required": false,
+    "service_failed": false,
+    "report_errors": [],
+    "portfolio_failure": null,
+    "audit": [
+      {
+        "action": "RECONCILED",
+        "detail": "position_and_account_revision=1",
+        "ts_ns": 1791959035226707351
+      },
+      {
+        "action": "DEMO_ARMED",
+        "detail": "",
+        "ts_ns": 1791959038704984317
+      },
+      {
+        "action": "TARGET_SUBMITTED",
+        "detail": "mother-probe-one",
+        "ts_ns": 1791959038720854158
+      },
+      {
+        "action": "TARGET_SUBMITTED",
+        "detail": "mother-probe-two",
+        "ts_ns": 1791959038752012871
+      },
+      {
+        "action": "TARGET_SUBMITTED",
+        "detail": "mother-probe-two",
+        "ts_ns": 1791959038802962697
+      },
+      {
+        "action": "REPORT",
+        "detail": "ACCEPTED",
+        "ts_ns": 1791959039140446075
+      },
+      {
+        "action": "REPORT",
+        "detail": "CANCELED",
+        "ts_ns": 1791959039181158088
+      },
+      {
+        "action": "DISARMED",
+        "detail": "shared_host_stop",
+        "ts_ns": 1791959039319055506
+      },
+      {
+        "action": "DISARMED",
+        "detail": "risk_mode=HALTED",
+        "ts_ns": 1791959039319083817
+      },
+      {
+        "action": "DISARMED",
+        "detail": "stop",
+        "ts_ns": 1791959040863347881
+      }
+    ]
+  },
+  "strategy_positions": [],
+  "execution_positions": {
+    "MO2611-C-7400.CFFEX": "-1",
+    "cu2611.SHFE": "0",
+    "au2612.SHFE": "-1",
+    "hc2701.SHFE": "1",
+    "rb2701.SHFE": "0",
+    "sc2611.INE": "1",
+    "ni2611.SHFE": "1",
+    "i2701.DCE": "-1",
+    "ag2612.SHFE": "-1"
+  },
+  "strategies": {
+    "mother-probe-one": {
+      "active": false,
+      "failure": "acceptance_shared_cancel",
+      "failure_readiness": null,
+      "fills_received": 0,
+      "execution_events": {
+        "stopping": true,
+        "closed": true,
+        "pending_events": 0,
+        "pending_fills": 0,
+        "fills_enqueued": 0,
+        "fills_delivered": 0,
+        "last_fill_enqueued": null,
+        "last_fill_delivered": null
+      },
+      "stop_requested_at_ns": 1791959039142856891,
+      "stopped_at_ns": 1791959039264109001,
+      "state_file": "scripts/integration/shared_account/results/shared-mother-probe-1791959032663749879/mother-probe-one.json"
+    },
+    "mother-probe-two": {
+      "active": false,
+      "failure": "host_stop",
+      "failure_readiness": null,
+      "fills_received": 0,
+      "execution_events": {
+        "stopping": true,
+        "closed": true,
+        "pending_events": 0,
+        "pending_fills": 0,
+        "fills_enqueued": 0,
+        "fills_delivered": 0,
+        "last_fill_enqueued": null,
+        "last_fill_delivered": null
+      },
+      "stop_requested_at_ns": 1791959039264324979,
+      "stopped_at_ns": 1791959039319043956,
+      "state_file": "scripts/integration/shared_account/results/shared-mother-probe-1791959032663749879/mother-probe-two.json"
+    }
+  },
+  "plan": {
+    "instrument": "cu2612.SHFE",
+    "side": "BUY",
+    "quantity": 2,
+    "per_source_quantity": 1,
+    "limit_price": "110470",
+    "tick": "10.0",
+    "multiplier": "5.0",
+    "notional": "1106200.00",
+    "quote": {
+      "BidPrice1": "110610.0",
+      "AskPrice1": "110620.0",
+      "LastPrice": "110620.0",
+      "LowerLimitPrice": "100390.0",
+      "UpperLimitPrice": "120240.0"
+    },
+    "quote_ts_event": 1791959033000000000,
+    "observed_md_trading_day": "20261014",
+    "unexpected_fill_policy": "最多2手意外成交归独立测试账本；保留持仓，不自动平仓或改原检查点"
+  },
+  "failure": null,
+  "shutdown_failure": null,
+  "expected_trading_day": "20261014",
+  "observed_td_trading_day": "20261014",
+  "authenticated_simnow_at_preflight": true,
+  "submission_session_at_preflight": true,
+  "protected_state_unchanged": true,
+  "protected_hashes": {
+    "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/shared-account-cu-au.json": "a008f531725dc1cd52baf061abedabbb59e2cc3e0f8037cc2400947e6f579df8",
+    "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/shared-account.json": "f18816b79a820fbe9a3bdfeea0776f7dc3ea53c463bbc58c0224060236d17b6f"
+  },
+  "orders_submitted": 1,
+  "verification": "controlled_live_mother_probe",
+  "shared_cancel_acceptance": {
+    "status": "passed",
+    "stop_owner": "mother-probe-one",
+    "selection": "accepted_working_shared_mother_with_non_submitter_owner",
+    "extra_targets_submitted": 0,
+    "limit_prices_overridden": false,
+    "mother": {
+      "allocation_token": "162b44cc14a14314b8c99c9ebe98a29b",
+      "client_id": "shared-mother-probe",
+      "instrument_id": "cu2612.SHFE",
+      "submitting_strategy": "mother-probe-two",
+      "direction": 1,
+      "quantity": "2",
+      "client_order_id": "CTP-9999-097561-20261014-2",
+      "released": false,
+      "legs": [
+        {
+          "strategy_id": "mother-probe-one",
+          "target_key": "main",
+          "quantity": "1",
+          "filled": "0",
+          "target_revision": 1,
+          "deadline_ns": 1791959068705696243
+        },
+        {
+          "strategy_id": "mother-probe-two",
+          "target_key": "main",
+          "quantity": "1",
+          "filled": "0",
+          "target_revision": 1,
+          "deadline_ns": 1791959068734862454
+        }
+      ]
+    },
+    "requested_at_ns": 1791959039142798400,
+    "stopped_at_ns": 1791959039264109001,
+    "peers_active_after_stop": [
+      "mother-probe-two"
+    ],
+    "partial_fill_observed": false,
+    "rejection_observed": false,
+    "peer_target_continuations_after_stop": 0,
+    "peer_fills_after_stop": 0,
+    "mother_report_types": [
+      "ACCEPTED",
+      "CANCELED"
+    ],
+    "canceled_report_ids": [
+      "CTP-9999-097561-20261014-2:2"
+    ],
+    "reason": "真实回报记录母单撤单，非提交者停止后同单其他策略保持活动"
+  },
+  "unexpected_fill": false,
+  "final_gross": {
+    "MO2611-C-7400.CFFEX": [
+      "0",
+      "1"
+    ],
+    "au2612.SHFE": [
+      "0",
+      "1"
+    ],
+    "hc2701.SHFE": [
+      "1",
+      "0"
+    ],
+    "sc2611.INE": [
+      "1",
+      "0"
+    ],
+    "ni2611.SHFE": [
+      "1",
+      "0"
+    ],
+    "i2701.DCE": [
+      "0",
+      "1"
+    ],
+    "ag2612.SHFE": [
+      "0",
+      "1"
+    ]
+  },
+  "final_active_orders": 0,
+  "new_state_file": "scripts/integration/shared_account/results/shared-mother-probe-1791959032663749879/account.json",
+  "controlled_sources_submitted": 2,
+  "original_strategy_signals_overridden": false,
+  "reference_evidence": {
+    "source": "dolphindb:dfs://bomber_daily/fut_basic",
+    "fingerprint": "5c979f39f186f47d171684c99ca5009084932c11b46c03d579066af2ca7e6c5d",
+    "observed_at_ns": 1791959034081874988
+  },
+  "eligible_instruments": [
+    "cu2612.SHFE",
+    "cu2701.SHFE",
+    "cu2702.SHFE",
+    "cu2703.SHFE",
+    "cu2704.SHFE",
+    "cu2705.SHFE",
+    "cu2706.SHFE",
+    "cu2707.SHFE",
+    "cu2708.SHFE",
+    "cu2709.SHFE"
+  ],
+  "peer_state_after_owner_cancel": {
+    "mother-probe-two": {
+      "active": true,
+      "source": {
+        "revision": 1,
+        "ts_event": 1791959038734862454,
+        "targets": {
+          "cu2612.SHFE": "1"
+        },
+        "rows": [
+          {
+            "strategy_id": "mother-probe-two",
+            "target_key": "main",
+            "instrument_id": "cu2612.SHFE",
+            "quantity": "1",
+            "source_revision": 1,
+            "source_deadline_ns": 1791959068734862454
+          }
+        ],
+        "deadline_ns": 1791959068734862454,
+        "execution_policy": "DIRECT",
+        "metadata": {
+          "signal_source": "controlled_shared_mother_cancel_acceptance",
+          "position_attribution": [
+            {
+              "strategy_id": "mother-probe-two",
+              "target_key": "main",
+              "instrument_id": "cu2612.SHFE",
+              "quantity": "1",
+              "source_revision": 1,
+              "source_deadline_ns": 1791959068734862454
+            }
+          ]
+        }
+      }
+    }
+  },
+  "status": "completed"
+}

@@ -1,0 +1,378 @@
+{
+  "config": {
+    "version": 1,
+    "trading_day": "20261014",
+    "environment": "realtime",
+    "position_scope": "strategy_instruments",
+    "seconds": 600.0,
+    "account_state_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/shared-account.json",
+    "report_dir": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results",
+    "account": {
+      "client_id": "shared-simnow",
+      "max_gross_quantity": "4",
+      "max_gross_notional": "2000000",
+      "max_session_orders": 20,
+      "limit_offset_ticks": 1
+    },
+    "strategies": [
+      {
+        "strategy_id": "ema-rb-alpha",
+        "kind": "main_ema",
+        "state_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/ema-rb-alpha.json",
+        "stop_after_seconds": 300,
+        "argv": [
+          "--product",
+          "RB",
+          "--expected-source-day",
+          "20261013",
+          "--fast",
+          "3",
+          "--slow",
+          "5",
+          "--quantity",
+          "1",
+          "--max-notional",
+          "100000",
+          "--factor-date-basis",
+          "source",
+          "--factor-availability",
+          "observed-on-read"
+        ]
+      },
+      {
+        "strategy_id": "cross-rb-hc-beta",
+        "kind": "cross_section",
+        "state_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/cross-rb-hc-beta.json",
+        "argv": [
+          "--products",
+          "RB,HC",
+          "--expected-source-day",
+          "20261013",
+          "--lookback",
+          "3",
+          "--rebalance-interval",
+          "1",
+          "--group-fraction",
+          "0.5",
+          "--target-notional",
+          "100000",
+          "--target-quantity-cap",
+          "1",
+          "--max-quantity",
+          "1",
+          "--max-notional",
+          "100000",
+          "--factor-date-basis",
+          "source",
+          "--factor-availability",
+          "observed-on-read"
+        ]
+      }
+    ]
+  },
+  "account": {
+    "version": 1,
+    "client_id": "shared-simnow",
+    "account_id": "097561",
+    "failed": false,
+    "pending": false,
+    "portfolio_revision": 7,
+    "strategy_revisions": {
+      "cross-rb-hc-beta": 7
+    },
+    "known_instruments": [
+      "hc2701.SHFE",
+      "rb2701.SHFE"
+    ],
+    "sources": {
+      "cross-rb-hc-beta": {
+        "revision": 6,
+        "ts_event": 1791900961498433632,
+        "targets": {
+          "rb2701.SHFE": "1",
+          "hc2701.SHFE": "-1"
+        },
+        "rows": [
+          {
+            "strategy_id": "cross-rb-hc-beta",
+            "target_key": "rb2701.SHFE",
+            "instrument_id": "rb2701.SHFE",
+            "quantity": "1",
+            "source_revision": 6,
+            "source_deadline_ns": null
+          },
+          {
+            "strategy_id": "cross-rb-hc-beta",
+            "target_key": "hc2701.SHFE",
+            "instrument_id": "hc2701.SHFE",
+            "quantity": "-1",
+            "source_revision": 6,
+            "source_deadline_ns": null
+          }
+        ],
+        "deadline_ns": null,
+        "execution_policy": "DIRECT",
+        "metadata": {
+          "long_products": [
+            "RB"
+          ],
+          "short_products": [
+            "HC"
+          ],
+          "group_fraction": "0.5",
+          "group_size": 1,
+          "side_target_notional": "100000",
+          "target_quantity_cap": "1",
+          "require_full_groups": false,
+          "incomplete_group_products": [],
+          "product_targets": {
+            "RB": "1",
+            "HC": "-1"
+          },
+          "scores": {
+            "RB": "0.000325203252032520325203252",
+            "HC": "0"
+          },
+          "main_contracts": {
+            "RB": "rb2701",
+            "HC": "hc2701"
+          },
+          "synchronized_frame": 9,
+          "simnow_environment": "realtime",
+          "replay_md_trading_day": null,
+          "signal_bar_ns": 1791900959999999999,
+          "position_attribution": [
+            {
+              "strategy_id": "cross-rb-hc-beta",
+              "target_key": "hc2701.SHFE",
+              "instrument_id": "hc2701.SHFE",
+              "quantity": "-1",
+              "source_revision": 6,
+              "source_deadline_ns": null
+            },
+            {
+              "strategy_id": "cross-rb-hc-beta",
+              "target_key": "rb2701.SHFE",
+              "instrument_id": "rb2701.SHFE",
+              "quantity": "1",
+              "source_revision": 6,
+              "source_deadline_ns": null
+            }
+          ],
+          "portfolio_revision": 6,
+          "market_health_mode": "NORMAL",
+          "market_health_state": "READY",
+          "market_health_feeds": []
+        }
+      }
+    },
+    "shared": {
+      "version": 1,
+      "budget": {
+        "max_gross_quantity": "4",
+        "max_gross_notional": "2000000"
+      },
+      "routes": {
+        "ema-rb-alpha": {
+          "routes": {
+            "rb_main": "rb2701.SHFE"
+          },
+          "budget": {
+            "max_gross_quantity": "1",
+            "max_gross_notional": "100000"
+          },
+          "limits": {
+            "rb2701.SHFE": {
+              "max_order_quantity": "1",
+              "max_abs_position": "1",
+              "max_order_notional": "100000",
+              "max_abs_position_notional": "100000",
+              "max_market_age_ns": "120000000000",
+              "contract_multiplier": "10.0"
+            }
+          }
+        },
+        "cross-rb-hc-beta": {
+          "routes": {
+            "rb2701.SHFE": "rb2701.SHFE",
+            "hc2701.SHFE": "hc2701.SHFE"
+          },
+          "budget": {
+            "max_gross_quantity": "2",
+            "max_gross_notional": "200000"
+          },
+          "limits": {
+            "rb2701.SHFE": {
+              "max_order_quantity": "1",
+              "max_abs_position": "1",
+              "max_order_notional": "100000",
+              "max_abs_position_notional": "100000",
+              "max_market_age_ns": "120000000000",
+              "contract_multiplier": "10.0"
+            },
+            "hc2701.SHFE": {
+              "max_order_quantity": "1",
+              "max_abs_position": "1",
+              "max_order_notional": "100000",
+              "max_abs_position_notional": "100000",
+              "max_market_age_ns": "120000000000",
+              "contract_multiplier": "10.0"
+            }
+          }
+        }
+      },
+      "suspended": [
+        "cross-rb-hc-beta",
+        "ema-rb-alpha"
+      ],
+      "draining": [],
+      "managed_instruments": [
+        "hc2701.SHFE",
+        "rb2701.SHFE"
+      ]
+    }
+  },
+  "strategy_positions": [
+    {
+      "strategy_id": "cross-rb-hc-beta",
+      "target_key": "rb2701.SHFE",
+      "quantity": "1"
+    },
+    {
+      "strategy_id": "cross-rb-hc-beta",
+      "target_key": "hc2701.SHFE",
+      "quantity": "-1"
+    }
+  ],
+  "execution_positions": {
+    "MO2611-C-7400.CFFEX": "-1",
+    "sc2611.INE": "1",
+    "ni2611.SHFE": "1",
+    "i2701.DCE": "-1",
+    "ag2612.SHFE": "-1",
+    "rb2701.SHFE": "1",
+    "hc2701.SHFE": "-1"
+  },
+  "strategies": {
+    "ema-rb-alpha": {
+      "active": false,
+      "failure": "configured_stop",
+      "fills_received": 0,
+      "state_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/ema-rb-alpha.json"
+    },
+    "cross-rb-hc-beta": {
+      "active": false,
+      "failure": "host_stop",
+      "fills_received": 14,
+      "state_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/cross-rb-hc-beta.json"
+    }
+  },
+  "failure": null,
+  "td_preflight": {
+    "environment": "realtime",
+    "expected_td_trading_day": "20261014",
+    "observed_td_trading_day": "20261014",
+    "md_front": "tcp://182.254.243.31:30011",
+    "td_front": "tcp://182.254.243.31:30001",
+    "preflight_orders_submitted": 0,
+    "position_scope_policy": "strategy_instruments",
+    "managed_instruments": [
+      "hc2701.SHFE",
+      "rb2701.SHFE"
+    ],
+    "external_gross": {
+      "MO2611-C-7400.CFFEX": [
+        "0",
+        "1"
+      ],
+      "sc2611.INE": [
+        "1",
+        "0"
+      ],
+      "ni2611.SHFE": [
+        "1",
+        "0"
+      ],
+      "i2701.DCE": [
+        "0",
+        "1"
+      ],
+      "ag2612.SHFE": [
+        "0",
+        "1"
+      ]
+    }
+  },
+  "verification": "runtime_completed_real_fill_acceptance_separate",
+  "final_gross": {
+    "MO2611-C-7400.CFFEX": [
+      "0",
+      "1"
+    ],
+    "hc2701.SHFE": [
+      "0",
+      "1"
+    ],
+    "rb2701.SHFE": [
+      "1",
+      "0"
+    ],
+    "sc2611.INE": [
+      "1",
+      "0"
+    ],
+    "ni2611.SHFE": [
+      "1",
+      "0"
+    ],
+    "i2701.DCE": [
+      "0",
+      "1"
+    ],
+    "ag2612.SHFE": [
+      "0",
+      "1"
+    ]
+  },
+  "position_scope": {
+    "policy": "strategy_instruments",
+    "managed_instruments": [
+      "hc2701.SHFE",
+      "rb2701.SHFE"
+    ],
+    "external_gross": {
+      "MO2611-C-7400.CFFEX": [
+        "0",
+        "1"
+      ],
+      "sc2611.INE": [
+        "1",
+        "0"
+      ],
+      "ni2611.SHFE": [
+        "1",
+        "0"
+      ],
+      "i2701.DCE": [
+        "0",
+        "1"
+      ],
+      "ag2612.SHFE": [
+        "0",
+        "1"
+      ]
+    },
+    "final_managed_gross": {
+      "hc2701.SHFE": [
+        "0",
+        "1"
+      ],
+      "rb2701.SHFE": [
+        "1",
+        "0"
+      ]
+    }
+  },
+  "final_active_orders": 0,
+  "status": "completed"
+}

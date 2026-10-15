@@ -1,0 +1,72 @@
+{
+  "plan": {
+    "instrument": "cu2612.SHFE",
+    "side": "BUY",
+    "quantity": 2,
+    "per_source_quantity": 1,
+    "limit_price": "110540.0",
+    "tick": "10.0",
+    "multiplier": "5.0",
+    "notional": "1105400.00",
+    "quote": {
+      "BidPrice1": "110540.0",
+      "AskPrice1": "110560.0",
+      "LastPrice": "110540.0",
+      "LowerLimitPrice": "100390.0",
+      "UpperLimitPrice": "120240.0"
+    },
+    "quote_ts_event": 1791960928500000000,
+    "observed_md_trading_day": "20261014",
+    "cancel_after": "partial",
+    "partial_wait_seconds": 30,
+    "book_volume": {
+      "BidVolume1": 7,
+      "AskVolume1": 7
+    },
+    "unexpected_fill_policy": "最多2手意外成交归独立测试账本；保留持仓，不自动平仓或改原检查点"
+  },
+  "failure": null,
+  "shutdown_failure": null,
+  "expected_trading_day": "20261014",
+  "observed_td_trading_day": "20261014",
+  "authenticated_simnow_at_preflight": true,
+  "submission_session_at_preflight": false,
+  "protected_state_unchanged": true,
+  "protected_hashes": {
+    "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/shared-account-cu-au.json": "a008f531725dc1cd52baf061abedabbb59e2cc3e0f8037cc2400947e6f579df8",
+    "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/shared-account.json": "f18816b79a820fbe9a3bdfeea0776f7dc3ea53c463bbc58c0224060236d17b6f"
+  },
+  "orders_submitted": 0,
+  "verification": "readonly_plan_no_orders",
+  "shared_cancel_acceptance": null,
+  "unexpected_fill": false,
+  "final_gross": null,
+  "final_active_orders": null,
+  "new_state_file": null,
+  "controlled_sources_submitted": 0,
+  "original_strategy_signals_overridden": false,
+  "reference_evidence": {
+    "source": "dolphindb:dfs://bomber_daily/fut_basic",
+    "fingerprint": "5c979f39f186f47d171684c99ca5009084932c11b46c03d579066af2ca7e6c5d",
+    "observed_at_ns": 1791960929782244943
+  },
+  "eligible_instruments": [
+    "cu2612.SHFE",
+    "cu2701.SHFE",
+    "cu2702.SHFE",
+    "cu2703.SHFE",
+    "cu2704.SHFE",
+    "cu2705.SHFE",
+    "cu2706.SHFE",
+    "cu2707.SHFE",
+    "cu2708.SHFE",
+    "cu2709.SHFE"
+  ],
+  "peer_state_after_owner_cancel": null,
+  "cancel_after": "partial",
+  "partial_cancel_acceptance": {
+    "status": "not_exercised",
+    "wait_outcome": null
+  },
+  "status": "prechecked"
+}
