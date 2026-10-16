@@ -32,7 +32,7 @@ from bomber.framework.trader.assembly import RoleGuard, StrategyBindings, assemb
 from bomber.framework.trader.execution.builders import build_ctp_execution, attach_ctp_persistence
 from bomber.framework.trader.execution.builders import build_model_execution, attach_execution_persistence
 from bomber.framework.trader.execution.policy import add_execution_policy_arguments, execution_policy_from_args, observed_account_positions
-from bomber.framework.trader.runtime.live.local import LocalExecutionChannel
+from bomber.framework.trader.runtime.live.local import LocalExecutionChannel, RecordingExecutionLifecycle
 from bomber.framework.trader.runtime.live.channels.ctp_market import CtpMarketSessionLifecycle
 from bomber.framework.trader.live_roles import SessionRoleLiveRunner
 from bomber.framework.trader.execution.ctp import CtpTdApiTransport
@@ -48,6 +48,27 @@ from .recovery import recovery_identity, validate_restored_session, verify_manag
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 CLIENT_ID = "main-ema-simnow"
+
+
+
+class MainEmaRecordingLifecycle(RecordingExecutionLifecycle, CtpMarketSessionLifecycle):
+    """CTP Recording仅使用MD；停机后仍保留实际观测交易日。"""
+    def shutdown(self, session, context):
+        self.recorded_md_day = getattr(session.upstream, "latest_trading_day", None) if session else None
+        return RecordingExecutionLifecycle.shutdown(self, session, context)
+
+    def snapshot(self, session, context):
+        fields = RecordingExecutionLifecycle.snapshot(self, session, context)
+        references = context.references if context else None
+        return {**fields, "observed_md_trading_day": getattr(self, "recorded_md_day", None),
+            "simnow_environment": self.profile.environment,
+            "replay_md_trading_day": self.profile.replay_md_trading_day,
+            "bar_time_basis": self.profile.bar_time_basis,
+            "reference_time_basis": "current_reference_day_and_wall_clock",
+            "timing": getattr(session.bar_feed, "timing_snapshot", {}) if session else {},
+            "reference_files": [str(p) for p in references.paths] if references else [],
+            "reference_manifest": getattr(references, "manifest", {}),
+            "factor_date": str(references.factor_date) if references else None}
 
 
 def session_source_purpose(args):
@@ -257,6 +278,10 @@ def parse_args(argv=None, *, shared_execution=False):
     elif args.enable_orders or args.confirm_simnow or args.state_file or args.resume:
         parser.error("recording模式不接受报单授权、交易状态文件或恢复参数")
     try:
+        if args.mode == "recording":
+            if args.account_reconciliation not in (None, "off"):
+                raise ValueError("Recording仅记录目标，account-reconciliation须为off")
+            args.account_reconciliation = "off"
         args.execution_policy = execution_policy_from_args(args)
     except ValueError as error:
         parser.error(str(error))
@@ -391,7 +416,7 @@ def assemble(args, references, driver, upstream, *, positions=None, account_rout
     elif model:
         execution = build_model_execution(CLIENT_ID, instrument_limits={instrument: limits}, positions=positions)
         check = SessionReadiness(market_channel, LocalExecutionChannel(CLIENT_ID, lambda: execution.client.is_reconciled))
-    elif args.mode == "recording" and source_config(args).source != "ctp":
+    elif args.mode == "recording":
         from bomber.framework.trader.execution.builders import ExecutionComponents
         from bomber.framework.trader.execution.recording import RecordingExecutionClient
         from bomber.framework.trader.execution.risk import MarketReferencePriceStore
@@ -489,16 +514,6 @@ def assemble(args, references, driver, upstream, *, positions=None, account_rout
 
 def build_runtime(args, *, account_routes=()):
     """选择通道生命周期、策略组装工厂与报告积木；构造期间不连接。"""
-    if args.mode == "recording" and source_config(args).source != "ctp":
-        from bomber.framework.trader.runtime.live.local import RecordingExecutionLifecycle
-        lifecycle = RecordingExecutionLifecycle(args.expected_trading_day)
-        report = LiveRunReport(args.report_dir, prefix="main-ema-recording", describe=lambda session: {} if session is None else {"bars_used": session.strategy.bars_used, "last_target": session.strategy.last_target},
-            metadata={"mode": args.mode, "market_source": source_config(args).source,
-                "market_config": source_config(args).identity})
-        return ManagedLiveRuntime(CLIENT_ID, controller=lifecycle,
-            prepare_inputs=lambda context: prepare_inputs(args, context, lifecycle),
-            assemble_session=lambda inputs, context: assemble(args, inputs.references, None, inputs.upstream),
-            report=report, seconds=args.seconds)
     if args.mode == "model":
         lifecycle = CtpMarketSessionLifecycle(expected_trading_day=args.expected_trading_day,
             environment=args.simnow_environment, replay_md_trading_day=args.replay_md_trading_day, resume=args.resume, state_file=args.state_file, market_source=source_config(args).source)
@@ -516,26 +531,35 @@ def build_runtime(args, *, account_routes=()):
             report=report, seconds=args.seconds)
     if account_routes:
         raise ValueError("跟随账户装配须选择model策略来源")
-    transport = build_simnow_transport(CtpTdApiTransport, client_id=CLIENT_ID,
-        flow_path="/tmp/bomber-main-ema-td", timeout_seconds=args.query_timeout)
-    lifecycle_type, extra = MainEmaSessionLifecycle, {}
-    if getattr(args, "run_forever", False):
-        from .continuous import ContinuousLifecycle
-        lifecycle_type = ContinuousLifecycle
-        extra = {"state_file": args.state_file, "window": args._continuous_window,
-                 "stop_event": args._stop_event}
-    lifecycle = lifecycle_type(transport, md_front=required("CTP_MD_ADDRESS") if source_config(args).source == "ctp" else None,
-        orders=args.mode == "simnow", max_session_orders=args.max_session_orders,
-        environment=args.simnow_environment, replay_md_trading_day=args.replay_md_trading_day,
-        adopt_instrument=args.adopt_existing_position, expected_position=args.expected_position,
-        account_reconciliation=execution_policy_from_args(args).account_reconciliation,
-        **({"resume": args.resume} if not getattr(args, "run_forever", False) else {}),
-        expected_trading_day=args.expected_trading_day, legacy_lock_namespaces=("bomber-main-ema",), **extra)
-    report = LiveRunReport(args.report_dir, prefix="simnow", metadata={
+    if args.mode == "recording":
+        if not args.expected_trading_day:
+            raise ValueError("仅MD Recording须--expected-trading-day声明参考交易日")
+        if source_config(args).source == "ctp":
+            lifecycle = MainEmaRecordingLifecycle(expected_trading_day=args.expected_trading_day,
+                environment=args.simnow_environment, replay_md_trading_day=args.replay_md_trading_day)
+        else:
+            lifecycle = RecordingExecutionLifecycle(args.expected_trading_day)
+    else:
+        transport = build_simnow_transport(CtpTdApiTransport, client_id=CLIENT_ID,
+            flow_path="/tmp/bomber-main-ema-td", timeout_seconds=args.query_timeout)
+        lifecycle_type, extra = MainEmaSessionLifecycle, {}
+        if getattr(args, "run_forever", False):
+            from .continuous import ContinuousLifecycle
+            lifecycle_type = ContinuousLifecycle
+            extra = {"state_file": args.state_file, "window": args._continuous_window,
+                     "stop_event": args._stop_event}
+        lifecycle = lifecycle_type(transport, md_front=required("CTP_MD_ADDRESS") if source_config(args).source == "ctp" else None,
+            orders=args.mode == "simnow", max_session_orders=args.max_session_orders,
+            environment=args.simnow_environment, replay_md_trading_day=args.replay_md_trading_day,
+            adopt_instrument=args.adopt_existing_position, expected_position=args.expected_position,
+            account_reconciliation=execution_policy_from_args(args).account_reconciliation,
+            **({"resume": args.resume} if not getattr(args, "run_forever", False) else {}),
+            expected_trading_day=args.expected_trading_day, legacy_lock_namespaces=("bomber-main-ema",), **extra)
+    report = LiveRunReport(args.report_dir, prefix="main-ema-recording" if args.mode == "recording" else "simnow", metadata={
         "market_source": source_config(args).source, "market_config": source_config(args).identity, "mode": args.mode, "product": args.product, "reference_source": args.reference_source,
         "expected_instrument": getattr(args, "expected_instrument", None),
         "service_mode": "continuous" if getattr(args, "run_forever", False) else "acceptance",
-        "initial_position_mode": ("resume" if getattr(args, "resume", False)
+        "initial_position_mode": ("none" if args.mode == "recording" else "resume" if getattr(args, "resume", False)
             else "adopt_existing" if args.adopt_existing_position else "fresh_flat"),
         "state_file": str(args.state_file) if args.state_file else None,
         "history_minutes": args.history_minutes,
@@ -565,11 +589,13 @@ def build_runtime(args, *, account_routes=()):
             "strategy_position": session.runner.position_manager.position(
                 session.strategy.strategy_id, session.strategy.config.target_key) if session else None,
             "account_position": ((observed_account_positions(session.client, (session.references.instrument_id,), positions=session.runner.position_manager) or {}).get(
-                str(session.references.instrument_id))) if session else None,
+                str(session.references.instrument_id))) if session and args.mode != "recording" else None,
             "execution_position": session.runner.position_manager.account_position(
                 CLIENT_ID, session.references.instrument_id) if session else None,
             "unassigned_position": session.runner.position_manager.unassigned_position(
                 CLIENT_ID, session.references.instrument_id) if session else None,
+            "fixed_instrument": str(session.references.instrument_id) if session else None,
+            "orders_submitted": getattr(session.driver, "submitted_orders", 0) if session else 0,
             "ema": {"fast": args.fast, "slow": args.slow, "quantity": str(args.quantity)}})
     seen = [0]
 

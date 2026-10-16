@@ -28,7 +28,30 @@ CTP符号转换对IM/IF保持大写；PortfolioRoleReferences/CalendarReferences
 
 已跑的本机无网络组：cross-history、shared-account、calendar-history、history-session-factors、
 cross-section-signal，合计119项通过。另以实际生命周期基类和源码中的Recording类验证MD构造不创建TD。完整cross-live本机导入失败，
-缺原生Bar，须远程复验；未连接真实DDB或柜台，不登记M06在线完成。
+缺原生Bar；该本机验证不包含真实DDB或柜台连接。后续远程结果见下节。
+
+## 远程验收进展（2026-10-16）
+
+用户回传cross-live离线80项全部通过。之后在线Recording曾在轮询时因访问
+RecordingExecutionClient不存在的report_errors失败；公共生命周期已改为Recording
+检查is_started、Model保留report_errors检查，并新增轮询回归。
+该修复本机execution-composition/live-common/live-channels/live-recovery共120项通过。
+
+用户回传04 IM/IF在线Recording最终报告status=passed，记录目录：
+`demos/04_cross_section/results/IM_IF_ddb_recording/cross-section-recording-1792116339492511168`。
+报告history_frames=22、live_frames=9，最新目标IM2610.CFFEX=-1、IF2610.CFFEX=1；
+行情/Recording通道ready=true，observed_md_trading_day=20261016，cleanup_errors为空。
+历史帧数包含运行期回补；该摘要未列逐品种历史覆盖审计，不据此另行推断missing数量。
+Recording的成交数和持仓为零、account_positions=None符合模式约定；本次验证了
+历史预热、实时接续和目标记录，未验证物理订单执行。下一步依次验01 IM、03 IM双腿。
+
+01 IM第一次远程运行已处理250根Bar并生成目标1，但TD资金查询超时，
+停机查询委托又返回-2，最终failed；该次不登记完整在线通过。
+后续01 Recording切为独立Recording客户端和仅MD生命周期，保留完整历史/因子审计和目标验收，
+不创建TD或占用物理账户锁，报告真实账户及TD观测为空。SimNow订单模式保留原TD流程。
+本机公共生命周期及历史因子相关129项通过；01实际Recording生命周期源码配合公共基类完成
+仅MD凭据构造、poll、verify、shutdown及停机后实际行情日保留验证。
+原生entry/im-runtime/continuous仍须在服务器复验，再执行同一条01 IM在线命令。
 
 ## 远程离线复验
 
@@ -60,6 +83,7 @@ export CTP_PRODUCTION_MODE=true
 ```bash
 python -u -m demos.01_main_ema.run_live \
   --connect --mode recording --product IM \
+  --expected-instrument IM2610.CFFEX \
   --market-source ctp --simnow-environment realtime \
   --account-reconciliation off --strategy-position-source fills \
   --reference-source dolphindb --reference-database dfs://bomber_daily \
@@ -75,7 +99,7 @@ python -u -m demos.01_main_ema.run_live \
   --report-dir demos/01_main_ema/results/IM_ddb_recording
 ```
 
-01现有CTP Recording仍会登录TD做会话检查，off不接管总仓；无报单授权，不发送物理订单。
+01 CTP Recording仅登录MD，不创建TD、不查询资金或委托；使用显式参考交易日并核对实际行情日。
 
 ### 03 IM：双腿原始价差预热
 

@@ -693,7 +693,7 @@ class LiveTests(unittest.TestCase):
         self.assertFalse(s.client.is_armed)
         self.assertTrue(s.runner.position_manager.is_recovery_required(live.CLIENT_ID))
 
-    def test_complete_recording_entry_precheck_relogin_and_shutdown(self):
+    def test_complete_recording_entry_md_only_and_shutdown(self):
         self.complete_entry(orders=False)
 
     def test_complete_simnow_entry_checkpoint_fill_and_final_gross(self):
@@ -963,7 +963,7 @@ class LiveTests(unittest.TestCase):
             self.assertFalse(session.runner.accept_bars)
 
     def test_runtime_construction_does_not_connect_or_open_database(self):
-        args = live.parse_args(["--connect", "--product", "RB", "--expected-source-day", "20260921", "--reference-source", "dolphindb",
+        args = live.parse_args(["--connect", "--expected-trading-day", "20260922", "--product", "RB", "--expected-source-day", "20260921", "--reference-source", "dolphindb",
             "--report-dir", str(self.root / "reports")])
         environment = {"CTP_BROKER_ID": "9999", "CTP_ACCOUNT_ID": "demo", "CTP_PASSWORD": "fake",
             "CTP_TD_ADDRESS": "tcp://fake:1234", "CTP_MD_ADDRESS": "tcp://fake:1234"}
@@ -977,11 +977,11 @@ class LiveTests(unittest.TestCase):
             create.assert_not_called()
         self.assertFalse((self.root / "reports").exists())
 
-    def test_database_input_failure_closes_source_and_preflight_td(self):
+    def test_recording_database_failure_closes_source_without_td(self):
         from .test_reference_sources import FakeSession
         from bomber.framework.dataprep.sources import DolphinDbReferenceConfig, DolphinDbReferenceSource
         from bomber.framework.datahub.sector_roles import SectorDataUnavailable
-        args = live.parse_args(["--connect", "--product", "RB", "--expected-source-day", "20260921", "--reference-source", "dolphindb",
+        args = live.parse_args(["--connect", "--expected-trading-day", "20260922", "--product", "RB", "--expected-source-day", "20260921", "--reference-source", "dolphindb",
             "--query-timeout", "0.05", "--report-dir", str(self.root / "reports")])
         sdk = FakeSession()
         sdk.data["fut_adjustment_factors"] = sdk.data["fut_adjustment_factors"].iloc[:0]
@@ -1008,10 +1008,11 @@ class LiveTests(unittest.TestCase):
         self.assertEqual(summary["orders_submitted"], 0)
         self.assertEqual(summary["cleanup_errors"], [])
         self.assertTrue(sdk.closed)
-        self.assertIsNone(transports[0]._api)
+        self.assertEqual(transports, [])
 
     def test_runtime_holds_shared_and_legacy_account_locks_before_td_start(self):
-        args = live.parse_args(["--connect", "--product", "RB", "--expected-source-day", "20260921"])
+        args = live.parse_args(["--connect", "--mode", "simnow", "--enable-orders", "--confirm-simnow",
+            "--state-file", str(self.root / "lock-state.json"), "--product", "RB", "--expected-source-day", "20260921"])
         environment = {"CTP_BROKER_ID": "9999", "CTP_ACCOUNT_ID": "demo", "CTP_PASSWORD": "fake",
             "CTP_TD_ADDRESS": "tcp://fake:1234", "CTP_MD_ADDRESS": "tcp://fake:1234",
             "CTP_TD_FLOW_PATH": str(self.root / "td-lock")}
@@ -1039,7 +1040,7 @@ class LiveTests(unittest.TestCase):
                 pass
 
     def complete_entry(self, orders, database=False, replay=False, refresh_controls=True):
-        args = live.parse_args(["--connect", "--product", "RB", "--fast", "2", "--slow", "3",
+        args = live.parse_args(["--connect", "--expected-trading-day", "20260922", "--product", "RB", "--fast", "2", "--slow", "3",
             "--expected-source-day", "20260921",
             "--seconds", "0.01", "--query-timeout", "0.05", "--contract-struct", str(self.role_path),
             "--fut-basic", str(self.basic_path), "--factors", str(self.factor_path),
@@ -1129,7 +1130,7 @@ class LiveTests(unittest.TestCase):
         if replay:
             self.assertEqual(summary["replay_md_trading_day"], "20260921")
             self.assertEqual(summary["observed_md_trading_day"], "20260921")
-            self.assertEqual(summary["observed_td_trading_day"], "20260922")
+            self.assertEqual(summary["observed_td_trading_day"], "20260922" if orders else None)
             self.assertEqual(summary["timing"]["ticks_used"], 4)
             self.assertEqual(summary["timing"]["first_source_event_ns"], BASE - 86_400_000_000_000 + 1000)
         if database:
@@ -1142,10 +1143,15 @@ class LiveTests(unittest.TestCase):
             self.assertEqual(summary["reference_manifest"]["factor_publication_policy"], "source-day-end")
         self.assertEqual(summary["orders_submitted"], 1 if orders else 0)
         self.assertEqual(summary["bars_used"], 3)
-        self.assertEqual(summary["final_active_orders"], 0)
-        self.assertEqual(summary["final_gross"], {"rb2704.SHFE": ["1", "0"]} if orders else {})
+        self.assertEqual(summary["final_active_orders"], 0 if orders else None)
+        self.assertEqual(summary["final_gross"], {"rb2704.SHFE": ["1", "0"]} if orders else None)
         self.assertFalse(upstream.is_connected)
-        self.assertIsNone(transports[0]._api)
+        if orders:
+            self.assertIsNone(transports[0]._api)
+        else:
+            self.assertEqual(transports, [])
+            self.assertIsNone(summary["account_position"])
+            self.assertEqual(summary["execution_origin"], "recording")
         if orders:
             saved = JsonStateStore(self.root / "complete-state.json").load()
             self.assertEqual(saved.payload["ctp_drivers"][live.CLIENT_ID]["orders"], [])

@@ -1,11 +1,13 @@
 """正式IM Recording装配/生命周期与历史实时衔接；假柜台，不连接网络。"""
-from contextlib import redirect_stderr
+from contextlib import ExitStack, redirect_stderr
 from datetime import datetime
 from decimal import Decimal
 from io import StringIO
 from types import SimpleNamespace
 import json
 import unittest
+from unittest.mock import patch
+import os
 
 import pandas as pd
 
@@ -42,6 +44,11 @@ class ImRuntimeTests(unittest.TestCase):
             "请核对公共live_role.py与PF0916部署摘要")
         return fixture, references
 
+    def recording_controller(self):
+        env = {"CTP_MD_ADDRESS": "tcp://fake:1234", "CTP_ACCOUNT_ID": "demo", "CTP_PASSWORD": "fake"}
+        with patch.dict(os.environ, env, clear=True):
+            return live.MainEmaRecordingLifecycle(expected_trading_day="20260922")
+
     def args(self, fixture, **changes):
         path = fixture.root / "im-history.jsonl"
         values = dict(mode="recording", product="IM", expected_instrument="IM2610.CFFEX",
@@ -58,6 +65,23 @@ class ImRuntimeTests(unittest.TestCase):
             "ts_event": OPEN + (index + 1) * MINUTE - 1,
             "adjusted_close": str(Decimal("7760") * factor)}) for index in range(2)))
         return SimpleNamespace(**values)
+
+    def test_recording_runtime_needs_only_md_credentials_and_no_td_transport(self):
+        fixture, _ = self.fixture()
+        args = live.parse_args(["--connect", "--product", "IM", "--expected-instrument", "IM2610.CFFEX",
+            "--expected-trading-day", "20260922", "--expected-source-day", "20260921"])
+        env = {"CTP_MD_ADDRESS": "tcp://fake:1234", "CTP_ACCOUNT_ID": "demo", "CTP_PASSWORD": "fake"}
+        with patch.dict(os.environ, env, clear=True), patch.object(live, "build_simnow_transport",
+                side_effect=AssertionError("Recording不得创建TD")):
+            runtime = live.build_runtime(args)
+        self.assertIsNone(runtime.controller.driver)
+        self.assertEqual(args.execution_policy.account_reconciliation.value, "off")
+        self.assertIsInstance(runtime.controller, live.MainEmaRecordingLifecycle)
+        with ExitStack() as resources:
+            for namespace in ("bomber-ctp", "bomber-main-ema"):
+                resources.enter_context(live_fixture.account_lock("demo", namespace=namespace))
+            context = runtime.controller.prepare(resources)
+            self.assertEqual(context.trading_day, "20260922")
 
     def test_if_calendar_and_cli_use_main_without_fixed_contract(self):
         calendar = index_sessions("IF")
@@ -81,13 +105,10 @@ class ImRuntimeTests(unittest.TestCase):
 
     def test_if_main_preloads_history_and_only_new_bar_records_target(self):
         fixture, references = self.fixture("IF")
-        transport, driver, _ = fixture.transport_driver()
-        driver.start(lambda report: None)
         args = self.args(fixture, product="IF", expected_instrument=None)
-        session = live.assemble(args, references, driver, ManualMd())
+        session = live.assemble(args, references, None, ManualMd())
         fixture.addCleanup(session.runner.stop)
-        controller = live.MainEmaSessionLifecycle(transport, md_front="tcp://fake:1234", orders=False)
-        controller.driver = driver
+        controller = self.recording_controller()
         controller.start(session, SimpleNamespace(trading_day="20260922"))
         self.assertEqual(str(session.references.instrument_id), "IF2610.CFFEX")
         self.assertEqual(session.strategy.bars_used, 2)
@@ -97,28 +118,35 @@ class ImRuntimeTests(unittest.TestCase):
         fixture.tick(session, 33, price=7760)
         self.assertEqual(session.strategy.bars_used, 3)
         self.assertEqual(len(session.client.requests), 1)
-        self.assertEqual(transport._api.sent, [])
+        self.assertIsNone(session.driver)
+        self.assertIsNone(session.ledger)
         self.assertEqual(session.strategy.fills_received, 0)
+        self.assertTrue(controller.poll(session))
+        controller.verify(session)
+        result = controller.shutdown(session, None)
+        self.assertEqual(result["cleanup_errors"], [])
+        snapshot = controller.snapshot(session, SimpleNamespace(references=references))
+        self.assertEqual(snapshot["observed_md_trading_day"], "20260922")
+        self.assertIsNone(snapshot["observed_td_trading_day"])
+        self.assertEqual(snapshot["execution_origin"], "recording")
         with self.assertRaises(ValueError):
             live.assemble(self.args(fixture, product="IF", mode="simnow", expected_instrument=None,
-                trading_calendar=args.trading_calendar), references, driver, ManualMd())
+                trading_calendar=args.trading_calendar), references, None, ManualMd())
 
     def test_if_strict_history_gap_keeps_bar_gate_closed(self):
         from bomber.framework.dataprep.history import HistoryUnavailable
         fixture, references = self.fixture("IF")
-        transport, driver, _ = fixture.transport_driver()
-        driver.start(lambda report: None)
         args = self.args(fixture, product="IF", expected_instrument=None, history_minutes=3)
-        session = live.assemble(args, references, driver, ManualMd())
+        session = live.assemble(args, references, None, ManualMd())
         fixture.addCleanup(session.runner.stop)
-        controller = live.MainEmaSessionLifecycle(transport, md_front="tcp://fake:1234", orders=False)
-        controller.driver = driver
+        controller = self.recording_controller()
         with self.assertRaises(HistoryUnavailable):
             controller.start(session, SimpleNamespace(trading_day="20260922"))
         self.assertFalse(session.runner.accept_bars)
         self.assertEqual(session.strategy.bars_used, 0)
         self.assertEqual(session.client.requests, ())
-        self.assertEqual(transport._api.sent, [])
+        self.assertIsNone(session.driver)
+        self.assertIsNone(session.ledger)
 
     def test_calendar_factory_im_sessions_lunch_and_previous_day(self):
         calendar = index_sessions("IM")
@@ -154,12 +182,9 @@ class ImRuntimeTests(unittest.TestCase):
 
     def test_formal_recording_lifecycle_preloads_history_then_records_only_new_minute(self):
         fixture, references = self.fixture()
-        transport, driver, _ = fixture.transport_driver()
-        driver.start(lambda report: None)
-        session = live.assemble(self.args(fixture), references, driver, ManualMd())
+        session = live.assemble(self.args(fixture), references, None, ManualMd())
         fixture.addCleanup(session.runner.stop)
-        controller = live.MainEmaSessionLifecycle(transport, md_front="tcp://fake:1234", orders=False)
-        controller.driver = driver
+        controller = self.recording_controller()
         controller.start(session, SimpleNamespace(trading_day="20260922"))
         self.assertEqual(str(session.references.instrument_id), "IM2610.CFFEX")
         self.assertEqual(session.strategy.bars_used, 2)
@@ -169,8 +194,17 @@ class ImRuntimeTests(unittest.TestCase):
         fixture.tick(session, 33, price=7760)
         self.assertEqual(session.strategy.bars_used, 3)
         self.assertEqual(len(session.client.requests), 1)
-        self.assertEqual(transport._api.sent, [])
+        self.assertIsNone(session.driver)
+        self.assertIsNone(session.ledger)
         self.assertEqual(session.strategy.fills_received, 0)
+        self.assertTrue(controller.poll(session))
+        controller.verify(session)
+        result = controller.shutdown(session, None)
+        self.assertEqual(result["cleanup_errors"], [])
+        snapshot = controller.snapshot(session, SimpleNamespace(references=references))
+        self.assertEqual(snapshot["observed_md_trading_day"], "20260922")
+        self.assertIsNone(snapshot["observed_td_trading_day"])
+        self.assertEqual(snapshot["execution_origin"], "recording")
 
     def test_assembly_rejects_im_orders_and_wrong_expected_contract(self):
         fixture, references = self.fixture()
@@ -183,18 +217,16 @@ class ImRuntimeTests(unittest.TestCase):
     def test_formal_history_gap_keeps_recording_bar_gate_closed(self):
         from bomber.framework.dataprep.history import HistoryUnavailable
         fixture, references = self.fixture()
-        transport, driver, _ = fixture.transport_driver()
-        driver.start(lambda report: None)
-        session = live.assemble(self.args(fixture, history_minutes=3), references, driver, ManualMd())
+        session = live.assemble(self.args(fixture, history_minutes=3), references, None, ManualMd())
         fixture.addCleanup(session.runner.stop)
-        controller = live.MainEmaSessionLifecycle(transport, md_front="tcp://fake:1234", orders=False)
-        controller.driver = driver
+        controller = self.recording_controller()
         with self.assertRaises(HistoryUnavailable):
             controller.start(session, SimpleNamespace(trading_day="20260922"))
         self.assertFalse(session.runner.accept_bars)
         self.assertEqual(session.strategy.bars_used, 0)
         self.assertEqual(session.client.requests, ())
-        self.assertEqual(transport._api.sent, [])
+        self.assertIsNone(session.driver)
+        self.assertIsNone(session.ledger)
 
 
 if __name__ == "__main__":

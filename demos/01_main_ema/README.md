@@ -1,5 +1,13 @@
 # 单品种主力 EMA 回测
 
+## Recording仅接行情（2026-10-16）
+
+`--mode recording`不创建TD、不占用账户锁、不查询资金/委托/柜台持仓，
+只连接所选行情源并记录策略目标。CTP行情仍使用`.env`中的账户ID和密码登录MD。
+须显式填写`--expected-trading-day`作为参考交易日，实际MD交易日由健康闸门核对；
+账户对账仅允许省略或`--account-reconciliation off`。报告中真实账户仓位与TD交易日为null。
+历史预热、因子审计、行情时效及目标验收继续执行。`--mode simnow`保留原TD查询、账户锁及报单门控。
+
 ## 当前启动方式：独立策略向 SimNow 报单（2026-10-14）
 
 当前需求是：**独立进程只启动01_main_ema，直接向SimNow报单，只按自己的归属成交管理策略仓位**。此前Model解释已纠正，Model只模拟成交，不符合当前真实SimNow报单需求。直接运行python -m demos.01_main_ema.run_live，只装配一个MainEmaStrategy，不启动其他demo、共享账户母进程或共享worker。
