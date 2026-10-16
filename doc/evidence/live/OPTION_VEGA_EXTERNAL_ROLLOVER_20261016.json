@@ -1,0 +1,16 @@
+{
+  "date": "2026-10-16",
+  "status": "offline_passed_online_pending",
+  "scope": "shared_cross_day_outside_managed_baseline_refresh",
+  "network_connected": false,
+  "real_orders_submitted": 0,
+  "tests": {
+    "option_base": 81,
+    "shared_rollover": 24,
+    "scope_migration": 2
+  },
+  "source_sha256": {
+    "scripts/integration/shared_account/rollover.py": "6624b6481ecb273af0a4bae7d09cc4a9ba90309af7d07dc74cdb8d22dded4000",
+    "tests/test_option_shared_rollover.py": "c648ae2f8136d4dcf1985b4ab078d175f7b89c245a60432ddcc968257ab1a1d0"
+  }
+}

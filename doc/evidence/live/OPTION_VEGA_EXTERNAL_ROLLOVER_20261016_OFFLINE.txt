@@ -1,0 +1,8 @@
+2026-10-16 offline validation
+08 base (tests.run_option_vega_offline): Ran 81 tests, OK.
+Shared rollover (tests.test_option_shared_rollover, with SDK entity shim): Ran 24 tests, OK.
+Scope migration (separate unittest process): Ran 2 tests, OK.
+Total: 107 tests passed. No network connections or real orders.
+Fault coverage: detail mismatch; query failure; gross changes during observation; managed gross conflict; final query failure; checkpoint bytes preserved.
+Success coverage: increase, decrease, close, new instrument, equal long/short; original owned short retained; terminal order history retained by existing regression; successful same-day restart after refresh; backups retained.
+Same-day external change remains rejected. Online external change policy unchanged.

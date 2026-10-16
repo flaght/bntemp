@@ -174,3 +174,7 @@ sha256sum -c doc/evidence/checksums/DOCUMENTATION_20261010_SHA256.txt
 ### 2026-10-15：08指数查询频率运行覆盖
 
 快捷入口新增`--index-poll-seconds 1`，公共缓存支持设置实际运行间隔并在manifest展示，原恢复身份/持仓不变。见 [交付说明](../HANDOFF/live/HANDOFF_OPTION_VEGA_INDEX_POLL_INTERVAL_2026-10-15.md)、[补充包](archives/OPTION_VEGA_INDEX_POLL_INTERVAL_20261015.tar.gz)、[SHA清单](checksums/OPTION_VEGA_INDEX_POLL_INTERVAL_20261015_SHA256.txt)。离线81+33通过，服务器生效仍待确认。
+
+### 2026-10-16：08共享跨日范围外基线刷新
+
+修复范围外CU/AG等品种跨日变化导致08无法恢复的问题。管理范围内核验保持严格；范围外以当日柜台总仓和明细核验后刷新基线，不产生策略归属；同日和在线检查不变。离线81+24+2项通过，服务器恢复待验。见[交付说明](../HANDOFF/live/HANDOFF_OPTION_VEGA_EXTERNAL_ROLLOVER_2026-10-16.md)、[补充包](archives/OPTION_VEGA_EXTERNAL_ROLLOVER_20261016.tar.gz)、[SHA清单](checksums/OPTION_VEGA_EXTERNAL_ROLLOVER_20261016_SHA256.txt)、[验证范围](live/OPTION_VEGA_EXTERNAL_ROLLOVER_20261016.json)。本补充不包含14:57结束管理的设计变更。

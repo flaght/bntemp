@@ -1,6 +1,7 @@
 """应用层共享会话跨日身份核对；算法参数及非08固定参考不能隐式改变。"""
 from copy import deepcopy
 from decimal import Decimal
+import logging
 
 from bomber.framework.trader.runtime.live.channels.ctp_rollover import observe_rollover
 
@@ -100,19 +101,42 @@ def payload_for_day(account, payload):
     external = payload["component_states"].get("external_positions")
     if external is not None:
         from bomber.framework.trader.runtime.ctp_account import position_buckets
-        # 总仓仍须与原外部基线相同；允许权威查询确认今昨桶自然变化。
+        # 范围外仓位可由其他策略跨日交易；只刷新观测基线，不创建策略归属。
         observed = account.position_scope.external(account.rollover_audit["gross"])
         expected = {key: tuple(Decimal(q) for q in values) for key, values in external["gross"].items()}
-        if observed != expected:
-            raise ValueError("跨日外部总仓变化，不能自动接管")
         account.driver.start(lambda report: None)
         try:
+            from bomber.framework.trader.runtime.live.channels.ctp import occupied_positions, assert_account_ready
+            if account.driver.trading_day != account.expected_day:
+                raise RuntimeError("跨日外部基线查询TD日不一致")
+            assert_account_ready(account.driver)
             rows = [row for row in account.transport.query_position_details()
                     if not account.position_scope.contains(f"{row['InstrumentID']}.{row['ExchangeID']}")]
             buckets = position_buckets(rows, observed)
             if {key: (r.quantities[0]+r.quantities[1], r.quantities[2]+r.quantities[3]) for key, r in buckets.items()} != observed:
                 raise RuntimeError("跨日外部明细与总仓不一致")
-            external["buckets"] = {key: [str(q) for q in r.quantities] for key, r in buckets.items()}
+            if occupied_positions(account.transport) != account.rollover_audit["gross"]:
+                raise RuntimeError("跨日外部基线查询期间柜台持仓发生变化")
+            assert_account_ready(account.driver)
+            # 同合约外部基线不在本次刷新范围内，仍须通过原管理范围核验。
+            retained = {key: values for key, values in external["gross"].items()
+                        if account.position_scope.contains(key)}
+            retained_buckets = {key: values for key, values in external["buckets"].items()
+                                if account.position_scope.contains(key)}
+            external["gross"] = {**retained, **{key: [str(q) for q in values] for key, values in observed.items()}}
+            external["buckets"] = {**retained_buckets,
+                **{key: [str(q) for q in r.quantities] for key, r in buckets.items()}}
+            changes = {key: {"before": [str(q) for q in expected.get(key, (0, 0))],
+                             "after": [str(q) for q in observed.get(key, (0, 0))]}
+                       for key in sorted(expected.keys() | observed.keys())
+                       if not account.position_scope.contains(key)
+                       and expected.get(key, (0, 0)) != observed.get(key, (0, 0))}
+            account.rollover_audit["external_baseline_refresh"] = {
+                "scope": "outside_managed_instruments", "changes": changes,
+                "gross": {key: [str(q) for q in values] for key, values in observed.items()}}
+            if changes:
+                logging.getLogger("SharedAccountRollover").info(
+                    "跨日范围外仓位基线已核验，待恢复最终对账提交: changes=%s", changes)
         finally:
             account.driver.stop()
     payload["component_states"]["session_identity"]["identity"] = new

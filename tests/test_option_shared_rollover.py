@@ -62,11 +62,11 @@ class OptionSharedRolloverTests(unittest.TestCase):
         now[0] += 21_000_000_000
         session.runner.flush_frames()
 
-    def shared(self, path=None, current=None):
+    def shared(self, path=None, current=None, transport=None):
         current = current or self.current
         day = current.references.service.valuation_day.strftime("%Y%m%d")
         args = deepcopy(self.new_args); args.expected_trading_day = args.valuation_day = day
-        transport = DetailsTransport(day)
+        transport = transport or DetailsTransport(day)
         driver = CtpNativeTraderDriver(CLIENT, "fixture", transport, enable_simnow_orders=True,
             disconnect_handler=lambda reason: None)
         specs = factories.instrument_specs("option_vega", current.references)
@@ -203,6 +203,119 @@ class OptionSharedRolloverTests(unittest.TestCase):
                          account.client.order_state_machine.checkpoints()[0])
         self.assertFalse(transport2.sent)
         restored.authorize(); restored.stop()
+
+    def rollover_with_external(self, gross, *, name="external", initial_quantity=1):
+        path = self.root / (name + ".json")
+        path.write_bytes(self.before)
+        initial = DetailsTransport("20260814")
+        initial.query_gross_positions = lambda: {OPTION: (Decimal(0), Decimal(1)),
+            "ag2612.SHFE": (Decimal(0), Decimal(initial_quantity))}
+        initial.query_positions = lambda: {OPTION: Decimal(-1), "ag2612.SHFE": Decimal(-initial_quantity)}
+        original_details = initial.query_position_details
+        initial.query_position_details = lambda: [dict(row, Position=initial_quantity)
+            if row["ExchangeID"] == "SHFE" else row for row in original_details()]
+        account, _, _, _, _ = self.shared(path=path, transport=initial)
+        account.start(resume=True); account.authorize(); account.stop()
+        before = path.read_bytes()
+        transport = DetailsTransport("20260817"); transport.bucket = "2"
+        positions = {OPTION: (Decimal(0), Decimal(1)), **gross}
+        transport.query_gross_positions = lambda: deepcopy(positions)
+        transport.query_positions = lambda: {key: long-short for key, (long, short) in positions.items()}
+        def details():
+            rows = []
+            for key, values in positions.items():
+                symbol, venue = key.rsplit(".", 1)
+                for direction, quantity in zip(("2", "3"), values):
+                    if quantity:
+                        rows.append(dict(InstrumentID=symbol, ExchangeID=venue, Position=quantity,
+                            PosiDirection=direction, PositionDate="2", HedgeFlag="1", PositionCost=10000))
+            return rows
+        transport.query_position_details = details
+        restored = self.shared(path=path, current=inputs(date(2026, 8, 17), "dolphindb"), transport=transport)
+        return restored, path, before
+
+    def test_cross_day_external_increase_decrease_close_new_and_hedged_positions(self):
+        cases = ((1, {"ag2612.SHFE": (Decimal(0), Decimal(3))}),
+                 (3, {"ag2612.SHFE": (Decimal(0), Decimal(1))}), (1, {}),
+                 (1, {"ag2612.SHFE": (Decimal(0), Decimal(1)), "cu2611.SHFE": (Decimal(2), Decimal(2))}),
+                 (1, {"cu2611.SHFE": (Decimal(1), Decimal(0))}))
+        for n, (initial_quantity, gross) in enumerate(cases):
+            # 柜台总仓接口不返回零仓合约；双向等量仓必须保留，不能只比净仓。
+            gross = {key: values for key, values in gross.items() if any(values)}
+            with self.subTest(gross=gross):
+                (account, service, _, _, transport), path, before = self.rollover_with_external(
+                    gross, name=str(n), initial_quantity=initial_quantity)
+                account.start(resume=True)
+                self.assertEqual(service.position_manager.position(CLIENT, OPTION), -1)
+                self.assertEqual(account.external_gross, gross)
+                self.assertEqual(account.ledger.snapshot(InstrumentId.from_str(OPTION)).short_yesterday, 1)
+                self.assertTrue(account.rollover_audit["external_baseline_refresh"]["changes"])
+                self.assertFalse(any(row["instrument_id"] in gross and Decimal(row["quantity"])
+                    for row in service.position_manager.attribution.state()["owned"]))
+                account.authorize(); account.stop()
+                state = JsonStateStore(path).load()
+                self.assertEqual(state.payload["component_states"]["external_positions"]["gross"],
+                    {key: [str(q) for q in values] for key, values in gross.items()})
+                self.assertFalse(transport.sent)
+                self.assertTrue(any(backup.read_bytes() == before
+                    for backup in path.parent.glob(path.name+".before-rollover-g*.json")))
+                again, service2, _, _, _ = self.shared(path=path,
+                    current=inputs(date(2026, 8, 17), "dolphindb"), transport=transport)
+                again.start(resume=True); again.authorize()
+                self.assertEqual(service2.position_manager.position(CLIENT, OPTION), -1)
+                self.assertEqual(again.external_gross, gross)
+                again.stop()
+
+    def test_external_refresh_query_mismatch_or_race_preserves_checkpoint(self):
+        for mode in ("details", "race", "managed", "query_failure", "final_query"):
+            with self.subTest(mode=mode):
+                (account, _, _, _, transport), path, before = self.rollover_with_external(
+                    {"ag2612.SHFE": (Decimal(0), Decimal(2))}, name=mode)
+                original = transport.query_position_details
+                calls = [0]
+                def details():
+                    calls[0] += 1
+                    rows = original()
+                    if calls[0] >= 2:
+                        if mode == "query_failure":
+                            raise RuntimeError("fixture external query failure")
+                        if mode == "details":
+                            return [row for row in rows if row["ExchangeID"] == "CFFEX"]
+                        if mode == "race":
+                            transport.query_gross_positions = lambda: {OPTION: (Decimal(0), Decimal(1))}
+                    return rows
+                transport.query_position_details = details
+                if mode == "managed":
+                    transport.query_gross_positions = lambda: {OPTION: (Decimal(0), Decimal(2))}
+                if mode == "final_query":
+                    original_gross = transport.query_gross_positions
+                    gross_calls = [0]
+                    def gross():
+                        gross_calls[0] += 1
+                        if gross_calls[0] >= 4:
+                            raise RuntimeError("fixture final query failure")
+                        return original_gross()
+                    transport.query_gross_positions = gross
+                with self.assertRaises((RuntimeError, ValueError)):
+                    account.start(resume=True)
+                account.stop()
+                self.assertEqual(path.read_bytes(), before)
+                self.assertFalse(transport.sent)
+
+    def test_same_day_external_change_still_refuses_resume(self):
+        (account, _, _, _, transport), path, _ = self.rollover_with_external(
+            {"ag2612.SHFE": (Decimal(0), Decimal(2))})
+        account.start(resume=True); account.authorize(); account.stop()
+        before = path.read_bytes()
+        transport.query_gross_positions = lambda: {OPTION: (Decimal(0), Decimal(1))}
+        transport.query_positions = lambda: {OPTION: Decimal(-1)}
+        again, _, _, _, _ = self.shared(path=path,
+            current=inputs(date(2026, 8, 17), "dolphindb"), transport=transport)
+        with self.assertRaises(RuntimeError):
+            again.start(resume=True)
+        again.stop()
+        self.assertEqual(path.read_bytes(), before)
+        self.assertFalse(transport.sent)
 
     def test_query_failure_in_last_prearm_check_preserves_original(self):
         lifecycle, session, context, transport = self.standalone()
