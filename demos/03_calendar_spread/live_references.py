@@ -68,8 +68,11 @@ class CalendarReferences:
         if set(specs) != set(self.roles) or any(s.product != self.product or
                 s.venue not in self.allowed_venues or s.currency != "CNY" for s in specs.values()):
             raise ValueError(f"跨期支持声明交易所{sorted(self.allowed_venues)}单品种人民币期货")
-        if len({s.venue for s in specs.values()}) != 1 or len(set(self.instrument_ids.values())) != 2:
-            raise ValueError("跨期双腿须为同交易所的不同真实合约")
+        instruments = {role: str(instrument) for role, instrument in self.instrument_ids.items()}
+        if len({s.venue for s in specs.values()}) != 1:
+            raise ValueError(f"跨期双腿须为同交易所的不同真实合约：交易所不一致；roles={instruments}")
+        if len(set(instruments.values())) != 2:
+            raise ValueError(f"跨期双腿须为同交易所的不同真实合约：角色指向相同合约；roles={instruments}")
 
     def assert_expected(self, expected):
         if not expected:

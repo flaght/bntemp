@@ -62,6 +62,16 @@ Recording的成交数和持仓为零、account_positions=None符合模式约定�
 补齐后完整推进一次；仍缺失或健康失效则失败。回归覆盖延迟补齐、固定窗口、到期失败、
 旧缺口、较旧尾分钟、等待中行情失效及数据库不可用。
 
+用户随后回传修复后01 IM在线Recording最终status=passed，目录为
+`demos/01_main_ema/results/IM_ddb_recording/main-ema-recording-1792118949894298711`。
+初始历史required=240、loaded=240、missing=0，运行期间另有1根DDB回补且missing=0；
+bars_used=250、last_target=1、fast_ema=9828.769185659849、slow_ema=9828.52357415313。
+历史跨交易日分别采用2026-10-14与2026-10-15来源日因子，均为1.456591；
+此因子证据仅用于当前在线指标预热，不代表历史版本as-of重放。
+行情/Recording通道ready=true，observed_md_trading_day=20261016，observed_td_trading_day=None，
+account_position=None、orders_submitted=0、cleanup_errors为空，符合仅MD Recording约定。
+因此01本次历史预热、实时接续和目标记录通过；物理报单未验。下一步验03 IM双腿。
+
 ## 远程离线复验
 
 ```bash

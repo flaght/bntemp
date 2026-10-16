@@ -189,6 +189,12 @@ class CrossHistoryTests(unittest.TestCase):
         refs = module.CalendarReferences(service, "IM", ("secondary", "far"),
             allowed_venues={"CFFEX"})
         self.assertEqual([str(i) for i in refs.instrument_ids.values()], ["IM2611.CFFEX", "IM2612.CFFEX"])
+        service.instrument_specs["IM"]["far"].symbol = "IM2611"
+        service.snapshot = lambda ns: SectorRoleAssignment(date(2026, 10, 16), date(2026, 10, 15), 0, 0,
+            {"IM": {"secondary": "IM2611", "far": "IM2611"}}, {"IM": {}})
+        with self.assertRaisesRegex(ValueError,
+                "角色指向相同合约.*secondary.*IM2611.CFFEX.*far.*IM2611.CFFEX"):
+            module.CalendarReferences(service, "IM", ("secondary", "far"), allowed_venues={"CFFEX"})
 
 
 if __name__ == "__main__":
