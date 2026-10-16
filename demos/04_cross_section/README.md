@@ -399,6 +399,11 @@ history_frames/live_frames，运行每15秒及新帧时输出窗口与缺失腿�
 SHFE目前发现数据缺失，本轮验收优先CFFEX：01/03使用IM；04至少需要两个品种，
 提供IM,IF的history_cffex.json。该配置表结构沿用已确认的cffex_1min与完成标签end，
 是否覆盖本次IM/IF实际主力须用运行报告验证，不宣称已有在线通过。
+
+2026-10-16 REV33：共享实时路径可声明IM、IH、IC、IF四个股指品种，使用各自的
+因子映射合约、条款乘数和完整21帧历史。group_fraction=0.5时多空各选两名，
+原信号算法保持。已有成交的IM/IF会话须经[四品种同日迁移](../../scripts/integration/shared_account/CFFEX_FOUR_JOINT_ACCEPTANCE.md)，
+保留原策略ID、归属与执行历史，不直接修改运行中的路由。
 共享工厂已允许04历史参数；混合来源可使用{"sources":{"品种":{DDB配置},...}}覆盖全部products。
 单一DDB配置则应用于全部品种。每个品种按同一CLI calendar-id加载自身时段键；
 采用不同交易日期Provider的组合须另行明确绑定，不能把任意日历当成等价。

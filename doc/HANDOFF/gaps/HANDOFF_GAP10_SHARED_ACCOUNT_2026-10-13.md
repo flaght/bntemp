@@ -597,3 +597,25 @@ contracts继续表示角色表，未修改因子优先规则、策略算法或�
 检查点不自动替换。新增shared-discovery专项3项及IPC/配置29项通过，共享账户
 81项回归通过；真实数据库/行情/柜台未连接，新的现场观察及预检仍待Linux执行。
 证据：doc/evidence/live/GAP10_STRATEGY_REFERENCE_DISCOVERY_20261016_REV32.json。
+
+## 2026-10-16 REV33：四股指及已成交横截面扩品种
+
+用户明确横截面应为IM/IH/IC/IF，并确认原IM/IF会话已有成交。新增cffex-four
+观察/生成profile，公共CTP符号适配允许IH/IC；每个品种读取独立因子、条款、乘数
+及21帧同分钟历史，原排名算法不变，group_fraction=0.5时多空各两名。
+账户七条归属腿按新盘口计算，侧预算按原等分规则覆盖观察时最贵合约的一手，
+原单腿手数和风险限制保留。
+
+prepare_session --from-config保留原账户及三策略ID/原参数，生成独立目标文件。
+migrate_scope增加同日strict股指路径，保留已交易横截面仓位、分配历史、事件/
+请求日志、消费游标、成交计数、原版本、OrderRef及已用额度，新增IH/IC零路由。
+沿用状态锁、JsonStateStore、权威总仓/今昨/活动订单核验与commit_restore；核验
+通过后才写新文件，原文件不改。原商品迁移仍拒绝旧横截面已有交易历史。
+未决发送、未终结委托、已交易worker文件缺失、新增外部仓位或原路由变化均拒绝。
+
+本机252项通过（共享81、IPC/配置/迁移32、发现4、历史15、公共120）。测试包含
+实际迁移CLI、原共享/CTP生命周期及序列化恢复，柜台/SDK为替身；迁移时零报单，
+之后恢复仅新增IH目标发单，旧仓、事件、worker游标和已用额度保留。
+完整cross-live原生入口与现场四股指迁移仍待Linux执行；原配置/账本未操作。
+逐终端指令：scripts/integration/shared_account/CFFEX_FOUR_JOINT_ACCEPTANCE.md。
+证据：doc/evidence/live/GAP10_CFFEX_FOUR_EXPANSION_20261016_REV33.json；GAP10仍开放。

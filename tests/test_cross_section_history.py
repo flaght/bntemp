@@ -68,6 +68,49 @@ class CrossHistoryTests(unittest.TestCase):
         self.strategy.set_targets.assert_not_called()
         self.assertEqual(self.history.last_audit["loaded"], 3)
 
+    def test_four_index_products_warm_21_frames_then_rank_two_long_two_short(self):
+        from tests.session_fixtures import declared_day_sessions
+        from bomber.framework.calendars.sessions import datetime_ns
+        products = ("IM", "IH", "IC", "IF")
+        calendars = {p: declared_day_sessions(p, date(2026, 10, 16), start="09:00", end="09:30") for p in products}
+        end = datetime_ns(calendars["IM"].windows(date(2026, 10, 16))[0].end)
+        stamps = calendars["IM"].last_minutes(end, 25)
+        ids = {p: Instrument(p+"2610.CFFEX") for p in products}
+        snapshot = NS(instrument=lambda p, role: ids[p].symbol, factor=lambda p, role: Decimal(2))
+        strategy = self.strategy_module.MainCrossSectionMomentumStrategy("four", products=products,
+            roles=NS(snapshot=lambda _: snapshot), instruments={i.symbol.lower(): i for i in ids.values()},
+            multipliers={i: Decimal(300 if p in {"IF", "IH"} else 200) for p, i in ids.items()},
+            lookback=20, rebalance_interval=5, group_fraction=Decimal("0.5"), target_notional=Decimal(3000000),
+            target_quantity_cap=1)
+        strategy.set_targets = Mock()
+        slopes = {"IM": 3, "IH": 1, "IC": -1, "IF": -3}
+        rows = {str(i): tuple(self.api.HistoryBar(str(i), s, close=100+n*slopes[p]) for n, s in enumerate(stamps[:21]))
+            for p, i in ids.items()}
+        class Provider:
+            def open(self): pass
+            def close(self): pass
+            def read(self, req): return rows[req.instrument_id]
+        class Factory:
+            @staticmethod
+            def create_for(*_): return Provider()
+        services = {p: self.api.HistoryService(database_config={}, factory=Factory, missing_policy="allow",
+            price_adjuster=lambda bars: tuple(replace(b, adjusted_close=b.close*2) for b in bars)) for p in products}
+        history = self.module.CrossSectionHistory(services, calendars, 21)
+        runner = NS(strategy=strategy, instruments=ids, _submit_lock=RLock(), history_buffer=[],
+            first_complete_bar_ns=stamps[0], history_frame_count=0)
+        history.warm(runner, stamps[20]+1)
+        self.assertEqual(history.last_audit["loaded"], 21)
+        self.assertEqual(set(history.last_audit["products"]), set(products))
+        strategy.set_targets.assert_not_called()
+        for n, stamp in enumerate(stamps[21:], 21):
+            for p in products:
+                strategy.on_bar(str(ids[p]), NS(bar_type=NS(instrument_id=ids[p]), ts_event=stamp,
+                    close=NS(as_decimal=lambda p=p, n=n: Decimal(100+n*slopes[p]))))
+        strategy.set_targets.assert_called_once()
+        self.assertEqual(set(strategy.last_signal.long_products), {"IM", "IH"})
+        self.assertEqual(set(strategy.last_signal.short_products), {"IC", "IF"})
+        self.assertEqual(dict(strategy.last_targets), {str(ids[p]): Decimal(1 if p in {"IM", "IH"} else -1) for p in products})
+
     def test_next_live_frame_uses_same_price_scale_and_original_ranking(self):
         self.warm()
         for p, price in (("IM", 104), ("IF", 96)):
@@ -173,6 +216,9 @@ class CrossHistoryTests(unittest.TestCase):
         refs = module.PortfolioRoleReferences(service, allowed_venues=module.CTP_PORTFOLIO_VENUES | {"CFFEX"})
         self.assertEqual(str(refs.instrument_ids["IM"]), "IM2611.CFFEX")
         self.assertEqual(module.ctp_futures_symbol("im2611", "CFFEX"), "IM2611")
+        self.assertEqual(module.ctp_futures_symbol("ih2610", "CFFEX"), "IH2610")
+        self.assertEqual(module.ctp_futures_symbol("ic2610", "CFFEX"), "IC2610")
+        with self.assertRaises(ValueError): module.ctp_futures_symbol("T2610", "CFFEX")
 
     def test_im_calendar_recording_reference_can_select_two_real_cffex_contracts(self):
         import sys

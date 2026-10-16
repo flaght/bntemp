@@ -61,6 +61,19 @@ class FourVenueTdApi(fixtures.AdoptTdApi):
 
 
 class CrossSectionLiveTests(unittest.TestCase):
+    def test_four_index_shared_cli_keeps_each_expected_contract_and_21_frame_history(self):
+        with TemporaryDirectory() as directory:
+            args = live.parse_args(["--connect", "--mode", "simnow", "--products", "IM,IH,IC,IF",
+                "--expected-trading-day", "20261016", "--expected-source-day", "20261015",
+                "--enable-orders", "--confirm-simnow", "--state-file", str(Path(directory)/"new.json"),
+                "--expected-instrument", "IM=IM2610.CFFEX", "--expected-instrument", "IH=IH2610.CFFEX",
+                "--expected-instrument", "IC=IC2610.CFFEX", "--expected-instrument", "IF=IF2610.CFFEX",
+                "--history-config", str(Path(__file__).resolve().parents[1]/"demos/04_cross_section/history_cffex.json"),
+                "--history-minutes", "21", "--calendar-id", "china.cffex", "--no-session-overrides"], shared_execution=True)
+            self.assertEqual(args.products, ("IM", "IH", "IC", "IF"))
+            self.assertEqual(set(args.expected_instruments), set(args.products))
+            self.assertEqual(args.history_minutes, 21)
+
     def test_im_if_shared_cli_accepts_pinned_cffex_contracts_and_history(self):
         with TemporaryDirectory() as directory:
             args = live.parse_args(["--connect", "--mode", "simnow", "--products", "IM,IF",

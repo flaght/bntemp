@@ -6,7 +6,7 @@ from copy import deepcopy
 from pathlib import Path
 import time
 
-from .prepare_session import parse_cross_products, observed_budget
+from .prepare_session import CFFEX_PROFILES, profile_cross_products, parse_cross_products, observed_budget
 
 
 def observe_reference_views(source, *, trading_day, environment, product, roles, products, clock_ns=None):
@@ -40,15 +40,18 @@ def main(argv=None):
     parser.add_argument("--environment", choices=("replay", "realtime"), required=True)
     parser.add_argument("--report-dir", type=Path, default=Path("scripts/integration/shared_account/results"))
     parser.add_argument("--output", type=Path, help="保存本次只读观察摘要，供会话生成器读取")
-    parser.add_argument("--cross-products", type=parse_cross_products, default="CU,AL")
-    parser.add_argument("--profile", choices=("commodity", "im-if"), default="commodity")
+    parser.add_argument("--cross-products", type=parse_cross_products)
+    parser.add_argument("--profile", choices=("commodity", *CFFEX_PROFILES), default="commodity")
     parser.add_argument("--ctp-future-buffer-ms", type=int, default=0)
     args = parser.parse_args(argv)
-    selected_product, selected_roles = ("IM", ("main", "secondary")) if args.profile == "im-if" else ("CU", ("secondary", "far"))
-    if args.profile == "im-if":
-        args.cross_products = ("IM", "IF")
+    try:
+        args.cross_products = profile_cross_products(args.profile, args.cross_products)
+    except ValueError as error:
+        parser.error(str(error))
+    selected_product, selected_roles = ("IM", ("main", "secondary")) if args.profile in CFFEX_PROFILES else ("CU", ("secondary", "far"))
+    if args.profile in CFFEX_PROFILES:
         if args.environment != "realtime":
-            parser.error("IM/IF联合观察仅支持realtime")
+            parser.error("股指联合观察仅支持realtime")
     if not 0 <= args.ctp_future_buffer_ms <= 100 or (args.ctp_future_buffer_ms and args.environment != "realtime"):
         parser.error("CTP未来事件缓冲须为realtime的0至100毫秒")
     from dotenv import load_dotenv

@@ -21,6 +21,7 @@ CASES = {
     "shared-mother-probe": ("tests.test_shared_mother_probe",),
     "shared-ipc": ("unittest", "tests.test_shared_ipc", "tests.test_shared_process_cli", "tests.test_shared_scope_migration"),
     "shared-discovery": ("unittest",
+        "tests.test_reference_sources.ReferenceSourceTests.test_discover_four_cffex_products_uses_each_own_factor_and_multiplier",
         "tests.test_reference_sources.ReferenceSourceTests.test_discover_matches_factor_contracts_for_ema_cross_and_raw_calendar_roles",
         "tests.test_reference_sources.ReferenceSourceTests.test_discover_missing_factor_is_not_reported_as_observed_role_only_success",
         "tests.test_reference_sources.ReferenceSourceTests.test_discover_rejects_factor_contract_changed_between_ema_and_cross_reads"),

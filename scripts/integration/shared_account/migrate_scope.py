@@ -1,4 +1,4 @@
-"""同日两品种调试账本迁移到四品种独立会话；柜台只读核验，不报单。"""
+"""同日扩品种独立会话迁移；柜台只读核验，保留原文件，不报单。"""
 
 import argparse
 from contextlib import ExitStack
@@ -22,12 +22,39 @@ def algorithm_arguments(argv):
     return result
 
 
+def is_cffex_expansion(previous, updated):
+    values = []
+    for config in (previous, updated):
+        argv = next((r["argv"] for r in config["strategies"] if r["kind"] == "cross_section"), [])
+        values.append(argv[argv.index("--products") + 1] if "--products" in argv else None)
+    return values == ["IM,IF", "IM,IH,IC,IF"]
+
+
+def cffex_algorithm_arguments(argv):
+    result, expected, index = [], {}, 0
+    argv = algorithm_arguments(argv)
+    while index < len(argv):
+        if argv[index] == "--expected-instrument":
+            product, instrument = argv[index + 1].split("=", 1)
+            if product in expected:
+                raise ValueError("预期合约品种重复")
+            expected[product] = instrument
+            index += 2
+        else:
+            result.append(argv[index]); index += 1
+    return result, expected
+
+
 def validate_scope_configs(previous, updated):
+    cffex = is_cffex_expansion(previous, updated)
     if (previous["trading_day"] != updated["trading_day"] or previous["environment"] != updated["environment"]
             or updated["environment"] != "realtime" or previous.get("execution_mode") != "independent"
-            or updated.get("execution_mode") != "independent" or updated.get("existing_position_policy") != "preserve_external"
+            or updated.get("execution_mode") != "independent"
             or previous.get("position_scope") != "strategy_instruments" or updated.get("position_scope") != "strategy_instruments"):
-        raise ValueError("范围迁移须为同日实时独立账户及外部基线隔离")
+        raise ValueError("范围迁移须为同日实时独立账户及策略合约范围")
+    if (cffex and any(c.get("existing_position_policy", "require_flat") != "require_flat" for c in (previous, updated))
+            or not cffex and updated.get("existing_position_policy") != "preserve_external"):
+        raise ValueError("股指扩品种须保留strict账本；原商品迁移须外部基线隔离")
     old, new = previous["account"], updated["account"]
     limits = {"max_gross_quantity", "max_gross_notional"}
     if ({k: v for k, v in old.items() if k not in limits} != {k: v for k, v in new.items() if k not in limits}
@@ -42,8 +69,20 @@ def validate_scope_configs(previous, updated):
         new_row = after[kind]
         a, b = algorithm_arguments(old_row["argv"]), algorithm_arguments(new_row["argv"])
         if kind == "cross_section":
+            if cffex:
+                if old_row["strategy_id"] != new_row["strategy_id"]:
+                    raise ValueError("已交易股指横截面必须保留策略ID及回报身份")
+                a, old_expected = cffex_algorithm_arguments(a)
+                b, new_expected = cffex_algorithm_arguments(b)
+                if set(new_expected) != {"IM", "IH", "IC", "IF"} or any(
+                        new_expected.get(p) != instrument for p, instrument in old_expected.items()):
+                    raise ValueError("股指扩品种不能改变原IM/IF合约，须完整声明四品种")
+                old_budget, new_budget = (Decimal(v[v.index("--target-notional") + 1]) for v in (a, b))
+                if not new_budget.is_finite() or new_budget < old_budget:
+                    raise ValueError("股指横截面侧预算只能保持或上调")
+                b[b.index("--target-notional") + 1] = a[a.index("--target-notional") + 1]
             ai, bi = a.index("--products") + 1, b.index("--products") + 1
-            if a[ai] != "CU,AL" or b[bi] != "CU,AL,AG,AU" or old_row["strategy_id"] == new_row["strategy_id"]:
+            if not cffex and (a[ai] != "CU,AL" or b[bi] != "CU,AL,AG,AU" or old_row["strategy_id"] == new_row["strategy_id"]):
                 raise ValueError("范围迁移须从CU/AL扩展到CU/AL/AG/AU并使用新横截面ID")
             b[bi] = a[ai]
         elif old_row["strategy_id"] != new_row["strategy_id"]:
@@ -57,7 +96,67 @@ def validate_scope_configs(previous, updated):
     return before, after
 
 
+def transform_cffex_scope_payload(payload, previous, updated, identity, declaration):
+    """仅增加零归属路由；已有仓位、事件日志、版本和OrderRef逐项保留。"""
+    before, after = validate_scope_configs(previous, updated)
+    result = deepcopy(payload)
+    components = result["component_states"]
+    old_identity = components["session_identity"]["identity"]
+    if (old_identity.get("account") != previous["account"] or old_identity.get("trading_day") != previous["trading_day"]
+            or old_identity.get("environment") != previous["environment"]):
+        raise ValueError("原配置与账户检查点身份不符")
+    for kind, row in before.items():
+        sid = row["strategy_id"]
+        old, new = old_identity["strategies"][sid], identity["strategies"][sid]
+        if old["argv"] != row["argv"] or old["kind"] != kind:
+            raise ValueError("原策略参数与账户检查点不符")
+        if kind != "cross_section":
+            if old["routes"] != new["routes"] or old.get("reference") != new.get("reference"):
+                raise ValueError("原EMA/跨期路由或固定参考变化，不能迁移")
+        elif any(new["routes"]["routes"].get(key) != instrument for key, instrument in old["routes"]["routes"].items()):
+            raise ValueError("已交易股指原路由必须完整保留")
+    shared = components["shared_account"]
+    nested = shared["shared"]
+    if (shared.get("failed") or shared.get("pending") or nested.get("draining")
+            or set(shared["sources"]) - set(nested["suspended"])):
+        raise ValueError("股指扩品种要求原会话完整停止且没有未决发送")
+    if (any(row["status"] not in {"FILLED", "CANCELED", "REJECTED"} for rows in result["orders"].values() for row in rows)
+            or any(Decimal(row["quantity"]) for row in result["positions"]["working_quantities"])
+            or any(driver["orders"] for driver in result["ctp_drivers"].values())
+            or any(row["status"] != "completed" for row in nested.get("event_journal", {}).get("requests", {}).values())):
+        raise ValueError("股指扩品种要求委托终结、IPC请求完成")
+    baseline = components["external_positions"]
+    old_scope, new_scope = set(old_identity["managed_instruments"]), set(identity["managed_instruments"])
+    if baseline.get("version") != 1 or not old_scope <= new_scope:
+        raise ValueError("股指扩品种不能缩减管理范围或转换外部基线模式")
+    if any(key in new_scope-old_scope and any(Decimal(q) for q in values) for key, values in baseline["gross"].items()):
+        raise ValueError("新增股指合约已有外部持仓，不能接管")
+    sid = before["cross_section"]["strategy_id"]
+    routes = declaration["shared"]["routes"][sid]["routes"]
+    source = shared["sources"].get(sid)
+    if source:
+        old_keys = {row["target_key"] for row in source["rows"]}
+        for key, instrument in routes.items():
+            if key in old_keys:
+                continue
+            source["rows"].append(dict(strategy_id=sid, target_key=key, instrument_id=instrument,
+                quantity="0", source_revision=source["revision"], source_deadline_ns=None))
+            source["targets"][instrument] = "0"
+            result["portfolio"]["contributions"][sid].append({"key": {
+                "client_id": updated["account"]["client_id"], "instrument_id": instrument}, "quantity": "0"})
+    nested.update(routes=deepcopy(declaration["shared"]["routes"]), budget=declaration["shared"]["budget"],
+        managed_instruments=sorted(new_scope))
+    baseline["managed_instruments"] = sorted(new_scope)
+    instruments = sorted({i for port in nested["routes"].values() for i in port["routes"].values()})
+    shared["known_instruments"] = instruments
+    result["portfolio"]["known_keys"] = [{"client_id": updated["account"]["client_id"], "instrument_id": i} for i in instruments]
+    components["session_identity"]["identity"] = deepcopy(identity)
+    return result
+
+
 def transform_scope_payload(payload, previous, updated, identity, declaration):
+    if is_cffex_expansion(previous, updated):
+        return transform_cffex_scope_payload(payload, previous, updated, identity, declaration)
     before, after = validate_scope_configs(previous, updated)
     result = deepcopy(payload)
     components = result["component_states"]
@@ -151,6 +250,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     previous, updated = read_config(args.from_config), read_config(args.to_config)
     before, after = validate_scope_configs(previous, updated)
+    cffex = is_cffex_expansion(previous, updated)
     if not args.connect:
         print("范围迁移配置通过；未连接、未写检查点")
         return
@@ -166,7 +266,7 @@ def main(argv=None):
     host, status, failure, fields = None, "failed", None, {"orders_submitted": 0}
     with ExitStack() as locks:
         try:
-            for path in sorted({previous["account_state_file"], *(r["state_file"] for r in previous["strategies"]),
+            for path in sorted({previous["account_state_file"], updated["account_state_file"], *(r["state_file"] for r in previous["strategies"]),
                                 *(r["state_file"] for r in updated["strategies"])}):
                 locks.enter_context(strategy_state_lock(Path(path)))
             destinations = [updated["account_state_file"], *(r["state_file"] for r in updated["strategies"])]
@@ -183,13 +283,13 @@ def main(argv=None):
                 if saved:
                     if saved.payload["identity"] != worker_identity(row, previous):
                         raise ValueError("原worker检查点身份不符")
-                    if kind == "cross_section":
+                    if kind == "cross_section" and not cffex:
                         if saved.payload["revision"] or saved.payload.get("cursor", 0) or saved.payload.get("fills_received", 0):
                             raise ValueError("旧横截面worker已有目标/回报，不允许重置")
                     else:
                         signals[kind] = deepcopy(saved.payload)
                         signals[kind]["identity"] = worker_identity(after[kind], updated)
-                elif kind != "cross_section" and persisted.payload["component_states"]["shared_account"]["sources"].get(row["strategy_id"]):
+                elif (cffex or kind != "cross_section") and persisted.payload["component_states"]["shared_account"]["sources"].get(row["strategy_id"]):
                     raise ValueError("原已交易策略缺少worker检查点，不能丢失消费游标")
             host = build_host(updated, resume=True, read_only=True, strategy_processes=True)
             host.service.event_journal = ExecutionEventJournal(host.strategies)
@@ -213,6 +313,7 @@ def main(argv=None):
                 JsonStateStore(after[kind]["state_file"]).save(payload, expected_generation=0)
                 fields["created_files"].append(after[kind]["state_file"])
             fields.update(original_sha256=hashlib.sha256(original_bytes).hexdigest(),
+                migration_mode="cffex_traded_expansion" if cffex else "commodity_untraded_expansion",
                 original_state_unchanged=source.path.read_bytes() == original_bytes,
                 account_state_file=str(destination), saved_generation=saved_account.generation,
                 preserved_worker_states=list(signals), new_cross_strategy=after["cross_section"]["strategy_id"],
@@ -235,6 +336,7 @@ def main(argv=None):
             except Exception as error:
                 shutdown_error, status = error, "failed"
             finally:
+                fields["orders_submitted"] = host.account.driver.submitted_orders if host else 0
                 report.write(status=status, fields={**fields, "failure": failure,
                     "shutdown_failure": str(shutdown_error) if shutdown_error else None,
                     "verification": "readonly_scope_migration_no_orders"}, session=None, events=())

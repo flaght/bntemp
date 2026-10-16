@@ -8,6 +8,9 @@ from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+import json
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from scripts.integration.shared_account import prepare_session, migrate_scope
 from scripts.integration.shared_account.config import read_config
@@ -20,6 +23,121 @@ class ScopeMigrationTests(unittest.TestCase):
     native_account = fixtures.SharedAccountTests.native_account
     request = fixtures.SharedAccountTests.request
     submit = fixtures.SharedAccountTests.submit
+
+    def test_traded_cffex_cross_migration_preserves_fills_journal_workers_quota_and_opens_new_leg(self):
+        from bomber.framework.trader.execution.ipc import ExecutionEventJournal
+        from bomber.framework.trader.execution.shared import SharedRiskBudget
+        from importlib import import_module
+        modules = self.native_modules()
+        self.instrument = type(self.instrument).from_str("IM2610.CFFEX")
+        all_ids = [self.instrument, *(type(self.instrument).from_str(p+"2610.CFFEX") for p in ("IF", "IH", "IC"))]
+        with TemporaryDirectory() as directory:
+            previous, updated = self.configs(directory)
+            updated.pop("existing_position_policy", None)
+            for config, products in ((previous, "IM,IF"), (updated, "IM,IH,IC,IF")):
+                for row in config["strategies"]:
+                    row["strategy_id"] = {"main_ema": "one", "cross_section": "two", "calendar_spread": "three"}[row["kind"]]
+                    argv = row["argv"]
+                    if row["kind"] == "cross_section":
+                        argv[argv.index("--products")+1] = products
+                        for p in products.split(","):
+                            argv += ["--expected-instrument", p+"="+p+"2610.CFFEX"]
+                    else:
+                        argv[argv.index("--product")+1] = "IM"
+            migrate_scope.validate_scope_configs(previous, updated)
+            def build(config, instruments):
+                account, service, broker, _, resources = self.native_account(Path(config["account_state_file"]), modules,
+                    scoped=True, execution_mode="independent", extra_instruments=tuple(instruments[1:]), generic_close_venues=("CFFEX",))
+                service._ports.pop("two")
+                cross = service.strategy_client("two", routes={str(i): i for i in instruments}, budget=SharedRiskBudget(5, 50000))
+                service.strategy_client("three", routes={"main": self.instrument}, budget=SharedRiskBudget(5, 50000))
+                service.event_journal = ExecutionEventJournal(service._ports)
+                self.configure_identity(account, service, config)
+                for i in instruments:
+                    service.prices.update(i, 3000, self.now)
+                return account, service, broker, cross, resources
+            old, service, broker, cross, _ = build(previous, all_ids[:2])
+            old.start(resume=False); service.start(); cross.start(); old.authorize()
+            targets = {all_ids[0]: Decimal(1), all_ids[1]: Decimal(-1)}
+            request = replace(self.request("account", strategy="two", timestamp=self.now), targets=targets,
+                metadata={"position_attribution": tuple(dict(strategy_id="two", target_key=str(i), instrument_id=str(i), quantity=str(q))
+                    for i, q in targets.items())})
+            cross.submit_targets(request)
+            for sent in tuple(broker.sent): broker.fill(sent["OrderRef"])
+            cross.drain_events()
+            service.event_journal.acknowledge("two", len(service.event_journal.events["two"]))
+            service.event_journal.requests["two:prior"] = {"digest": "prior", "status": "completed"}
+            cross.stop(); old.stop()
+            raw = old.manager.repository.load().payload
+            original_files = {Path(previous["account_state_file"]): Path(previous["account_state_file"]).read_bytes()}
+            for row in previous["strategies"]:
+                worker_payload = {"identity": migrate_scope.worker_identity(row, previous), "revision": 1 if row["strategy_id"] == "two" else 0,
+                    "cursor": len(service.event_journal.events[row["strategy_id"]]), "fills_received": 2 if row["strategy_id"] == "two" else 0}
+                modules.persistence.JsonStateStore(row["state_file"]).save(worker_payload, expected_generation=0)
+                original_files[Path(row["state_file"])] = Path(row["state_file"]).read_bytes()
+            for name, config in (("old.json", previous), ("new.json", updated)):
+                (Path(directory)/name).write_text(json.dumps(config))
+            new, service2, broker2, _, resources = build(updated, all_ids)
+            broker2.gross = dict(broker.gross)
+            host = SimpleNamespace(account=new, service=service2, resources=resources,
+                strategies={sid: SimpleNamespace() for sid in service2._ports})
+            run = import_module("scripts.integration.shared_account.run")
+            with patch.object(run, "build_host", return_value=host) as builder, \
+                    patch.dict("sys.modules", {"dotenv": SimpleNamespace(load_dotenv=lambda *_: None)}), redirect_stdout(StringIO()):
+                migrate_scope.main(["--from-config", str(Path(directory)/"old.json"), "--to-config", str(Path(directory)/"new.json"), "--connect"])
+            self.assertTrue(builder.call_args.kwargs["read_only"])
+            migrated = modules.persistence.JsonStateStore(updated["account_state_file"]).load().payload
+            self.assertEqual(migrated["positions"]["strategy_positions"], raw["positions"]["strategy_positions"])
+            self.assertEqual(migrated["component_states"]["shared_account"]["shared"]["event_journal"],
+                raw["component_states"]["shared_account"]["shared"]["event_journal"])
+            self.assertEqual(migrated["ctp_drivers"], raw["ctp_drivers"])
+            self.assertEqual(new.driver.order_budget["submitted"], 2)
+            self.assertEqual(new.driver.submitted_orders, 0)
+            self.assertFalse(broker2.sent)
+            for p, content in original_files.items(): self.assertEqual(p.read_bytes(), content)
+            for row in updated["strategies"]:
+                saved = modules.persistence.JsonStateStore(row["state_file"]).load().payload
+                if row["kind"] == "cross_section":
+                    self.assertEqual((saved["revision"], saved["fills_received"], saved["cursor"]),
+                        (1, 2, len(service.event_journal.events["two"])))
+            # 用迁移后的真实共享/CTP组件恢复，原两腿保留，仅新增IH目标发新单。
+            resumed, service3, broker3, cross3, _ = build(updated, all_ids)
+            broker3.gross = dict(broker.gross)
+            resumed.start(resume=True); service3.start(); cross3.start(); resumed.authorize()
+            target4 = {**targets, all_ids[2]: Decimal(1), all_ids[3]: Decimal(0)}
+            cross3.submit_targets(replace(request, revision=2, targets=target4, metadata={"position_attribution": tuple(
+                dict(strategy_id="two", target_key=str(i), instrument_id=str(i), quantity=str(q)) for i, q in target4.items())}))
+            self.assertEqual(len(broker3.sent), 1)
+            self.assertEqual(broker3.sent[0]["InstrumentID"], "IH2610")
+            self.assertGreater(int(broker3.sent[0]["OrderRef"]), raw["ctp_drivers"]["account"]["next_ref"])
+            broker3.fill(broker3.sent[0]["OrderRef"])
+            self.assertEqual(service3.position_manager.position("two", "IM2610.CFFEX"), 1)
+            self.assertEqual(service3.position_manager.position("two", "IF2610.CFFEX"), -1)
+            self.assertEqual(service3.position_manager.position("two", "IH2610.CFFEX"), 1)
+            cross3.stop(); resumed.stop()
+            # 未决状态、外部新增合约仓位及原路由变化不能被迁移隐藏。
+            identity = self.configure_identity(new, service2, updated)
+            declaration = service2.snapshot_state()
+            for field in ("pending", "failed"):
+                bad = deepcopy(raw); bad["component_states"]["shared_account"][field] = True
+                with self.assertRaises(ValueError): migrate_scope.transform_scope_payload(bad, previous, updated, identity, declaration)
+            bad = deepcopy(raw)
+            bad["component_states"]["external_positions"]["gross"]["IH2610.CFFEX"] = ["1", "0"]
+            with self.assertRaisesRegex(ValueError, "外部持仓"):
+                migrate_scope.transform_scope_payload(bad, previous, updated, identity, declaration)
+            bad = deepcopy(raw)
+            bad["component_states"]["shared_account"]["shared"]["event_journal"]["requests"]["two:prior"]["status"] = "pending"
+            with self.assertRaisesRegex(ValueError, "IPC请求完成"):
+                migrate_scope.transform_scope_payload(bad, previous, updated, identity, declaration)
+            changed_identity = deepcopy(identity)
+            changed_identity["strategies"]["two"]["routes"]["routes"]["IM2610.CFFEX"] = "IM2612.CFFEX"
+            with self.assertRaisesRegex(ValueError, "原路由"):
+                migrate_scope.transform_scope_payload(raw, previous, updated, changed_identity, declaration)
+            changed_config = deepcopy(updated)
+            row = next(r for r in changed_config["strategies"] if r["kind"] == "cross_section")
+            row["strategy_id"] = "new-cross"
+            with self.assertRaisesRegex(ValueError, "策略ID"):
+                migrate_scope.validate_scope_configs(previous, changed_config)
 
     def configs(self, directory):
         old, new = Path(directory)/"old.json", Path(directory)/"new.json"

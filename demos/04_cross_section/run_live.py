@@ -17,7 +17,7 @@ from bomber.framework.trader.runtime.live.channels.ctp import required, build_si
 from bomber.framework.trader.runtime.live.channels.ctp import add_environment_arguments, validate_environment_arguments
 
 from bomber.framework.dataprep.live_references import LiveFuturesReferences, live_factor_policy
-from bomber.framework.dataprep.live_portfolio import CTP_PORTFOLIO_VENUES, ctp_futures_symbol
+from bomber.framework.dataprep.live_portfolio import CTP_PORTFOLIO_VENUES, CFFEX_INDEX_PRODUCTS, ctp_futures_symbol
 from bomber.framework.dataprep.reference_freshness import ReferenceFreshnessPolicy
 from bomber.framework.dataprep.sources import DataSourcePurpose, DolphinDbReferenceConfig, ReferenceSourceFactory
 from bomber.framework.market.basic.base import InstrumentId
@@ -94,8 +94,8 @@ def parse_args(argv=None, *, shared_execution=False):
     parser.add_argument("--report-dir", type=Path, default=Path(__file__).with_name("results"))
     args = parser.parse_args(argv)
     args.shared_execution = shared_execution
-    if shared_execution and {p.strip().upper() for p in args.products.split(",")} & {"IM", "IF"} and args.simnow_environment != "realtime":
-        parser.error("共享IM/IF执行仅支持realtime")
+    if shared_execution and {p.strip().upper() for p in args.products.split(",")} & CFFEX_INDEX_PRODUCTS and args.simnow_environment != "realtime":
+        parser.error("共享IM/IH/IC/IF执行仅支持realtime")
     try:
         market_config_from_args(args, domestic_contracts=True)
     except (ValueError, TypeError, OSError) as error:

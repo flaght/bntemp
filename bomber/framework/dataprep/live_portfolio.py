@@ -9,6 +9,7 @@ from .live_cache import LiveReferenceCache
 
 
 CTP_PORTFOLIO_VENUES = frozenset({"SHFE", "INE", "DCE", "CZCE"})
+CFFEX_INDEX_PRODUCTS = frozenset({"IM", "IH", "IC", "IF"})
 
 
 def ctp_futures_symbol(symbol, venue):
@@ -24,8 +25,8 @@ def ctp_futures_symbol(symbol, venue):
     if not 1 <= int(month[-2:]) <= 12 or (venue != "CZCE" and len(month) != 4):
         raise ValueError(f"无效的CTP期货交割月份: {symbol}.{venue}")
     if venue == "CFFEX":
-        if product.upper() not in {"IM", "IF"}:
-            raise ValueError("当前CFFEX代码适配仅支持IM/IF")
+        if product.upper() not in CFFEX_INDEX_PRODUCTS:
+            raise ValueError("当前CFFEX代码适配仅支持IM/IH/IC/IF")
         return product.upper() + month
     if venue == "CZCE":
         return product.upper() + month[-3:]

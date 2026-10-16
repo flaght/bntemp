@@ -111,6 +111,26 @@ class ReferenceSourceTests(unittest.TestCase):
         self.assertIn("adjustment_factors", views["cross_section"].manifest["sources"])
         self.assertNotIn("adjustment_factors", views["calendar_spread"].manifest["sources"])
 
+    def test_discover_four_cffex_products_uses_each_own_factor_and_multiplier(self):
+        self.im_if_tables()
+        for p, multiplier in (("IH", 300), ("IC", 200)):
+            self.sdk.data["fut_basic"] = pd.concat([self.sdk.data["fut_basic"], pd.DataFrame([
+                {"date": "2026-01-01", "Code": p+month, "contractObject": p, "exchangeCD": "CCFX",
+                 "minChgPriceNum": "0.2", "contMultNum": multiplier, "lastTradeDate": "2027-04-30"}
+                for month in ("2610", "2612")])], ignore_index=True)
+            self.sdk.data["fut_contract"] = pd.concat([self.sdk.data["fut_contract"], pd.DataFrame([
+                {"date": "2026-09-21", "Code": p, "main": p+"2612", "second": p+"2612"}])], ignore_index=True)
+            self.sdk.data["fut_adjustment_factors"] = pd.concat([self.sdk.data["fut_adjustment_factors"], pd.DataFrame([
+                {"date": "2026-09-21", "Code": p+"2610", "contractObject": p, "pcr_cumfactor": "1.2"}])], ignore_index=True)
+        from scripts.integration.shared_account.discover import observe_reference_views
+        _, views = observe_reference_views(self.source, trading_day=DAY, environment="realtime", product="IM",
+            roles=("main", "secondary"), products=("IM", "IH", "IC", "IF"), clock_ns=lambda: self.now)
+        cross = views["cross_section"]
+        self.assertEqual(set(cross.instrument_specs), {"IM", "IH", "IC", "IF"})
+        for p, multiplier in (("IM", 200), ("IH", 300), ("IC", 200), ("IF", 300)):
+            self.assertEqual(cross.assignment.instrument(p, "main"), p.lower()+"2610")
+            self.assertEqual(cross.instrument_specs[p]["main"].multiplier, multiplier)
+
     def test_discover_missing_factor_is_not_reported_as_observed_role_only_success(self):
         self.im_if_tables()
         self.sdk.data["fut_adjustment_factors"] = self.sdk.data["fut_adjustment_factors"].iloc[0:0]

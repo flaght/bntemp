@@ -1,0 +1,113 @@
+{
+  "revision": "REV33",
+  "status": "offline_passed_remote_cffex_expansion_pending",
+  "request": "Cross-section IM/IH/IC/IF; user confirmed existing fills in original IM/IF three-worker session",
+  "profile": "cffex-four",
+  "cross_products": [
+    "IM",
+    "IH",
+    "IC",
+    "IF"
+  ],
+  "group_fraction": "0.5",
+  "rank_group_size": 2,
+  "history": {
+    "ema": 240,
+    "calendar": 120,
+    "cross": 21
+  },
+  "budget": "seven owned legs at observed ask+one tick; each-side equal budget covers two times largest observed cross leg notional; never decreases existing account limits",
+  "migration": {
+    "prepare": "prepare_session --profile cffex-four --from-config original im_if_joint.json",
+    "apply": "existing migrate_scope same-day readonly flow; original account and all strategy IDs preserved",
+    "preserved": [
+      "all original checkpoints as bytes",
+      "strategy positions and attribution",
+      "orders and allocation history",
+      "event and request journals",
+      "worker consumption cursors and fill counters",
+      "strategy and portfolio revisions",
+      "CTP next OrderRef and trade deduplication data",
+      "used order budget"
+    ],
+    "changed": [
+      "new separate destination files",
+      "two new zero owned routes",
+      "expanded route declarations and managed scope",
+      "observed account quantity/notional budget",
+      "cross products and expected contracts",
+      "cross side notional if needed"
+    ],
+    "refused": [
+      "different TD day or execution mode",
+      "changed original strategy IDs or IM/IF routes",
+      "pending sends or IPC requests",
+      "active/unsettled orders",
+      "missing worker checkpoint for traded source",
+      "preexisting external holdings on newly managed index contracts",
+      "preexisting destination state files"
+    ],
+    "actual_cli_test": "Real migrate_scope.main + CtpSharedAccountLifecycle + JsonStateStore; app build_host returns real fixture assembly; broker transport and SDK types are substitutes",
+    "after_restore_test": "Original IM long and IF short remain owned by same cross strategy; only new IH target sends next higher OrderRef"
+  },
+  "unique_passed_tests": 252,
+  "passed_modules": [
+    {
+      "module": "shared-account",
+      "tests": 81,
+      "exit_code": 0,
+      "log": "tests/results/main-ema-acceptance-1792130177918407000/shared-account.log"
+    },
+    {
+      "module": "shared-ipc",
+      "tests": 32,
+      "exit_code": 0,
+      "log": "tests/results/main-ema-acceptance-1792130177918407000/shared-ipc.log"
+    },
+    {
+      "module": "shared-discovery",
+      "tests": 4,
+      "exit_code": 0,
+      "log": "tests/results/main-ema-acceptance-1792130177918407000/shared-discovery.log"
+    },
+    {
+      "module": "cross-history",
+      "tests": 15,
+      "exit_code": 0,
+      "log": "tests/results/main-ema-acceptance-1792130177918407000/cross-history.log"
+    },
+    {
+      "module": "live-common",
+      "tests": 120,
+      "exit_code": 0,
+      "log": "tests/results/main-ema-acceptance-1792130177918407000/live-common.log"
+    }
+  ],
+  "broker_connected": false,
+  "database_connected": false,
+  "real_broker_orders_submitted": 0,
+  "user_runtime_files_modified": false,
+  "native_entry_pending": [
+    "Linux cross-live four-product shared parser/assembly checks"
+  ],
+  "remote_remaining": [
+    "clean stop original workers then server",
+    "current four-product readonly observation and budget",
+    "readonly same-day migration and resume preflight",
+    "joint real-SimNow signals/fills and final account reconciliation"
+  ],
+  "runbook": "scripts/integration/shared_account/CFFEX_FOUR_JOINT_ACCEPTANCE.md",
+  "sources": {
+    "bomber/framework/dataprep/live_portfolio.py": "6e48882106e8d9783e51f4e38e572c18a1445dea12b3d99507f88b284ffd0abd",
+    "demos/04_cross_section/run_live.py": "b19f607c267c70eff6886c33cf7ab5c66107ce9441322afe844e925930f64654",
+    "scripts/integration/shared_account/discover.py": "6904feb84585c25dd7e24ce159209066fed726d4e30ab7ac805dd530c30da14d",
+    "scripts/integration/shared_account/migrate_scope.py": "5afa496556b16daa65c21edae18f72f7048a5e0251f8a2f39b98f08099729f9e",
+    "scripts/integration/shared_account/prepare_session.py": "bcf6a47eb934b5b49fa41fd350481f40db4b563657fe72d178c7814ddc83eb0e",
+    "tests/run_main_ema_acceptance.py": "ca3a27c64c71903f4bfc4cd8abafb3bdb1f7b91a4d30a4573cde4f37487fcfa4",
+    "tests/test_cross_section_history.py": "cef2a6c416fd86119da51c498c07dc8ffded8c7c6402f2949be83219b7b7fc9a",
+    "tests/test_cross_section_live.py": "62e54cc1fb26417dde90f4caff4e6cc6571b73325fef4cf904b12ed7c1bb1635",
+    "tests/test_reference_sources.py": "b12f9971f0fd918e7066f682656cbd184d7d141297d8bbc26fcc7f0a80c67fa2",
+    "tests/test_shared_process_cli.py": "c063c8c8379b3c1423cbd1f3be699aa930a8f0d112c3883642b8a33e02af7548",
+    "tests/test_shared_scope_migration.py": "656c2bce8b1ec31f91a3196246f637b9d1dada722e20e340cd368fdef3d7bf78"
+  }
+}

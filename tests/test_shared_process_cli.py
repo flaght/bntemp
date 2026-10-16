@@ -16,6 +16,59 @@ from scripts.integration.shared_account import config, prepare_session, server, 
 
 
 class ProcessCliTests(unittest.TestCase):
+    def test_cffex_four_profile_preserves_traded_identities_in_separate_migration_files(self):
+        from scripts.integration.shared_account.migrate_scope import validate_scope_configs
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            observed, original, expanded = (root/name for name in ("observed.json", "old.json", "four.json"))
+            contracts = {p: {"main": p+"2612.CFFEX"} for p in ("IM", "IH", "IC", "IF")}
+            contracts["IM"]["secondary"] = "IM2703.CFFEX"
+            routes = {"main_ema": {"IM": {"main": "IM2610.CFFEX"}},
+                "calendar_spread": {"IM": contracts["IM"]},
+                "cross_section": {p: {"main": p+"2610.CFFEX"} for p in ("IM", "IF")}}
+            instruments = ("IM2610.CFFEX", "IM2612.CFFEX", "IM2703.CFFEX", "IF2610.CFFEX", "IH2610.CFFEX", "IC2610.CFFEX")
+            data = {"status": "observed", "orders_submitted": 0, "verification": "readonly_dates_and_contracts",
+                "environment": "realtime", "profile": "im-if", "contracts": contracts, "strategy_contracts": routes,
+                "session_arguments": {"trading_day": "20261016", "source_day": "20261015", "replay_md_trading_day": None},
+                "instrument_specs": {i: {"tick": "0.2", "multiplier": 300 if i.startswith(("IH", "IF")) else 200} for i in instruments},
+                "quotes": {i: {"bid": 5000 if i.startswith(("IH", "IF")) else 10000,
+                    "ask": 5001 if i.startswith(("IH", "IF")) else 10001} for i in instruments}}
+            common = ["--environment", "realtime", "--execution-mode", "independent", "--use-observed-budget", "--observations", str(observed)]
+            observed.write_text(json.dumps(data))
+            with redirect_stdout(StringIO()):
+                prepare_session.main(["--output", str(original), "--profile", "im-if", *common])
+            old = config.read_config(original)
+            state = Path(old["account_state_file"])
+            state.parent.mkdir(parents=True)
+            state.write_bytes(b"untouched existing checkpoint")
+            data["profile"] = "cffex-four"
+            data["strategy_contracts"]["cross_section"] = {p: {"main": p+"2610.CFFEX"} for p in ("IM", "IH", "IC", "IF")}
+            observed.write_text(json.dumps(data))
+            with redirect_stdout(StringIO()):
+                prepare_session.main(["--output", str(expanded), "--profile", "cffex-four", "--from-config", str(original), *common])
+            new = config.read_config(expanded)
+            validate_scope_configs(old, new)
+            self.assertEqual(new["account"]["client_id"], old["account"]["client_id"])
+            self.assertEqual([r["strategy_id"] for r in new["strategies"]], [r["strategy_id"] for r in old["strategies"]])
+            self.assertEqual(new["account"]["max_gross_quantity"], "7")
+            self.assertEqual(new["account"]["max_session_orders"], 200)
+            self.assertNotEqual(new["account_state_file"], old["account_state_file"])
+            cross = new["strategies"][1]["argv"]
+            self.assertEqual(cross[cross.index("--products")+1], "IM,IH,IC,IF")
+            self.assertEqual(cross[cross.index("--history-minutes")+1], "21")
+            self.assertEqual(cross[cross.index("--group-fraction")+1], "0.5")
+            self.assertGreater(Decimal(cross[cross.index("--target-notional")+1]), 4000000)
+            self.assertEqual(state.read_bytes(), b"untouched existing checkpoint")
+            for i in (0, 2):
+                self.assertEqual(new["strategies"][i]["argv"], old["strategies"][i]["argv"])
+            for p in ("IM", "IH", "IC", "IF"):
+                self.assertIn(p+"="+p+"2610.CFFEX", cross)
+
+    def test_cffex_profile_never_silently_ignores_explicit_cross_products(self):
+        self.assertEqual(prepare_session.profile_cross_products("cffex-four", None), ("IM", "IH", "IC", "IF"))
+        with self.assertRaisesRegex(ValueError, "静默忽略"):
+            prepare_session.profile_cross_products("im-if", ("IM", "IH", "IC", "IF"))
+
     def test_im_if_profile_builds_pinned_contracts_observed_budget_and_three_history_windows(self):
         with TemporaryDirectory() as directory:
             root = Path(directory)
