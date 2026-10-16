@@ -94,8 +94,11 @@ class LocalExecutionLifecycle:
         session.runner.begin_bars()
         print("策略会话就绪：独立策略执行，无物理账户关联", flush=True)
 
+    def _execution_failed(self, session):
+        return bool(session.client.report_errors)
+
     def poll(self, session):
-        if getattr(session.runner, "failure", None) or session.client.report_errors:
+        if getattr(session.runner, "failure", None) or self._execution_failed(session):
             raise RuntimeError("独立策略执行或行情发生冲突")
         if not session.runner.session_ready():
             raise RuntimeError("独立策略行情交易日、健康或接收心跳失效")
@@ -142,6 +145,10 @@ class LocalExecutionLifecycle:
 class RecordingExecutionLifecycle(LocalExecutionLifecycle):
     """记录标准目标；独立于行情厂商，不创建任何TD或模型成交。"""
     event_label = "Recording目标"
+
+    def _execution_failed(self, session):
+        # Recording没有订单回报通道；执行端健康由记录客户端启动状态判断。
+        return not session.client.is_started
 
     def verify(self, session):
         if session.runner.failure or not session.client.requests:

@@ -701,6 +701,17 @@ class CrossSectionLiveTests(unittest.TestCase):
         self.assertIsNone(managed.controller.driver)
         self.assertEqual(args.execution_policy.account_reconciliation.value, "off")
 
+    def test_ctp_recording_lifecycle_polls_recording_client(self):
+        s = self.session()
+        env = {"CTP_MD_ADDRESS": "tcp://fake:1234", "CTP_ACCOUNT_ID": "demo", "CTP_PASSWORD": "fake"}
+        with patch.dict(os.environ, env, clear=True):
+            lifecycle = live.CrossRecordingLifecycle(expected_trading_day="20260922")
+        self.assertFalse(hasattr(s.client, "report_errors"))
+        self.assertTrue(lifecycle.poll(s))
+        s.client.stop()
+        with self.assertRaisesRegex(RuntimeError, "执行或行情发生冲突"):
+            lifecycle.poll(s)
+
     def test_cffex_references_require_explicit_recording_venue_policy(self):
         self.service.products = ("IM", "IF")
         self.assignment = replace(self.assignment, contracts={"IM": {"main": "IM2611"}, "IF": {"main": "IF2611"}},

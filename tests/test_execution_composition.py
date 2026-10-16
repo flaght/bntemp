@@ -444,6 +444,41 @@ class ExecutionCompositionTests(unittest.TestCase):
         self.assertTrue(snapshots[0]["pending"])
         self.assertFalse(service.snapshot_state()["pending"])
 
+    def test_recording_lifecycle_poll_uses_actual_recording_client(self):
+        import_module('tests.test_live_common')
+        module = import_module('_test_live_runtime.live.local')
+        client = import_module('bomber.framework.trader.execution.recording').RecordingExecutionClient('recording')
+        lifecycle = module.RecordingExecutionLifecycle('20261016')
+        session = NS(client=client, runner=NS(failure=None, session_ready=lambda: True,
+            stale_instruments=lambda: {}, fixed_spec='fixed'),
+            references=NS(refresh=lambda: None, spec='fixed'))
+        client.start()
+        self.assertFalse(hasattr(client, 'report_errors'))
+        self.assertTrue(lifecycle.poll(session))
+        session.runner.failure = 'market callback failed'
+        with self.assertRaisesRegex(RuntimeError, '执行或行情发生冲突'):
+            lifecycle.poll(session)
+        session.runner.failure = None
+        client.stop()
+        with self.assertRaisesRegex(RuntimeError, '执行或行情发生冲突'):
+            lifecycle.poll(session)
+
+    def test_recording_lifecycle_poll_still_rejects_unhealthy_market(self):
+        import_module('tests.test_live_common')
+        module = import_module('_test_live_runtime.live.local')
+        client = import_module('bomber.framework.trader.execution.recording').RecordingExecutionClient('recording')
+        client.start()
+        session = NS(client=client, runner=NS(failure=None, session_ready=lambda: False))
+        with self.assertRaisesRegex(RuntimeError, '健康或接收心跳失效'):
+            module.RecordingExecutionLifecycle('20261016').poll(session)
+
+    def test_model_lifecycle_poll_still_rejects_report_errors(self):
+        import_module('tests.test_live_common')
+        module = import_module('_test_live_runtime.live.local')
+        session = NS(client=NS(report_errors=('model report conflict',)), runner=NS(failure=None))
+        with self.assertRaisesRegex(RuntimeError, '执行或行情发生冲突'):
+            module.LocalExecutionLifecycle('20261016').poll(session)
+
     def test_model_state_file_lock_is_per_strategy_not_per_account(self):
         import_module('tests.test_live_common')  # 初始化独立的Runtime测试包。
         module = import_module('_test_live_runtime.live.local')
