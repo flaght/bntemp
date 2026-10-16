@@ -31,7 +31,7 @@ from .strategy import CalendarSpreadConfig
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
-def parse_args(argv=None):
+def parse_args(argv=None, *, shared_execution=False):
     parser = argparse.ArgumentParser(description=__doc__)
     add_market_source_arguments(parser)
     parser.add_argument("--connect", action="store_true")
@@ -76,6 +76,9 @@ def parse_args(argv=None):
     parser.add_argument("--require-fills", action="store_true", help="额外要求本次取得归属成交")
     parser.add_argument("--report-dir", type=Path, default=Path(__file__).with_name("results"))
     args = parser.parse_args(argv)
+    args.shared_execution = shared_execution
+    if shared_execution and args.product.upper() in {"IM", "IF"} and args.simnow_environment != "realtime":
+        parser.error("共享IM/IF执行仅支持realtime")
     try:
         market_config_from_args(args, domestic_contracts=True)
     except (ValueError, TypeError, OSError) as error:
@@ -170,7 +173,7 @@ def prepare_inputs(args, context, lifecycle):
             max_refresh_duration_seconds=args.reference_max_refresh_duration_seconds))
     from bomber.framework.dataprep.live_portfolio import CTP_PORTFOLIO_VENUES
     references = CalendarReferences(service, args.product, (args.leg1_role, args.leg2_role),
-        allowed_venues=CTP_PORTFOLIO_VENUES | ({"CFFEX"} if args.mode == "recording" else set()))
+        allowed_venues=CTP_PORTFOLIO_VENUES | ({"CFFEX"} if args.mode == "recording" or getattr(args, "shared_execution", False) else set()))
     references.assert_expected(args.expected_instruments)
     context.references = references
     print(f"跨期参考: product={args.product} legs={references.instrument_ids} "

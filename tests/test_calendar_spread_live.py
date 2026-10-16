@@ -516,6 +516,17 @@ class CliTests(unittest.TestCase):
             managed = entry.build_runtime(args)
         self.assertIsNone(managed.controller.driver)
 
+    def test_im_shared_simnow_cli_retains_two_roles_and_history(self):
+        with TemporaryDirectory() as directory:
+            args = entry.parse_args(["--connect", "--mode", "simnow", "--product", "IM",
+                "--expected-trading-day", "20261016", "--expected-source-day", "20261015",
+                "--enable-orders", "--confirm-simnow", "--state-file", str(Path(directory)/"state.json"),
+                "--leg1-role", "main", "--leg2-role", "secondary", "--history-minutes", "120",
+                "--history-config", str(Path(__file__).resolve().parents[1]/"demos/03_calendar_spread/history_im.json"),
+                "--calendar-id", "china.cffex", "--no-session-overrides"], shared_execution=True)
+            self.assertTrue(args.shared_execution)
+            self.assertEqual((args.leg1_role, args.leg2_role, args.history_minutes), ("main", "secondary", 120))
+
     def test_defaults_roles_and_recording_no_td_policy(self):
         args = entry.parse_args(self.common)
         self.assertEqual((args.mode, args.leg1_role, args.leg2_role), ("recording", "secondary", "far"))

@@ -72,6 +72,17 @@ bars_used=250、last_target=1、fast_ema=9828.769185659849、slow_ema=9828.52357
 account_position=None、orders_submitted=0、cleanup_errors为空，符合仅MD Recording约定。
 因此01本次历史预热、实时接续和目标记录通过；物理报单未验。下一步验03 IM双腿。
 
+03随后按main+secondary组合完成在线Recording，用户回传最终status=passed，目录：
+`demos/03_calendar_spread/results/IM_ddb_recording/calendar-spread-recording-1792119928435472683`。
+实际固定双腿IM2612.CFFEX/IM2703.CFFEX；来源日2026-10-15的second与far均为IM2703，
+因此本次明确改用main+secondary，不是原默认secondary+far组合的验收。
+双腿初始历史均required=120、loaded=120、missing=0，另回补完整双腿1帧；
+最终history_frames=121、live_frames=9、complete_frames=130，两腿各9根实时Bar，
+pending_frames为空、expired_frame_count=0、session_readiness.ready=true、cleanup_errors为空。
+原始合约价差未使用复权因子。last_z=0.2369050077061904、direction=0、submissions=0，
+本次日志未触发开仓，因此通过范围为完整历史覆盖、双腿实时同步及信号计算，
+未验证03新目标下发或物理订单。此时01和04已另有在线目标记录证据；08无需滚动历史预热。
+
 ## 远程离线复验
 
 ```bash

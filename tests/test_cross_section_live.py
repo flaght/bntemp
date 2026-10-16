@@ -61,6 +61,19 @@ class FourVenueTdApi(fixtures.AdoptTdApi):
 
 
 class CrossSectionLiveTests(unittest.TestCase):
+    def test_im_if_shared_cli_accepts_pinned_cffex_contracts_and_history(self):
+        with TemporaryDirectory() as directory:
+            args = live.parse_args(["--connect", "--mode", "simnow", "--products", "IM,IF",
+                "--expected-trading-day", "20261016", "--expected-source-day", "20261015",
+                "--enable-orders", "--confirm-simnow", "--state-file", str(Path(directory)/"state.json"),
+                "--expected-instrument", "IM=IM2612.CFFEX", "--expected-instrument", "IF=IF2612.CFFEX",
+                "--history-config", str(Path(__file__).resolve().parents[1]/"demos/04_cross_section/history_cffex.json"),
+                "--history-minutes", "21", "--calendar-id", "china.cffex", "--no-session-overrides"],
+                shared_execution=True)
+            self.assertTrue(args.shared_execution)
+            self.assertEqual(args.history_minutes, 21)
+            self.assertEqual(set(args.expected_instruments), {"IM", "IF"})
+
     def four_venue_references(self):
         products = ("RB", "SC", "I", "MA")
         terms = {"RB": ("SHFE", 1, 10), "SC": ("INE", "0.1", 1000),

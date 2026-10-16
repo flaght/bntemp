@@ -21,6 +21,111 @@ class SharedAccountTests(unittest.TestCase):
     client = fixtures.ExecutionCompositionTests.client
     request = fixtures.ExecutionCompositionTests.request
 
+    def test_order_budget_is_saved_before_transport_and_not_refunded_after_send(self):
+        modules = self.native_modules()
+        with TemporaryDirectory() as directory:
+            path = Path(directory)/"account.json"
+            account, service, transport, (one, _), _ = self.native_account(path, modules)
+            account.start(resume=False); service.start(); one.start(); account.authorize()
+            send = transport.send_order
+            saved = []
+            def capture(fields):
+                state = json.loads(path.read_text())["payload"]["component_states"]["shared_account"]
+                saved.append(state["shared"]["order_budget"]["submitted"])
+                send(fields)
+            transport.send_order = capture
+            self.submit(one)
+            self.assertEqual(saved, [1])
+            self.assertEqual(account.driver.order_budget["submitted"], 1)
+            one.stop(); account.stop()
+
+    def test_budget_stop_cancel_failure_is_not_reported_as_normal_completion(self):
+        modules = self.native_modules()
+        with TemporaryDirectory() as directory:
+            account, service, transport, (one, _), _ = self.native_account(Path(directory)/"account.json", modules)
+            self.addCleanup(account.driver.stop)
+            account.driver._max_session_orders = 1
+            account.start(resume=False); service.start(); one.start(); account.authorize()
+            self.submit(one, 2)
+            transport.cancel_order = lambda *_: (_ for _ in ()).throw(RuntimeError("cancel transport failed"))
+            with self.assertRaisesRegex(RuntimeError, "cancel transport failed"):
+                service.poll()
+            self.assertTrue(service._failed)
+            self.assertTrue(account.driver._orders)
+            self.assertEqual(service.position_manager.working_quantity(service.client_id, self.instrument), 2)
+
+    def test_budget_rejects_whole_two_leg_batch_before_any_leg_is_sent(self):
+        modules = self.native_modules()
+        extra = type(self.instrument).from_str("HC.SHFE")
+        with TemporaryDirectory() as directory:
+            account, service, transport, _, _ = self.native_account(Path(directory)/"account.json", modules,
+                scoped=True, execution_mode="independent", extra_instruments=(extra,))
+            account.driver._max_session_orders = 1
+            service.prices.update(extra, 3000, self.now)
+            port = service.strategy_client("pair", routes={"a": self.instrument, "b": extra},
+                budget=import_module("bomber.framework.trader.execution.shared").SharedRiskBudget(5, 50000))
+            account.start(resume=False); service.start(); port.start(); account.authorize()
+            request = replace(self.request(service.client_id, strategy="pair", timestamp=self.now),
+                targets={self.instrument: Decimal(1), extra: Decimal(-1)}, metadata={"position_attribution": tuple(
+                    {"strategy_id": "pair", "target_key": key, "instrument_id": str(i), "quantity": str(q)}
+                    for key, i, q in (("a", self.instrument, 1), ("b", extra, -1)))})
+            port.submit_targets(request)
+            self.assertEqual(service.execution_stop["requested"], 2)
+            self.assertFalse(transport.sent)
+            self.assertFalse(service._failed or service._pending)
+            self.assertFalse(service.position_manager.attribution.state()["orders"])
+            service.poll(); port.stop(); account.stop()
+
+    def test_budget_counter_and_stop_survive_resume_without_reporting_new_sends(self):
+        modules = self.native_modules()
+        with TemporaryDirectory() as directory:
+            path = Path(directory)/"account.json"
+            account, service, transport, (one, _), _ = self.native_account(path, modules, execution_mode="independent")
+            account.driver._max_session_orders = 1
+            account.start(resume=False); service.start(); one.start(); account.authorize()
+            self.submit(one)
+            transport.fill(transport.sent[-1]["OrderRef"])
+            service.poll(); one.stop(); account.stop()
+            resumed, service2, transport2, _, _ = self.native_account(path, modules, execution_mode="independent")
+            resumed.driver._max_session_orders = 1
+            transport2.gross = dict(transport.gross)
+            resumed.start(resume=True)
+            self.assertEqual(resumed.driver.order_budget["submitted"], 1)
+            self.assertEqual(resumed.driver.submitted_orders, 0)
+            self.assertEqual(service2.execution_stop["reason"], "order_budget_exhausted")
+            with self.assertRaisesRegex(RuntimeError, "报单上限"):
+                resumed.driver.check_order_capacity(1)
+            resumed.stop()
+            # 只有运行入口显式声明新窗口额度时才允许重置计数，原仓和归属仍保留。
+            window, service3, transport3, _, _ = self.native_account(path, modules, execution_mode="independent")
+            window.driver._max_session_orders = 1
+            window.driver.new_order_budget_window = True
+            transport3.gross = dict(transport.gross)
+            window.start(resume=True)
+            self.assertEqual(window.driver.order_budget["submitted"], 0)
+            self.assertIsNone(service3.execution_stop)
+            self.assertEqual(service3.position_manager.position("one", "main"), 1)
+            window.driver.check_order_capacity(1)
+            window.stop()
+
+    def test_independent_cffex_owners_open_opposite_and_close_only_their_own(self):
+        modules = self.native_modules()
+        self.instrument = type(self.instrument).from_str("IM2612.CFFEX")
+        with TemporaryDirectory() as directory:
+            account, service, transport, (one, two), _ = self.native_account(Path(directory)/"account.json", modules,
+                scoped=True, execution_mode="independent", generic_close_venues=("CFFEX",))
+            account.start(resume=False); service.start(); one.start(); two.start(); account.authorize()
+            self.submit(one, 1); transport.fill(transport.sent[-1]["OrderRef"])
+            self.submit(two, -1); transport.fill(transport.sent[-1]["OrderRef"])
+            self.assertEqual(transport.gross[str(self.instrument)], (1, 1))
+            self.submit(one, 0, revision=2)
+            self.assertEqual(transport.sent[-1]["CombOffsetFlag"], "1")
+            transport.fill(transport.sent[-1]["OrderRef"])
+            self.assertEqual(service.position_manager.position("one", "main"), 0)
+            self.assertEqual(service.position_manager.position("two", "main"), -1)
+            account._validate_account()
+            one.stop(); two.stop(); account.stop()
+
     def service(self, *, quantity=10, notional=100000, max_events=10000):
         self.timestamp = time.time_ns()
         self.now = self.timestamp
@@ -292,7 +397,7 @@ class SharedAccountTests(unittest.TestCase):
             events=import_module("bomber.framework.trader.execution.events"))
 
     def native_account(self, path, modules, *, scoped=False, execution_mode="netted", preserve_external=False,
-                       extra_instruments=()):
+                       extra_instruments=(), generic_close_venues=()):
         owner = self
         self.timestamp = time.time_ns()
         self.now = self.timestamp
@@ -390,6 +495,7 @@ class SharedAccountTests(unittest.TestCase):
                 driver, trading_day="20261013", price_increments={i: 1 for i in limits}, multipliers={i: 1 for i in limits},
                 instrument_limits=limits, session_check=lambda: driver.is_simnow_session, orders=True,
                 positions=positions, prices=prices, instrument_scope=scope, limit_offset_ticks=0,
+                generic_close_venues=generic_close_venues,
                 account_reconciliation="observe" if preserve_external else "strict")
             client, backend, ledger = execution.client, execution.backend, execution.ledger
         shared = import_module("bomber.framework.trader.execution.shared")
@@ -1640,7 +1746,7 @@ class SharedConfigTests(unittest.TestCase):
                 self.assertEqual("--resume" in calls[-1][0], resume)
             row["kind"] = "calendar_spread"
             self.assertIs(factories.strategy_arguments(row, config, resume=False)[1], parsed)
-            self.assertEqual(calls[-1][1], {})
+            self.assertEqual(calls[-1][1], {"shared_execution": True})
             row["kind"] = "cross_section"
             self.assertIs(factories.strategy_arguments(row, config, resume=False)[1], parsed)
             row["kind"] = "option_vega"

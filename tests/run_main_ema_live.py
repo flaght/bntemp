@@ -145,6 +145,22 @@ class ManualMd(MarketDataFeed):
 
 
 class LiveTests(unittest.TestCase):
+    def test_im_shared_simnow_parser_and_assembly_venue_gate(self):
+        from datetime import date
+        from types import SimpleNamespace
+        with TemporaryDirectory() as directory:
+            argv = ["--connect", "--mode", "simnow", "--product", "IM", "--expected-instrument", "IM2612.CFFEX",
+                "--expected-trading-day", "20261016", "--expected-source-day", "20261015",
+                "--enable-orders", "--confirm-simnow", "--state-file", str(Path(directory)/"state.json")]
+            args = live.parse_args(argv, shared_execution=True)
+            references = SimpleNamespace(spec=SimpleNamespace(venue="CFFEX", currency="CNY"),
+                instrument_id=live.InstrumentId.from_str("IM2612.CFFEX"), trading_day=date(2026,10,16))
+            with patch.object(live, "assemble_minute_market", side_effect=RuntimeError("venue gate passed")), \
+                    self.assertRaisesRegex(RuntimeError, "venue gate passed"):
+                live.assemble(args, references, None, None, shared_service=object(), strategy_id="im-shared")
+            with redirect_stderr(StringIO()), self.assertRaises(SystemExit):
+                live.parse_args(argv)
+
     def setUp(self):
         temporary = TemporaryDirectory(prefix="main-ema-live-")
         self.addCleanup(temporary.cleanup)

@@ -32,6 +32,114 @@ class SharedIpcTests(unittest.TestCase):
     native_account = fixtures.SharedAccountTests.native_account
     request = fixtures.SharedAccountTests.request
 
+    def test_budget_stop_keeps_ipc_alive_for_partial_fill_cancel_and_final_ack(self):
+        from bomber.framework.trader.execution.contracts import OrderBudgetExhausted
+        from bomber.framework.trader.execution.ipc_client import RemoteAccountService
+        from bomber.framework.trader.execution.shared import SharedRiskBudget
+        with TemporaryDirectory() as directory:
+            _, account, service, transport, protocol = self.prepare(Path(directory)/"account.json")
+            account.driver._max_session_orders = 1
+            owner = self
+            class Connection:
+                sid, lease, sequence = "one", None, 0
+                def call(self, action, data):
+                    self.sequence += 1
+                    result = owner.call(protocol, "one", action, data, lease=self.lease,
+                        request_id=str(self.sequence))
+                    if action == "attach": self.lease = result["lease"]
+                    return result
+            connection = Connection()
+            remote = RemoteAccountService(connection, service._ports["one"].configuration(), protocol.state("one"))
+            port = remote.strategy_client("one", routes={"main": self.instrument},
+                budget=SharedRiskBudget(5,50000), instrument_limits=service._ports["one"].instrument_limits)
+            port.ready_check = lambda: True
+            port.start(); port.drain_events()
+            remote.prices.update(self.instrument, 100, self.now)
+            port.submit_targets(self.request(service.client_id, strategy="one", quantity=2, timestamp=self.now))
+            transport.fill(transport.sent[-1]["OrderRef"], 1)
+            protocol.poll()
+            with self.assertRaises(OrderBudgetExhausted):
+                port.drain_events()
+            self.assertEqual(remote.position_manager.position("one", "main"), 1)
+            port.begin_stop()
+            self.assertEqual(protocol.journal.ack["one"], len(protocol.journal.events["one"]))
+            self.assertFalse(protocol.leases)
+            self.assertFalse(service._failed or service._pending)
+            self.assertEqual(len(transport.sent), 1)
+            self.assertTrue(all(r["status"] == "completed" for r in protocol.journal.requests.values()))
+            account.stop()
+
+    def test_actual_server_budget_stop_drains_three_clients_and_writes_completed_report(self):
+        from unittest.mock import patch
+        from contextlib import redirect_stdout
+        from io import StringIO
+        from scripts.integration.shared_account import server, run
+        from bomber.framework.trader.execution.ipc import UnixExecutionConnection
+        from bomber.framework.trader.execution.ipc_client import RemoteAccountService
+        from bomber.framework.trader.execution.shared import SharedRiskBudget
+        from bomber.framework.trader.execution.contracts import OrderBudgetExhausted
+        import json
+        with nullcontext(self.enterContext(TemporaryDirectory(dir="/tmp"))) as directory:
+            root = Path(directory)
+            _, account, service, transport, _ = self.prepare(root/"account.json")
+            account.driver._max_session_orders = 1
+            cancel = transport.cancel_order
+            def late_fill_before_cancel(ref):
+                transport.fill(ref, 1)
+                cancel(ref)
+            transport.cancel_order = late_fill_before_cancel
+            host = SimpleNamespace(account=account, service=service,
+                strategies={sid: SimpleNamespace(session=SimpleNamespace()) for sid in service._ports},
+                resources=SimpleNamespace(close=lambda: None),
+                snapshot=lambda: {"execution_diagnostics": {"service_failed": service._failed}})
+            args = SimpleNamespace(socket=root/"exec.sock", credentials_dir=root/"keys", resume=False,
+                remaining_orders=None)
+            errors = []
+            def control():
+                try:
+                    server._run(args, {"seconds": 10, "trading_day": "20261013", "report_dir": str(root)}, threading.Event())
+                except BaseException as error:
+                    errors.append(error)
+            with patch.object(run, "build_host", return_value=host), \
+                    patch.object(server, "connect_valuation_market", return_value=None), \
+                    patch.dict("sys.modules", {"dotenv": SimpleNamespace(load_dotenv=lambda *_: None)}), \
+                    redirect_stdout(StringIO()):
+                thread = threading.Thread(target=control)
+                thread.start()
+                ports = []
+                try:
+                    until = time.monotonic() + 5
+                    while not (args.credentials_dir/"three.json").exists() and time.monotonic() < until:
+                        time.sleep(0.01)
+                    for sid, original in service._ports.items():
+                        credentials = json.loads((args.credentials_dir/f"{sid}.json").read_text())
+                        connection = UnixExecutionConnection(args.socket, sid, credentials["key"], timeout=5)
+                        remote = RemoteAccountService(connection, original.configuration(), connection.call("describe", {})["state"])
+                        port = remote.strategy_client(sid, routes={"main": self.instrument},
+                            budget=SharedRiskBudget(5,50000), instrument_limits=original.instrument_limits)
+                        port.ready_check = lambda: True
+                        port.start(); port.drain_events()
+                        ports.append(port)
+                    ports[0].service.prices.update(self.instrument, 100, self.now)
+                    ports[0].submit_targets(self.request(service.client_id, strategy="one", quantity=2, timestamp=self.now))
+                    for port in ports:
+                        with self.assertRaises(OrderBudgetExhausted):
+                            port.drain_events()
+                        port.begin_stop()
+                finally:
+                    thread.join(8)
+                self.assertFalse(thread.is_alive())
+                self.assertFalse(errors, errors)
+            report = json.loads(next(root.glob("shared-account-server-*/summary.json")).read_text())
+            self.assertEqual(report["status"], "completed")
+            self.assertEqual(report["stop_reason"], "order_budget_exhausted")
+            self.assertIsNone(report["failure"])
+            self.assertIsNone(report["shutdown_failure"])
+            self.assertEqual(report["final_active_orders"], 0)
+            self.assertEqual(len(transport.sent), 1)
+            self.assertFalse(args.socket.exists())
+            self.assertEqual(ports[0].position_manager.position("one", "main"), 1)
+
     def test_poll_publishes_owned_route_prices_before_signals_and_rejects_future_or_foreign(self):
         with nullcontext(self.enterContext(TemporaryDirectory())) as directory:
             _, _, service, transport, protocol = self.prepare(Path(directory)/"account.json")

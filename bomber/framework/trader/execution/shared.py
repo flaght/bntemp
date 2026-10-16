@@ -97,6 +97,7 @@ class SharedAccountExecutionService(AccountExecutionService):
         self._cancelled = set()
         self.bootstrap_signals = {}
         self.event_journal = None
+        self.execution_stop = None
         self.client.backend = _SharedAccountBackend(self, client.backend)
         self.client.register_execution_event_handler(self._route_event)
 
@@ -236,6 +237,22 @@ class SharedAccountExecutionService(AccountExecutionService):
             for order in self.position_manager.attribution.state()["orders"].values())
 
     def _send(self, request):
+        from .contracts import OrderBudgetExhausted
+        if self.execution_stop is not None:
+            return
+        try:
+            self._send_available(request)
+        except OrderBudgetExhausted as error:
+            self.stop_for_order_budget(error)
+
+    def stop_for_order_budget(self, error):
+        self.execution_stop = error.state()
+        for sid, port in self._ports.items():
+            if port._started and sid not in self._suspended:
+                self.suspend_strategy(sid)
+        self._save()
+
+    def _send_available(self, request):
         now = self.clock_ns()
         with self._lock:
             sources = deepcopy(self._sources)
@@ -304,6 +321,15 @@ class SharedAccountExecutionService(AccountExecutionService):
                     or self.position_manager.is_recovery_required(self.client_id)
                     or getattr(self.client, "portfolio_failure", None)):
                 raise RuntimeError("共享账户执行状态不明，保持闭闸")
+            driver = getattr(self.client.backend, "driver", None)
+            if self.execution_stop is None and driver is not None:
+                from .contracts import OrderBudgetExhausted
+                try:
+                    check = getattr(driver, "check_order_capacity", None)
+                    if callable(check):
+                        check(1)
+                except OrderBudgetExhausted as error:
+                    self.stop_for_order_budget(error)
             now = self.clock_ns()
             with self._lock:
                 expired = [sid for sid, source in self._sources.items()
@@ -422,6 +448,10 @@ class SharedAccountExecutionService(AccountExecutionService):
             state["shared"] = {"version": 1, "budget": self.budget.state(),
                 "routes": {sid: port.configuration() for sid, port in self._ports.items()},
                 "suspended": sorted(self._suspended), "draining": sorted(self._draining)}
+            state["shared"]["execution_stop"] = deepcopy(self.execution_stop)
+            driver = getattr(self.client.backend, "driver", None)
+            if driver is not None and hasattr(driver, "order_budget"):
+                state["shared"]["order_budget"] = driver.order_budget
             if self.execution_mode != "netted":
                 state["shared"]["execution_mode"] = self.execution_mode
             if self.event_journal is not None:
@@ -495,6 +525,13 @@ class SharedAccountExecutionService(AccountExecutionService):
                     or (deadline is not None and (isinstance(deadline, bool) or not isinstance(deadline, int) or deadline < 0))):
                 raise ValueError("恢复贡献的路由、期限或政策无效")
         super().restore_state(state)
+        driver = getattr(self.client.backend, "driver", None)
+        new_window = getattr(driver, "new_order_budget_window", False)
+        self.execution_stop = None if new_window else deepcopy(shared.get("execution_stop"))
+        if driver is not None and hasattr(driver, "restore_order_budget") and not new_window:
+            budget_state = shared.get("order_budget", {**driver.order_budget,
+                "submitted": len(self.client.order_state_machine.states())})
+            driver.restore_order_budget(budget_state)
         if self.event_journal is not None and any(row["status"] != "completed"
                 for row in self.event_journal.requests.values()):
             self._failed = True
@@ -604,6 +641,8 @@ class SharedStrategyExecutionClient:
             raise ValueError("策略端口请求身份不符")
         # 暂停后的新版本可恢复；旧版本重发不能解除暂停。
         with self.service._dispatch_lock:
+            if self.service.execution_stop is not None:
+                return
             source = self.service._sources.get(self.strategy_id)
             was_suspended = self.strategy_id in self.service._suspended
             if was_suspended:

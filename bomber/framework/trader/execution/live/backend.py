@@ -65,6 +65,11 @@ class NautilusLiveExecutionBackend:
             )
         self.driver.submit_order(order)
 
+    def check_order_capacity(self, quantity):
+        check = getattr(self.driver, "check_order_capacity", None)
+        if callable(check):
+            check(quantity)
+
     def register_report_handler(
         self,
         handler: Callable[[ExecutionReport], None],

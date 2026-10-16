@@ -563,3 +563,22 @@ GAP10_THREE_STRATEGIES_OFFLINE_20261014.json；完整运行手册THREE_STRATEGIE
 calendar-live及实际三个独立worker同时运行/成交/单独停止恢复仍待核验。
 SHFE/INE独立昨仓、旧横截面已有交易历史的扩品种迁移不在本批自动恢复范围内。
 GAP10继续开放。
+
+## 2026-10-16 REV31：IM/IF共享执行与额度正常收尾
+
+原01/03/04入口在共享SimNow装配中允许CFFEX，保持各自Runner与真实成交归属。
+新增im-if只读观察/配置生成profile，固定01 IM240根、03 IM main+secondary120帧、
+04 IM/IF21帧，角色合约来自本次观察，账户预算按实际盘口逐腿计入，额度200笔。
+配置加载现在允许并解析三个策略原有历史参数；历史仍只预热，不产生历史订单。
+
+额度不足在实际订单批次冻结/发单前识别；双腿不因仅剩一笔而先发一腿。额度停止
+不会设置执行不明标记；暂停贡献、撤已知单并交付成交，账户socket保留至三个worker
+确认停止和事件游标后关闭。取消失败/确认超时等真故障仍保持failed。计数随订单
+写前保存，普通恢复不重置，显式新窗口机制保留。正常停止保留仓位，不自动平仓。
+
+本机254项通过，含实际server._run、Unix socket及三客户端额度收尾回归；柜台/SDK
+为替身。完整原生entry/calendar-live/cross-live、01历史调整及连续共享组受本机
+原生Bar/指标/dotenv缺失限制，待Linux复验。未联网、未修改旧运行账本。
+逐终端命令见scripts/integration/shared_account/IM_IF_JOINT_ACCEPTANCE.md；证据为
+doc/evidence/live/GAP10_IM_IF_SHARED_QUOTA_OFFLINE_20261016_REV31.json。
+本批不能登记IM/IF真实共享报单通过，GAP10整体仍开放。

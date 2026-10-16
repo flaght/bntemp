@@ -178,8 +178,8 @@ def parse_args(argv=None, *, shared_execution=False):
     except (ValueError, TypeError, OSError) as error:
         parser.error(str(error))
     if args.product.upper() in {"IM", "IF"}:
-        if args.mode not in {"recording", "model"} or args.run_forever or args.simnow_environment != "realtime":
-            parser.error("IM/IF首阶段仅支持realtime Recording/model单次观察")
+        if (args.mode not in {"recording", "model"} and not (shared_execution and args.mode == "simnow")) or args.run_forever or args.simnow_environment != "realtime":
+            parser.error("IM/IF仅支持realtime Recording/model或共享SimNow单次会话")
         if args.product.upper() == "IM" and not args.expected_instrument:
             parser.error("IM观察须声明--expected-instrument核对固定真实合约")
     if args.expected_instrument:
@@ -380,9 +380,9 @@ def prepare_inputs(args, context, lifecycle):
 def assemble(args, references, driver, upstream, *, positions=None, account_routes=(),
              shared_service=None, strategy_id=None):
     """与run_backtest相同：执行积木→策略→绑定声明→Runner。"""
-    allowed = {"CFFEX"} if args.product.upper() in {"IM", "IF"} and args.mode != "simnow" else {"SHFE", "INE"}
+    allowed = {"CFFEX"} if args.product.upper() in {"IM", "IF"} and (args.mode != "simnow" or shared_service is not None) else {"SHFE", "INE"}
     if references.spec.venue not in allowed or references.spec.currency != "CNY":
-        raise ValueError("主力EMA交易所/模式不支持：IM/IF仅CFFEX Recording/model，其他入口SHFE/INE")
+        raise ValueError("主力EMA交易所/模式不支持：IM/IF仅CFFEX观察或共享SimNow，其他入口SHFE/INE")
     if getattr(args, "expected_instrument", None) and references.instrument_id != InstrumentId.from_str(args.expected_instrument):
         raise ValueError(f"装配合约与显式预期不一致：expected={args.expected_instrument} "
             f"actual={references.instrument_id} spec.symbol={references.spec.symbol!r} "

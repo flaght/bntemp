@@ -119,6 +119,8 @@ def _run(args, config, stop_event):
     host = server = None
     diagnostics, failure, shutdown_failure, status = {}, None, None, "failed"
     failure_execution_diagnostics = None
+    stop_reason = None
+    budget_stop_started = None
     try:
         if args.socket.exists():
             raise RuntimeError("执行socket已存在；禁止接管其他账户服务")
@@ -167,12 +169,22 @@ def _run(args, config, stop_event):
 
         print(f"账户服务就绪：socket={args.socket}；策略客户端文件目录={args.credentials_dir}", flush=True)
         until = time.monotonic() + config["seconds"] + 120  # 给分终端启动和策略先停机留出时间。
-        while not stop_event.is_set() and time.monotonic() < until:
-            if valuation is not None and not valuation.check().ready:
+        while not stop_event.is_set() and (time.monotonic() < until or budget_stop_started is not None):
+            if host.service.execution_stop is None and valuation is not None and not valuation.check().ready:
                 raise RuntimeError(f"账户估值行情失效: {valuation.check().as_dict()}")
             server.poll()
             protocol.poll()
             host.account.poll()
+            if host.service.execution_stop is not None:
+                stop_reason = "order_budget_exhausted"
+                budget_stop_started = budget_stop_started or time.monotonic()
+                journal = protocol.journal
+                acknowledged = all(journal.ack[sid] == len(rows) for sid, rows in journal.events.items())
+                stopped = protocol.closed_tokens.keys() <= protocol.stopped_acknowledged
+                if not protocol.leases and not host.service._active_instruments() and acknowledged and stopped:
+                    break
+                if time.monotonic() - budget_stop_started > 30:
+                    raise RuntimeError("额度耗尽后回报/策略停止未在期限内确认，保留检查点")
             time.sleep(0.02)
         status = "completed"
     except StopRequested:
@@ -182,27 +194,37 @@ def _run(args, config, stop_event):
         failure_execution_diagnostics = capture_execution_failure(host)
         raise
     finally:
+        cleanup_errors = []
         try:
             if host:
                 if server:
                     for sid in tuple(protocol.leases):
-                        protocol.stop_owner(sid)
-                host.account.stop()
-                host.service.stop()
-                host.resources.close()
+                        try:
+                            protocol.stop_owner(sid)
+                        except Exception as error:
+                            cleanup_errors.append(str(error))
+                try:
+                    host.account.stop()
+                    host.service.stop()
+                except Exception as error:
+                    cleanup_errors.append(str(error))
+                if not cleanup_errors:
+                    host.resources.close()
+        finally:
             if server:
                 server.close()
-        except Exception as error:
-            shutdown_failure, status = str(error), "failed"
-            raise
-        finally:
+            if cleanup_errors:
+                shutdown_failure, status = "; ".join(cleanup_errors), "failed"
             report.write(status=status, fields={"failure": failure, "shutdown_failure": shutdown_failure,
+                "stop_reason": stop_reason,
                 "failure_execution_diagnostics": failure_execution_diagnostics,
                 "td_preflight": diagnostics, "account": host.service.snapshot_state() if host else None,
                 "final_gross": host.account.final_gross if host else None,
                 "final_active_orders": host.account.final_active_orders if host else None,
                 "verification": "independent_process_account_service"},
                 session=host, events=host.account.execution.backend.reports if host else ())
+        if cleanup_errors and failure is None:
+            raise RuntimeError(shutdown_failure)
 
 
 def main(argv=None):

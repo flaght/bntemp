@@ -16,8 +16,14 @@ def main(argv=None):
     parser.add_argument("--report-dir", type=Path, default=Path("scripts/integration/shared_account/results"))
     parser.add_argument("--output", type=Path, help="保存本次只读观察摘要，供会话生成器读取")
     parser.add_argument("--cross-products", type=parse_cross_products, default="CU,AL")
+    parser.add_argument("--profile", choices=("commodity", "im-if"), default="commodity")
     parser.add_argument("--ctp-future-buffer-ms", type=int, default=0)
     args = parser.parse_args(argv)
+    selected_product, selected_roles = ("IM", ("main", "secondary")) if args.profile == "im-if" else ("CU", ("secondary", "far"))
+    if args.profile == "im-if":
+        args.cross_products = ("IM", "IF")
+        if args.environment != "realtime":
+            parser.error("IM/IF联合观察仅支持realtime")
     if not 0 <= args.ctp_future_buffer_ms <= 100 or (args.ctp_future_buffer_ms and args.environment != "realtime"):
         parser.error("CTP未来事件缓冲须为realtime的0至100毫秒")
     from dotenv import load_dotenv
@@ -37,7 +43,7 @@ def main(argv=None):
     load_dotenv(PROJECT_ROOT / ".env")
     report = LiveRunReport(args.report_dir, prefix=f"three-discover-{args.environment}")
     report.begin()
-    status, failure, driver, feed, fields = "failed", None, None, None, {"cross_products": args.cross_products}
+    status, failure, driver, feed, fields = "failed", None, None, None, {"cross_products": args.cross_products, "profile": args.profile}
     with ExitStack() as resources:
         try:
             transport = build_simnow_transport(CtpTdApiTransport, client_id="three-discover",
@@ -60,8 +66,8 @@ def main(argv=None):
             resources.enter_context(source)
             references = [LiveFuturesReferences(source, products=(product,), trading_day=driver.trading_day,
                 started_ns=time.time_ns(), roles=roles, factor_roles=(), refresh_seconds=0)
-                for product, roles in [(p, ("main", "secondary", "far") if p == "CU" else ("main",))
-                    for p in dict.fromkeys(("CU", *args.cross_products))]]
+                for product, roles in [(p, tuple(dict.fromkeys(("main", *selected_roles))) if p == selected_product else ("main",))
+                    for p in dict.fromkeys((selected_product, *args.cross_products))]]
             source_days = {r.snapshot(time.time_ns()).source_day.strftime("%Y%m%d") for r in references}
             fields["observed_source_days"] = sorted(source_days)
             if len(source_days) != 1:
@@ -75,7 +81,8 @@ def main(argv=None):
             for references_by_product in references:
                 for product, specs in references_by_product.instrument_specs.items():
                     for role, spec in specs.items():
-                        instrument = InstrumentId.from_str(f"{spec.symbol.lower()}.{spec.venue}")
+                        from bomber.framework.dataprep.live_portfolio import ctp_futures_symbol
+                        instrument = InstrumentId.from_str(f"{ctp_futures_symbol(spec.symbol, spec.venue)}.{spec.venue}")
                         instruments[instrument] = spec
                         fields.setdefault("contracts", {}).setdefault(product, {})[role] = str(instrument)
                         fields.setdefault("instrument_specs", {})[str(instrument)] = {"tick": str(spec.tick), "multiplier": str(spec.multiplier)}
@@ -113,7 +120,7 @@ def main(argv=None):
             with quote_lock:
                 fields["quotes"] = deepcopy(quotes)
             fields["budget_upper_bound"] = observed_budget(fields["contracts"], fields["instrument_specs"],
-                fields["quotes"], args.cross_products)
+                fields["quotes"], args.cross_products, product=selected_product, roles=selected_roles)
             days = {row.trading_day for row in feed.depth_observations.values()}
             fields["observed_md_trading_days"] = sorted(days)
             if len(days) != 1:

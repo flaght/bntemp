@@ -212,6 +212,11 @@ class SharedAccountLiveHost:
             raise RuntimeError("共享宿主未运行")
         self.account.poll()
         self.service.poll()
+        if self.service.execution_stop is not None:
+            for item in self.strategies.values():
+                if item.active:
+                    self.stop_strategy(item.strategy_id, reason="order_budget_exhausted")
+            return
         for item in self.strategies.values():
             if not item.active:
                 continue

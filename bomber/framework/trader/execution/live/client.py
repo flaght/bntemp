@@ -204,6 +204,10 @@ class BackendExecutionClient:
                 raise RuntimeError(
                     "行情降级期间Live执行必须配置PreTradeRiskManager以校验真实仓位",
                 )
+            # 先检查整个实际批次，再冻结归属/增加在途；避免双腿只剩一笔时先发一腿。
+            capacity = getattr(self.backend, "check_order_capacity", None)
+            if callable(capacity):
+                capacity(len(orders))
             self._strategy_ids.add(request.strategy_id)
             orders = self.position_manager.attribution.prepare(request, orders)
             for order in orders:

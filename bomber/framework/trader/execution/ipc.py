@@ -121,6 +121,7 @@ class AccountExecutionProtocol:
         self.lease_seconds, self.stop_seconds = lease_seconds, stop_seconds
         self.leases = {}
         self.closed_tokens = {}
+        self.stopped_acknowledged = set()
         if service.event_journal is None:
             service.event_journal = ExecutionEventJournal(keys)
         self.journal = service.event_journal
@@ -142,7 +143,7 @@ class AccountExecutionProtocol:
             "positions": {key: str(service.position_manager.position(sid, key)) for key in port.routes},
             "working": {key: str(service.position_manager.attribution.working_quantity(
                 service.client_id, instrument, sid, key)) for key, instrument in port.routes.items()},
-            "ack": self.journal.ack[sid]}
+            "ack": self.journal.ack[sid], "execution_stop": self.service.execution_stop}
 
     def stop_owner(self, sid):
         port = self.service._ports[sid]
@@ -160,6 +161,7 @@ class AccountExecutionProtocol:
         lease = self.leases.pop(sid, None)
         if lease:
             self.closed_tokens[sid] = lease["token"]
+            self.stopped_acknowledged.discard(sid)
         self.service._save()
 
     def poll(self):
@@ -198,6 +200,7 @@ class AccountExecutionProtocol:
                                                              self.closed_tokens.get(sid, ""))):
                 raise ValueError("已停止连接的回报确认身份不符")
             self.journal.acknowledge(sid, data["cursor"])
+            self.stopped_acknowledged.add(sid)
             self.service._save()
             return {"state": self.state(sid)}
         if action == "attach":
@@ -208,6 +211,8 @@ class AccountExecutionProtocol:
             if sid in self.service._draining:
                 raise RuntimeError("旧策略撤单尚未完成")
             port.start()
+            self.closed_tokens.pop(sid, None)
+            self.stopped_acknowledged.discard(sid)
             token = secrets.token_hex(24)
             self.leases[sid] = {"token": token, "ready": False,
                                 "deadline": time.monotonic() + self.lease_seconds}
@@ -232,6 +237,9 @@ class AccountExecutionProtocol:
             with self.service.client._submit_lock:
                 return {"state": self.state(sid), "events": self.journal.read(sid, data["cursor"])}
         elif action in {"submit", "continue"}:
+            if self.service.execution_stop is not None:
+                return {"state": self.state(sid), "accepted": False,
+                        "reason": self.service.execution_stop["reason"]}
             if not lease["ready"]:
                 raise RuntimeError("策略行情/参考尚未就绪")
             self._update_prices(port, data["prices"])

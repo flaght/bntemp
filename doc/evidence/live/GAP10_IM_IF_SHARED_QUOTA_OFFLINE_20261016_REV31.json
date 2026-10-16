@@ -1,0 +1,131 @@
+{
+  "revision": "REV31",
+  "date": "2026-10-16",
+  "status": "implementation_ready_remote_acceptance_pending",
+  "verification": "offline_controlled_transport_and_actual_local_unix_socket",
+  "broker_connected": false,
+  "database_connected": false,
+  "real_broker_orders_submitted": 0,
+  "existing_runtime_checkpoints_modified": false,
+  "implementation": {
+    "strategy_entry_points": [
+      "01_main_ema",
+      "03_calendar_spread",
+      "04_cross_section"
+    ],
+    "profile": "im-if",
+    "mode": "realtime independent strategy processes with single account TD service",
+    "history": {
+      "ema_im": 240,
+      "calendar_im_main_secondary": 120,
+      "cross_im_if": 21
+    },
+    "order_limit": 200,
+    "budget": "current observed ask plus one tick * multiplier, five owned legs; duplicate IM counted per strategy",
+    "quota_stop": "reject new target execution, cancel known working orders, deliver and acknowledge events, wait for worker stop acknowledgements before closing socket",
+    "resume": "normal same-window resume preserves usage; explicit new-window allowance preserves existing ownership and resets only the window counter",
+    "whole_batch_check": "before attribution.prepare/reserve/working changes, not after first calendar leg",
+    "durability": "budget counter included in the write-before-send checkpoint; pre-send failure refunds only its unsent reservation",
+    "fault_policy": "real cancellation failure, callback/ack timeout, unknown or conflicting broker state remain failures",
+    "position_policy": "managed CFFEX instruments must be gross flat for a fresh session; external unmanaged holdings remain separate"
+  },
+  "unique_passed_tests": 254,
+  "passed_modules": [
+    {
+      "module": "shared-account",
+      "tests": 81,
+      "report": "tests/results/main-ema-acceptance-1792122293851723000/shared-account.log",
+      "sha256": "fe61034352135e7359f04b90ec90fd7691449fc8234d015ee47230f8e6b23147"
+    },
+    {
+      "module": "shared-ipc",
+      "tests": 27,
+      "report": "tests/results/main-ema-acceptance-1792122293851723000/shared-ipc.log",
+      "sha256": "f30f1ee2503c23e56fc71f2254195c6d1db0c62db5030b0f289bd153c377301a"
+    },
+    {
+      "module": "calendar-history",
+      "tests": 12,
+      "report": "tests/results/main-ema-acceptance-1792122125049614000/calendar-history.log",
+      "sha256": "7c66c9b379f9fc55300cbf756745f96875ba75149485a69998d1002d4ed98fce"
+    },
+    {
+      "module": "cross-history",
+      "tests": 14,
+      "report": "tests/results/main-ema-acceptance-1792122125049614000/cross-history.log",
+      "sha256": "659e8d53364837ecb32553f44aecb812439fe2fdf3aefcd2853b03652e62a829"
+    },
+    {
+      "module": "live-common",
+      "tests": 120,
+      "report": "tests/results/main-ema-acceptance-1792122125049614000/live-common.log",
+      "sha256": "f0f618f6be955ca2e05de538c863fa9fed8290c9c952f5b3714644f9c26cd589"
+    }
+  ],
+  "new_cases": [
+    "quota saved before broker transport call",
+    "entire two-leg batch denied when only one remaining order; no leg sent or reservation left",
+    "ordinary resume retains quota usage and stop reason; explicit new window retains ownership",
+    "CFFEX independent opposite owners open and one closes only its own generic CLOSE quantity",
+    "quota cancellation failure remains failed with working order preserved",
+    "remote owner receives partial fill and acknowledges cancellation during quota stop",
+    "actual server loop and Unix socket keep all three remote clients alive through late fill, cancel and ack_stopped",
+    "generated profile pins observed CFFEX roles and original 240/120/21 history configurations",
+    "native parser/assembly guards added for 01/03/04; require Linux execution"
+  ],
+  "environment_limited": [
+    {
+      "modules": [
+        "entry",
+        "calendar-live",
+        "cross-live"
+      ],
+      "reason": "local SDK import: cannot import Bar from bomber.framework.fixes; deployment check stops native suite",
+      "report": "tests/results/main-ema-acceptance-1792121754413983000"
+    },
+    {
+      "module": "history-adjustment",
+      "reason": "local native Bar/indicator and dotenv dependencies unavailable; 16 errors, not recorded as passed",
+      "report": "tests/results/main-ema-acceptance-1792121922027155000/history-adjustment.log"
+    },
+    {
+      "module": "option-shared",
+      "reason": "native Bar import unavailable; 13 loader/import errors, not 13 executed passing scenarios",
+      "report": "tests/results/main-ema-acceptance-1792122293851723000/option-shared.log"
+    }
+  ],
+  "remaining": [
+    "Linux checksum and complete native offline modules",
+    "current TD/reference/MD and managed-gross-flat readonly preflight",
+    "IM/IF account service plus original three workers: actual signals, orders, owned fills, individual stop/restart and final broker reconciliation",
+    "historical Recording evidence is not physical-order acceptance"
+  ],
+  "runbook": "scripts/integration/shared_account/IM_IF_JOINT_ACCEPTANCE.md",
+  "sources": {
+    "bomber/framework/trader/execution/contracts.py": "bb51d3e75fd2a4d529da04f17b8625939a8404f61ceabcda6fe9108bd238e006",
+    "bomber/framework/trader/execution/ctp/native_driver.py": "448038f2d382f55dedd3c4a39502acf073d8d0ed0639decdac0b971c0e7dcec1",
+    "bomber/framework/trader/execution/ipc.py": "8e003d9e21017f6bfa2e4c60e02cd6a27ca7e63a116df647c2b88bbb806bbfd5",
+    "bomber/framework/trader/execution/ipc_client.py": "c6078187f79b4e3db5df758b0c473267a11264d160d61a9085b75477f84d8711",
+    "bomber/framework/trader/execution/live/backend.py": "c7c0e9cc74808f590dfc6b1e63958cd8434fb8bded008d18df574455b1ee06bd",
+    "bomber/framework/trader/execution/live/client.py": "c1735e1902dedf40a687dc5947778ebfd6a2abcf06f69461c5bc511374a762cd",
+    "bomber/framework/trader/execution/shared.py": "36e650e360317ddadf136914b06c9977e6513d47711e7fe944ec3aca88eab99d",
+    "bomber/framework/trader/runtime/live/shared.py": "1ae13b40a585b5172a9c01698dec5a8f9dce422956ea08706fd1854b41d6f3e1",
+    "demos/01_main_ema/run_live.py": "dda765161310fb4f7ceb8e9a2199d354eb4c38b1c4a6c3ebb301f4779be3f862",
+    "demos/03_calendar_spread/run_live.py": "5250fae3f22782edf1bc09fd928b89ebb392d86616f671a611bfafbc648c66ab",
+    "demos/04_cross_section/run_live.py": "14b90f28cd70d7120642cec51325d949788f9ad6f7e7feb7b8d60305b73fc2b3",
+    "scripts/integration/shared_account/config.py": "70e68d01f1a0666415f69d0a974b680b4ff5de4ba0215718c3e8ea069b5aca3b",
+    "scripts/integration/shared_account/discover.py": "3c1a3bb7b1cfcff7364b879544433a9501887b33bc9ac8aa7bee66212f1b6ec7",
+    "scripts/integration/shared_account/factories.py": "6f49fd24a253da9f37f749d9e69d52feb02098482f56aef55a6690baf339dfb4",
+    "scripts/integration/shared_account/prepare_session.py": "ba96e226ea31943c998f90c03c33fd592b4815c2a632f61921d53d3763565bb9",
+    "scripts/integration/shared_account/run.py": "fafd0c03aca1f47d88f5b94e05682a7f376031ae8a3be9f2f44065c30512543d",
+    "scripts/integration/shared_account/server.py": "35e98103844f8db76079d78326526ac4facf4141e62861de45c6ba91445aad66",
+    "scripts/integration/shared_account/worker.py": "c7b13bb1726e81c697297d1336cf8fe6013c0d6e79e10c63878c5f8b981dbbd5",
+    "tests/run_main_ema_acceptance.py": "ab2af3abb90f678b63a93534e2afbf87dd5a413607bb2d5062fecc242a9e5de9",
+    "tests/run_main_ema_live.py": "90af3b7417c7ea7be7d24a962ec2439bffd710dd39d769aca64a51e951f26570",
+    "tests/test_calendar_spread_live.py": "bb50f49f79fe85551686714ac8a3a923953c6f4cf6bff80f345f52bcf56a4ef8",
+    "tests/test_cross_section_live.py": "389b7df748e28a192093a7259ef6eab87c10f6bea496a18a5954907ea2f69d10",
+    "tests/test_shared_account.py": "6b3df7b6adc9266bc57fd31d225dacff72094d0c6e9f34ee1c740a300d89ab04",
+    "tests/test_shared_ipc.py": "59eddcd706b6b810ac85bdb7bb97b75d25e678cac9b1683c4a3887e73a76024e",
+    "tests/test_shared_process_cli.py": "52053f3456122d9e473b587b42c371ed7a13cf1a7926990edfc445bf8d950e9f"
+  }
+}

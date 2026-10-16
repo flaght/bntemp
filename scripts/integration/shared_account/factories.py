@@ -17,7 +17,7 @@ def strategy_arguments(row, config, *, resume):
         argv += ["--replay-md-trading-day", config["replay_md_trading_day"]]
     if resume and (row["kind"] != "option_vega" or Path(row["state_file"]).is_file()):
         argv += ["--resume"]
-    args = (entry.parse_args(argv, shared_execution=True) if row["kind"] == "main_ema"
+    args = (entry.parse_args(argv, shared_execution=True) if row["kind"] in {"main_ema", "calendar_spread", "cross_section"}
             else entry.parse_args(argv))
     history_enabled = any(getattr(args, name, None) for name in
         ("history_minutes", "history_config", "history_file"))

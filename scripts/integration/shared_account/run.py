@@ -97,6 +97,7 @@ def build_host(config, *, resume, diagnostics=None, read_only=False, strategy_pr
         driver = CtpNativeTraderDriver(transport.client_id, transport.account_id, transport,
             enable_simnow_orders=not read_only, max_session_orders=order_budget,
             disconnect_handler=disconnected)
+        driver.new_order_budget_window = session_order_budget is not None
         driver.start(lambda report: None)
         validate_td_preflight(config, driver, md_front=md_front, td_front=transport.front,
                               diagnostics=diagnostics)
@@ -246,7 +247,7 @@ def main(argv=None):
                 if row.get("stop_after_seconds") is not None and time.monotonic() - started >= float(row["stop_after_seconds"]):
                     host.stop_strategy(row["strategy_id"], reason="configured_stop")
             time.sleep(0.2)
-        status = "failed" if any(item.failure not in {None, "configured_stop", "acceptance_shared_cancel"}
+        status = "failed" if any(item.failure not in {None, "configured_stop", "acceptance_shared_cancel", "order_budget_exhausted"}
                                  for item in host.strategies.values()) else "completed"
     except BaseException as error:
         failure = str(error)
@@ -275,6 +276,7 @@ def main(argv=None):
             if cancel_probe is not None:
                 snapshot["shared_cancel_acceptance"] = cancel_probe.result(host, runtime_status=status)
             report.write(status=status, fields={**snapshot, "failure": failure,
+                "stop_reason": ("order_budget_exhausted" if getattr(getattr(host, "service", None), "execution_stop", None) else None),
                 "shutdown_failure": shutdown_failure,
                 "failure_execution_diagnostics": failure_execution_diagnostics,
                 "reconciliation": reconciliation,

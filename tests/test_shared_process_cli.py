@@ -15,6 +15,37 @@ from scripts.integration.shared_account import config, prepare_session, server, 
 
 
 class ProcessCliTests(unittest.TestCase):
+    def test_im_if_profile_builds_pinned_contracts_observed_budget_and_three_history_windows(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            observed, output = root/"observed.json", root/"session.json"
+            contracts = {"IM": {"main": "IM2612.CFFEX", "secondary": "IM2703.CFFEX"},
+                "IF": {"main": "IF2612.CFFEX"}}
+            instruments = ("IM2612.CFFEX", "IM2703.CFFEX", "IF2612.CFFEX")
+            observed.write_text(json.dumps({"status": "observed", "orders_submitted": 0,
+                "verification": "readonly_dates_and_contracts", "environment": "realtime", "profile": "im-if",
+                "session_arguments": {"trading_day": "20261016", "source_day": "20261015", "replay_md_trading_day": None},
+                "contracts": contracts,
+                "instrument_specs": {i: {"tick": "0.2", "multiplier": "300" if i.startswith("IF") else "200"} for i in instruments},
+                "quotes": {i: {"bid": "5000" if i.startswith("IF") else "10000", "ask": "5001" if i.startswith("IF") else "10001"} for i in instruments}}))
+            with redirect_stdout(StringIO()):
+                prepare_session.main(["--output", str(output), "--environment", "realtime", "--execution-mode", "independent",
+                    "--profile", "im-if", "--use-observed-budget", "--observations", str(observed)])
+            c = config.read_config(output)
+            self.assertEqual(c["account"]["max_session_orders"], 200)
+            self.assertEqual(c["account"]["max_gross_quantity"], "5")
+            self.assertGreater(int(c["account"]["max_gross_notional"]), 9000000)
+            self.assertEqual([row["strategy_id"] for row in c["strategies"]],
+                ["ema-im-three", "cross-im-if-three", "calendar-im-three"])
+            for row, minutes in zip(c["strategies"], (240,21,120)):
+                argv = row["argv"]
+                self.assertEqual(argv[argv.index("--history-minutes")+1], str(minutes))
+                self.assertTrue(Path(argv[argv.index("--history-config")+1]).is_file())
+                self.assertIn("--expected-instrument", argv)
+            calendar = c["strategies"][2]["argv"]
+            self.assertEqual(calendar[calendar.index("--leg1-role")+1], "main")
+            self.assertEqual(calendar[calendar.index("--leg2-role")+1], "secondary")
+
     def test_server_fault_capture_uses_original_gate_and_diagnostic_failure_is_separate(self):
         from scripts.integration.shared_account.server import capture_execution_failure
         diagnostics = {"is_reconciled": False, "service_failed": True,

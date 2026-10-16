@@ -56,6 +56,18 @@ class AmbiguousOrderSubmission(RuntimeError):
     order_may_be_live = True
 
 
+class OrderBudgetExhausted(RuntimeError):
+    """本地批次额度不足；与状态不明的柜台发送失败分开处理。"""
+
+    def __init__(self, limit, submitted, requested=1):
+        self.limit, self.submitted, self.requested = limit, submitted, requested
+        super().__init__(f"CTP会话报单上限不足: limit={limit} submitted={submitted} requested={requested}")
+
+    def state(self):
+        return {"reason": "order_budget_exhausted", "limit": self.limit,
+                "submitted": self.submitted, "requested": self.requested}
+
+
 @dataclass(frozen=True)
 class AccountPositionSnapshot:
     """交易柜台返回的账户级权威净仓快照。"""

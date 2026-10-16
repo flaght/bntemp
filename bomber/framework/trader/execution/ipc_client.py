@@ -115,6 +115,10 @@ class RemoteStrategyExecutionClient:
         self.deliver(result["events"], completed)
         if result["events"]:
             self.service.connection.call("poll", {"cursor": self.cursor, "ready": bool(not self._stopping and self.ready_check())})
+        stopped = self.state.get("execution_stop")
+        if stopped:
+            from .contracts import OrderBudgetExhausted
+            raise OrderBudgetExhausted(stopped["limit"], stopped["submitted"], stopped["requested"])
 
     def price_state(self, *, fresh_only=False):
         now = time.time_ns()

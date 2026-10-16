@@ -59,6 +59,11 @@ CASES = {
     "entry": ("tests.run_main_ema_live",),
 }
 SOURCES = (
+    "bomber/framework/trader/execution/contracts.py",
+    "bomber/framework/trader/execution/live/backend.py",
+    "demos/03_calendar_spread/run_live.py",
+    "demos/04_cross_section/run_live.py",
+    "tests/test_cross_section_live.py",
     "bomber/framework/calendars/hours.py",
     "bomber/framework/calendars/overrides.py",
     "bomber/framework/calendars/sessions.py",

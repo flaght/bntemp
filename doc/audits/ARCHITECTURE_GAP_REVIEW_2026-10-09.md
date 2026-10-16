@@ -285,3 +285,16 @@ CU 真实 5 段、10 月 12／13 日共 10 窗口、最近 600 与区间 930 个
 CTP深度8、公共117共215项离线通过（实际三进程socket、替身柜台）。
 完整说明见scripts/integration/shared_account/FOUR_PRODUCTS_RUNBOOK_20261014.md。
 尚无本批Linux原生完整装配和三worker实际成交/单独停止恢复报告，GAP-10不关闭。
+
+## GAP-10 2026-10-16 REV31补充
+
+IM/IF已接入原01/03/04共享SimNow装配；新增专用观察/配置profile，保留240/120/21
+历史预热，按本次真实盘口计算总预算，独立模式使用各自实际订单及归属账本。
+额度耗尽已改为停止新目标、撤单、交付成交并等待worker确认后正常退出；普通
+恢复保留已用额度，真故障仍闭闸。未改变策略算法或接管外部IM/IF持仓。
+
+本机254项离线通过，真实Unix socket服务收尾包含部分成交、撤单和最终确认；
+柜台传输及SDK类型为替身。Linux原生入口/连续共享回归及本批IM/IF联合实单仍待验，
+本机缺少原生Bar/指标及dotenv的组不登记通过。GAP-10保持开放。
+完整步骤见[IM/IF联合验收](../../scripts/integration/shared_account/IM_IF_JOINT_ACCEPTANCE.md)，
+证据见[REV31离线结果](../evidence/live/GAP10_IM_IF_SHARED_QUOTA_OFFLINE_20261016_REV31.json)。

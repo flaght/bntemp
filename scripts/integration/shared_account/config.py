@@ -12,7 +12,7 @@ from pathlib import Path
 PROTECTED = frozenset(("--connect", "--mode", "--enable-orders", "--confirm-simnow", "--resume",
     "--state-file", "--expected-trading-day", "--seconds", "--account-reconciliation",
     "--strategy-position-source", "--run-forever", "--adopt-existing-position", "--expected-position",
-    "--history-minutes", "--history-file", "--history-config", "--simnow-environment",
+    "--simnow-environment",
     "--replay-md-trading-day"))
 
 
@@ -81,6 +81,25 @@ def read_config(path):
             raise ValueError("策略argv须为字符串数组")
         if any(arg.split("=", 1)[0] in PROTECTED for arg in row["argv"]):
             raise ValueError("策略参数不能覆盖宿主执行、日期、授权或恢复政策")
+        history_args = {"--history-minutes", "--history-file", "--history-config"}
+        if row["kind"] not in {"main_ema", "calendar_spread", "cross_section"} and any(
+                arg.split("=", 1)[0] in history_args for arg in row["argv"]):
+            raise ValueError("共享历史预热仅支持01/03/04")
+        argv = list(row["argv"])
+        for index, arg in enumerate(argv):
+            key, separator, value = arg.partition("=")
+            if key not in {"--history-file", "--history-config"}:
+                continue
+            if not separator:
+                if index + 1 >= len(argv) or argv[index + 1].startswith("--"):
+                    raise ValueError(f"{key}缺少文件路径")
+                value = argv[index + 1]
+            resolved = str((path.parent / value).resolve())
+            if separator:
+                argv[index] = f"{key}={resolved}"
+            else:
+                argv[index + 1] = resolved
+        row["argv"] = argv
         state_file = str((path.parent / row["state_file"]).resolve())
         if state_file in paths:
             raise ValueError("账户与各策略检查点文件必须不同")

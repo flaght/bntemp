@@ -90,6 +90,7 @@ def _main(argv):
 def _run(args, config, stop_event):
     row = next(row for row in config["strategies"] if row["strategy_id"] == args.strategy_id)
     from bomber.framework.trader.runtime.live.continuous import StopRequested
+    from bomber.framework.trader.execution.contracts import OrderBudgetExhausted
     from dotenv import load_dotenv
     from .run import PROJECT_ROOT
     from .factories import strategy_arguments, assemble_strategy_session
@@ -107,6 +108,7 @@ def _run(args, config, stop_event):
     report = LiveRunReport(config["report_dir"], prefix=row["strategy_id"], metadata=identity)
     report.begin()
     session, failure, shutdown_failure, status = None, None, None, "failed"
+    stop_reason = None
     save = None
     with ExitStack() as resources:
         try:
@@ -202,6 +204,8 @@ def _run(args, config, stop_event):
                 poll_strategy_session(session, save)
                 time.sleep(0.2)
             status = "completed"
+        except OrderBudgetExhausted:
+            stop_reason, status = "order_budget_exhausted", "completed"
         except StopRequested:
             status = "completed"
         except BaseException as error:
@@ -227,6 +231,7 @@ def _run(args, config, stop_event):
             finally:
                 from bomber.framework.trader.runtime.live.shared import history_snapshot
                 report.write(status=status, fields={"failure": failure, "shutdown_failure": shutdown_failure,
+                    "stop_reason": stop_reason,
                     **(history_snapshot(session) if session else {}),
                     "failure_readiness": getattr(session.runner, "failure_readiness", None) if session else None,
                     "verification": "independent_strategy_process", "strategy_id": args.strategy_id,

@@ -44,7 +44,7 @@ class CrossRecordingLifecycle(RecordingExecutionLifecycle, CtpMarketSessionLifec
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
-def parse_args(argv=None):
+def parse_args(argv=None, *, shared_execution=False):
     parser = argparse.ArgumentParser(description=__doc__)
     add_market_source_arguments(parser)
     parser.add_argument("--connect", action="store_true")
@@ -93,6 +93,9 @@ def parse_args(argv=None):
     parser.add_argument("--resume", action="store_true", help="恢复原状态文件，同交易日且无活动订单；实时重新预热")
     parser.add_argument("--report-dir", type=Path, default=Path(__file__).with_name("results"))
     args = parser.parse_args(argv)
+    args.shared_execution = shared_execution
+    if shared_execution and {p.strip().upper() for p in args.products.split(",")} & {"IM", "IF"} and args.simnow_environment != "realtime":
+        parser.error("共享IM/IF执行仅支持realtime")
     try:
         market_config_from_args(args, domestic_contracts=True)
     except (ValueError, TypeError, OSError) as error:
@@ -110,7 +113,7 @@ def parse_args(argv=None):
             product = product.strip().upper()
             parsed = InstrumentId.from_str(instrument.strip())
             venue = str(parsed.venue)
-            if product in expected or venue not in CTP_PORTFOLIO_VENUES | ({"CFFEX"} if args.mode == "recording" else set()):
+            if product in expected or venue not in CTP_PORTFOLIO_VENUES | ({"CFFEX"} if args.mode == "recording" or shared_execution else set()):
                 raise ValueError("重复品种或不支持的交易所")
             if str(parsed.symbol).rstrip("0123456789").upper() != product:
                 raise ValueError("预期合约代码与品种不匹配")
@@ -198,7 +201,7 @@ def prepare_inputs(args, context, lifecycle):
             max_source_age_days=args.reference_max_source_age_days,
             max_observation_age_seconds=args.reference_max_observation_seconds,
             max_refresh_duration_seconds=args.reference_max_refresh_duration_seconds)),
-        allowed_venues=CTP_PORTFOLIO_VENUES | ({"CFFEX"} if args.mode == "recording" else set()))
+        allowed_venues=CTP_PORTFOLIO_VENUES | ({"CFFEX"} if args.mode == "recording" or getattr(args, "shared_execution", False) else set()))
     context.references = references
     actual = {p: str(i) for p, i in references.instrument_ids.items()}
     references.assert_expected(args.expected_instruments, args.expected_source_symbols)

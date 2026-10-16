@@ -12,6 +12,7 @@ from typing import Any, Callable, Mapping, Protocol
 from bomber.framework.market.basic.base import InstrumentId
 from bomber.framework.trader.execution.contracts import (
     AmbiguousOrderSubmission,
+    OrderBudgetExhausted,
     ExecutionReport,
     ExecutionReportType,
     OrderIntent,
@@ -141,6 +142,7 @@ class CtpNativeTraderDriver:
         self._enable_simnow_orders = enable_simnow_orders
         self._max_session_orders = max_session_orders
         self._submitted_orders = 0
+        self._budget_used = 0
         self._disconnect_handler = disconnect_handler
         self._sink: Callable[[ExecutionReport], None] | None = None
         self._session: CtpTraderSession | None = None
@@ -181,6 +183,23 @@ class CtpNativeTraderDriver:
     @property
     def submitted_orders(self) -> int:
         return self._submitted_orders
+
+    @property
+    def order_budget(self):
+        return {"limit": self._max_session_orders, "submitted": self._budget_used}
+
+    def restore_order_budget(self, state):
+        if (state.get("limit") != self._max_session_orders or
+                type(state.get("submitted")) is not int or state["submitted"] < 0):
+            raise ValueError("报单窗口额度恢复身份或计数无效")
+        self._budget_used = max(self._budget_used, state["submitted"])
+
+    @_serialized_transition
+    def check_order_capacity(self, quantity):
+        if type(quantity) is not int or quantity < 0:
+            raise ValueError("待发订单笔数须为非负整数")
+        if self._max_session_orders is not None and self._budget_used + quantity > self._max_session_orders:
+            raise OrderBudgetExhausted(self._max_session_orders, self._budget_used, quantity)
 
     def bind_durability(
         self,
@@ -372,8 +391,7 @@ class CtpNativeTraderDriver:
             raise RuntimeError("原生CTP Driver默认禁单；本阶段只读")
         if order.backend_id != self.driver_id:
             raise ValueError("CTP订单Backend不匹配")
-        if self._max_session_orders is not None and self._submitted_orders >= self._max_session_orders:
-            raise RuntimeError(f"CTP本次会话已达到{self._max_session_orders}笔报单上限")
+        self.check_order_capacity(1)
         session = self._session
         if session is None:
             raise RuntimeError("CTP会话不存在")
@@ -391,6 +409,9 @@ class CtpNativeTraderDriver:
         self._orders[order_ref] = (client_id, order)
         self._filled[order_ref] = Decimal(0)
         self._next_ref = next_ref
+        # 与订单关联一起写前保存；进程在发送后、回报前退出也不能恢复出更多额度。
+        self._budget_used += 1
+        send_started = False
         try:
             if self._before_send is not None:
                 self._before_send(client_id, order)
@@ -398,8 +419,11 @@ class CtpNativeTraderDriver:
             if deadline is not None and time.time_ns() > deadline:
                 raise RuntimeError("共享账户贡献在写前保存后到期，拒绝柜台发送")
             self._submitted_orders += 1
+            send_started = True
             self.transport.send_order(fields)
         except Exception as error:
+            if not send_started:
+                self._budget_used -= 1
             if self._sequences.get(order_ref, 0) > 0:
                 self.on_disconnect(-1)
                 raise AmbiguousOrderSubmission(

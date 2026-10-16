@@ -17,11 +17,11 @@ def parse_cross_products(value):
     return products
 
 
-def observed_budget(contracts, specs, quotes, products):
-    """每策略每腿最多1手的保守归属上界；CU主力在EMA和截面各计一次。"""
-    legs = [("ema", contracts["CU"]["main"]),
+def observed_budget(contracts, specs, quotes, products, *, product="CU", roles=("secondary", "far")):
+    """每策略每腿最多1手的保守归属上界；重复合约按各策略分别计入。"""
+    legs = [("ema", contracts[product]["main"]),
         *(("cross", contracts[p]["main"]) for p in products),
-        ("calendar", contracts["CU"]["secondary"]), ("calendar", contracts["CU"]["far"])]
+        *(("calendar", contracts[product][role]) for role in roles)]
     rows, total = [], Decimal(0)
     for strategy, instrument in legs:
         quote, spec = quotes[instrument], specs[instrument]
@@ -39,11 +39,50 @@ def observed_budget(contracts, specs, quotes, products):
         "price_basis": "observed_ask_plus_one_tick", "legs": rows}
 
 
+def apply_im_if_profile(config, observed, output):
+    """本次固定联合验收；沿用三个Recording已验证的指标和历史参数。"""
+    import os
+    root = Path(__file__).resolve().parents[3]
+    config["account"].update(client_id="three-im-if-independent", max_session_orders=200)
+    common = ["--calendar-id", "china.cffex", "--trading-hours-database", "dfs://bomber_static",
+        "--trading-hours-table", "fut_trading_session", "--no-session-overrides",
+        "--history-stage", "recovery", "--history-missing-policy", "fail"]
+    definitions = [("ema-im-three", "01_main_ema", "history_im_raw.json", 240),
+        ("cross-im-if-three", "04_cross_section", "history_cffex.json", 21),
+        ("calendar-im-three", "03_calendar_spread", "history_im.json", 120)]
+    for row, (sid, demo, history, minutes) in zip(config["strategies"], definitions):
+        row["strategy_id"] = sid
+        argv = row["argv"]
+        if "--product" in argv:
+            argv[argv.index("--product") + 1] = "IM"
+        argv[argv.index("--max-notional") + 1] = "3000000"
+        if row["kind"] == "main_ema":
+            argv += ["--expected-instrument", observed["contracts"]["IM"]["main"]]
+        elif row["kind"] == "calendar_spread":
+            argv[argv.index("--leg1-role") + 1], argv[argv.index("--leg2-role") + 1] = "main", "secondary"
+            argv[argv.index("--lookback") + 1] = "120"
+            argv[argv.index("--rebalance-interval") + 1] = "5"
+            argv[argv.index("--entry-z") + 1], argv[argv.index("--exit-z") + 1] = "2", "0.5"
+            if observed["contracts"]["IM"]["main"] == observed["contracts"]["IM"]["secondary"]:
+                raise ValueError("跨期必须是两个不同的IM真实合约")
+            for role in ("main", "secondary"):
+                argv += ["--expected-instrument", f"{role}={observed['contracts']['IM'][role]}"]
+        else:
+            argv[argv.index("--lookback") + 1] = "20"
+            argv[argv.index("--rebalance-interval") + 1] = "5"
+            argv[argv.index("--target-notional") + 1] = "3000000"
+            for product in ("IM", "IF"):
+                argv += ["--expected-instrument", f"{product}={observed['contracts'][product]['main']}"]
+        argv += [*common, "--history-db", "dolphindb", "--history-minutes", str(minutes),
+            "--history-config", os.path.relpath(root / "demos" / demo / history, output.resolve().parent)]
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--environment", choices=("replay", "realtime"), required=True)
     parser.add_argument("--execution-mode", choices=("netted", "independent"), required=True)
+    parser.add_argument("--profile", choices=("commodity", "im-if"), default="commodity")
     parser.add_argument("--trading-day")
     parser.add_argument("--source-day")
     parser.add_argument("--observations", type=Path, help="本次discover只读摘要；不得与手工日期混用")
@@ -55,6 +94,13 @@ def main(argv=None):
     parser.add_argument("--ctp-future-buffer-ms", type=int, default=0)
     parser.add_argument("--use-observed-budget", action="store_true", help="按本次只读盘口的逐腿上界计算账户限额")
     args = parser.parse_args(argv)
+    product, roles = ("IM", ("main", "secondary")) if args.profile == "im-if" else ("CU", ("secondary", "far"))
+    if args.profile == "im-if":
+        args.cross_products = ("IM", "IF")
+        if (args.environment != "realtime" or args.execution_mode != "independent"
+                or args.existing_position_policy != "require_flat"
+                or not args.observations or not args.use_observed_budget):
+            parser.error("IM/IF联合配置须realtime、independent、管理合约空仓及本次im-if实际盘口观察预算")
     if (not 0 <= args.ctp_future_buffer_ms <= 100 or (args.ctp_future_buffer_ms and args.environment != "realtime")
             or (args.existing_position_policy == "preserve_external" and args.execution_mode != "independent")
             or (args.use_observed_budget and not args.observations)):
@@ -67,13 +113,15 @@ def main(argv=None):
                 or observed.get("verification") != "readonly_dates_and_contracts"
                 or observed.get("environment") != args.environment):
             parser.error("只读摘要未通过或环境不一致")
+        if args.profile != observed.get("profile", "commodity"):
+            parser.error("观察摘要的联合profile与配置不符")
         dates = observed["session_arguments"]
         if args.cross_products != ("CU", "AL"):
             contracts = observed.get("contracts", {})
             required = {p: {"main"} for p in args.cross_products}
-            required["CU"] = {"main", "secondary", "far"}
+            required.setdefault(product, set()).update(("main", *roles))
             if any(not roles <= set(contracts.get(product, {})) for product, roles in required.items()):
-                parser.error("只读观察未覆盖新横截面品种及CU跨期合约；须用同样的cross-products重新观察")
+                parser.error("只读观察未覆盖横截面品种及跨期合约；须用同样的profile/cross-products重新观察")
         args.trading_day, args.source_day = dates["trading_day"], dates["source_day"]
         args.replay_md_trading_day = dates["replay_md_trading_day"]
     if not args.trading_day or not args.source_day:
@@ -120,9 +168,11 @@ def main(argv=None):
         for row in config["strategies"]:
             row["argv"] += ["--ctp-future-buffer-ms", str(args.ctp_future_buffer_ms)]
     if args.use_observed_budget:
-        budget = observed_budget(observed["contracts"], observed["instrument_specs"], observed["quotes"], args.cross_products)
+        budget = observed_budget(observed["contracts"], observed["instrument_specs"], observed["quotes"], args.cross_products, product=product, roles=roles)
         config["account"].update(max_gross_quantity=str(max(5, budget["quantity"])),
             max_gross_notional=str(max(Decimal(3000000), Decimal(budget["rounded_notional_limit"]))))
+    if args.profile == "im-if":
+        apply_im_if_profile(config, observed, args.output)
     if args.replay_md_trading_day:
         config["replay_md_trading_day"] = args.replay_md_trading_day
     args.output.parent.mkdir(parents=True, exist_ok=True)
