@@ -168,7 +168,9 @@ def prepare_inputs(args, context, lifecycle):
             max_source_age_days=args.reference_max_source_age_days,
             max_observation_age_seconds=args.reference_max_observation_seconds,
             max_refresh_duration_seconds=args.reference_max_refresh_duration_seconds))
-    references = CalendarReferences(service, args.product, (args.leg1_role, args.leg2_role))
+    from bomber.framework.dataprep.live_portfolio import CTP_PORTFOLIO_VENUES
+    references = CalendarReferences(service, args.product, (args.leg1_role, args.leg2_role),
+        allowed_venues=CTP_PORTFOLIO_VENUES | ({"CFFEX"} if args.mode == "recording" else set()))
     references.assert_expected(args.expected_instruments)
     context.references = references
     print(f"跨期参考: product={args.product} legs={references.instrument_ids} "

@@ -1642,6 +1642,8 @@ class SharedConfigTests(unittest.TestCase):
             self.assertIs(factories.strategy_arguments(row, config, resume=False)[1], parsed)
             self.assertEqual(calls[-1][1], {})
             row["kind"] = "cross_section"
+            self.assertIs(factories.strategy_arguments(row, config, resume=False)[1], parsed)
+            row["kind"] = "option_vega"
             with self.assertRaisesRegex(ValueError, "仅支持01"):
                 factories.strategy_arguments(row, config, resume=False)
             self.assertEqual(calls[-1][1], {})

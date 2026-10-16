@@ -504,6 +504,18 @@ class CliTests(unittest.TestCase):
     common = ["--connect", "--product", "RB", "--expected-trading-day", "20261009",
               "--expected-source-day", "20261008"]
 
+    def test_im_recording_history_cli_uses_completed_cffex_source(self):
+        config = Path(__file__).resolve().parents[1] / "demos/03_calendar_spread/history_im.json"
+        args = entry.parse_args(["--connect", "--product", "IM", "--expected-trading-day", "20261016",
+            "--expected-source-day", "20261015", "--history-config", str(config), "--history-minutes", "120",
+            "--calendar-id", "china.cffex", "--no-session-overrides"])
+        self.assertEqual(args.history_minutes, 120)
+        with patch.dict("os.environ", {"CTP_MD_ADDRESS": "tcp://fixture:1", "CTP_ACCOUNT_ID": "fixture",
+                "CTP_PASSWORD": "fixture"}, clear=True), patch.object(entry, "build_simnow_transport",
+                side_effect=AssertionError("Recording不应构造TD")):
+            managed = entry.build_runtime(args)
+        self.assertIsNone(managed.controller.driver)
+
     def test_defaults_roles_and_recording_no_td_policy(self):
         args = entry.parse_args(self.common)
         self.assertEqual((args.mode, args.leg1_role, args.leg2_role), ("recording", "secondary", "far"))

@@ -64,6 +64,14 @@ class MainCrossSectionMomentumStrategy(StrategyTemplate):
         self.order_updates_received += 1
         self.last_order_update = event
 
+    def warm_closed(self, timestamp, adjusted_closes):
+        """完整同步复权价格仅推进动量窗口，不发布历史排名或交易目标。"""
+        if timestamp <= self.last_emitted_ns:
+            raise ValueError("横截面历史帧时间重复或倒退")
+        self.signal.update(adjusted_closes)
+        self.last_emitted_ns = timestamp
+        self.synchronized_frames += 1
+
     def on_fill(self, event) -> None:
         self.fills_received += 1
         # 归属仓位已由公共执行链更新；回调仅观察，不重复入账。

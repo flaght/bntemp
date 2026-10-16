@@ -21,8 +21,8 @@ def strategy_arguments(row, config, *, resume):
             else entry.parse_args(argv))
     history_enabled = any(getattr(args, name, None) for name in
         ("history_minutes", "history_config", "history_file"))
-    if getattr(args, "run_forever", False) or (history_enabled and row["kind"] not in {"main_ema", "calendar_spread"}):
-        raise ValueError("共享入口仅支持01/03的历史预热；持续模式及其他策略历史预热尚未接入")
+    if getattr(args, "run_forever", False) or (history_enabled and row["kind"] not in {"main_ema", "calendar_spread", "cross_section"}):
+        raise ValueError("共享入口仅支持01/03/04历史预热；持续模式及其他策略历史预热尚未接入")
     return entry, args
 
 

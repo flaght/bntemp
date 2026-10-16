@@ -1,0 +1,13 @@
+{
+  "database": "dfs://min_bar",
+  "table": "cffex_1min",
+  "columns": {"instrument_id": "Code", "open": "open", "high": "high", "low": "low", "close": "close"},
+  "date_column": "date",
+  "time_column": "minTime",
+  "source_timezone": "Asia/Shanghai",
+  "time_unit": "ns",
+  "time_label": "end",
+  "instrument_format": "symbol",
+  "venue": "CFFEX",
+  "factor_database": "dfs://bomber_daily"
+}

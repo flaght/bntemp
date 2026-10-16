@@ -36,6 +36,9 @@ def history_snapshot(session):
     return {"history": service.last_audit if service is not None else None,
             "history_audit": list(service.audit_history) if service is not None else [],
             "complete_frames": getattr(session.strategy, "complete_frames", None),
+            "synchronized_frames": getattr(session.strategy, "synchronized_frames", None),
+            "history_frames": getattr(session.runner, "history_frame_count", None),
+            "live_frames": getattr(session.runner, "live_frame_count", None),
             "bars_used": getattr(session.strategy, "bars_used", None)}
 
 

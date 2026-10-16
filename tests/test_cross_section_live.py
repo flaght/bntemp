@@ -676,9 +676,35 @@ class CrossSectionLiveTests(unittest.TestCase):
         self.assertEqual(args.mode, "recording")
         self.assertEqual(args.products, ("RB", "HC"))
         self.assertEqual(args.factor_availability, "observed-on-read")
+        self.assertEqual(args.execution_policy.account_reconciliation.value, "off")
         args = live.parse_args(self.command("--mode", "simnow", "--enable-orders", "--confirm-simnow",
             "--state-file", str(self.root / "new.json")))
         self.assertEqual(args.max_quantity, 1)
+
+    def test_cffex_recording_history_builds_without_td_and_keeps_uppercase_symbols(self):
+        config = Path(__file__).resolve().parents[1] / "demos/04_cross_section/history_cffex.json"
+        args = live.parse_args(["--connect", "--products", "IM,IF", "--expected-trading-day", "20261016",
+            "--expected-source-day", "20261015", "--expected-instrument", "IM=IM2611.CFFEX",
+            "--expected-instrument", "IF=IF2611.CFFEX", "--history-config", str(config),
+            "--history-minutes", "21", "--calendar-id", "china.cffex", "--no-session-overrides"])
+        self.assertEqual(args.expected_instruments["IM"], "IM2611.CFFEX")
+        with patch.dict("os.environ", {"CTP_MD_ADDRESS": "tcp://fixture:1", "CTP_ACCOUNT_ID": "fixture",
+                "CTP_PASSWORD": "fixture"}, clear=True), patch.object(live, "build_simnow_transport",
+                side_effect=AssertionError("Recording不应构造TD")):
+            managed = live.build_runtime(args)
+        self.assertIsNone(managed.controller.driver)
+        self.assertEqual(args.execution_policy.account_reconciliation.value, "off")
+
+    def test_cffex_references_require_explicit_recording_venue_policy(self):
+        self.service.products = ("IM", "IF")
+        self.assignment = replace(self.assignment, contracts={"IM": {"main": "IM2611"}, "IF": {"main": "IF2611"}},
+            cumulative_factors={"IM": {"main": Decimal(2)}, "IF": {"main": Decimal(1)}})
+        self.service.instrument_specs = {p: {"main": SimpleNamespace(symbol=p + "2611", product=p,
+            venue="CFFEX", currency="CNY", tick=Decimal("0.2"), multiplier=Decimal(200))} for p in ("IM", "IF")}
+        with self.assertRaises(ValueError): runtime.PortfolioReferences(self.service)
+        from bomber.framework.dataprep.live_portfolio import CTP_PORTFOLIO_VENUES
+        refs = runtime.PortfolioReferences(self.service, allowed_venues=CTP_PORTFOLIO_VENUES | {"CFFEX"})
+        self.assertEqual(str(refs.instrument_ids["IM"]), "IM2611.CFFEX")
 
     def test_optional_expected_instruments_select_current_main(self):
         command = ["--connect", "--products", "CU,PB,NI,AU,AG",

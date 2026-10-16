@@ -71,6 +71,7 @@ class CrossSectionSessionRunner(UnifiedStrategyRunner):
         self.bar_counts = {}
         self.latest_bar_ns = {}
         self.expired_frame_count = 0
+        self.history_frame_count = self.live_frame_count = 0
 
     def bar_is_current(self, event):
         now = self._clock_ns()
@@ -129,8 +130,25 @@ class CrossSectionSessionRunner(UnifiedStrategyRunner):
         return failures
 
     def begin_bars(self):
+        if getattr(self, "history_service", None) is not None:
+            with self._submit_lock:
+                self.history_service.flush(self)
+                if not self.session_ready() or self.references.spec != self.fixed_spec:
+                    raise RuntimeError("横截面历史接续后行情或参考失效")
+                pending, self.history_buffer = sorted(self.history_buffer, key=lambda b: b.ts_event), []
+                self.history_buffering, self.accept_bars = False, True
+                for bar in pending:
+                    self.publish(self.market_feed_id, bar)
+            return
         self.first_complete_bar_ns = ((self._clock_ns() + MINUTE - 1) // MINUTE + 1) * MINUTE - 1
         self.accept_bars = True
+
+    def mark_history_live_start(self):
+        with self._submit_lock:
+            self.first_complete_bar_ns = ((self._clock_ns() + MINUTE - 1) // MINUTE + 1) * MINUTE - 1
+
+    def _prepare_history(self):
+        self.history_service.warm(self, self._clock_ns())
 
     def close_role_gate(self, reason):
         from bomber.framework.trader.runtime.live.health import readiness_failure_context
@@ -145,6 +163,14 @@ class CrossSectionSessionRunner(UnifiedStrategyRunner):
         raise RuntimeError(reason)
 
     def publish(self, feed_id, event):
+        if isinstance(event, Bar) and getattr(self, "history_buffering", False):
+            with self._submit_lock:
+                if self.history_buffering:
+                    if (feed_id != self.market_feed_id or event.bar_type.instrument_id not in self.fixed_ids
+                            or event.ts_event > self._clock_ns() or len(self.history_buffer) >= 10000):
+                        self.close_role_gate("横截面历史缓冲来源、时间、合约或容量无效")
+                    self.history_buffer.append(event)
+                    return
         if not isinstance(event, Bar) or not self.accept_bars:
             return
         instrument = event.bar_type.instrument_id
@@ -182,6 +208,8 @@ class CrossSectionSessionRunner(UnifiedStrategyRunner):
                         continue
                     if set(current_frame) != self.fixed_ids:
                         continue
+                    if getattr(self, "history_service", None) is not None:
+                        self.history_service.warm(self, stamp, phase="recovery")
                     if not self.bar_is_current(next(iter(current_frame.values()))[1]):
                         del self.pending_frames[stamp]
                         self.expired_frame_count += 1
@@ -193,6 +221,7 @@ class CrossSectionSessionRunner(UnifiedStrategyRunner):
                             raise RuntimeError("完整帧发布期间行情或参考版本失效")
                         super().publish(fid, bar)
                         self.last_bars[current] = stamp
+                    self.live_frame_count += 1
                     del self.pending_frames[stamp]
                     if self.orders and self.strategy.last_targets is not None:
                         for current in self.instruments.values():
@@ -287,7 +316,7 @@ def assemble(args, references, driver, upstream, *, account_routes=(), shared_se
     positions = shared_service.position_manager if shared_service is not None else PositionManager()
     client_id = shared_service.client_id if shared_service is not None else CLIENT_ID
     client_holder = {}
-    local_recording = args.mode == "recording" and source_config(args).source != "ctp"
+    local_recording = args.mode == "recording"
     execution_channel = (LocalExecutionChannel(CLIENT_ID, lambda: bool(client_holder.get("client") and
         (client_holder["client"].is_started if local_recording else client_holder["client"].is_reconciled)),
         channel=args.mode) if model or local_recording else CtpExecutionChannel(driver, expected_day, require_orders=orders))
@@ -351,6 +380,12 @@ def assemble(args, references, driver, upstream, *, account_routes=(), shared_se
         target_quantity_cap=getattr(args, "target_quantity_cap", None),
         require_full_groups=getattr(args, "require_full_groups", False))
     runner.strategy, runner.client = strategy, execution.client
+    history_enabled = any(getattr(args, name, None) for name in ("history_minutes", "history_config", "history_file"))
+    if history_enabled:
+        from .history import build_history
+        runner.history_service = build_history(args, references)
+        runner.history_buffer, runner.history_buffering = [], True
+        runner.prepare_history = runner._prepare_history
     references.publication_lock = runner._submit_lock
     # 先记录各腿Tick新鲜度，再让聚合器分派由新Tick收盘的Bar。
     if source_config(args).source == "ctp":
@@ -363,6 +398,13 @@ def assemble(args, references, driver, upstream, *, account_routes=(), shared_se
         execution=tuple(ExecutionRoute(str(i), client_id, i) for i in ids.values()))
     assemble_strategy(runner, strategy, feeds={runner.market_feed_id: feed}, execution=execution, bindings=bindings)
     components = {"execution_policy": execution_policy} if execution_policy != ExecutionPolicy() else {}
+    if history_enabled:
+        from bomber.framework.trader.runtime.live.recovery import SessionIdentityCheckpoint
+        components["history"] = SessionIdentityCheckpoint({
+            "config": str(args.history_config), "file": str(args.history_file),
+            "minutes": args.history_minutes or args.lookback + 1, "stage": args.history_stage,
+            "missing_policy": args.history_missing_policy,
+            "calendars": {p: c.provenance["sha256"] for p, c in runner.history_service.calendars.items()}})
     if source_config(args).source != "ctp":
         from bomber.framework.trader.runtime.live.recovery import SessionIdentityCheckpoint
         components["market_source"] = SessionIdentityCheckpoint(source_config(args).identity)

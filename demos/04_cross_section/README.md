@@ -378,3 +378,41 @@ Replay下单需Linux验证。完整同步和命令见
 本入口已接入统一 `--market-config` / `--market-source`。回测使用文件，Live默认CTP，
 可配置DolphinDB共享分钟流；行情选择独立于执行与历史来源。
 参数、BN业务输入限制、共享worker用法及验证见[公共配置说明](../market_sources/README.md)。
+
+## 2026-10-16：历史预热与CFFEX Recording
+
+04已接入独立Recording/Model/SimNow、共享宿主和独立worker历史预热。
+默认lookback=20，需要21个完整同步复权价格点；仅加载历史不发布目标，
+后续新实时帧继续原收益率排名和rebalance-interval调仓规则。
+不启用历史参数时保留原实时预热。
+
+每个品种使用自身会话日历，取共同交易分钟。复用公共HistoryService及
+SessionReferenceFactorAdjuster，原始close乘固定真实合约在该历史交易日适用的累计因子。
+不使用当前因子统一覆盖整段历史，不手写逐日映射。真实available_ns继续门控；
+当前读取的历史因子版本仅用于Live指标初始化，不宣称历史版本在过去已可见。
+同一历史交易日的跨品种角色/因子来源日不一致、价格错误、查询不可用均拒绝。
+缺行情默认fail；显式allow仅取真实同分钟完整品种交集，不复制价格或跨分钟拼接。
+
+历史加载前先订阅并缓冲实时，完成后去重接续。报告包含逐品种覆盖、因子审计、
+history_frames/live_frames，运行每15秒及新帧时输出窗口与缺失腿。
+
+SHFE目前发现数据缺失，本轮验收优先CFFEX：01/03使用IM；04至少需要两个品种，
+提供IM,IF的history_cffex.json。该配置表结构沿用已确认的cffex_1min与完成标签end，
+是否覆盖本次IM/IF实际主力须用运行报告验证，不宣称已有在线通过。
+共享工厂已允许04历史参数；混合来源可使用{"sources":{"品种":{DDB配置},...}}覆盖全部products。
+单一DDB配置则应用于全部品种。每个品种按同一CLI calendar-id加载自身时段键；
+采用不同交易日期Provider的组合须另行明确绑定，不能把任意日历当成等价。
+
+Recording现在只接MD与DDB，不创建TD、不接管物理账户。CFFEX参考装配仅为Recording
+显式放行IM/IF，原SimNow/Model和共享真实执行的商品交易所范围保持原限制。
+恢复使用原归属/版本，新历史与日历身份纳入状态核对，不直接给旧状态更换配置。
+
+远程同步后先离线验证：
+
+```bash
+python -u -m tests.run_main_ema_acceptance \
+  --only cross-history --only cross-live --only calendar-live --only shared-account
+```
+
+01/03 IM与04 IM,IF的完整Recording命令见
+[本轮交接及命令](../../doc/HANDOFF/history/HANDOFF_CFFEX_WARMUP_2026-10-16.md)。

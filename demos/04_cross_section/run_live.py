@@ -28,6 +28,18 @@ from bomber.framework.trader.runtime.reports import LiveRunReport
 from .live_runtime import CLIENT_ID, CrossSectionLifecycle, PortfolioReferences, assemble
 from bomber.framework.trader.execution.policy import add_execution_policy_arguments, execution_policy_from_args, observed_account_positions
 from bomber.framework.trader.runtime.live.channels.ctp_market import CtpMarketSessionLifecycle
+from bomber.framework.trader.runtime.live.local import RecordingExecutionLifecycle
+
+
+class CrossRecordingLifecycle(RecordingExecutionLifecycle, CtpMarketSessionLifecycle):
+    """原生CTP只接MD；历史/实时目标记录不要求物理账户空仓。"""
+    def shutdown(self, session, context):
+        self.recorded_md_day = getattr(session.upstream, "latest_trading_day", None) if session else None
+        return RecordingExecutionLifecycle.shutdown(self, session, context)
+
+    def snapshot(self, session, context):
+        return {**RecordingExecutionLifecycle.snapshot(self, session, context),
+                "observed_md_trading_day": getattr(self, "recorded_md_day", None)}
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -39,6 +51,8 @@ def parse_args(argv=None):
     parser.add_argument("--mode", choices=("recording", "simnow", "model"), default="recording")
     add_execution_policy_arguments(parser)
     add_environment_arguments(parser)
+    from bomber.framework.dataprep.session_inputs import add_session_arguments
+    add_session_arguments(parser)
     parser.add_argument("--products", required=True, help="至少两个不同品种，逗号分隔；首轮RB,HC")
     parser.add_argument("--expected-instrument", action="append", default=[],
                         help="可选手工核对PRODUCT=symbol.VENUE；省略则自动读取当前主力，传入时须覆盖全部品种")
@@ -54,6 +68,12 @@ def parse_args(argv=None):
     parser.add_argument("--factor-availability", choices=("source-day-end", "aligned", "explicit", "observed-on-read"),
                         default="observed-on-read")
     parser.add_argument("--lookback", type=int, default=20)
+    parser.add_argument("--history-minutes", type=int, default=0)
+    parser.add_argument("--history-config", type=Path)
+    parser.add_argument("--history-file", type=Path)
+    parser.add_argument("--history-db", choices=("dolphindb",), default="dolphindb")
+    parser.add_argument("--history-stage", choices=("auto", "preopen", "recovery"), default="auto")
+    parser.add_argument("--history-missing-policy", choices=("fail", "allow"), default="fail")
     parser.add_argument("--rebalance-interval", type=int, default=5)
     parser.add_argument("--group-fraction", type=Decimal, default=Decimal("0.30"))
     parser.add_argument("--target-notional", type=Decimal, default=Decimal(100000), help="每侧总名义金额预算")
@@ -90,7 +110,7 @@ def parse_args(argv=None):
             product = product.strip().upper()
             parsed = InstrumentId.from_str(instrument.strip())
             venue = str(parsed.venue)
-            if product in expected or venue not in CTP_PORTFOLIO_VENUES:
+            if product in expected or venue not in CTP_PORTFOLIO_VENUES | ({"CFFEX"} if args.mode == "recording" else set()):
                 raise ValueError("重复品种或不支持的交易所")
             if str(parsed.symbol).rstrip("0123456789").upper() != product:
                 raise ValueError("预期合约代码与品种不匹配")
@@ -145,7 +165,19 @@ def parse_args(argv=None):
     elif args.enable_orders or args.confirm_simnow or args.state_file or args.resume:
         parser.error("Recording不接受报单开关或交易状态文件")
     try:
+        if args.mode == "recording":
+            if args.account_reconciliation not in (None, "off"):
+                raise ValueError("Recording不连接TD，account-reconciliation须为off")
+            args.account_reconciliation = "off"
         args.execution_policy = execution_policy_from_args(args)
+        if not 0 <= args.history_minutes <= 10000:
+            raise ValueError("history-minutes须在0至10000")
+        if args.history_config and not args.history_config.is_file():
+            raise ValueError("历史配置文件不存在")
+        if args.history_minutes or args.history_config or args.history_file:
+            from bomber.framework.dataprep.session_inputs import validate_session_arguments
+            for product in args.products:
+                validate_session_arguments(args, product=product, purpose=DataSourcePurpose.LIVE_REFERENCE)
     except ValueError as error:
         parser.error(str(error))
     return args
@@ -165,7 +197,8 @@ def prepare_inputs(args, context, lifecycle):
             expected_source_day=datetime.strptime(args.expected_source_day, "%Y%m%d").date(),
             max_source_age_days=args.reference_max_source_age_days,
             max_observation_age_seconds=args.reference_max_observation_seconds,
-            max_refresh_duration_seconds=args.reference_max_refresh_duration_seconds)))
+            max_refresh_duration_seconds=args.reference_max_refresh_duration_seconds)),
+        allowed_venues=CTP_PORTFOLIO_VENUES | ({"CFFEX"} if args.mode == "recording" else set()))
     context.references = references
     actual = {p: str(i) for p, i in references.instrument_ids.items()}
     references.assert_expected(args.expected_instruments, args.expected_source_symbols)
@@ -185,6 +218,9 @@ def describe(session):
     s = session.strategy
     positions = session.runner.position_manager
     return {"synchronized_frames": s.synchronized_frames, "rebalances": s.rebalances,
+        "history": getattr(getattr(session.runner, "history_service", None), "last_audit", None),
+        "history_audit": getattr(getattr(session.runner, "history_service", None), "audit_history", []),
+        "history_frames": session.runner.history_frame_count, "live_frames": session.runner.live_frame_count,
         "last_frame_ns": s.last_emitted_ns,
         "last_targets": dict(s.last_targets) if s.last_targets is not None else None,
         "scores": dict(s.last_signal.scores) if s.last_signal else None,
@@ -194,12 +230,24 @@ def describe(session):
         "last_order_status": s.last_order_update.status.value if s.last_order_update else None,
         "fill_positions": s.fill_positions,
         "strategy_positions": {str(i): positions.position(s.strategy_id, str(i)) for i in session.runner.fixed_ids},
-        "account_positions": observed_account_positions(session.client, session.runner.fixed_ids, positions=positions),
+        "account_positions": (observed_account_positions(session.client, session.runner.fixed_ids, positions=positions)
+                              if session.runner.orders else None),
         "execution_positions": {str(i): positions.account_position(CLIENT_ID, i) for i in session.runner.fixed_ids},
         "unassigned_positions": {str(i): positions.unassigned_position(CLIENT_ID, i) for i in session.runner.fixed_ids}}
 
 
 def build_runtime(args, *, account_routes=()):
+    if args.mode == "recording" and source_config(args).source == "ctp":
+        lifecycle = CrossRecordingLifecycle(expected_trading_day=args.expected_trading_day,
+            environment=args.simnow_environment, replay_md_trading_day=args.replay_md_trading_day)
+        report = LiveRunReport(args.report_dir, prefix="cross-section-recording", describe=describe,
+            metadata={"mode": args.mode, "products": args.products, "lookback": args.lookback,
+                      "history_minutes": args.history_minutes or (args.lookback + 1 if args.history_config else 0)})
+        from .progress import CrossSectionProgress
+        return ManagedLiveRuntime(CLIENT_ID, controller=lifecycle,
+            prepare_inputs=lambda context: prepare_inputs(args, context, lifecycle),
+            assemble_session=lambda inputs, context: assemble(args, inputs.references, None, inputs.upstream),
+            report=report, seconds=args.seconds, progress=CrossSectionProgress())
     if args.mode == "recording" and source_config(args).source != "ctp":
         from bomber.framework.trader.runtime.live.local import RecordingExecutionLifecycle
         lifecycle = RecordingExecutionLifecycle(args.expected_trading_day)
@@ -244,7 +292,7 @@ def build_runtime(args, *, account_routes=()):
         "factor_date_basis": args.factor_date_basis, "factor_availability": args.factor_availability,
         "expected_source_day": args.expected_source_day,
         "state_file": str(args.state_file) if args.state_file else None,
-        "initial_position_mode": "resume" if args.resume else "fresh_flat", "history_minutes": 0,
+        "initial_position_mode": "resume" if args.resume else "fresh_flat", "history_minutes": args.history_minutes,
         "instrument_max_age_seconds": args.instrument_max_age_seconds,
         "target_quantity_cap": args.target_quantity_cap,
         "require_full_groups": args.require_full_groups})
@@ -255,10 +303,14 @@ def build_runtime(args, *, account_routes=()):
 
 
 def main(argv=None):
-    args = parse_args(argv)
     load_dotenv(PROJECT_ROOT / ".env")
+    args = parse_args(argv)
     import bomber
     print(f"Bomber={getattr(bomber, '__version__', 'unknown')} source={Path(__file__).resolve()}", flush=True)
+    enabled = bool(args.history_minutes or args.history_config or args.history_file)
+    print(f"横截面运行配置: products={args.products} lookback={args.lookback} "
+          f"history_enabled={enabled} history_minutes={(args.history_minutes or args.lookback + 1) if enabled else 0} "
+          f"seconds={args.seconds}", flush=True)
     runtime = build_runtime(args)
     try:
         runtime.run()

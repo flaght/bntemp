@@ -14,7 +14,8 @@ class CalendarReferences:
     # 兼容原生CTP生命周期的报告契约；跨期没有因子日期口径。
     factor_date_basis = None
 
-    def __init__(self, service, product, roles, *, clock_ns=None):
+    def __init__(self, service, product, roles, *, clock_ns=None, allowed_venues=CTP_PORTFOLIO_VENUES):
+        self.allowed_venues = frozenset(allowed_venues)
         self.service, self.product, self.roles = service, product, tuple(roles)
         self.trading_day = service.trading_day
         self.clock_ns = clock_ns or time.time_ns
@@ -65,8 +66,8 @@ class CalendarReferences:
     def validate(self):
         specs = self.specs
         if set(specs) != set(self.roles) or any(s.product != self.product or
-                s.venue not in CTP_PORTFOLIO_VENUES or s.currency != "CNY" for s in specs.values()):
-            raise ValueError("跨期支持SHFE/INE/DCE/CZCE单品种人民币期货")
+                s.venue not in self.allowed_venues or s.currency != "CNY" for s in specs.values()):
+            raise ValueError(f"跨期支持声明交易所{sorted(self.allowed_venues)}单品种人民币期货")
         if len({s.venue for s in specs.values()}) != 1 or len(set(self.instrument_ids.values())) != 2:
             raise ValueError("跨期双腿须为同交易所的不同真实合约")
 

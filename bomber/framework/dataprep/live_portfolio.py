@@ -15,14 +15,18 @@ def ctp_futures_symbol(symbol, venue):
     """将已由条款/生命周期核验的真实期货代码转为CTP柜台代码。
 
     资料身份与原始指纹仍保留在service中；不猜测主力合约或交割年。
-    郑商所使用大写品种和YMM，其余三个交易所使用小写品种和YYMM。
+    郑商所使用大写品种和YMM，中金所大写品种和YYMM，其余商品交易所小写YYMM。
     """
     match = re.fullmatch(r"([A-Za-z]+)(\d{3,4})", str(symbol).strip())
-    if venue not in CTP_PORTFOLIO_VENUES or not match:
+    if venue not in CTP_PORTFOLIO_VENUES | {"CFFEX"} or not match:
         raise ValueError(f"不支持的CTP真实期货代码: {symbol}.{venue}")
     product, month = match.groups()
     if not 1 <= int(month[-2:]) <= 12 or (venue != "CZCE" and len(month) != 4):
         raise ValueError(f"无效的CTP期货交割月份: {symbol}.{venue}")
+    if venue == "CFFEX":
+        if product.upper() not in {"IM", "IF"}:
+            raise ValueError("当前CFFEX代码适配仅支持IM/IF")
+        return product.upper() + month
     if venue == "CZCE":
         return product.upper() + month[-3:]
     return product.lower() + month
@@ -33,7 +37,8 @@ class PortfolioRoleReferences:
     paths = ()
     refresh_on_event = False
 
-    def __init__(self, service):
+    def __init__(self, service, *, allowed_venues=CTP_PORTFOLIO_VENUES):
+        self.allowed_venues = frozenset(allowed_venues)
         self.service = service
         self.products = service.products
         self.trading_day = service.trading_day
@@ -45,9 +50,9 @@ class PortfolioRoleReferences:
     def validate(self):
         specs = self.specs
         unsupported = {p: (s.venue, s.currency) for p, s in specs.items()
-                       if s.venue not in CTP_PORTFOLIO_VENUES or s.currency != "CNY"}
+                       if s.venue not in self.allowed_venues or s.currency != "CNY"}
         if unsupported:
-            raise ValueError(f"组合在线通道仅支持SHFE/INE/DCE/CZCE人民币期货: {unsupported}")
+            raise ValueError(f"组合在线通道仅支持声明交易所{sorted(self.allowed_venues)}人民币期货: {unsupported}")
         if len(set(self.instrument_ids.values())) != len(self.products):
             raise ValueError("多品种不能映射到同一个真实合约")
 
