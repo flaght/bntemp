@@ -1,0 +1,78 @@
+{
+  "revision": "REV40",
+  "date": "2026-10-17",
+  "status": "offline_passed_remote_incident_cause_not_unique",
+  "verification": "controlled_offline_no_network",
+  "network_connected": false,
+  "real_broker_orders_submitted": 0,
+  "remote_error": {
+    "report_dir": "calendar-cu-n1792157494436899523-1792167266042554423",
+    "action": "poll",
+    "exception": "策略价格路由或时效不符",
+    "bar_counts": {
+      "cu2612.SHFE": 9,
+      "cu2701.SHFE": 7
+    },
+    "limitation": "old error contains no instrument, age or reason; exact remote cause remains unproven"
+  },
+  "reproduced_boundary": {
+    "client_age_seconds": 119.999,
+    "server_age_seconds": 120.001,
+    "before": "poll rejects expiry and queued fill delivery/ack is interrupted",
+    "after": "expired own-route observation omitted; account price unchanged; one fill delivered and acknowledged; one order only"
+  },
+  "unchanged_guards": [
+    "120-second submit and continue price validation",
+    "30-second configured instrument health",
+    "future timestamps rejected",
+    "foreign routes rejected even when expired",
+    "invalid prices or timestamps rejected",
+    "atomic price batch validation",
+    "checkpoint identities and existing strategy IDs/positions/cursors"
+  ],
+  "diagnostics": {
+    "price_error": [
+      "strategy_id",
+      "instrument_id",
+      "reason",
+      "price",
+      "ts_event",
+      "checked_at_ns",
+      "age_seconds",
+      "max_age_seconds"
+    ],
+    "worker_report": "price_sync.expired_observations and price_sync.last_expired (process-local only)"
+  },
+  "tests": {
+    "report": "tests/results/main-ema-acceptance-1792168164452820000/summary.json",
+    "report_sha256": "c64290c088513fc52f6c32516de6ac0aecec1b788ad7910b96667e0dad07d78b",
+    "shared-account": 83,
+    "shared-ipc": 47,
+    "total": 130,
+    "modules": [
+      {
+        "module": "shared-account",
+        "exit_code": 0,
+        "seconds": 2.922
+      },
+      {
+        "module": "shared-ipc",
+        "exit_code": 0,
+        "seconds": 2.698
+      }
+    ],
+    "added_cases": [
+      "test_remote_poll_price_expiry_in_transit_still_delivers_and_acknowledges_fill",
+      "test_poll_expired_prices_do_not_relax_submit_or_continue_validation"
+    ],
+    "expanded_case": "test_poll_publishes_owned_route_prices_before_signals_and_rejects_future_or_foreign"
+  },
+  "original_17_user_files_unchanged": true,
+  "resume_config": "scripts/integration/shared_account/night_cu_au_ag_sc_age30.json",
+  "remaining": [
+    "full remote calendar summary",
+    "Linux shared-ipc regression",
+    "same-day read-only preflight",
+    "resume same account plus three workers and review actual reports; GAP10 remains open"
+  ]
+}

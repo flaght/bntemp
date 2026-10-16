@@ -1,5 +1,31 @@
 # 同账户多策略 SimNow 宿主
 
+## 当前恢复补充：回报轮询的价格过期边界（REV40，2026-10-17）
+
+现场calendar在drain_events的poll返回“策略价格路由或时效不符”。该错误属于
+IPC的120秒参考价同步校验，独立于下方30秒逐合约健康门；旧错误未携带合约及
+时间，不能仅凭堆栈判断是过期、未来时间还是路由不符。
+
+已确定性复现一个同触发点问题：worker筛选价格时119.999秒，账户处理时
+120.001秒，原poll拒绝全部响应，该次poll连已排队成交回报也未交付。现在poll仅丢弃
+合法自有路由中已过期的观测，既不更新参考价也不触发报单，继续交付并确认
+执行事件。submit/continue仍严格拒绝过期价，未来时间、非法时间/价格及其他
+路由在poll中仍拒绝；价格整批校验后才更新。回报归属、游标与账本格式不变。
+
+所有价格拒绝错误现在记录strategy_id、instrument_id、reason、ts_event、
+checked_at_ns、age_seconds和max_age_seconds。worker报告新增price_sync，含
+本进程expired_observations累计及最近last_expired列表；不写入恢复身份或账本。
+30秒配置及下方四终端命令继续使用，不改策略名、不生成新会话。同步后先停止
+旧进程，在Linux校验并复验shared-ipc，再按下方顺序preflight和全部resume：
+
+```bash
+sha256sum -c doc/evidence/checksums/GAP10_IPC_POLL_PRICE_EXPIRY_20261017_REV40_SHA256.txt
+python -u -m tests.run_main_ema_acceptance --only shared-ipc
+```
+
+本机shared-account83、shared-ipc47共130项通过，未连接柜台。修复复现的边界，
+尚不能把本次现场唯一成因写成已证明；仍需本次calendar完整summary及恢复报告。
+
 ## 当前夜盘逐合约时效30秒（REV39，2026-10-17）
 
 用户确认将本轮CTP逐合约时效设为30秒。配置顶层增加

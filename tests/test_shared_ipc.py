@@ -323,6 +323,69 @@ class SharedIpcTests(unittest.TestCase):
             self.assertFalse(broker2.sent)
             resumed.stop()
 
+    def test_remote_poll_price_expiry_in_transit_still_delivers_and_acknowledges_fill(self):
+        from unittest.mock import patch
+        from bomber.framework.trader.execution.ipc_client import RemoteAccountService
+        from bomber.framework.trader.execution.shared import SharedRiskBudget
+        from bomber.framework.trader.execution.risk import MarketReferencePriceStore
+        with nullcontext(self.enterContext(TemporaryDirectory())) as directory:
+            _, _, service, transport, protocol = self.prepare(Path(directory)/"account.json")
+            owner = self
+            base = time.time_ns()
+            class Connection:
+                sid, lease, sequence = "one", None, 0
+                def call(self, action, data):
+                    self.sequence += 1
+                    # worker筛选时119.999秒，账户处理时120.001秒。
+                    with patch.object(time, "time_ns", return_value=base+2_000_000):
+                        result = owner.call(protocol, "one", action, data, lease=self.lease,
+                            request_id=f"expiry-{self.sequence}")
+                    if action == "attach":
+                        self.lease = result["lease"]
+                    return result
+            remote = RemoteAccountService(Connection(), service._ports["one"].configuration(), protocol.state("one"))
+            port = remote.strategy_client("one", routes={"main": self.instrument}, budget=SharedRiskBudget(5, 50000),
+                instrument_limits=service._ports["one"].instrument_limits)
+            port.ready_check = lambda: True
+            port.start()
+            remote.prices.update(self.instrument, 100, self.now)
+            port.submit_targets(self.request(service.client_id, strategy="one", quantity=1, timestamp=self.now))
+            transport.fill(transport.sent[-1]["OrderRef"], 1)
+            previous = service.prices.get(self.instrument)
+            remote.prices = MarketReferencePriceStore()
+            remote.prices.update(self.instrument, 999, base-120_000_000_000+1_000_000)
+            with patch.object(time, "time_ns", return_value=base):
+                port.drain_events()
+            self.assertEqual(port.cursor, len(protocol.journal.events["one"]))
+            self.assertEqual(protocol.journal.ack["one"], port.cursor)
+            self.assertEqual(sum(type(event).__name__ == "FillEvent" for event in port.received_events), 1)
+            self.assertEqual(remote.position_manager.position("one", "main"), 1)
+            self.assertEqual(service.prices.get(self.instrument), previous)
+            self.assertEqual(len(transport.sent), 1)
+            self.assertFalse(service._failed or service._pending)
+            self.assertEqual(port.price_sync["expired_observations"], 1)
+            self.assertEqual(port.price_sync["last_expired"][0]["instrument_id"], str(self.instrument))
+            self.assertGreater(port.price_sync["last_expired"][0]["age_seconds"], 120)
+            port.begin_stop()
+
+    def test_poll_expired_prices_do_not_relax_submit_or_continue_validation(self):
+        with nullcontext(self.enterContext(TemporaryDirectory())) as directory:
+            _, _, service, transport, protocol = self.prepare(Path(directory)/"account.json")
+            lease = self.attach(protocol, "one")
+            expired = {str(self.instrument): {"price": "999", "ts_event": time.time_ns()-121_000_000_000}}
+            previous = service.prices.get(self.instrument)
+            result = self.call(protocol, "one", "poll", {"cursor": 0, "ready": True, "prices": expired}, lease=lease)
+            self.assertEqual(result["expired_prices"][0]["reason"], "expired")
+            self.assertEqual(service.prices.get(self.instrument), previous)
+            for action in ("submit", "continue"):
+                with self.assertRaisesRegex(ValueError, "reason.*expired"):
+                    self.call(protocol, "one", action, {**self.target(protocol, "one", 1),
+                        "ready": True, "prices": expired}, lease=lease)
+            self.assertFalse(transport.sent)
+            self.assertFalse(protocol.journal.requests)
+            self.assertFalse(service.snapshot_state()["sources"])
+            protocol.stop_owner("one")
+
     def test_poll_publishes_owned_route_prices_before_signals_and_rejects_future_or_foreign(self):
         with nullcontext(self.enterContext(TemporaryDirectory())) as directory:
             _, _, service, transport, protocol = self.prepare(Path(directory)/"account.json")
@@ -333,10 +396,17 @@ class SharedIpcTests(unittest.TestCase):
             self.assertEqual(service.prices.get(self.instrument).price, 3210)
             self.assertFalse(transport.sent)
             self.assertFalse(protocol.leases["one"]["ready"])
-            invalid = {**row, "au2612.SHFE": {"price": "1000", "ts_event": stamp}}
-            for prices in (invalid, {str(self.instrument): {"price": "4000", "ts_event": stamp + 1_000_000_000}}):
-                with self.assertRaisesRegex(ValueError, "路由或时效"):
+            invalid = {str(self.instrument): {"price": "4321", "ts_event": stamp},
+                "au2612.SHFE": {"price": "1000", "ts_event": stamp-121_000_000_000}}
+            cases = [(invalid, "foreign_route"),
+                ({str(self.instrument): {"price": "4000", "ts_event": stamp+1_000_000_000}}, "future"),
+                ({str(self.instrument): {"price": "NaN", "ts_event": stamp-121_000_000_000}}, "invalid_price"),
+                ({str(self.instrument): {"price": "100", "ts_event": False}}, "invalid_timestamp")]
+            for prices, reason in cases:
+                with self.assertRaisesRegex(ValueError, f"路由或时效.*reason.*{reason}") as raised:
                     self.call(protocol, "one", "poll", {"cursor": 0, "ready": True, "prices": prices}, lease=lease)
+                self.assertIn("instrument_id", str(raised.exception))
+                self.assertIn("checked_at_ns", str(raised.exception))
                 self.assertFalse(protocol.leases["one"]["ready"])
                 self.assertEqual(service.prices.get(self.instrument).price, 3210)
             protocol.stop_owner("one")

@@ -14,6 +14,7 @@ import threading
 import time
 
 MAX_MESSAGE = 1_048_576
+MAX_PRICE_AGE_NS = 120_000_000_000
 
 
 def wire(value):
@@ -170,18 +171,31 @@ class AccountExecutionProtocol:
                 self.stop_owner(sid)
         self.service.poll()
 
-    def _update_prices(self, port, prices):
+    def _update_prices(self, port, prices, *, discard_expired=False):
         from bomber.framework.market.basic.base import InstrumentId
-        now, updates = time.time_ns(), []
+        now, updates, expired = time.time_ns(), [], []
         for instrument, row in prices.items():
             parsed = InstrumentId.from_str(instrument)
             stamp, price = row["ts_event"], Decimal(row["price"])
-            if (parsed not in port.routes.values() or isinstance(stamp, bool) or not isinstance(stamp, int)
-                    or not 0 <= now - stamp <= 120_000_000_000 or not price.is_finite() or price <= 0):
-                raise ValueError("策略价格路由或时效不符")
+            valid_stamp = not isinstance(stamp, bool) and isinstance(stamp, int) and stamp > 0
+            age = now - stamp if valid_stamp else None
+            reason = ("foreign_route" if parsed not in port.routes.values() else
+                "invalid_timestamp" if not valid_stamp else
+                "invalid_price" if not price.is_finite() or price <= 0 else
+                "future" if age < 0 else "expired" if age > MAX_PRICE_AGE_NS else None)
+            if reason is not None:
+                context = {"strategy_id": port.strategy_id, "instrument_id": instrument, "reason": reason,
+                    "price": str(price), "ts_event": stamp, "checked_at_ns": now,
+                    "age_seconds": age / 1e9 if age is not None else None,
+                    "max_age_seconds": MAX_PRICE_AGE_NS / 1e9}
+                if discard_expired and reason == "expired":
+                    expired.append(context)
+                    continue
+                raise ValueError(f"策略价格路由或时效不符: {context}")
             updates.append((parsed, price, stamp))
         for instrument, price, stamp in updates:
             self.service.prices.update(instrument, price, stamp)
+        return expired
 
     def handle(self, message):
         from bomber.framework.market.basic.base import InstrumentId
@@ -230,12 +244,15 @@ class AccountExecutionProtocol:
         if action == "cancel":
             port.cancel_strategy(sid)
         elif action == "poll":
-            self._update_prices(port, data.get("prices", {}))
+            # 客户端筛选后，排队/传输可让临界参考价过期。只丢弃该观测，
+            # 不用旧价更新账户，也不能让回报交付被行情同步阻断；报单仍严格校验。
+            expired = self._update_prices(port, data.get("prices", {}), discard_expired=True)
             lease["ready"] = bool(data.get("ready", False))
             self.journal.acknowledge(sid, data["cursor"])
             self.service._save()
             with self.service.client._submit_lock:
-                return {"state": self.state(sid), "events": self.journal.read(sid, data["cursor"])}
+                return {"state": self.state(sid), "events": self.journal.read(sid, data["cursor"]),
+                    "expired_prices": expired}
         elif action in {"submit", "continue"}:
             if self.service.execution_stop is not None:
                 return {"state": self.state(sid), "accepted": False,

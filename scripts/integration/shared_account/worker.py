@@ -251,6 +251,7 @@ def _run(args, config, stop_event):
                     "positions": session.client.state["positions"] if session else None,
                     "cursor": session.client.cursor if session else None,
                     "fills_received": session.strategy.fills_received if session else None,
+                    "price_sync": getattr(session.client, "price_sync", None) if session else None,
                     "source_revision": session.client.state["source_revision"] if session else None,
                     "last_targets": getattr(session.strategy, "last_targets", None) if session else None,
                     "reference_manifest": getattr(session.references, "manifest", None) if session else None,

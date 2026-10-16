@@ -4,7 +4,7 @@ from decimal import Decimal
 import time
 
 from bomber.framework.trader.portfolio import PositionManager
-from .ipc import decode_event, wire
+from .ipc import MAX_PRICE_AGE_NS, decode_event, wire
 from .risk import MarketReferencePriceStore
 
 
@@ -44,6 +44,7 @@ class RemoteStrategyExecutionClient:
         self._revision = 0
         self.completed = None
         self.received_events = []
+        self.price_sync = {"expired_observations": 0, "last_expired": []}
 
     def configuration(self):
         return self._configuration
@@ -111,6 +112,9 @@ class RemoteStrategyExecutionClient:
             return  # begin_stop已排空并确认回报；不能再轮询已关闭的租约。
         result = self.service.connection.call("poll", {"cursor": self.cursor,
             "ready": bool(not self._stopping and self.ready_check()), "prices": self.price_state(fresh_only=True)})
+        if result.get("expired_prices"):
+            self.price_sync["expired_observations"] += len(result["expired_prices"])
+            self.price_sync["last_expired"] = result["expired_prices"]
         self.sync(result["state"])
         self.deliver(result["events"], completed)
         if result["events"]:
@@ -125,10 +129,11 @@ class RemoteStrategyExecutionClient:
             raise RuntimeError(f"未知账户停止原因: {stopped['reason']}")
 
     def price_state(self, *, fresh_only=False):
+        prices = self.service.prices.snapshot()
         now = time.time_ns()
         return {str(i): {"price": str(p.price), "ts_event": p.ts_event}
-                for i, p in self.service.prices.snapshot().items() if i in self.routes.values()
-                and (not fresh_only or 0 <= now - p.ts_event <= 120_000_000_000)}
+                for i, p in prices.items() if i in self.routes.values()
+                and (not fresh_only or 0 <= now - p.ts_event <= MAX_PRICE_AGE_NS)}
 
     def submit_targets(self, request):
         if self._stopping or request.strategy_id != self.strategy_id:
