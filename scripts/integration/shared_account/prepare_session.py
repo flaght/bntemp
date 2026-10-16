@@ -214,8 +214,10 @@ def main(argv=None):
             parser.error("日期须为YYYYMMDD")
     if args.source_day >= args.trading_day or bool(args.replay_md_trading_day) != (args.environment == "replay"):
         parser.error("来源日须早于TD日；replay须且仅replay可声明原始MD日")
-    if args.output.exists() or not 0 < args.seconds <= 3600:
-        parser.error("不得覆盖已有配置；运行时长须在(0,3600]秒")
+    if args.output.exists():
+        parser.error(f"目标配置已存在，禁止覆盖: {args.output}")
+    if not 0 < args.seconds <= 3600:
+        parser.error("运行时长须在(0,3600]秒")
     suffix = f"{args.environment}-{args.execution_mode}-{args.trading_day}"
     cross_id = "cross-" + "-".join(p.lower() for p in args.cross_products) + "-three"
     if args.cross_products != ("CU", "AL"):

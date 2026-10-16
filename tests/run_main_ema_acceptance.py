@@ -110,6 +110,7 @@ SOURCES = (
     "scripts/integration/shared_account/server.py",
     "scripts/integration/shared_account/worker.py",
     "scripts/integration/shared_account/prepare_session.py",
+    "scripts/integration/shared_account/prepare_night.py",
     "scripts/integration/shared_account/preflight.py",
     "scripts/integration/shared_account/discover.py",
     "bomber/framework/trader/execution/ipc.py",

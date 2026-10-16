@@ -659,3 +659,21 @@ socket直至所有worker回报/停止确认完成。未发送预留撤回，已�
 双腿第二腿前失效撤回未发预留、显式恢复保持原仓及已用额度。仅SDK/柜台传输及
 健康输入为替身，原策略完整原生运行及现场断流原因仍需Linux报告核对。
 证据：doc/evidence/live/GAP10_MARKET_STOP_DRAIN_20261016_REV35.json；GAP10仍开放。
+
+## 2026-10-16 REV36：夜盘准备入口替代长粘贴命令
+
+用户改用01/03 CU与04 CU/AU/AG/SC、不加载历史。上轮回复的长Python片段把
+generated.json写在会话目录，重跑时被标准生成器的禁止覆盖规则拦住，3600秒
+合法；不是行情或交易运行错误。新增应用入口prepare_night，复用prepare_session、
+observed_budget、read_config，不修改策略算法或公共执行链。
+
+准备中间文件只放TemporaryDirectory，不依赖或改写残留generated.json。最终配置
+固定从完整commodity四品种观察读取TD/来源日、逐策略合约与乘数；锁定实际路由，
+七腿账户及横截面两名每侧预算按当前盘口计算，200笔、每合约最多1手。显式
+history-minutes=0且不带历史文件/配置，仍使用实时EMA3/5和跨期/截面lookback3。
+新商品会话独立目录和ID，柜台旧仓按preserve_external基线保留，不分配策略归属。
+
+重复准备时只复用一致且未启动的session.json，保持字节和mtime；已有账户/worker
+检查点或配置差异拒绝。环境路径文件原子替换，不触及原账本；新配置禁止覆盖。
+标准prepare_session把输出已存在与时长非法拆成独立错误，避免再次误判。
+配置专项与共享IPC离线回归见REV36证据，真实夜盘观察及三策略运行仍待Linux。

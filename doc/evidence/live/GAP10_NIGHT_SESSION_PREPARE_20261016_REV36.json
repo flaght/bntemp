@@ -1,0 +1,65 @@
+{
+  "revision": "REV36",
+  "status": "offline_passed_remote_night_run_pending",
+  "reported_failure": "Long pasted preparation command created generated.json; rerunning standard generator hit existing-output guard. 3600 seconds is legal.",
+  "entry": "python -u -m scripts.integration.shared_account.prepare_night --observations \"$NIGHT_DIR/observed.json\" --output-dir \"$NIGHT_DIR\"",
+  "selection": {
+    "main_ema": "CU main",
+    "calendar_spread": "CU secondary+far",
+    "cross_section": [
+      "CU",
+      "AU",
+      "AG",
+      "SC"
+    ]
+  },
+  "history": {
+    "minutes": 0,
+    "file": null,
+    "config": null,
+    "runtime_warmup": "original commodity EMA3/5; calendar/cross lookback3 with full live minute bars/frames"
+  },
+  "budget": "Seven owned legs at actual per-strategy quotes/specs; rounded account notional and per-leg limits; cross per-side covers two times most expensive observed cross leg; cap1 per contract and 200 orders",
+  "preparation": [
+    "Reuse original prepare_session/observed_budget/read_config",
+    "TemporaryDirectory holds standard generator output, never touches existing generated.json",
+    "Pin observed actual strategy routes including factor-aware CU for EMA/cross",
+    "Reject incomplete/failed observations, invalid prices, wrong products or identical calendar legs before final output",
+    "Create session.json exclusively; repeat preparation of identical unstarted configuration preserves bytes and mtime",
+    "Reject different existing session configuration or any account/worker checkpoints without rewriting",
+    "Write shell-quoted current-session environment atomically; normal account process still creates authentication tokens",
+    "Separate existing-output error from invalid duration error in standard generator"
+  ],
+  "existing_positions": "New independent commodity session uses existing preserve_external baseline; no prior strategy checkpoint reset or adopted strategy ownership",
+  "verification": {
+    "configuration_tests": 20,
+    "shared_ipc_tests": 40,
+    "report_dir": "tests/results/main-ema-acceptance-1792158191629675000",
+    "status": "passed",
+    "regressions": [
+      "leftover generated.json retry",
+      "identical repeat retains configuration bytes/mtime",
+      "existing account/worker checkpoint refusal",
+      "invalid observation before config/environment write",
+      "AU multiplier/high per-leg and two-selection side budget",
+      "actual shared Unix socket and scope migration regressions"
+    ]
+  },
+  "broker_connected": false,
+  "database_connected": false,
+  "real_broker_orders_submitted": 0,
+  "user_runtime_files_modified": false,
+  "remote_next": [
+    "sync REV36",
+    "shared-ipc regression",
+    "reuse original NIGHT_DIR and observed.json with prepare_night",
+    "fresh readonly preflight",
+    "existing terminal1 server and terminal2/3/4 worker commands with regenerated environment"
+  ],
+  "sources": {
+    "scripts/integration/shared_account/prepare_night.py": "467db0608daa25c5e6ca7d290768c8222e6af88a8aa8257457490898a5bb3d81",
+    "scripts/integration/shared_account/prepare_session.py": "b50cc21f88474c35b93fa8e23ccfb3c5a1e3ac9c03be798e5a181a8d60b647a8",
+    "tests/test_shared_process_cli.py": "df106a26c2ff5d4a13c5f2789f830ff2d87c22d8815715eb4e42f8674f408c27",
+    "tests/run_main_ema_acceptance.py": "9c30cd10d5428112531bce5a117b133de54ee628877aa7369fdce83922c46edc"
+  }
+}

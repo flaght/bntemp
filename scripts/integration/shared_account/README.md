@@ -1,5 +1,48 @@
 # 同账户多策略 SimNow 宿主
 
+## CU／AU／AG／SC夜盘实时预热（REV36）
+
+01使用CU主力，03使用CU次主力/远月，04使用CU/AU/AG/SC。沿用商品联调参数
+EMA 3/5、跨期及横截面lookback=3；关闭历史加载，实时完整Bar/同步帧仍须预热。
+先正常停止原账户服务与worker，按同一品种集合discover；交易日不手工猜测。
+本入口只准备新商品会话，不迁移或接管旧策略账本；柜台原持仓由preserve_external
+基线保留，七条策略归属腿的预算按实际逐策略盘口计算，每合约最多1手，200笔上限。
+
+终端1原有NIGHT_DIR及observed.json可以直接复用，不删除失败命令留下的generated.json：
+
+```bash
+python -u -m scripts.integration.shared_account.prepare_night \
+  --observations "$NIGHT_DIR/observed.json" \
+  --output-dir "$NIGHT_DIR"
+
+source /tmp/bomber-night-cu-au-ag-sc.env
+
+python -u -m scripts.integration.shared_account.preflight \
+  --config "$NIGHT_CONFIG" --connect
+```
+
+逐步执行，prechecked且零报单后启动唯一账户服务：
+
+```bash
+python -u -m scripts.integration.shared_account.server \
+  --config "$NIGHT_CONFIG" --socket "$NIGHT_SOCKET" \
+  --credentials-dir "$NIGHT_KEYS" \
+  --connect --enable-orders --confirm-simnow
+```
+
+看到服务就绪后，三个worker沿用终端2/3/4的命令。每个终端加载相同环境文件，
+策略ID分别是ema-cu-n${NIGHT_TAG}、calendar-cu-n${NIGHT_TAG}、
+cross-cu-au-ag-sc-n${NIGHT_TAG}。首次启动不用resume；已有检查点改走原恢复流程。
+
+prepare_night复用标准prepare_session和observed_budget，只在临时目录生成中间
+配置，核验完整观察/预算/真实合约后才创建session.json。重复执行时，一致且未
+启动的配置逐字节保留；不一致或已有检查点拒绝重新准备。忽略旧generated.json，
+不改写该文件或旧账本。关闭历史必须同时无history-config/history-file且
+history-minutes=0；输出全部策略argv供核对。使用本机环境文件传递配置路径和ID，
+令牌仍由账户服务创建。
+
+---
+
 REV33支持[IM/IH/IC/IF四品种及已成交会话迁移](CFFEX_FOUR_JOINT_ACCEPTANCE.md)。
 已有成交沿用原账户和三个策略ID，权威只读核验后输出独立目标账本，保留归属、
 订单历史、事件游标及已用额度；仅增加IH/IC零路由，指标重新预热。原IM/IF配置

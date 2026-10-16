@@ -12,10 +12,106 @@ import threading
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from scripts.integration.shared_account import config, prepare_session, server, worker, preflight
+from scripts.integration.shared_account import config, prepare_session, prepare_night, server, worker, preflight
 
 
 class ProcessCliTests(unittest.TestCase):
+    def night_observation(self, path):
+        contracts = {p: {"main": p.lower()+"2612."+("INE" if p == "SC" else "SHFE")}
+                     for p in prepare_night.PRODUCTS}
+        contracts["CU"].update(secondary="cu2701.SHFE", far="cu2702.SHFE")
+        routes = {"main_ema": {"CU": {"main": "cu2611.SHFE"}},
+            "cross_section": {p: {"main": "cu2611.SHFE" if p == "CU" else v["main"]} for p, v in contracts.items()},
+            "calendar_spread": {"CU": contracts["CU"]}}
+        instruments = {i for products in routes.values() for roles in products.values() for i in roles.values()}
+        data = {"status": "observed", "orders_submitted": 0, "verification": "readonly_dates_and_contracts",
+            "environment": "realtime", "profile": "commodity", "cross_products": list(prepare_night.PRODUCTS),
+            "session_arguments": {"trading_day": "20261019", "source_day": "20261016", "replay_md_trading_day": None},
+            "contracts": contracts, "strategy_contracts": routes,
+            "instrument_specs": {i: {"tick": "1", "multiplier": "1000" if i.startswith("au") else "5"} for i in instruments},
+            "quotes": {i: {"bid": "1000" if i.startswith("au") else "100000",
+                           "ask": "1001" if i.startswith("au") else "100001"} for i in instruments}}
+        path.write_text(json.dumps(data))
+        return data
+
+    def test_night_prepare_ignores_existing_generated_and_reuses_identical_config_without_rewrite(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)/"night-cu-1792135000000000000"
+            root.mkdir()
+            observed, env = root/"observed.json", Path(directory)/"night.env"
+            self.night_observation(observed)
+            generated = root/"generated.json"
+            generated.write_bytes(b"original intermediate file left by previous command")
+            argv = ["--observations", str(observed), "--output-dir", str(root), "--env-file", str(env)]
+            with redirect_stdout(StringIO()):
+                prepare_night.main(argv)
+            out = root/"session.json"
+            original = out.read_bytes(), out.stat().st_mtime_ns
+            c = config.read_config(out)
+            self.assertEqual(c["account"]["max_gross_quantity"], "7")
+            self.assertEqual(c["account"]["max_session_orders"], 200)
+            self.assertEqual(c["existing_position_policy"], "preserve_external")
+            self.assertEqual(c["account"]["max_gross_notional"], "4100000")
+            self.assertEqual(c["account_state_file"], str((root/"account.json").resolve()))
+            for row in c["strategies"]:
+                a = row["argv"]
+                self.assertEqual(a[a.index("--history-minutes")+1], "0")
+                self.assertNotIn("--history-config", a)
+                self.assertNotIn("--history-file", a)
+                self.assertFalse(Path(row["state_file"]).exists())
+                if row["kind"] == "cross_section":
+                    self.assertEqual(a[a.index("--products")+1], "CU,AU,AG,SC")
+                    self.assertEqual(a[a.index("--max-notional")+1], "1100000")
+                    self.assertEqual(a[a.index("--target-notional")+1], "2100000")
+                    self.assertIn("CU=cu2611.SHFE", a)
+            with redirect_stdout(StringIO()):
+                prepare_night.main(argv)
+            self.assertEqual((out.read_bytes(), out.stat().st_mtime_ns), original)
+            self.assertEqual(generated.read_bytes(), b"original intermediate file left by previous command")
+            self.assertIn("NIGHT_TAG=1792135000000000000", env.read_text())
+            # 已有状态时必须改走恢复入口，不能再按首次启动覆写配置/环境。
+            Path(c["account_state_file"]).write_bytes(b"existing ledger")
+            env_before = env.read_bytes()
+            with redirect_stderr(StringIO()), self.assertRaises(SystemExit):
+                prepare_night.main(argv)
+            self.assertEqual(out.read_bytes(), original[0])
+            self.assertEqual(Path(c["account_state_file"]).read_bytes(), b"existing ledger")
+            self.assertEqual(env.read_bytes(), env_before)
+
+    def test_night_prepare_rejects_bad_observation_before_config_or_environment_write(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)/"night-cu-1792135000000000000"
+            root.mkdir()
+            observed, env = root/"observed.json", Path(directory)/"night.env"
+            original = self.night_observation(observed)
+            for mutate in (lambda d: d.update(status="failed"), lambda d: d.update(cross_products=["CU", "AU"]),
+                    lambda d: d["quotes"]["au2612.SHFE"].update(ask="0"),
+                    lambda d: d["strategy_contracts"]["calendar_spread"]["CU"].update(far="cu2701.SHFE")):
+                from copy import deepcopy
+                data = deepcopy(original)
+                mutate(data)
+                observed.write_text(json.dumps(data))
+                with redirect_stderr(StringIO()), self.assertRaises(SystemExit):
+                    prepare_night.main(["--observations", str(observed), "--output-dir", str(root), "--env-file", str(env)])
+                self.assertFalse((root/"session.json").exists())
+                self.assertFalse((root/"generated.json").exists())
+                self.assertFalse(env.exists())
+
+    def test_night_prepare_never_rewrites_different_session_or_old_worker_checkpoint(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)/"night-cu-1792135000000000000"
+            root.mkdir()
+            observed, env, out = root/"observed.json", Path(directory)/"night.env", root/"session.json"
+            self.night_observation(observed)
+            argv = ["--observations", str(observed), "--output-dir", str(root), "--env-file", str(env)]
+            for old_path, content in ((out, b'{"version": 9}'), (root/"main_ema.json", b"old worker state")):
+                old_path.write_bytes(content)
+                with redirect_stderr(StringIO()), self.assertRaises(SystemExit):
+                    prepare_night.main(argv)
+                self.assertEqual(old_path.read_bytes(), content)
+                self.assertFalse(env.exists())
+                old_path.unlink()
+
     def test_cffex_four_profile_preserves_traded_identities_in_separate_migration_files(self):
         from scripts.integration.shared_account.migrate_scope import validate_scope_configs
         with TemporaryDirectory() as directory:
