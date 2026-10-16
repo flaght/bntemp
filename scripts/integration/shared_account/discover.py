@@ -9,6 +9,31 @@ import time
 from .prepare_session import parse_cross_products, observed_budget
 
 
+def observe_reference_views(source, *, trading_day, environment, product, roles, products, clock_ns=None):
+    """按原策略的因子口径读取；跨期无因子，01/04同角色因子合约优先。"""
+    from bomber.framework.dataprep.live_references import LiveFuturesReferences
+    from types import SimpleNamespace
+    clock = clock_ns or time.time_ns
+    all_products = tuple(dict.fromkeys((product, *products)))
+    role_names = {p: tuple(dict.fromkeys(("main", *roles))) if p == product else ("main",) for p in all_products}
+    def read(selected_products, selected_roles, factor_roles, availability):
+        service = LiveFuturesReferences(source, products=selected_products, roles=selected_roles,
+            factor_roles=factor_roles, trading_day=trading_day, started_ns=clock(), clock_ns=clock,
+            factor_date_basis="source", factor_availability=availability)
+        assignment = service.snapshot(clock())
+        return SimpleNamespace(assignment=assignment, instrument_specs=service.instrument_specs, manifest=service.manifest)
+    raw = read(all_products, role_names, (), "source-day-end")
+    availability = "source-day-end" if environment == "replay" else "observed-on-read"
+    ema = read((product,), ("main",), ("main",), availability)
+    cross = read(products, ("main",), ("main",), availability)
+    if product in products and ema.assignment.instrument(product, "main") != cross.assignment.instrument(product, "main"):
+        raise RuntimeError("读取期间EMA和横截面的同角色因子合约变化，须重新观察")
+    views = {"main_ema": ema, "cross_section": cross, "calendar_spread": raw}
+    if len({view.assignment.source_day for view in views.values()}) != 1:
+        raise RuntimeError("三个策略资料来源日不一致，不能生成同一会话")
+    return raw, views
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--connect", action="store_true", required=True)
@@ -34,7 +59,6 @@ def main(argv=None):
         CtpLiveProfile, CtpMarketChannel, InstrumentHealthGate)
     from bomber.framework.trader.runtime.live.channels.ctp_shared import CtpSharedAccountLifecycle
     from bomber.framework.trader.runtime.reports import LiveRunReport
-    from bomber.framework.dataprep.live_references import LiveFuturesReferences
     from bomber.framework.dataprep.sources import DataSourcePurpose, DolphinDbReferenceConfig, ReferenceSourceFactory
     from bomber.framework.market.stream.ctp import CtpLiveDataFeed, CtpMdConfig
     from bomber.framework.market.basic.base import InstrumentId, InstrumentMeta, DataType
@@ -64,27 +88,35 @@ def main(argv=None):
             source = ReferenceSourceFactory.create_for(DataSourcePurpose.LIVE_REFERENCE, "dolphindb",
                                                       DolphinDbReferenceConfig.from_env())
             resources.enter_context(source)
-            references = [LiveFuturesReferences(source, products=(product,), trading_day=driver.trading_day,
-                started_ns=time.time_ns(), roles=roles, factor_roles=(), refresh_seconds=0)
-                for product, roles in [(p, tuple(dict.fromkeys(("main", *selected_roles))) if p == selected_product else ("main",))
-                    for p in dict.fromkeys((selected_product, *args.cross_products))]]
-            source_days = {r.snapshot(time.time_ns()).source_day.strftime("%Y%m%d") for r in references}
+            raw, views = observe_reference_views(source, trading_day=driver.trading_day, environment=args.environment,
+                product=selected_product, roles=selected_roles, products=args.cross_products)
+            source_days = {view.assignment.source_day.strftime("%Y%m%d") for view in views.values()}
             fields["observed_source_days"] = sorted(source_days)
-            if len(source_days) != 1:
-                raise RuntimeError("声明品种资料来源日不一致，不能生成同一会话")
+            from bomber.framework.dataprep.live_portfolio import ctp_futures_symbol
+            fields["contracts"] = {p: {role: f"{ctp_futures_symbol(spec.symbol, spec.venue)}.{spec.venue}"
+                for role, spec in specs.items()} for p, specs in raw.instrument_specs.items()}
+            fields["reference_manifests"] = {kind: view.manifest for kind, view in views.items()}
             lifecycle = SimpleNamespace(transport=transport, md_front=required("CTP_MD_ADDRESS"))
             from dataclasses import replace
             feed = CtpLiveDataFeed(replace(build_md_config(CtpMdConfig, lifecycle, flow_path=str(report.path / "md-flow")),
                 future_buffer_ns=args.ctp_future_buffer_ms * 1_000_000))
             resources.callback(feed.disconnect)
             instruments = {}
-            for references_by_product in references:
-                for product, specs in references_by_product.instrument_specs.items():
-                    for role, spec in specs.items():
-                        from bomber.framework.dataprep.live_portfolio import ctp_futures_symbol
+            selections = {"main_ema": {selected_product: ("main",)},
+                "cross_section": {p: ("main",) for p in args.cross_products},
+                "calendar_spread": {selected_product: selected_roles}}
+            fields["strategy_contracts"] = {}
+            for kind, selected in selections.items():
+                fields["strategy_contracts"][kind] = {}
+                for product, roles in selected.items():
+                    fields["strategy_contracts"][kind][product] = {}
+                    for role in roles:
+                        spec = views[kind].instrument_specs[product][role]
                         instrument = InstrumentId.from_str(f"{ctp_futures_symbol(spec.symbol, spec.venue)}.{spec.venue}")
+                        if instrument in instruments and (instruments[instrument].tick, instruments[instrument].multiplier) != (spec.tick, spec.multiplier):
+                            raise RuntimeError("逐策略共享合约条款在读取期间变化，须重新观察")
                         instruments[instrument] = spec
-                        fields.setdefault("contracts", {}).setdefault(product, {})[role] = str(instrument)
+                        fields["strategy_contracts"][kind][product][role] = str(instrument)
                         fields.setdefault("instrument_specs", {})[str(instrument)] = {"tick": str(spec.tick), "multiplier": str(spec.multiplier)}
             for instrument, spec in instruments.items():
                 feed.register_instrument(InstrumentMeta(instrument,
@@ -120,7 +152,8 @@ def main(argv=None):
             with quote_lock:
                 fields["quotes"] = deepcopy(quotes)
             fields["budget_upper_bound"] = observed_budget(fields["contracts"], fields["instrument_specs"],
-                fields["quotes"], args.cross_products, product=selected_product, roles=selected_roles)
+                fields["quotes"], args.cross_products, product=selected_product, roles=selected_roles,
+                strategy_contracts=fields["strategy_contracts"])
             days = {row.trading_day for row in feed.depth_observations.values()}
             fields["observed_md_trading_days"] = sorted(days)
             if len(days) != 1:

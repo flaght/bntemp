@@ -582,3 +582,18 @@ GAP10继续开放。
 逐终端命令见scripts/integration/shared_account/IM_IF_JOINT_ACCEPTANCE.md；证据为
 doc/evidence/live/GAP10_IM_IF_SHARED_QUOTA_OFFLINE_20261016_REV31.json。
 本批不能登记IM/IF真实共享报单通过，GAP10整体仍开放。
+
+## 2026-10-16 REV32：逐策略参考合约发现
+
+用户回传预检三-readonly-1792128375630950926：TD正确，EMA配置预期IM2612、
+实际加载IM2610，orders_submitted=0。REV31探针只读角色表、忽略因子表同角色
+合约优先规则，生成的统一合约不能表示原01/04和无因子的03实际路由。
+现复用LiveFuturesReferences按三种原有口径读取，观察记录strategy_contracts和
+reference_manifests，订阅实际路由盘口并据此计算预算及生成各自预期合约。
+contracts继续表示角色表，未修改因子优先规则、策略算法或任何运行账本。
+
+旧的im-if角色表摘要不再用于生成配置；缺因子及跨读取同角色合约变化闭闸。
+仅有失败预检、没有检查点的配置可在原状态锁下备份并按原文件名重建；已有
+检查点不自动替换。新增shared-discovery专项3项及IPC/配置29项通过，共享账户
+81项回归通过；真实数据库/行情/柜台未连接，新的现场观察及预检仍待Linux执行。
+证据：doc/evidence/live/GAP10_STRATEGY_REFERENCE_DISCOVERY_20261016_REV32.json。

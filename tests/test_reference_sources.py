@@ -81,6 +81,55 @@ class ReferenceSourceTests(unittest.TestCase):
         return LiveFuturesReferences(self.source, products=("RB",), trading_day=DAY,
             started_ns=BASE, clock_ns=lambda: self.now, **kwargs)
 
+    def im_if_views(self):
+        from scripts.integration.shared_account.discover import observe_reference_views
+        return observe_reference_views(self.source, trading_day=DAY, environment="realtime",
+            product="IM", roles=("main", "secondary"), products=("IM", "IF"), clock_ns=lambda: self.now)
+
+    def im_if_tables(self):
+        self.sdk.data["fut_basic"] = pd.DataFrame([
+            {"date": "2026-01-01", "Code": symbol, "contractObject": product, "exchangeCD": "CCFX",
+             "minChgPriceNum": "0.2", "contMultNum": 200 if product == "IM" else 300,
+             "lastTradeDate": "2027-04-30"}
+            for product, symbols in (("IM", ("IM2610", "IM2612", "IM2703")), ("IF", ("IF2610", "IF2612")))
+            for symbol in symbols])
+        self.sdk.data["fut_contract"] = pd.DataFrame([
+            {"date": "2026-09-21", "Code": p, "main": p+"2612", "second": p+"2703"} for p in ("IM", "IF")])
+        self.sdk.data["fut_adjustment_factors"] = pd.DataFrame([
+            {"date": "2026-09-21", "Code": p+"2610", "contractObject": p, "pcr_cumfactor": "1.4"} for p in ("IM", "IF")])
+
+    def test_discover_matches_factor_contracts_for_ema_cross_and_raw_calendar_roles(self):
+        self.im_if_tables()
+        raw, views = self.im_if_views()
+        self.assertEqual(raw.assignment.instrument("IM", "main"), "im2612")
+        self.assertEqual(views["main_ema"].assignment.instrument("IM", "main"), "im2610")
+        self.assertEqual(views["cross_section"].assignment.instrument("IF", "main"), "if2610")
+        self.assertEqual(views["calendar_spread"].assignment.instrument("IM", "main"), "im2612")
+        self.assertEqual(views["calendar_spread"].assignment.instrument("IM", "secondary"), "im2703")
+        self.assertEqual(views["main_ema"].instrument_specs["IM"]["main"].symbol.upper(), "IM2610")
+        self.assertEqual(views["main_ema"].manifest["factor_availability"], "observed-on-read")
+        self.assertIn("adjustment_factors", views["cross_section"].manifest["sources"])
+        self.assertNotIn("adjustment_factors", views["calendar_spread"].manifest["sources"])
+
+    def test_discover_missing_factor_is_not_reported_as_observed_role_only_success(self):
+        self.im_if_tables()
+        self.sdk.data["fut_adjustment_factors"] = self.sdk.data["fut_adjustment_factors"].iloc[0:0]
+        with self.assertRaisesRegex(SectorDataUnavailable, "累计因子"):
+            self.im_if_views()
+
+    def test_discover_rejects_factor_contract_changed_between_ema_and_cross_reads(self):
+        self.im_if_tables()
+        calls = [0]
+        def change(table):
+            if table == "fut_adjustment_factors":
+                calls[0] += 1
+                if calls[0] == 2:
+                    frame = self.sdk.data[table]
+                    frame.loc[frame.contractObject.eq("IM"), "Code"] = "IM2612"
+        self.sdk.on_read = change
+        with self.assertRaisesRegex(RuntimeError, "同角色因子合约变化"):
+            self.im_if_views()
+
     def test_factory_is_lazy_and_placeholders_fail_explicitly(self):
         seen = []
         source = ReferenceSourceFactory.create("dolphindb", self.config,

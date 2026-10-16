@@ -17,11 +17,12 @@ def parse_cross_products(value):
     return products
 
 
-def observed_budget(contracts, specs, quotes, products, *, product="CU", roles=("secondary", "far")):
+def observed_budget(contracts, specs, quotes, products, *, product="CU", roles=("secondary", "far"), strategy_contracts=None):
     """每策略每腿最多1手的保守归属上界；重复合约按各策略分别计入。"""
-    legs = [("ema", contracts[product]["main"]),
-        *(("cross", contracts[p]["main"]) for p in products),
-        *(("calendar", contracts[product][role]) for role in roles)]
+    selected = strategy_contracts or {kind: contracts for kind in ("main_ema", "cross_section", "calendar_spread")}
+    legs = [("ema", selected["main_ema"][product]["main"]),
+        *(("cross", selected["cross_section"][p]["main"]) for p in products),
+        *(("calendar", selected["calendar_spread"][product][role]) for role in roles)]
     rows, total = [], Decimal(0)
     for strategy, instrument in legs:
         quote, spec = quotes[instrument], specs[instrument]
@@ -51,28 +52,29 @@ def apply_im_if_profile(config, observed, output):
         ("cross-im-if-three", "04_cross_section", "history_cffex.json", 21),
         ("calendar-im-three", "03_calendar_spread", "history_im.json", 120)]
     for row, (sid, demo, history, minutes) in zip(config["strategies"], definitions):
+        contracts = observed["strategy_contracts"][row["kind"]]
         row["strategy_id"] = sid
         argv = row["argv"]
         if "--product" in argv:
             argv[argv.index("--product") + 1] = "IM"
         argv[argv.index("--max-notional") + 1] = "3000000"
         if row["kind"] == "main_ema":
-            argv += ["--expected-instrument", observed["contracts"]["IM"]["main"]]
+            argv += ["--expected-instrument", contracts["IM"]["main"]]
         elif row["kind"] == "calendar_spread":
             argv[argv.index("--leg1-role") + 1], argv[argv.index("--leg2-role") + 1] = "main", "secondary"
             argv[argv.index("--lookback") + 1] = "120"
             argv[argv.index("--rebalance-interval") + 1] = "5"
             argv[argv.index("--entry-z") + 1], argv[argv.index("--exit-z") + 1] = "2", "0.5"
-            if observed["contracts"]["IM"]["main"] == observed["contracts"]["IM"]["secondary"]:
+            if contracts["IM"]["main"] == contracts["IM"]["secondary"]:
                 raise ValueError("跨期必须是两个不同的IM真实合约")
             for role in ("main", "secondary"):
-                argv += ["--expected-instrument", f"{role}={observed['contracts']['IM'][role]}"]
+                argv += ["--expected-instrument", f"{role}={contracts['IM'][role]}"]
         else:
             argv[argv.index("--lookback") + 1] = "20"
             argv[argv.index("--rebalance-interval") + 1] = "5"
             argv[argv.index("--target-notional") + 1] = "3000000"
             for product in ("IM", "IF"):
-                argv += ["--expected-instrument", f"{product}={observed['contracts'][product]['main']}"]
+                argv += ["--expected-instrument", f"{product}={contracts[product]['main']}"]
         argv += [*common, "--history-db", "dolphindb", "--history-minutes", str(minutes),
             "--history-config", os.path.relpath(root / "demos" / demo / history, output.resolve().parent)]
 
@@ -115,6 +117,19 @@ def main(argv=None):
             parser.error("只读摘要未通过或环境不一致")
         if args.profile != observed.get("profile", "commodity"):
             parser.error("观察摘要的联合profile与配置不符")
+        if args.profile == "im-if":
+            expected = {"main_ema": {"IM": ("main",)}, "cross_section": {"IM": ("main",), "IF": ("main",)},
+                "calendar_spread": {"IM": ("main", "secondary")}}
+            try:
+                for kind, products in expected.items():
+                    for p, role_names in products.items():
+                        for role in role_names:
+                            instrument = observed["strategy_contracts"][kind][p][role]
+                            if (not re.fullmatch(p + r"\d{4}\.CFFEX", instrument)
+                                    or instrument not in observed["instrument_specs"] or instrument not in observed["quotes"]):
+                                raise ValueError("逐策略合约或盘口不完整")
+            except (KeyError, TypeError, ValueError):
+                parser.error("须重新运行im-if discover：旧观察仅有角色表，未核验逐策略因子合约及其盘口")
         dates = observed["session_arguments"]
         if args.cross_products != ("CU", "AL"):
             contracts = observed.get("contracts", {})
@@ -168,7 +183,8 @@ def main(argv=None):
         for row in config["strategies"]:
             row["argv"] += ["--ctp-future-buffer-ms", str(args.ctp_future_buffer_ms)]
     if args.use_observed_budget:
-        budget = observed_budget(observed["contracts"], observed["instrument_specs"], observed["quotes"], args.cross_products, product=product, roles=roles)
+        budget = observed_budget(observed["contracts"], observed["instrument_specs"], observed["quotes"], args.cross_products,
+            product=product, roles=roles, strategy_contracts=observed.get("strategy_contracts"))
         config["account"].update(max_gross_quantity=str(max(5, budget["quantity"])),
             max_gross_notional=str(max(Decimal(3000000), Decimal(budget["rounded_notional_limit"]))))
     if args.profile == "im-if":

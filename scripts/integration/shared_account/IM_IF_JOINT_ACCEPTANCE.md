@@ -16,6 +16,12 @@ Recording中的代码。每腿名义限额300万元；账户总限额按实际as
 五个归属腿计算，向上取整到10万元，最低300万元。IM在不同策略出现时分别计入。
 价格变化使预算不足时仍会被原风控拒绝，不自动提高额度。
 
+REV32修正合约发现口径：contracts保留角色结构表，strategy_contracts列出每个策略
+实际路由。01/04沿用原有的因子表同角色合约优先规则；03不使用因子，按结构表选双腿。
+因此EMA的IM main可能与跨期的IM main是不同月份，不能用一个全局主力代码替代。
+发现流程会查询实际路由并订阅其盘口，按逐策略路由计算预算；旧的仅角色表观察
+不再用于生成IM/IF配置。reference_manifests保留各策略资料来源/因子证据。
+
 新会话要求管理合约的多空总仓均为零、全账户无活动单；其他合约持仓继续保留。
 不要通过修改账本、删除状态或preserve_external接管已有IM/IF仓位；通用平仓
 交易所当前不支持同合约外部基线。账户服务持有整个物理账户锁，不得另开TD报单服务。
@@ -30,10 +36,11 @@ source /workspace/worker/env/uv-nautilus/bin/activate
 cd /workspace/worker/pj/Chrono/nautilus_trader_demo/pro
 set +e
 
-sha256sum -c doc/evidence/checksums/GAP10_IM_IF_SHARED_QUOTA_20261016_REV31_SHA256.txt
+sha256sum -c doc/evidence/checksums/GAP10_STRATEGY_REFERENCE_DISCOVERY_20261016_REV32_SHA256.txt
 
 python -u -m tests.run_main_ema_acceptance \
   --only shared-account --only shared-ipc \
+  --only shared-discovery \
   --only entry --only calendar-live --only cross-live \
   --only calendar-history --only cross-history \
   --only live-common --only history-adjustment --only option-shared
@@ -42,6 +49,12 @@ python -u -m tests.run_main_ema_acceptance \
 sha256必须全部OK，选定模块必须全部exit_code=0。本机已通过共享执行、实际Unix
 socket账户服务及回调收尾测试；本机缺原生Bar/指标及dotenv，完整原生入口和01
 历史调整组及连续共享回归尚待本次Linux运行，不把依赖导入失败登记为功能通过。
+
+REV32仅修复只读发现/配置/预算。本轮REV31原生模块已经通过时，只需复测：
+
+```bash
+python -u -m tests.run_main_ema_acceptance --only shared-ipc --only shared-discovery
+```
 
 ## 2. 终端1：观察、生成一次配置、预检、启动账户服务
 
@@ -60,8 +73,10 @@ python -u -m scripts.integration.shared_account.discover \
   --output scripts/integration/shared_account/results/im-if-observed.json
 ```
 
-确认status=observed、orders_submitted=0，contracts覆盖IM main/secondary和IF main，
+确认status=observed、orders_submitted=0，strategy_contracts覆盖三个策略实际路由，
 查看budget_upper_bound中的逐腿价格、乘数及金额后执行：
+
+已存在上一版im_if_joint.json时，先执行本节下方的未启动配置备份，再运行生成命令。
 
 ```bash
 python -u -m scripts.integration.shared_account.prepare_session \
@@ -72,6 +87,33 @@ python -u -m scripts.integration.shared_account.prepare_session \
 
 python -u -m scripts.integration.shared_account.preflight \
   --config scripts/integration/shared_account/im_if_joint.json --connect
+```
+
+若上一版已生成im_if_joint.json、仅预检合约不符且没有任何账户/策略状态文件，
+先在下面的状态锁保护下备份原配置，再执行上述生成命令。配置名和策略ID不必改。
+存在任何检查点或有进程持锁都会拒绝，不改旧账本，不自动迁移已有交易。
+
+```bash
+python - <<'PY'
+from contextlib import ExitStack
+from pathlib import Path
+import time
+from scripts.integration.shared_account.config import read_config
+from bomber.framework.trader.runtime.live.local import strategy_state_lock
+
+p = Path('scripts/integration/shared_account/im_if_joint.json')
+if p.exists():
+    c = read_config(p)
+    states = [Path(c['account_state_file']), *(Path(r['state_file']) for r in c['strategies'])]
+    with ExitStack() as locks:
+        for state in states:
+            locks.enter_context(strategy_state_lock(state))
+        if any(state.exists() for state in states):
+            raise SystemExit('已有运行账本，保留原配置并停止；不能按未启动配置重建')
+        backup = p.with_name(p.name + '.before-reference-fix-' + str(time.time_ns()))
+        p.rename(backup)
+        print('原配置已备份：', backup)
+PY
 ```
 
 确认status=prechecked、orders_submitted=0后启动服务：

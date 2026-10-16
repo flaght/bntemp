@@ -1,6 +1,7 @@
 """三策略应用配置/离线入口规则；不加载SDK或联网。"""
 
 from contextlib import redirect_stdout, redirect_stderr
+from decimal import Decimal
 import argparse
 from io import StringIO
 import json
@@ -21,11 +22,15 @@ class ProcessCliTests(unittest.TestCase):
             observed, output = root/"observed.json", root/"session.json"
             contracts = {"IM": {"main": "IM2612.CFFEX", "secondary": "IM2703.CFFEX"},
                 "IF": {"main": "IF2612.CFFEX"}}
-            instruments = ("IM2612.CFFEX", "IM2703.CFFEX", "IF2612.CFFEX")
+            strategies = {"main_ema": {"IM": {"main": "IM2610.CFFEX"}},
+                "cross_section": {"IM": {"main": "IM2610.CFFEX"}, "IF": {"main": "IF2610.CFFEX"}},
+                "calendar_spread": {"IM": contracts["IM"]}}
+            instruments = ("IM2610.CFFEX", "IM2612.CFFEX", "IM2703.CFFEX", "IF2610.CFFEX")
             observed.write_text(json.dumps({"status": "observed", "orders_submitted": 0,
                 "verification": "readonly_dates_and_contracts", "environment": "realtime", "profile": "im-if",
                 "session_arguments": {"trading_day": "20261016", "source_day": "20261015", "replay_md_trading_day": None},
                 "contracts": contracts,
+                "strategy_contracts": strategies,
                 "instrument_specs": {i: {"tick": "0.2", "multiplier": "300" if i.startswith("IF") else "200"} for i in instruments},
                 "quotes": {i: {"bid": "5000" if i.startswith("IF") else "10000", "ask": "5001" if i.startswith("IF") else "10001"} for i in instruments}}))
             with redirect_stdout(StringIO()):
@@ -45,6 +50,40 @@ class ProcessCliTests(unittest.TestCase):
             calendar = c["strategies"][2]["argv"]
             self.assertEqual(calendar[calendar.index("--leg1-role")+1], "main")
             self.assertEqual(calendar[calendar.index("--leg2-role")+1], "secondary")
+            ema, cross = (r["argv"] for r in c["strategies"][:2])
+            self.assertEqual(ema[ema.index("--expected-instrument")+1], "IM2610.CFFEX")
+            self.assertIn("IM=IM2610.CFFEX", cross)
+            self.assertIn("IF=IF2610.CFFEX", cross)
+            self.assertIn("main=IM2612.CFFEX", calendar)
+            self.assertIn("secondary=IM2703.CFFEX", calendar)
+
+    def test_im_if_old_role_only_observation_is_rejected_before_output(self):
+        with TemporaryDirectory() as directory:
+            observed, output = Path(directory)/"observed.json", Path(directory)/"session.json"
+            observed.write_text(json.dumps({"status": "observed", "orders_submitted": 0,
+                "verification": "readonly_dates_and_contracts", "environment": "realtime", "profile": "im-if",
+                "contracts": {"IM": {"main": "IM2612.CFFEX", "secondary": "IM2703.CFFEX"},
+                    "IF": {"main": "IF2612.CFFEX"}}}))
+            with redirect_stderr(StringIO()) as stderr, self.assertRaises(SystemExit):
+                prepare_session.main(["--output", str(output), "--environment", "realtime", "--execution-mode", "independent",
+                    "--profile", "im-if", "--use-observed-budget", "--observations", str(observed)])
+            self.assertIn("逐策略因子合约", stderr.getvalue())
+            self.assertFalse(output.exists())
+
+    def test_observed_budget_uses_factor_contracts_for_signals_and_raw_roles_for_calendar(self):
+        raw = {"IM": {"main": "IM2612.CFFEX", "secondary": "IM2703.CFFEX"}, "IF": {"main": "IF2612.CFFEX"}}
+        actual = {"main_ema": {"IM": {"main": "IM2610.CFFEX"}},
+            "cross_section": {"IM": {"main": "IM2610.CFFEX"}, "IF": {"main": "IF2610.CFFEX"}},
+            "calendar_spread": {"IM": raw["IM"]}}
+        prices = {"IM2610.CFFEX": 100, "IM2612.CFFEX": 200, "IM2703.CFFEX": 300, "IF2610.CFFEX": 400}
+        specs = {i: {"tick": 1, "multiplier": 10} for i in prices}
+        quotes = {i: {"bid": price, "ask": price} for i, price in prices.items()}
+        budget = prepare_session.observed_budget(raw, specs, quotes, ("IM", "IF"), product="IM",
+            roles=("main", "secondary"), strategy_contracts=actual)
+        self.assertEqual(budget["quantity"], 5)
+        self.assertEqual(Decimal(budget["notional"]), 11050)
+        self.assertEqual([r["instrument"] for r in budget["legs"]],
+            ["IM2610.CFFEX", "IM2610.CFFEX", "IF2610.CFFEX", "IM2612.CFFEX", "IM2703.CFFEX"])
 
     def test_server_fault_capture_uses_original_gate_and_diagnostic_failure_is_separate(self):
         from scripts.integration.shared_account.server import capture_execution_failure

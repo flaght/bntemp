@@ -1,0 +1,60 @@
+{
+  "revision": "REV32",
+  "status": "offline_passed_remote_discovery_pending",
+  "reported_failure": {
+    "report": "three-readonly-1792128375630950926",
+    "trading_day": "20261016",
+    "expected_ema_instrument": "IM2612.CFFEX",
+    "actual_ema_instrument": "IM2610.CFFEX",
+    "real_broker_orders_submitted": 0
+  },
+  "cause": "REV31 discover requested factor_roles=() and used one raw role map for all strategies; original 01 and 04 prioritize same-role factor symbol, while 03 intentionally uses raw structure roles without factors",
+  "fixes": [
+    "Read raw calendar roles and original EMA/cross factor-aware views through existing LiveFuturesReferences",
+    "Preserve contracts as raw role map; strategy_contracts stores each strategy actual role routes",
+    "Observe market quotes and instrument specs for union of actual strategy routes, not just raw roles",
+    "Generate per-strategy expected contracts and aggregate notional by those actual owned legs",
+    "Reject legacy im-if observations missing actual routes/specs/quotes before writing config",
+    "Reject missing factors and changed factor contracts across EMA/cross reads",
+    "Document state-locked backup of unstarted config; existing checkpoints prohibit config replacement"
+  ],
+  "broker_connected": false,
+  "database_connected": false,
+  "real_broker_orders_submitted": 0,
+  "runtime_checkpoints_modified": false,
+  "strategy_algorithms_modified": false,
+  "passed_modules": [
+    {
+      "module": "shared-account",
+      "tests": 81,
+      "report": "tests/results/main-ema-acceptance-1792128732877969000/shared-account.log"
+    },
+    {
+      "module": "shared-ipc",
+      "tests": 29,
+      "report": "tests/results/main-ema-acceptance-1792128811307578000/shared-ipc.log"
+    },
+    {
+      "module": "shared-discovery",
+      "tests": 3,
+      "report": "tests/results/main-ema-acceptance-1792128811307578000/shared-discovery.log"
+    }
+  ],
+  "unique_passed_tests": 113,
+  "new_regressions": "real normalized fake-DolphinDB source + existing factor/role/basic parser: raw IM2612 versus factor IM2610; calendar stays raw IM2612/IM2703; generated EMA and cross pin factor contracts; quote budget uses each owned leg; role-only legacy observation fails before output",
+  "local_sdk_limit": "Full reference test module has preexisting native Bar import errors in four adapter tests on this machine; new three discovery source cases ran successfully without SDK substitutions",
+  "remote_remaining": [
+    "resync changed code and run shared-ipc/shared-discovery",
+    "repeat readonly discover with actual factor-aware routes and all actual route quotes",
+    "backup unstarted im_if_joint.json only if no checkpoint and no process holds state locks",
+    "generate config, readonly preflight, then original four-terminal joint acceptance"
+  ],
+  "runbook": "scripts/integration/shared_account/IM_IF_JOINT_ACCEPTANCE.md",
+  "sources": {
+    "scripts/integration/shared_account/discover.py": "ff3ca58cc0dc6c5c57a8df348118a2c283dbad769d107bf298d1c30518dbd98c",
+    "scripts/integration/shared_account/prepare_session.py": "61a6211b8ad66dfbf9f60d61566aac7649952efae1c69003d24b0bc22a457c62",
+    "tests/run_main_ema_acceptance.py": "0dd8a4a5bf8388312a87468bcd5e31c77dc8767f9ca1281120a52e5d5f187032",
+    "tests/test_reference_sources.py": "5dc4ea94251e9b7d06f725bc615d0396bf3e955568e823191002ba306c35121d",
+    "tests/test_shared_process_cli.py": "b964faa8f8953e4284474dbd2d8067a07deac00b77d9c7c029ca0cbcb6db376a"
+  }
+}
