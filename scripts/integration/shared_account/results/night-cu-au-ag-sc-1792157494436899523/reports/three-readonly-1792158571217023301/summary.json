@@ -1,0 +1,231 @@
+{
+  "config": {
+    "version": 1,
+    "trading_day": "20261019",
+    "environment": "realtime",
+    "position_scope": "strategy_instruments",
+    "execution_mode": "independent",
+    "seconds": 3600.0,
+    "account_state_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/night-cu-au-ag-sc-1792157494436899523/account.json",
+    "report_dir": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/night-cu-au-ag-sc-1792157494436899523/reports",
+    "account": {
+      "client_id": "night-cu-1792157494436899523",
+      "max_gross_quantity": "7",
+      "max_gross_notional": "4100000",
+      "max_session_orders": 200,
+      "limit_offset_ticks": 1
+    },
+    "strategies": [
+      {
+        "strategy_id": "ema-cu-n1792157494436899523",
+        "kind": "main_ema",
+        "state_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/night-cu-au-ag-sc-1792157494436899523/main_ema.json",
+        "argv": [
+          "--product",
+          "CU",
+          "--expected-source-day",
+          "20261016",
+          "--factor-date-basis",
+          "source",
+          "--factor-availability",
+          "observed-on-read",
+          "--fast",
+          "3",
+          "--slow",
+          "5",
+          "--quantity",
+          "1",
+          "--max-notional",
+          "1000000",
+          "--ctp-future-buffer-ms",
+          "100",
+          "--history-minutes",
+          "0",
+          "--expected-instrument",
+          "cu2611.SHFE"
+        ]
+      },
+      {
+        "strategy_id": "cross-cu-au-ag-sc-n1792157494436899523",
+        "kind": "cross_section",
+        "state_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/night-cu-au-ag-sc-1792157494436899523/cross_section.json",
+        "argv": [
+          "--products",
+          "CU,AU,AG,SC",
+          "--expected-source-day",
+          "20261016",
+          "--factor-date-basis",
+          "source",
+          "--factor-availability",
+          "observed-on-read",
+          "--lookback",
+          "3",
+          "--rebalance-interval",
+          "1",
+          "--group-fraction",
+          "0.5",
+          "--target-notional",
+          "1800000",
+          "--target-quantity-cap",
+          "1",
+          "--max-quantity",
+          "1",
+          "--max-notional",
+          "1000000",
+          "--ctp-future-buffer-ms",
+          "100",
+          "--history-minutes",
+          "0",
+          "--expected-instrument",
+          "CU=cu2611.SHFE",
+          "--expected-instrument",
+          "AU=au2612.SHFE",
+          "--expected-instrument",
+          "AG=ag2612.SHFE",
+          "--expected-instrument",
+          "SC=sc2612.INE"
+        ]
+      },
+      {
+        "strategy_id": "calendar-cu-n1792157494436899523",
+        "kind": "calendar_spread",
+        "state_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/night-cu-au-ag-sc-1792157494436899523/calendar_spread.json",
+        "argv": [
+          "--product",
+          "CU",
+          "--expected-source-day",
+          "20261016",
+          "--leg1-role",
+          "secondary",
+          "--leg2-role",
+          "far",
+          "--quantity",
+          "1",
+          "--lookback",
+          "3",
+          "--rebalance-interval",
+          "1",
+          "--entry-z",
+          "1",
+          "--exit-z",
+          "0.25",
+          "--max-notional",
+          "1000000",
+          "--ctp-future-buffer-ms",
+          "100",
+          "--history-minutes",
+          "0",
+          "--expected-instrument",
+          "secondary=cu2612.SHFE",
+          "--expected-instrument",
+          "far=cu2701.SHFE"
+        ]
+      }
+    ],
+    "existing_position_policy": "preserve_external"
+  },
+  "failure": null,
+  "td_preflight": {
+    "environment": "realtime",
+    "expected_td_trading_day": "20261019",
+    "observed_td_trading_day": "20261019",
+    "md_front": "tcp://182.254.243.31:30011",
+    "td_front": "tcp://182.254.243.31:30001",
+    "preflight_orders_submitted": 0,
+    "position_scope_policy": "strategy_instruments",
+    "managed_instruments": [
+      "ag2612.SHFE",
+      "au2612.SHFE",
+      "cu2611.SHFE",
+      "cu2612.SHFE",
+      "cu2701.SHFE",
+      "sc2612.INE"
+    ],
+    "external_gross": {
+      "MO2611-C-7100.CFFEX": [
+        "0",
+        "1"
+      ],
+      "sc2611.INE": [
+        "1",
+        "0"
+      ],
+      "ni2611.SHFE": [
+        "1",
+        "0"
+      ],
+      "i2701.DCE": [
+        "0",
+        "1"
+      ],
+      "hc2701.SHFE": [
+        "1",
+        "0"
+      ],
+      "al2611.SHFE": [
+        "2",
+        "0"
+      ]
+    }
+  },
+  "markets": {
+    "ema-cu-n1792157494436899523": {
+      "cu2611.SHFE": {
+        "trading_day": "20261019",
+        "ts_event": 1792158641500000000,
+        "received_monotonic_ns": 15124616880485338,
+        "timestamp_regressed": false,
+        "reference_price": "109945.0"
+      }
+    },
+    "cross-cu-au-ag-sc-n1792157494436899523": {
+      "ag2612.SHFE": {
+        "trading_day": "20261019",
+        "ts_event": 1792158641500000000,
+        "received_monotonic_ns": 15124616878427737,
+        "timestamp_regressed": false,
+        "reference_price": "13970.0"
+      },
+      "au2612.SHFE": {
+        "trading_day": "20261019",
+        "ts_event": 1792158641500000000,
+        "received_monotonic_ns": 15124616881173565,
+        "timestamp_regressed": false,
+        "reference_price": "902.13"
+      },
+      "cu2611.SHFE": {
+        "trading_day": "20261019",
+        "ts_event": 1792158641500000000,
+        "received_monotonic_ns": 15124616881494734,
+        "timestamp_regressed": false,
+        "reference_price": "109945.0"
+      },
+      "sc2612.INE": {
+        "trading_day": "20261019",
+        "ts_event": 1792158641500000000,
+        "received_monotonic_ns": 15124616881685363,
+        "timestamp_regressed": false,
+        "reference_price": "707.95"
+      }
+    },
+    "calendar-cu-n1792157494436899523": {
+      "cu2612.SHFE": {
+        "trading_day": "20261019",
+        "ts_event": 1792158639500000000,
+        "received_monotonic_ns": 15124616885843905,
+        "timestamp_regressed": false,
+        "reference_price": "109245.0"
+      },
+      "cu2701.SHFE": {
+        "trading_day": "20261019",
+        "ts_event": 1792158641500000000,
+        "received_monotonic_ns": 15124616886381193,
+        "timestamp_regressed": false,
+        "reference_price": "108660.0"
+      }
+    }
+  },
+  "verification": "readonly_no_strategy_no_orders",
+  "orders_submitted": 0,
+  "status": "prechecked"
+}

@@ -1,0 +1,172 @@
+{
+  "strategy_id": "cross-cu-au-ag-sc-n1792157494436899523",
+  "kind": "cross_section",
+  "argv": [
+    "--products",
+    "CU,AU,AG,SC",
+    "--expected-source-day",
+    "20261016",
+    "--factor-date-basis",
+    "source",
+    "--factor-availability",
+    "observed-on-read",
+    "--lookback",
+    "3",
+    "--rebalance-interval",
+    "1",
+    "--group-fraction",
+    "0.5",
+    "--target-notional",
+    "1800000",
+    "--target-quantity-cap",
+    "1",
+    "--max-quantity",
+    "1",
+    "--max-notional",
+    "1000000",
+    "--ctp-future-buffer-ms",
+    "100",
+    "--history-minutes",
+    "0",
+    "--expected-instrument",
+    "CU=cu2611.SHFE",
+    "--expected-instrument",
+    "AU=au2612.SHFE",
+    "--expected-instrument",
+    "AG=ag2612.SHFE",
+    "--expected-instrument",
+    "SC=sc2612.INE"
+  ],
+  "trading_day": "20261019",
+  "environment": "realtime",
+  "replay_md_trading_day": null,
+  "execution_mode": "independent",
+  "failure": null,
+  "shutdown_failure": null,
+  "stop_reason": "market_data_unavailable",
+  "history": null,
+  "history_audit": [],
+  "complete_frames": null,
+  "synchronized_frames": 20,
+  "history_frames": 0,
+  "live_frames": 20,
+  "bars_used": null,
+  "failure_readiness": {
+    "observed_at_ns": 1792160330572674882,
+    "channel_readiness": {
+      "ready": true,
+      "sources": [
+        {
+          "domain": "market",
+          "channel": "ctp",
+          "source_id": "CTP_LIVE_SOURCE"
+        },
+        {
+          "domain": "execution",
+          "channel": "ctp",
+          "source_id": "night-cu-1792157494436899523"
+        }
+      ],
+      "issues": []
+    },
+    "runner_failure": null,
+    "stale_instruments": {},
+    "reference_current": true,
+    "execution_port": {
+      "started": true,
+      "stopping": false,
+      "reconciled": true,
+      "account_reconciled": true,
+      "observation_age_seconds": 0.0004365183413028717
+    },
+    "account_valuation": {
+      "issues": [
+        {
+          "channel": "ctp",
+          "code": "INSTRUMENT_UNHEALTHY",
+          "context": {
+            "event_age_seconds": 10.117900541,
+            "max_age_seconds": 10.0,
+            "receive_age_seconds": 8.945279993,
+            "timestamp_regressed": false,
+            "trading_day": "20261019"
+          },
+          "detail": "cu2701.SHFE",
+          "domain": "market",
+          "source_id": "CTP_LIVE_SOURCE"
+        }
+      ],
+      "ready": false,
+      "sources": [
+        {
+          "channel": "ctp",
+          "domain": "market",
+          "source_id": "CTP_LIVE_SOURCE"
+        }
+      ]
+    }
+  },
+  "verification": "independent_strategy_process",
+  "positions": {
+    "ag2612.SHFE": "1",
+    "au2612.SHFE": "0",
+    "cu2611.SHFE": "-1",
+    "sc2612.INE": "1"
+  },
+  "cursor": 99,
+  "fills_received": 33,
+  "source_revision": 17,
+  "last_targets": "{'cu2611.SHFE': Decimal('-1'), 'au2612.SHFE': Decimal('-0'), 'ag2612.SHFE': Decimal('1'), 'sc2612.INE': Decimal('1')}",
+  "reference_manifest": {
+    "backend": "DolphinDbReferenceSource",
+    "trading_day": "2026-10-19",
+    "factor_date_basis": "source",
+    "factor_date": "2026-10-16",
+    "factor_availability": "observed-on-read",
+    "factor_publication_policy": "observed-on-read",
+    "role_source_day": "2026-10-16",
+    "freshness_policy": {
+      "expected_source_day": "2026-10-16",
+      "role_and_factor_max_source_age_days": 14,
+      "basic_age_basis": "contract_lifecycle_and_successful_observation_not_listing_date",
+      "max_observation_age_seconds": 30,
+      "max_refresh_duration_seconds": 30,
+      "source_day_evidence": "operator_declared_day"
+    },
+    "reference_date_selection": "latest_role_source_before_td_requires_upstream_completeness",
+    "role_date_basis": "previous_source_day",
+    "fingerprint": "494c60c5cd854a1232d79334b45026387d70bb0f186717b01195aadb1c8507e4",
+    "observed_at_ns": 1792160324069931947,
+    "first_observed_ns": 1792159001889575297,
+    "effective_ns": 1792158990236273369,
+    "available_ns": 1792159001889575297,
+    "evidence": "stable_read_observation_not_publication_version",
+    "sources": {
+      "contract_structure": {
+        "source": "dolphindb:dfs://bomber_daily/fut_contract",
+        "sha256": "47cb7940f491ce5a82d1e79b79463f185f9cf038a40779ae75f362fb28b571e4",
+        "rows": 6612
+      },
+      "adjustment_factors": {
+        "source": "dolphindb:dfs://bomber_daily/fut_adjustment_factors",
+        "sha256": "467173fbea9115ed858e6e71c03e2e6116630d30cbbf9c7ab049d6982221e3cd",
+        "rows": 4
+      },
+      "futures_basic": {
+        "source": "dolphindb:dfs://bomber_daily/fut_basic",
+        "sha256": "120705cb468519fc80223a69daf2f060e3f0d5953c44346f273346ee4a487d9f",
+        "rows": 52
+      }
+    },
+    "ready": true,
+    "failure": null
+  },
+  "bar_counts": {
+    "au2612.SHFE": 20,
+    "sc2612.INE": 20,
+    "ag2612.SHFE": 20,
+    "cu2611.SHFE": 20
+  },
+  "last_processed_ns": null,
+  "status": "completed"
+}
