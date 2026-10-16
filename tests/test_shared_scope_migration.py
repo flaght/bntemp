@@ -1,6 +1,6 @@
 """范围变更保持原成交和回报；真实组件、替身柜台，不联网。"""
 
-from contextlib import redirect_stdout
+from contextlib import ExitStack, redirect_stdout
 from copy import deepcopy
 from dataclasses import replace
 from decimal import Decimal
@@ -10,7 +10,7 @@ from tempfile import TemporaryDirectory
 import unittest
 import json
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from scripts.integration.shared_account import prepare_session, migrate_scope
 from scripts.integration.shared_account.config import read_config
@@ -82,7 +82,21 @@ class ScopeMigrationTests(unittest.TestCase):
             host = SimpleNamespace(account=new, service=service2, resources=resources,
                 strategies={sid: SimpleNamespace() for sid in service2._ports})
             run = import_module("scripts.integration.shared_account.run")
-            with patch.object(run, "build_host", return_value=host) as builder, \
+            from bomber.framework.trader.runtime.live.local import strategy_state_lock
+            def build_locked_host(config, **kwargs):
+                # 保留真实build_host的文件锁边界；不能用无锁替身隐藏迁移重复加锁。
+                resources.enter_context(strategy_state_lock(Path(config["account_state_file"])))
+                return host
+            start = new.start
+            def start_with_locked_files(**kwargs):
+                for path in (*original_files, Path(updated["account_state_file"]),
+                             *(Path(r["state_file"]) for r in updated["strategies"])):
+                    with self.assertRaisesRegex(RuntimeError, "已有进程使用"):
+                        with strategy_state_lock(path):
+                            self.fail("迁移权威核验期间状态锁已释放")
+                return start(**kwargs)
+            with patch.object(run, "build_host", side_effect=build_locked_host) as builder, \
+                    patch.object(new, "start", side_effect=start_with_locked_files), \
                     patch.dict("sys.modules", {"dotenv": SimpleNamespace(load_dotenv=lambda *_: None)}), redirect_stdout(StringIO()):
                 migrate_scope.main(["--from-config", str(Path(directory)/"old.json"), "--to-config", str(Path(directory)/"new.json"), "--connect"])
             self.assertTrue(builder.call_args.kwargs["read_only"])
@@ -95,6 +109,10 @@ class ScopeMigrationTests(unittest.TestCase):
             self.assertEqual(new.driver.submitted_orders, 0)
             self.assertFalse(broker2.sent)
             for p, content in original_files.items(): self.assertEqual(p.read_bytes(), content)
+            for path in (*original_files, Path(updated["account_state_file"]),
+                         *(Path(r["state_file"]) for r in updated["strategies"])):
+                with strategy_state_lock(path):
+                    pass  # 迁移结束后所有锁均释放。
             for row in updated["strategies"]:
                 saved = modules.persistence.JsonStateStore(row["state_file"]).load().payload
                 if row["kind"] == "cross_section":
@@ -138,6 +156,71 @@ class ScopeMigrationTests(unittest.TestCase):
             row["strategy_id"] = "new-cross"
             with self.assertRaisesRegex(ValueError, "策略ID"):
                 migrate_scope.validate_scope_configs(previous, changed_config)
+
+    def migration_files(self, directory):
+        """仅准备进入宿主前所需的文件，用于真实flock及目标文件竞争回归。"""
+        from bomber.framework.trader.persistence import JsonStateStore
+        previous, updated = self.configs(directory)
+        for name, config in (("old.json", previous), ("new.json", updated)):
+            (Path(directory)/name).write_text(json.dumps(config))
+        JsonStateStore(previous["account_state_file"]).save(
+            {"component_states": {"shared_account": {"sources": {}}}}, expected_generation=0)
+        return previous, updated, ["--from-config", str(Path(directory)/"old.json"),
+                                  "--to-config", str(Path(directory)/"new.json"), "--connect"]
+
+    def test_migration_refuses_occupied_original_and_destination_files_without_writes(self):
+        from importlib import import_module
+        self.native_modules()
+        from bomber.framework.trader.runtime.live.local import strategy_state_lock
+        run = import_module("scripts.integration.shared_account.run")
+        with TemporaryDirectory() as directory:
+            previous, updated, argv = self.migration_files(directory)
+            original = Path(previous["account_state_file"]).read_bytes()
+            destinations = [Path(updated["account_state_file"]), *(Path(r["state_file"]) for r in updated["strategies"])]
+            paths = [Path(previous["account_state_file"]), *(Path(r["state_file"]) for r in previous["strategies"]), *destinations]
+            for path in paths:
+                with self.subTest(path=path), ExitStack() as resources:
+                    def build_locked_host(config, **kwargs):
+                        resources.enter_context(strategy_state_lock(Path(config["account_state_file"])))
+                        self.fail("已有文件被占用时不得进入迁移核验")
+                    with strategy_state_lock(path), \
+                            patch.object(run, "build_host", side_effect=build_locked_host), \
+                            patch.dict("sys.modules", {"dotenv": SimpleNamespace(load_dotenv=lambda *_: None)}), \
+                            redirect_stdout(StringIO()), self.assertRaisesRegex(RuntimeError, "已有进程使用"):
+                        migrate_scope.main(argv)
+                self.assertEqual(Path(previous["account_state_file"]).read_bytes(), original)
+                self.assertFalse(any(p.exists() for p in destinations))
+                with strategy_state_lock(path):
+                    pass
+
+    def test_migration_rechecks_destination_after_host_acquires_account_lock(self):
+        from importlib import import_module
+        self.native_modules()
+        from bomber.framework.trader.runtime.live.local import strategy_state_lock
+        run = import_module("scripts.integration.shared_account.run")
+        with TemporaryDirectory() as directory, ExitStack() as resources:
+            previous, updated, argv = self.migration_files(directory)
+            original = Path(previous["account_state_file"]).read_bytes()
+            destination = Path(updated["account_state_file"])
+            account = SimpleNamespace(driver=SimpleNamespace(submitted_orders=0),
+                abort_preparation=Mock(), stop=Mock(), start=Mock())
+            def competing_host(config, **kwargs):
+                # 模拟初次存在性检查后，另一次运行先生成账本并释放锁。
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(b"existing checkpoint from another run")
+                resources.enter_context(strategy_state_lock(destination))
+                return SimpleNamespace(account=account, resources=resources)
+            with patch.object(run, "build_host", side_effect=competing_host), \
+                    patch.dict("sys.modules", {"dotenv": SimpleNamespace(load_dotenv=lambda *_: None)}), \
+                    redirect_stdout(StringIO()), self.assertRaisesRegex(ValueError, "新检查点已存在"):
+                migrate_scope.main(argv)
+            self.assertEqual(destination.read_bytes(), b"existing checkpoint from another run")
+            self.assertEqual(Path(previous["account_state_file"]).read_bytes(), original)
+            account.start.assert_not_called()
+            account.abort_preparation.assert_called_once()
+            self.assertFalse(any(Path(r["state_file"]).exists() for r in updated["strategies"]))
+            with strategy_state_lock(destination):
+                pass
 
     def configs(self, directory):
         old, new = Path(directory)/"old.json", Path(directory)/"new.json"

@@ -1,4 +1,4 @@
-# IM／IH／IC／IF 四品种横截面联合运行（REV33）
+# IM／IH／IC／IF 四品种横截面联合运行（REV34）
 
 本页用于用户已成交的IM/IF三策略会话扩品种。原01 EMA仍为IM，原03跨期仍为
 IM main+secondary；04横截面改为IM、IH、IC、IF，group_fraction=0.5，多空各选两名。
@@ -28,7 +28,7 @@ source /workspace/worker/env/uv-nautilus/bin/activate
 cd /workspace/worker/pj/Chrono/nautilus_trader_demo/pro
 set +e
 
-sha256sum -c doc/evidence/checksums/GAP10_CFFEX_FOUR_EXPANSION_20261016_REV33_SHA256.txt
+sha256sum -c doc/evidence/checksums/GAP10_SCOPE_MIGRATION_LOCK_20261016_REV34_SHA256.txt
 
 python -u -m tests.run_main_ema_acceptance \
   --only shared-ipc --only shared-discovery --only cross-history --only cross-live
@@ -84,6 +84,13 @@ python -u -m scripts.integration.shared_account.migrate_scope \
 original_state_unchanged=true，failure/shutdown_failure为空。原/目标状态文件均受
 原有状态锁保护，柜台权威核对通过后才创建目标文件；已有目标不覆盖，失败的部分
 输出不自动重试。新增IH/IC若有外部持仓，或原IM/IF路由改变、IPC发送未决，均拒绝。
+
+REV34修复迁移外层与build_host对目标账户文件重复flock的问题。原账户和两侧
+worker由迁移持锁，目标账户由宿主持锁直至关闭；取得目标锁后再次检查目标文件，
+防止初次检查后其他运行已经创建检查点。已有进程占用时仍拒绝迁移。
+如果REV33报错堆栈止于build_host内strategy_state_lock，尚未写入迁移账本；同步
+修复后仅复测shared-ipc，再重跑上面的migrate_scope --connect，不重新生成配置、
+不改策略ID、不删除锁文件。已出现其他失败或部分输出时按实际报告核对。
 
 ```bash
 python -u -m scripts.integration.shared_account.preflight \

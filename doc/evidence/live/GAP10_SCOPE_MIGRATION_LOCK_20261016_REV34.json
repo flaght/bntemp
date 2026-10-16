@@ -1,0 +1,42 @@
+{
+  "revision": "REV34",
+  "status": "offline_passed_remote_migration_pending",
+  "reported_remote_failure": "four-scope-migration-1792131119992763273: build_host reacquired destination account flock already held by migrate_scope; orders_submitted=0",
+  "root_cause": "Separate open file descriptors cannot exclusively flock the same checkpoint in the same process; previous host fixture omitted the real lock boundary",
+  "fix": [
+    "Migration owns original account and all original/destination worker checkpoint locks",
+    "Existing build_host exclusively owns destination account lock until resources close",
+    "Recheck all destination files after host acquires destination account lock; reject concurrent creation before restore or writes",
+    "Keep broker readonly and original files unchanged; no runtime configuration or checkpoint files modified"
+  ],
+  "regression": {
+    "reproduced_before_fix": "Traded CLI migration failed at actual strategy_state_lock in host fixture, matching remote traceback",
+    "migration_tests": 5,
+    "shared_ipc_tests": 34,
+    "shared_ipc_status": "passed",
+    "report_dir": "tests/results/main-ema-acceptance-1792131260181717000",
+    "coverage": [
+      "traded migration preserves positions/journal/cursors/order quota and OrderRef",
+      "all eight original/destination checkpoint locks exclude competing handles",
+      "all locks held during authoritative restore and released on completion",
+      "destination created between initial existence check and host lock is preserved; restore not started",
+      "Unix socket and three real client processes"
+    ],
+    "boundary": "Real flock, original migration CLI, JsonStateStore, CTP/shared lifecycle; SDK/broker and host assembly are fixtures; host fixture retains real build_host locking behavior",
+    "initial_sandbox_attempt": "Unix socket bind denied; repeated same module with permitted local socket and all 34 tests passed"
+  },
+  "broker_connected": false,
+  "database_connected": false,
+  "real_broker_orders_submitted": 0,
+  "user_runtime_files_modified": false,
+  "remote_next": [
+    "sync REV34",
+    "run shared-ipc only",
+    "reuse generated configs and rerun migrate_scope --connect",
+    "resume readonly preflight"
+  ],
+  "sources": {
+    "scripts/integration/shared_account/migrate_scope.py": "1c6ad6a29d27e0165888be944d4c6db5415121eba04058981f5dcca881a70356",
+    "tests/test_shared_scope_migration.py": "8e19cc5a125958935615f25cc2d2781649b0511928760a285df946406d496651"
+  }
+}

@@ -619,3 +619,21 @@ migrate_scope增加同日strict股指路径，保留已交易横截面仓位、�
 完整cross-live原生入口与现场四股指迁移仍待Linux执行；原配置/账本未操作。
 逐终端指令：scripts/integration/shared_account/CFFEX_FOUR_JOINT_ACCEPTANCE.md。
 证据：doc/evidence/live/GAP10_CFFEX_FOUR_EXPANSION_20261016_REV33.json；GAP10仍开放。
+
+## 2026-10-16 REV34：迁移目标账户锁重复获取修复
+
+现场four-scope-migration-1792131119992763273在build_host获取账户锁时失败，
+orders_submitted=0。原因是migrate_scope已锁目标账户，build_host另开文件描述符
+再次flock同一路径，当前进程与自身冲突。REV33迁移测试返回无锁的宿主替身，
+未覆盖真实装配锁边界，不能把该现场错误解释为仍有旧进程。
+
+保留build_host的目标账户锁，外层仅锁原账户和两侧worker；宿主取得目标锁后
+再次检查所有目标文件是否存在，再开始权威核验和提交。锁保持到连接关闭，
+真实占用及竞争创建的目标账本仍拒绝，原文件保持不变。
+
+迁移测试的宿主替身现在使用与真实build_host一致的实际strategy_state_lock；
+回归复现了修复前重复锁失败，并验证8个原/目标文件占用、核验期持锁及结束后
+释放、目标竞争创建不覆盖、已成交迁移与恢复新增腿。迁移专项5项通过，集中
+shared-ipc共34项通过（含实际Unix socket及三客户端）；不连接柜台或数据库。
+现场只需同步后复测shared-ipc，沿用已生成配置重跑只读迁移及resume预检。
+证据：doc/evidence/live/GAP10_SCOPE_MIGRATION_LOCK_20261016_REV34.json；GAP10仍开放。

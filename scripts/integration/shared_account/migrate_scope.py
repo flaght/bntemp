@@ -266,7 +266,9 @@ def main(argv=None):
     host, status, failure, fields = None, "failed", None, {"orders_submitted": 0}
     with ExitStack() as locks:
         try:
-            for path in sorted({previous["account_state_file"], updated["account_state_file"], *(r["state_file"] for r in previous["strategies"]),
+            # 目标账户锁由build_host持有直至resources关闭，不能在此再次打开并flock。
+            # 原账户及两侧worker仍由迁移持锁，核验、提交和连接关闭期间均不释放。
+            for path in sorted({previous["account_state_file"], *(r["state_file"] for r in previous["strategies"]),
                                 *(r["state_file"] for r in updated["strategies"])}):
                 locks.enter_context(strategy_state_lock(Path(path)))
             destinations = [updated["account_state_file"], *(r["state_file"] for r in updated["strategies"])]
@@ -292,6 +294,9 @@ def main(argv=None):
                 elif (cffex or kind != "cross_section") and persisted.payload["component_states"]["shared_account"]["sources"].get(row["strategy_id"]):
                     raise ValueError("原已交易策略缺少worker检查点，不能丢失消费游标")
             host = build_host(updated, resume=True, read_only=True, strategy_processes=True)
+            # 首次检查到宿主取得目标账户锁之间，其他运行可能已创建目标账本。
+            if any(Path(path).exists() for path in destinations):
+                raise ValueError("新检查点已存在，禁止重复迁移或覆盖")
             host.service.event_journal = ExecutionEventJournal(host.strategies)
             identity = host.account.manager.state_components["session_identity"].identity
             declaration = host.service.snapshot_state()
