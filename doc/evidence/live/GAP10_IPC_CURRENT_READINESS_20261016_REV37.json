@@ -1,0 +1,49 @@
+{
+  "revision": "REV37",
+  "status": "offline_passed_remote_incident_review_pending",
+  "reported_session": "night-cu-au-ag-sc-1792157494436899523",
+  "reported_results": {
+    "server": "completed; final_active_orders=0",
+    "ema": "completed",
+    "cross": "completed; fills_received=33",
+    "calendar": "failed; bars14/15; 策略行情/参考尚未就绪"
+  },
+  "incident_limit": "Only truncated summaries supplied; exact first failing action/local readiness and stop reasons require original full reports. Do not claim incident root cause proven.",
+  "deterministic_defect": "Previous poll ready=False; runner health becomes True on new Tick; submit/continue before next poll was rejected by stale server lease ready",
+  "before_fix": "Both actual RemoteStrategyExecutionClient submit and continue tests reproduced identical protocol RuntimeError",
+  "fix": [
+    "Carry current local ready_check boolean in existing submit/continue messages",
+    "Validate boolean, lease, routed fresh prices before publishing new lease readiness",
+    "Current False rejects before journal or source change; missing field retains legacy last-poll behavior",
+    "No strategy/threshold/accounting/state identity changes; no additional heartbeat RPC per Tick"
+  ],
+  "regression": {
+    "counts": {
+      "shared-account": 83,
+      "shared-ipc": 43
+    },
+    "total": 126,
+    "report_dir": "tests/results/main-ema-acceptance-1792162545757344000",
+    "new_cases": [
+      "Recovered readiness enables submit before next poll",
+      "Recovered readiness enables continuation after partial fill and cancel",
+      "Current False still closes gate even if cached state True",
+      "Invalid boolean, future price and legacy missing-ready cannot release gate"
+    ]
+  },
+  "broker_connected": false,
+  "database_connected": false,
+  "real_broker_orders_submitted": 0,
+  "user_runtime_files_modified": false,
+  "remote_remaining": [
+    "Full four reports and account/worker checkpoints",
+    "Identify first calendar failure readiness and action",
+    "Reconcile owned fill journal against worker cursor/fill counts and external baseline",
+    "Linux shared-ipc regression and same-ledger recovery if eligible"
+  ],
+  "sources": {
+    "bomber/framework/trader/execution/ipc.py": "b15a70fbc4cea9759de24a42c55aaa894c0076b7a565f989e9a223127c24807c",
+    "bomber/framework/trader/execution/ipc_client.py": "6a0c0da843be7d09293704d95160f2531379fa6f31f309ca8f4b32c1cf501556",
+    "tests/test_shared_ipc.py": "a19f6a7cd17e450ec4e1716ed2f0cc134a159ccca9a30d9911672479914b48e1"
+  }
+}

@@ -32,6 +32,87 @@ class SharedIpcTests(unittest.TestCase):
     native_account = fixtures.SharedAccountTests.native_account
     request = fixtures.SharedAccountTests.request
 
+    def test_remote_submit_uses_current_health_after_last_poll_was_unready(self):
+        self.current_health_after_poll("submit")
+
+    def test_remote_continue_uses_current_health_after_last_poll_was_unready(self):
+        self.current_health_after_poll("continue")
+
+    def current_health_after_poll(self, action):
+        with nullcontext(self.enterContext(TemporaryDirectory())) as directory:
+            _, account, service, transport, protocol = self.prepare(Path(directory)/"account.json")
+            from bomber.framework.trader.execution.ipc_client import RemoteAccountService
+            from bomber.framework.trader.execution.shared import SharedRiskBudget
+            owner = self
+            class Connection:
+                sid, lease, sequence = "one", None, 0
+                def call(self, method, data):
+                    self.sequence += 1
+                    result = owner.call(protocol, self.sid, method, data, lease=self.lease,
+                        request_id=f"current-health-{self.sequence}")
+                    if method == "attach":
+                        self.lease = result["lease"]
+                    return result
+            remote = RemoteAccountService(Connection(), service._ports["one"].configuration(), protocol.state("one"))
+            port = remote.strategy_client("one", routes={"main": self.instrument}, budget=SharedRiskBudget(5, 50000),
+                instrument_limits=service._ports["one"].instrument_limits)
+            healthy = [True]
+            port.ready_check = lambda: healthy[0]
+            port.start(); port.drain_events()
+            remote.prices.update(self.instrument, 100, self.now)
+            if action == "continue":
+                port.submit_targets(self.request(service.client_id, strategy="one", quantity=2, timestamp=self.now))
+                ref = transport.sent[-1]["OrderRef"]
+                transport.fill(ref, 1); transport.cancel_order(ref); port.drain_events()
+            healthy[0] = False
+            port.drain_events()
+            self.assertFalse(protocol.leases["one"]["ready"])
+            # 新Tick使本地健康恢复，但下一次周期poll尚未发送。
+            healthy[0] = True
+            if action == "submit":
+                port.submit_targets(self.request(service.client_id, strategy="one", quantity=1, timestamp=self.now))
+            else:
+                port.continue_target("one", "main", self.now + 1, instrument_id=self.instrument)
+            self.assertTrue(protocol.leases["one"]["ready"])
+            self.assertEqual(len(transport.sent), 1 if action == "submit" else 2)
+            self.assertFalse(service._failed or service._pending)
+            # 当前健康为False时，同次请求仍须在写前日志/贡献版本变化前拒绝。
+            healthy[0] = False
+            before = protocol.journal.snapshot_state()["requests"]
+            sent = len(transport.sent)
+            with self.assertRaisesRegex(RuntimeError, "策略行情/参考尚未就绪"):
+                if action == "submit":
+                    port.submit_targets(self.request(service.client_id, strategy="one", quantity=2, revision=2, timestamp=self.now))
+                else:
+                    port.continue_target("one", "main", self.now + 2, instrument_id=self.instrument)
+            self.assertEqual(protocol.journal.requests, before)
+            self.assertEqual(len(transport.sent), sent)
+            self.assertFalse(protocol.leases["one"]["ready"])
+            port.begin_stop(); account.stop()
+
+    def test_current_health_cannot_bypass_invalid_prices_or_legacy_unready_poll(self):
+        with nullcontext(self.enterContext(TemporaryDirectory())) as directory:
+            _, _, service, transport, protocol = self.prepare(Path(directory)/"account.json")
+            lease = self.attach(protocol, "one")
+            self.call(protocol, "one", "poll", {"cursor": 0, "ready": False}, lease=lease)
+            for ready in ("true", 1, None):
+                data = {**self.target(protocol, "one", 1), "ready": ready}
+                with self.assertRaisesRegex(ValueError, "布尔值"):
+                    self.call(protocol, "one", "submit", data, lease=lease)
+                self.assertFalse(protocol.leases["one"]["ready"])
+            # 老客户端未传ready时仍服从上一次poll，不能默认为就绪。
+            with self.assertRaisesRegex(RuntimeError, "策略行情/参考尚未就绪"):
+                self.call(protocol, "one", "submit", self.target(protocol, "one", 1), lease=lease)
+            data = {**self.target(protocol, "one", 1), "ready": True,
+                "prices": {str(self.instrument): {"price": "100", "ts_event": time.time_ns()+1_000_000_000}}}
+            with self.assertRaisesRegex(ValueError, "时效"):
+                self.call(protocol, "one", "submit", data, lease=lease)
+            self.assertFalse(protocol.leases["one"]["ready"])
+            self.assertFalse(transport.sent)
+            self.assertFalse(protocol.journal.requests)
+            self.assertFalse(service.snapshot_state()["sources"])
+            protocol.stop_owner("one")
+
     def test_budget_stop_keeps_ipc_alive_for_partial_fill_cancel_and_final_ack(self):
         from bomber.framework.trader.execution.contracts import OrderBudgetExhausted
         from bomber.framework.trader.execution.ipc_client import RemoteAccountService

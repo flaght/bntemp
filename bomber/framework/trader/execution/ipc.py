@@ -240,9 +240,16 @@ class AccountExecutionProtocol:
             if self.service.execution_stop is not None:
                 return {"state": self.state(sid), "accepted": False,
                         "reason": self.service.execution_stop["reason"]}
-            if not lease["ready"]:
+            # Tick可能已使本地健康恢复，而下一次周期poll尚未到达；发送请求携带
+            # 本次检查结果。旧客户端继续使用最近poll，不能把缺失字段当作True。
+            ready = data.get("ready", lease["ready"])
+            if not isinstance(ready, bool):
+                raise ValueError("策略就绪声明须为布尔值")
+            if not ready:
+                lease["ready"] = False
                 raise RuntimeError("策略行情/参考尚未就绪")
             self._update_prices(port, data["prices"])
+            lease["ready"] = ready  # 价格/路由校验完成后更新，拒绝请求不解除旧闭闸。
             if action == "continue":
                 port.continue_target(sid, data["target_key"], data["now_ns"],
                     instrument_id=InstrumentId.from_str(data["instrument_id"]))

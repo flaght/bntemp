@@ -133,7 +133,8 @@ class RemoteStrategyExecutionClient:
     def submit_targets(self, request):
         if self._stopping or request.strategy_id != self.strategy_id:
             raise RuntimeError("策略身份不符或已经停止")
-        result = self.service.connection.call("submit", {"request": wire(request), "prices": self.price_state()})
+        result = self.service.connection.call("submit", {"request": wire(request), "prices": self.price_state(),
+            "ready": bool(self.ready_check())})
         self.sync(result["state"])
 
     def continue_target(self, strategy_id, target_key, now_ns, *, instrument_id):
@@ -142,7 +143,7 @@ class RemoteStrategyExecutionClient:
         if strategy_id != self.strategy_id or self.routes.get(target_key) != instrument_id:
             raise ValueError("远程执行路由不属于本策略")
         result = self.service.connection.call("continue", {"target_key": target_key, "now_ns": now_ns,
-            "instrument_id": str(instrument_id), "prices": self.price_state()})
+            "instrument_id": str(instrument_id), "prices": self.price_state(), "ready": bool(self.ready_check())})
         self.sync(result["state"])
 
     def cancel_strategy(self, strategy_id):

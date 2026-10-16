@@ -677,3 +677,24 @@ history-minutes=0且不带历史文件/配置，仍使用实时EMA3/5和跨期/�
 检查点或配置差异拒绝。环境路径文件原子替换，不触及原账本；新配置禁止覆盖。
 标准prepare_session把输出已存在与时长非法拆成独立错误，避免再次误判。
 配置专项与共享IPC离线回归见REV36证据，真实夜盘观察及三策略运行仍待Linux。
+
+## 2026-10-16 REV37：本次执行请求同步当前策略就绪结果
+
+用户回传夜盘night-cu-au-ag-sc-1792157494436899523：账户服务completed、活动单0，
+EMA completed，横截面completed且fills_received=33；跨期14/15根Bar后报
+策略行情/参考尚未就绪。这句话来自AccountExecutionProtocol租约ready校验，
+不是数据库直接抛错；片段未含首个failure_readiness，不能断言现场成因已查明。
+
+代码审查及确定性复现发现：周期poll可能发送False，之后新Tick使runner本地健康
+恢复；本地_check通过，但在下一次poll前submit/continue仍被账户缓存False拒绝。
+远程端现于原请求携带当前ready_check结果，协议严格要求布尔值，在有效租约下
+先验证本次健康及价格/路由，再更新ready并执行；未传ready的旧客户端仍按最近
+poll，不默认放行。拒绝False/非法值/无效价格均在新请求日志及贡献变更前完成。
+无策略算法、仓位、参考合约、历史窗口、10秒阈值或已有运行账本变更。
+
+修复前实际RemoteStrategyExecutionClient与AccountExecutionProtocol复现同名拒绝，
+修复后submit及保留目标continue均通过；新增当前False、字符串/整数冒充布尔、
+未来价及旧协议闭闸保护回归。共享账户83+IPC43共126项离线通过，SDK/柜台为替身，
+真实Unix socket、回报确认及归属恢复回归保持通过。尚需完整原报告核对本次成因、
+每个worker与账户日志成交/游标、停止原因、外部基线及最终柜台对账；保留原配置和
+账本，不重建新会话掩盖跨期错误。证据GAP10_IPC_CURRENT_READINESS_20261016_REV37.json。
