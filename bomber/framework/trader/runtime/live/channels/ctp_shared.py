@@ -33,6 +33,8 @@ class CtpSharedAccountLifecycle:
                 or self.client.account_reconciliation is not AccountReconciliationMode.OBSERVE):
             raise ValueError("外部基线须使用独立订单、明确范围及只观测柜台仓位")
         self.preserve_external = preserve_external
+        planner = getattr(self.client.planner, "planner", self.client.planner)
+        self.generic_close_venues = planner._planner.generic_close_venues
         self.external_gross, self.external_buckets = {}, {}
         components = {"shared_account": service, "session_identity": SessionIdentityCheckpoint(identity)}
         if position_scope is not None:
@@ -87,16 +89,27 @@ class CtpSharedAccountLifecycle:
                     if p.long_total or p.short_total}
         if managed != expected:
             raise RuntimeError("共享账户柜台总仓与保存CTP账本不一致")
+        if self.preserve_external:
+            from .ctp_owned import external_partition
+            remaining, residual = external_partition(self.ledger.state(), gross, buckets, self.generic_close_venues)
+            if remaining != self.external_gross:
+                raise RuntimeError("柜台剩余多空仓与外部基线不一致；禁止改写策略归属")
+            for key, values in residual.items():
+                if key.rsplit(".", 1)[-1] not in self.generic_close_venues and values != self.external_buckets.get(key):
+                    raise RuntimeError("明确今昨平仓合约的外部桶变化")
+            # 通用CLOSE仅减少逻辑归属份额；柜台可能优先减少其他物理今昨桶。
+            self.external_buckets = residual
         if not set(self.ledger.state().positions) <= set(self.service.instrument_limits):
             raise RuntimeError("共享CTP账本包含未注册合约")
         for instrument in self.service.instrument_limits:
             state = self.ledger.snapshot(instrument)
+            generic = self.preserve_external and str(instrument).rsplit(".", 1)[-1] in self.generic_close_venues
             actual = buckets.get(str(instrument))
-            if self.preserve_external:
+            if self.preserve_external and not generic:
                 actual = self._subtract_baseline({str(instrument): actual} if actual else {},
                     {str(instrument): self.external_buckets[str(instrument)]}
                     if str(instrument) in self.external_buckets else {}, 4).get(str(instrument))
-            if (actual if actual else (0, 0, 0, 0)) != (
+            if not generic and (actual if actual else (0, 0, 0, 0)) != (
                     state.long_today, state.long_yesterday, state.short_today, state.short_yesterday):
                 raise RuntimeError("共享账户柜台今昨仓与保存账本不一致")
             if self.execution.positions.account_position(self.service.client_id, instrument) != state.net_position:
@@ -172,12 +185,6 @@ class CtpSharedAccountLifecycle:
                     buckets[key][2] + buckets[key][3]) for key, (long, short) in gross.items())):
             raise ValueError("范围外持仓检查点的总仓或今昨桶无效")
         self.external_gross, self.external_buckets = gross, buckets
-        self._validate_baseline_venues()
-
-    def _validate_baseline_venues(self):
-        if self.preserve_external and any(self.position_scope.contains(key)
-                and key.rsplit(".", 1)[-1] not in {"SHFE", "INE"} for key in self.external_gross):
-            raise ValueError("同合约外部基线仅支持明确今昨平仓的SHFE/INE；通用平仓交易所不能保证旧桶保留")
 
     def scope_diagnostics(self):
         return {"policy": "account" if self.position_scope is None else "strategy_instruments",
@@ -200,6 +207,19 @@ class CtpSharedAccountLifecycle:
                 if self.rollover_transform is None:
                     raise RuntimeError("此共享会话未配置跨日恢复")
                 transform = lambda payload: self.rollover_transform(self, payload)
+            if self.preserve_external:
+                previous_transform = transform
+                def owned_transform(payload):
+                    old_identity = payload["component_states"]["session_identity"]["identity"]
+                    new_identity = self.manager.state_components["session_identity"].identity
+                    if "strategies" in old_identity and old_identity.get("existing_position_policy") is None:
+                        # 仅迁移持仓政策，其他身份/预算/算法/路由仍由原恢复严格比较。
+                        if new_identity.get("existing_position_policy") == "preserve_external":
+                            old_identity["existing_position_policy"] = "preserve_external"
+                    payload = previous_transform(payload) if previous_transform else payload
+                    from .ctp_owned import restore_external_baseline
+                    return restore_external_baseline(self, payload)
+                transform = owned_transform
             if self.manager.restore(payload_transform=transform) is None:
                 raise RuntimeError("共享账户恢复文件不存在")
             self._restored = True
@@ -227,7 +247,6 @@ class CtpSharedAccountLifecycle:
                 gross, buckets = self._observe_positions()
                 self.external_gross = gross if self.preserve_external else self.position_scope.external(gross)
                 self.external_buckets = buckets if self.preserve_external else self.position_scope.external(buckets)
-                self._validate_baseline_venues()
                 self._validate_account()
         self._ready = True
         self._next_check = time.monotonic() + self.reconcile_seconds

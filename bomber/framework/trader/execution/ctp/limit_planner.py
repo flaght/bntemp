@@ -81,13 +81,26 @@ class IndependentCtpLimitPlanner:
                 quantity = min(quantity, abs(current))
                 snapshot = self.planner._planner.ledger.snapshot(instrument)
                 venue = str(instrument).rsplit(".", 1)[-1]
-                overnight = venue == "CFFEX" and venue in self.planner._planner.generic_close_venues
-                available = (snapshot.short_total if delta > 0 else snapshot.long_total) if overnight else (
-                    snapshot.short_today if delta > 0 else snapshot.long_today)
+                generic = venue in self.planner._planner.generic_close_venues
+                available = snapshot.short_total if delta > 0 else snapshot.long_total
                 if available < abs(current):
-                    raise RuntimeError("独立归属缺少同日可平仓量；拒绝接管昨仓或其他来源")
-                effect = (PositionEffect.CLOSE if str(instrument).rsplit(".", 1)[-1] in self.planner._planner.generic_close_venues
-                          else PositionEffect.CLOSE_TODAY)
+                    raise RuntimeError("独立归属缺少已记账可平仓量；拒绝使用其他来源仓位")
+                if generic:
+                    effect = PositionEffect.CLOSE
+                else:
+                    today = snapshot.short_today if delta > 0 else snapshot.long_today
+                    # 只分配系统账本的今昨桶；总量仍由发起策略的归属份额限制。
+                    remaining = quantity
+                    for effect, bucket in ((PositionEffect.CLOSE_TODAY, today),
+                                           (PositionEffect.CLOSE_YESTERDAY, available-today)):
+                        closing = min(remaining, bucket)
+                        if closing:
+                            planned.append(OrderIntent(request.strategy_id, request.client_id, instrument,
+                                side, closing, position_effect=effect, reduce_only=True,
+                                metadata={**request.metadata, "target": str(target), "owned_position": str(current),
+                                          "request_revision": request.revision}))
+                            remaining -= closing
+                    continue
             planned.append(OrderIntent(request.strategy_id, request.client_id, instrument, side, quantity,
                 position_effect=effect, reduce_only=effect is not PositionEffect.OPEN,
                 metadata={**request.metadata, "target": str(target), "owned_position": str(current),

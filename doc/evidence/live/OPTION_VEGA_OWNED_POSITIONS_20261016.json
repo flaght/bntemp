@@ -1,0 +1,32 @@
+{
+  "date": "2026-10-16",
+  "status": "offline_passed_online_pending",
+  "scope": "attributed_positions_same_contract_external_baseline_and_08_resume",
+  "network_connected": false,
+  "real_orders_submitted": 0,
+  "tests": {
+    "option_base": 81,
+    "option_shared": 26,
+    "index_poll": 5,
+    "shared_account": 83,
+    "live_common": 120,
+    "shared_ipc": 34,
+    "total": 349
+  },
+  "same_process_and_shared_server_workers": true,
+  "ownership": "persisted_attributed_fills_not_candidate_instruments",
+  "unknown_external_concurrent_writers_supported": false,
+  "close_auction_1457_implemented": false,
+  "source_sha256": {
+    "bomber/framework/trader/execution/ctp/limit_planner.py": "1f4b4d8a6f51924010572b1eff4b4fd3a54263b9be6c5adffe4e5b6dc3c6522e",
+    "bomber/framework/trader/execution/shared.py": "a65592e20d5c947dcf6fb1b8be79341411893d04ebdc3226fecfb72143c0d800",
+    "bomber/framework/trader/runtime/live/channels/ctp_owned.py": "1ba58ac2e1ec9842e84eae8a77a5da12dafbe3f6c9ec939ea0dad5bbbddd8fe0",
+    "bomber/framework/trader/runtime/live/channels/ctp_rollover.py": "b4bf2ce263cf5e198d35ac2354eb0e89c5d671fa8d58e814c47b5ffb582252b7",
+    "bomber/framework/trader/runtime/live/channels/ctp_shared.py": "467cac81ed02c0058224bd90e10e7406af3fdbed4367b613a42a7db1f7431c01",
+    "scripts/integration/options/shared.py": "bc6fa62119f219cbbe3f1891d697bf73166f6d0393f68020c08cf862a0295bb6",
+    "scripts/integration/shared_account/rollover.py": "5759ae7c737e680273bec99c32c2893da575baa1410fee31128a7eeab799fa45",
+    "tests/test_option_shared_rollover.py": "3faf517c9d51a1a80cecb86355a0504d2137595f5d8f9eeeaa6ae1f2125c5427",
+    "tests/test_shared_account.py": "c33868583a59276b753563308a4c8d5b0d552d7e904ab99897766ff9435eb7ea",
+    "tests/test_shared_ipc.py": "c8007fb6baff2916ad53f11ceea41adc70cc18aa0d1669194862e72bf1bec26d"
+  }
+}

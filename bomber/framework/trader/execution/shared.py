@@ -491,11 +491,9 @@ class SharedAccountExecutionService(AccountExecutionService):
                 owned = [Decimal(row["quantity"]) for row in self.position_manager.attribution.state()["owned"]
                          if row["instrument_id"] == str(instrument) and row["client_id"] == self.client_id]
                 gross = ledger.snapshot(instrument)
-                generic = str(instrument).rsplit(".", 1)[-1] == "CFFEX"
-                if ((not generic and (gross.long_yesterday or gross.short_yesterday))
-                        or sum((max(q, Decimal(0)) for q in owned), Decimal(0)) != gross.long_total
+                if (sum((max(q, Decimal(0)) for q in owned), Decimal(0)) != gross.long_total
                         or sum((max(-q, Decimal(0)) for q in owned), Decimal(0)) != gross.short_total):
-                    raise ValueError("独立策略归属总仓与CTP同日账本不一致；禁止净额/昨仓账本混用")
+                    raise ValueError("独立策略归属多空总仓与CTP成交账本不一致")
 
     def restore_state(self, state):
         shared = state.get("shared", {})

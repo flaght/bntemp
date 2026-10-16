@@ -62,7 +62,7 @@ class OptionSharedRolloverTests(unittest.TestCase):
         now[0] += 21_000_000_000
         session.runner.flush_frames()
 
-    def shared(self, path=None, current=None, transport=None):
+    def shared(self, path=None, current=None, transport=None, preserve_external=False):
         current = current or self.current
         day = current.references.service.valuation_day.strftime("%Y%m%d")
         args = deepcopy(self.new_args); args.expected_trading_day = args.valuation_day = day
@@ -77,6 +77,7 @@ class OptionSharedRolloverTests(unittest.TestCase):
         execution = build_ctp_portfolio_execution(driver, trading_day=day,
             price_increments={i: s.tick for i, s in specs.items()}, multipliers=multipliers,
             instrument_limits=limits, session_check=lambda: True, orders=True, instrument_scope=scope,
+            account_reconciliation="observe" if preserve_external else "strict",
             generic_close_venues=("CFFEX",), generic_close_today_first_venues=("CFFEX",))
         service = SharedAccountExecutionService(execution.client, prices=execution.prices,
             instrument_limits=limits, budget=SharedRiskBudget(10, 10000000), instrument_scope=scope,
@@ -86,10 +87,13 @@ class OptionSharedRolloverTests(unittest.TestCase):
         identity = dict(strategy_id=CLIENT, kind="option_vega", argv=["unchanged"], trading_day=day,
             environment="realtime", routes=session.client.configuration(), reference=session.session_identity)
         resources = ExitStack(); self.addCleanup(resources.close)
+        account_identity = dict(trading_day=day, environment="realtime", strategies={CLIENT: identity})
+        if preserve_external:
+            account_identity["existing_position_policy"] = "preserve_external"
         account = CtpSharedAccountLifecycle(execution, service, transport=transport, state_file=path or self.source,
-            identity=dict(trading_day=day, environment="realtime", strategies={CLIENT: identity}),
+            identity=account_identity,
             resources=resources, expected_day=day, position_scope=scope,
-            rollover_transform=rollover.payload_for_day)
+            rollover_transform=rollover.payload_for_day, preserve_external=preserve_external)
         account.option_sessions = {CLIENT: session}
         return account, service, session, identity, transport
 
@@ -203,6 +207,65 @@ class OptionSharedRolloverTests(unittest.TestCase):
                          account.client.order_state_machine.checkpoints()[0])
         self.assertFalse(transport2.sent)
         restored.authorize(); restored.stop()
+
+    def test_old_shared_state_migrates_same_day_without_claiming_candidate_or_same_contract_external(self):
+        account, _, _, _, _ = self.shared()
+        account.start(resume=True); account.authorize(); account.stop()
+        before = self.source.read_bytes()
+        old = JsonStateStore(self.source).load().payload
+        transport = DetailsTransport("20260814")
+        gross = {OPTION: (Decimal(1), Decimal(3)), "IM2609.CFFEX": (Decimal(0), Decimal(1)),
+                 "ag2612.SHFE": (Decimal(0), Decimal(1))}
+        transport.query_gross_positions = lambda: gross
+        transport.query_positions = lambda: {key: long-short for key, (long, short) in gross.items()}
+        transport.query_position_details = lambda: [dict(InstrumentID=key.split(".")[0],
+            ExchangeID=key.split(".")[1], PosiDirection=direction, Position=quantity,
+            PositionDate="1", HedgeFlag="1", PositionCost=10000)
+            for key, values in gross.items() for direction, quantity in zip(("2", "3"), values) if quantity]
+        new, service, session, _, _ = self.shared(transport=transport, preserve_external=True)
+        new.start(resume=True); new.authorize()
+        self.assertEqual(service.position_manager.position(CLIENT, OPTION), -1)
+        self.assertEqual(service.position_manager.position(CLIENT, "IM2609.CFFEX"), 0)
+        self.assertEqual(new.external_gross[OPTION], (1, 2))
+        self.assertEqual(new.external_gross["IM2609.CFFEX"], (0, 1))
+        self.assertEqual(new.ledger.snapshot(InstrumentId.from_str(OPTION)).short_total, 1)
+        self.assertEqual(new.ledger.snapshot(InstrumentId.from_str(OPTION)).short_today_basis, Decimal("82.2"))
+        new.stop()
+        saved = JsonStateStore(self.source).load().payload
+        self.assertEqual(saved["positions"]["attribution"], old["positions"]["attribution"])
+        self.assertEqual(saved["orders"], old["orders"])
+        self.assertEqual(saved["component_states"]["external_positions"]["version"], 2)
+        self.assertFalse(transport.sent)
+        self.assertTrue(any(p.read_bytes() == before for p in self.root.glob(self.source.name+".before-rollover-g*.json")))
+        tomorrow = DetailsTransport("20260817")
+        tomorrow.query_gross_positions = transport.query_gross_positions
+        tomorrow.query_positions = transport.query_positions
+        tomorrow.query_position_details = lambda: [dict(row, PositionDate="2")
+            for row in transport.query_position_details()]
+        later, service2, _, _, _ = self.shared(current=inputs(date(2026, 8, 17), "dolphindb"),
+            transport=tomorrow, preserve_external=True)
+        later.start(resume=True); later.authorize()
+        self.assertEqual(service2.position_manager.position(CLIENT, OPTION), -1)
+        self.assertEqual(later.ledger.snapshot(InstrumentId.from_str(OPTION)).short_yesterday_basis, Decimal("82.2"))
+        self.assertEqual(later.external_gross[OPTION], (1, 2))
+        self.assertFalse(tomorrow.sent)
+        later.stop()
+
+    def test_owned_migration_rejects_missing_owned_quantity_without_overwriting_checkpoint(self):
+        account, _, _, _, _ = self.shared()
+        account.start(resume=True); account.authorize(); account.stop()
+        before = self.source.read_bytes()
+        transport = DetailsTransport("20260814")
+        transport.query_gross_positions = lambda: {"ag2612.SHFE": (Decimal(0), Decimal(1))}
+        transport.query_positions = lambda: {"ag2612.SHFE": Decimal(-1)}
+        transport.query_position_details = lambda: [dict(InstrumentID="ag2612", ExchangeID="SHFE",
+            PosiDirection="3", Position=1, PositionDate="1", HedgeFlag="1", PositionCost=10000)]
+        new, _, _, _, _ = self.shared(transport=transport, preserve_external=True)
+        with self.assertRaisesRegex(RuntimeError, "不足以覆盖"):
+            new.start(resume=True)
+        new.stop()
+        self.assertEqual(self.source.read_bytes(), before)
+        self.assertFalse(transport.sent)
 
     def rollover_with_external(self, gross, *, name="external", initial_quantity=1):
         path = self.root / (name + ".json")

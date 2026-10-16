@@ -97,7 +97,13 @@ def payload_for_day(account, payload):
     limits = account.service.instrument_limits
     account.rollover_audit = observe_rollover(payload, driver=account.driver, transport=account.transport,
         day=account.expected_day, multipliers={i: limit.contract_multiplier for i, limit in limits.items()},
-        scope=account.position_scope)
+        scope=account.position_scope, preserve_external=account.preserve_external,
+        generic_close_venues=account.generic_close_venues)
+    if account.preserve_external:
+        from bomber.framework.trader.runtime.live.channels.ctp_owned import restore_external_baseline
+        payload = restore_external_baseline(account, payload, refresh=True)
+        payload["component_states"]["session_identity"]["identity"] = new
+        return payload
     external = payload["component_states"].get("external_positions")
     if external is not None:
         from bomber.framework.trader.runtime.ctp_account import position_buckets

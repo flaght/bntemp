@@ -1,0 +1,11 @@
+2026-10-16 offline validation; no broker/database connections; no real orders.
+Option SDK entity shim + actual core:
+  tests.run_option_vega_offline: Ran 81 tests, OK.
+  tests.test_option_shared_rollover + tests.test_option_poll_interval: Ran 31 tests, OK (26 + 5).
+Separate processes with repository test fixtures:
+  python -m unittest tests.test_shared_account: Ran 83 tests, OK.
+  python -m tests.run_main_ema_acceptance --only live-common: Ran 120 tests, OK.
+  python -m tests.run_main_ema_acceptance --only shared-ipc: Ran 34 tests, OK.
+Total: 349 passed.
+Unix socket tests initially hit sandbox bind restrictions; final run with local Unix socket permission passed including three real child processes, no second TD.
+Covered: same-contract same/opposite owners; external gross retained; CFFEX/DCE/CZCE/SHFE/INE offset planning; generic physical buckets are not ownership; owned yesterday close; old checkpoint same-day migration with external candidate future; same-contract foreign double-sided positions; next-day restore; original fill basis/order history retained; missing owned capacity preserves original bytes; IPC per-owner state and real process attachments with external baseline.

@@ -21,7 +21,7 @@ def session_config(identity, *, day, account_state, signal_state, report_dir, ma
         if account["client_id"] != sid or account["max_session_orders"] != max_orders:
             raise ValueError("共享恢复须保留原账户ID及订单上限")
         return {"version": 1, "trading_day": day, "environment": "realtime", "execution_mode": "independent",
-            "position_scope": "strategy_instruments", "seconds": 86400,
+            "position_scope": "strategy_instruments", "existing_position_policy": "preserve_external", "seconds": 86400,
             "account_state_file": str(account_state), "report_dir": str(report_dir), "account": account,
             "strategies": [{"strategy_id": sid, "kind": "option_vega", "state_file": str(signal_state),
                 "argv": deepcopy(declarations[sid]["argv"])}]}
@@ -45,7 +45,7 @@ def session_config(identity, *, day, account_state, signal_state, report_dir, ma
     config = identity["config"]
     quantity = config["max_total_option_lots"] + config["max_future_lots"] * 4
     return {"version": 1, "trading_day": day, "environment": "realtime", "execution_mode": "independent",
-        "position_scope": "strategy_instruments", "seconds": 86400,
+        "position_scope": "strategy_instruments", "existing_position_policy": "preserve_external", "seconds": 86400,
         "account_state_file": str(account_state), "report_dir": str(report_dir),
         "account": {"client_id": identity["strategy_id"], "max_gross_quantity": quantity,
             "max_gross_notional": identity["max_notional"], "max_session_orders": max_orders,

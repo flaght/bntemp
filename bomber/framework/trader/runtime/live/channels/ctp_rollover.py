@@ -11,7 +11,8 @@ from .ctp import occupied_positions, assert_account_ready
 BUCKETS = ("long_today", "long_yesterday", "short_today", "short_yesterday")
 
 
-def observe_rollover(payload, *, driver, transport, day, multipliers, scope=None):
+def observe_rollover(payload, *, driver, transport, day, multipliers, scope=None,
+                     preserve_external=False, generic_close_venues=()):
     """禁单阶段观察；不移动日期猜分桶，不从柜台仓位推断策略所有者。"""
     client_id = driver.driver_id
     if set(payload["ctp_ledgers"]) != {client_id} or set(payload["ctp_drivers"]) != {client_id}:
@@ -47,9 +48,34 @@ def observe_rollover(payload, *, driver, transport, day, multipliers, scope=None
         assert_account_ready(driver)
         gross = occupied_positions(transport)
         managed = scope.select(gross) if scope is not None else gross
-        if managed != expected:
+        if not preserve_external and managed != expected:
             raise RuntimeError("跨日恢复柜台总仓与原成交账本不一致")
         rows = transport.query_position_details()
+        if preserve_external:
+            from .ctp_owned import external_partition, validate_saved_ownership
+            validate_saved_ownership(payload, client_id)
+            # 只结转系统自己的成交成本，不用包含外部仓位的柜台均价覆盖归属成本。
+            encoded = storage._encode_ctp_ledger(ledger)
+            encoded["trading_day"] = day
+            for row in encoded["positions"]:
+                for side in ("long", "short"):
+                    today, yesterday = (Decimal(row[side+suffix]) for suffix in ("_today", "_yesterday"))
+                    total = today+yesterday
+                    basis = ((today*Decimal(row[side+"_today_basis"])+yesterday*Decimal(row[side+"_yesterday_basis"]))
+                             / total if total else Decimal(0))
+                    row.update({side+"_today": "0", side+"_today_basis": "0",
+                                side+"_yesterday": str(total), side+"_yesterday_basis": str(basis)})
+            rolled = storage._decode_ctp_ledger(encoded)
+            all_buckets = position_buckets(rows, gross)
+            external_partition(rolled, gross, {key: row.quantities for key, row in all_buckets.items()},
+                               generic_close_venues)
+            assert_account_ready(driver)
+            if occupied_positions(transport) != gross:
+                raise RuntimeError("跨日归属查询期间柜台持仓变化")
+            payload["ctp_ledgers"][client_id] = encoded
+            return {"from_day": ledger.trading_day, "to_day": day, "gross": gross,
+                "owned_cost_basis": "persisted_strategy_fills_not_account_average",
+                "bucket_basis": "owned_logical_rollover_with_authoritative_capacity_check"}
         allowed = {str(i) for i in multipliers}
         managed_rows = [row for row in rows if f"{row['InstrumentID']}.{row['ExchangeID']}" in allowed]
         buckets = position_buckets(managed_rows, multipliers, require_cost=True)

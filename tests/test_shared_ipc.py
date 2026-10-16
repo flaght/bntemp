@@ -242,11 +242,11 @@ class SharedIpcTests(unittest.TestCase):
             connect_session_market(session, cleanup)
         self.assertEqual(cleanup, [upstream])
 
-    def prepare(self, path, *, resume=False, gross=None):
+    def prepare(self, path, *, resume=False, gross=None, preserve_external=False):
         from bomber.framework.trader.execution.ipc import AccountExecutionProtocol
         modules = self.native_modules()
         account, service, transport, ports, _ = self.native_account(path, modules,
-            scoped=True, execution_mode="independent")
+            scoped=True, execution_mode="independent", preserve_external=preserve_external)
         shared = __import__("bomber.framework.trader.execution.shared", fromlist=["SharedRiskBudget"])
         three = service.strategy_client("three", routes={"main": self.instrument},
             budget=shared.SharedRiskBudget(5, 50000))
@@ -281,7 +281,9 @@ class SharedIpcTests(unittest.TestCase):
 
     def test_request_idempotency_conflict_identity_and_opposite_native_orders(self):
         with nullcontext(self.enterContext(TemporaryDirectory())) as directory:
-            modules, account, service, transport, protocol = self.prepare(Path(directory) / "account.json")
+            baseline = {str(self.instrument): (2, 3)}
+            modules, account, service, transport, protocol = self.prepare(Path(directory) / "account.json",
+                gross=baseline.copy(), preserve_external=True)
             one, two = self.attach(protocol, "one"), self.attach(protocol, "two")
             target = self.target(protocol, "one", 1)
             self.call(protocol, "one", "submit", target, lease=one)
@@ -297,8 +299,17 @@ class SharedIpcTests(unittest.TestCase):
             self.call(protocol, "two", "submit", self.target(protocol, "two", -1), lease=two)
             transport.fill(transport.sent[-1]["OrderRef"])
             self.assertEqual([row["CombOffsetFlag"] for row in transport.sent], ["0", "0"])
-            self.assertEqual(transport.gross[str(self.instrument)], (1, 1))
+            self.assertEqual(transport.gross[str(self.instrument)], (3, 4))
             self.assertFalse(service.position_manager.attribution.state()["transfers"])
+            self.call(protocol, "one", "submit", self.target(protocol, "one", 0, revision=2),
+                lease=one, request_id="close-one")
+            self.assertEqual(transport.sent[-1]["VolumeTotalOriginal"], 1)
+            transport.fill(transport.sent[-1]["OrderRef"])
+            account._validate_account()
+            self.assertEqual(transport.gross[str(self.instrument)], (2, 4))
+            self.assertEqual(service.position_manager.position("one", "main"), 0)
+            self.assertEqual(service.position_manager.position("two", "main"), -1)
+            self.assertEqual(account.external_gross, baseline)
             protocol.stop_owner("one")
             self.assertIn("two", protocol.leases)
             self.assertEqual(service.position_manager.position("two", "main"), -1)
@@ -437,7 +448,8 @@ class SharedIpcTests(unittest.TestCase):
     def test_three_real_processes_attach_through_unix_socket_without_second_td(self):
         from bomber.framework.trader.execution.ipc import UnixExecutionServer
         with nullcontext(self.enterContext(TemporaryDirectory(dir="/tmp"))) as directory:
-            _, _, service, transport, protocol = self.prepare(Path(directory) / "account.json")
+            _, _, service, transport, protocol = self.prepare(Path(directory) / "account.json",
+                gross={str(self.instrument): (2, 3)}, preserve_external=True)
             server = UnixExecutionServer(Path(directory) / "exec.sock", protocol)
             self.addCleanup(server.close)
             running = threading.Event()
@@ -461,6 +473,7 @@ class SharedIpcTests(unittest.TestCase):
                     self.assertEqual(worker.exitcode, 0)
                 self.assertEqual({row["sid"] for row in rows}, {"one", "two", "three"})
                 self.assertFalse(any("error" in row for row in rows), rows)
+                self.assertTrue(all(row["state"]["positions"] == {"main": "0"} for row in rows))
                 self.assertEqual(transport.starts, 1)
                 self.assertFalse(transport.sent)
             finally:

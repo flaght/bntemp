@@ -602,18 +602,94 @@ class SharedAccountTests(unittest.TestCase):
             self.assertEqual(account.external_gross[str(self.instrument)], (0, 1))
             account.stop()
 
-    def test_same_instrument_external_baseline_rejects_generic_close_venue(self):
+    def test_same_contract_two_owners_and_external_are_isolated_across_venues(self):
         modules = self.native_modules()
-        self.instrument = type(self.instrument).from_str("i2701.DCE")
+        for venue in ("CFFEX", "DCE", "CZCE", "SHFE", "INE"):
+            with self.subTest(venue=venue), TemporaryDirectory() as directory:
+                self.instrument = type(self.instrument).from_str("fixture."+venue)
+                path = Path(directory)/"account.json"
+                generic = (venue,) if venue in {"CFFEX", "DCE", "CZCE"} else ()
+                account, service, transport, (one, two), _ = self.native_account(path, modules,
+                    scoped=True, execution_mode="independent", preserve_external=True,
+                    generic_close_venues=generic)
+                transport.gross = {str(self.instrument): (2, 3)}
+                account.start(resume=False); service.start(); one.start(); two.start(); account.authorize()
+                self.submit(one, -1); transport.fill(transport.sent[-1]["OrderRef"])
+                self.submit(two, -1); transport.fill(transport.sent[-1]["OrderRef"])
+                self.assertEqual(transport.gross[str(self.instrument)], (2, 5))
+                self.submit(one, 0, revision=2)
+                self.assertEqual(transport.sent[-1]["VolumeTotalOriginal"], 1)
+                self.assertEqual(transport.sent[-1]["CombOffsetFlag"], "1" if generic else "3")
+                transport.fill(transport.sent[-1]["OrderRef"])
+                self.assertEqual(transport.gross[str(self.instrument)], (2, 4))
+                self.assertEqual(service.position_manager.position("one", "main"), 0)
+                self.assertEqual(service.position_manager.position("two", "main"), -1)
+                self.assertEqual(account.external_gross[str(self.instrument)], (2, 3))
+                one.stop(); two.stop(); account.stop()
+                restored, service2, transport2, _, _ = self.native_account(path, modules,
+                    scoped=True, execution_mode="independent", preserve_external=True,
+                    generic_close_venues=generic)
+                transport2.gross = dict(transport.gross)
+                restored.start(resume=True); restored.authorize()
+                self.assertEqual(service2.position_manager.position("two", "main"), -1)
+                self.assertFalse(transport2.sent)
+                restored.stop()
+
+    def test_generic_close_external_physical_buckets_are_not_strategy_ownership(self):
+        modules = self.native_modules()
+        self.instrument = type(self.instrument).from_str("MO2611-C-7100.CFFEX")
         with TemporaryDirectory() as directory:
-            path = Path(directory)/"account.json"
-            account, _, transport, _, _ = self.native_account(path, modules,
+            account, service, transport, (one, two), _ = self.native_account(Path(directory)/"account.json", modules,
+                scoped=True, execution_mode="independent", preserve_external=True, generic_close_venues=("CFFEX",))
+            key = str(self.instrument)
+            transport.gross = {key: (0, 2)}
+            account.start(resume=False); service.start(); one.start(); two.start(); account.authorize()
+            self.submit(one, -1); transport.fill(transport.sent[-1]["OrderRef"])
+            self.submit(two, 1); transport.fill(transport.sent[-1]["OrderRef"])
+            # 柜台通用CLOSE的物理桶与逻辑成交桶可以不同，不能据此转移策略归属。
+            def details():
+                long, short = transport.gross[key]
+                return [dict(InstrumentID="MO2611-C-7100", ExchangeID="CFFEX", Position=q,
+                    PosiDirection=d, PositionDate=b, HedgeFlag="1")
+                    for d, b, q in (("2", "1", long), ("3", "1", max(short-2, 0)), ("3", "2", min(short, 2))) if q]
+            transport.query_position_details = details
+            account._validate_account()
+            self.submit(one, 0, revision=2); transport.fill(transport.sent[-1]["OrderRef"])
+            account._validate_account()
+            self.assertEqual(service.position_manager.position("one", "main"), 0)
+            self.assertEqual(service.position_manager.position("two", "main"), 1)
+            self.assertEqual(account.external_gross[key], (0, 2))
+            self.assertEqual(account.external_buckets[key], (0, 0, 0, 2))
+            one.stop(); two.stop(); account.stop()
+
+    def test_independent_explicit_yesterday_close_uses_owned_ledger(self):
+        from dataclasses import replace
+        modules = self.native_modules()
+        with TemporaryDirectory() as directory:
+            account, service, transport, (one, two), _ = self.native_account(Path(directory)/"account.json", modules,
                 scoped=True, execution_mode="independent", preserve_external=True)
-            transport.gross = {str(self.instrument): (0, 1)}
-            with self.assertRaisesRegex(ValueError, "SHFE/INE"):
-                account.start(resume=False)
-            self.assertFalse(transport.sent)
-            self.assertFalse(path.exists())
+            key = str(self.instrument)
+            transport.gross = {key: (0, 2)}
+            account.start(resume=False); service.start(); one.start(); two.start(); account.authorize()
+            self.submit(one, -1); transport.fill(transport.sent[-1]["OrderRef"])
+            old = account.ledger.snapshot(self.instrument)
+            account.ledger.restore(modules.ledger.CtpLedgerState("20261013", {self.instrument: replace(old,
+                short_today=Decimal(0), short_today_basis=Decimal(0),
+                short_yesterday=old.short_total, short_yesterday_basis=old.short_today_basis)}))
+            def details():
+                short = transport.gross[key][1]
+                return [dict(InstrumentID=key.split(".")[0], ExchangeID="SHFE", Position=q,
+                    PosiDirection="3", PositionDate=b, HedgeFlag="1")
+                    for b, q in (("1", 2), ("2", short-2)) if q]
+            transport.query_position_details = details
+            account._validate_account()
+            self.submit(one, 0, revision=2)
+            self.assertEqual(transport.sent[-1]["VolumeTotalOriginal"], 1)
+            self.assertEqual(transport.sent[-1]["CombOffsetFlag"], "4")
+            transport.fill(transport.sent[-1]["OrderRef"])
+            self.assertEqual(transport.gross[key], (0, 2))
+            self.assertEqual(service.position_manager.position("one", "main"), 0)
+            one.stop(); two.stop(); account.stop()
 
     def test_native_independent_opposite_orders_open_separately_and_close_only_owner(self):
         modules = self.native_modules()
