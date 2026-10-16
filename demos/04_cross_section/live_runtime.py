@@ -226,7 +226,11 @@ class CrossSectionSessionRunner(UnifiedStrategyRunner):
                     if self.orders and self.strategy.last_targets is not None:
                         for current in self.instruments.values():
                             if not self.session_ready() or getattr(self.client, "portfolio_failure", None):
-                                raise RuntimeError("逐腿推进期间会话失败或出现拒单")
+                                from bomber.framework.trader.runtime.live.health import readiness_failure_context
+                                details = {**readiness_failure_context(self),
+                                    "report_errors": [str(e) for e in getattr(self.client, "report_errors", ())],
+                                    "portfolio_failure": getattr(self.client, "portfolio_failure", None)}
+                                raise RuntimeError(f"逐腿推进期间会话失败或出现拒单: {details}")
                             self.continue_execution_target(self.strategy.strategy_id, str(current),
                                 stamp, trigger_instrument_id=current)
             except Exception as error:

@@ -439,6 +439,12 @@ class CrossSectionLiveTests(unittest.TestCase):
         clock = patch("time.time_ns", side_effect=lambda: self.now)
         clock.start()
         self.addCleanup(clock.stop)
+        # 事件时间与接收时间均由夹具控制；同步模型成交会落盘，不能把
+        # CI文件系统耗时解释为行情断流。陈旧接收测试仍显式减去接收年龄。
+        self.receive_now = 1_000_000_000_000_000
+        receive_clock = patch("time.monotonic_ns", side_effect=lambda: self.receive_now)
+        receive_clock.start()
+        self.addCleanup(receive_clock.stop)
         self.assignment = SectorRoleAssignment(date(2026, 9, 22), date(2026, 9, 21), BASE, BASE,
             {"RB": {"main": "rb2704"}, "HC": {"main": "hc2704"}},
             {"RB": {"main": Decimal(2)}, "HC": {"main": Decimal(1)}})
@@ -1365,6 +1371,36 @@ class CrossSectionLiveTests(unittest.TestCase):
         from bomber.framework.trader.execution.policy import ExecutionPolicy
         with self.assertRaisesRegex(ValueError, "政策不一致"):
             ExecutionPolicy().restore_state(s.manager.state_components["execution_policy"].snapshot_state())
+
+    def test_model_receive_age_expires_during_execution_keeps_gate_closed(self):
+        s = self.session(model=True)
+        self.frame(s, 0, 3100, 3000)
+        advanced = []
+
+        def expire_receive_clock(event):
+            if not advanced:
+                advanced.append(True)
+                self.receive_now += 11_000_000_000
+
+        s.client.register_execution_event_handler(expire_receive_clock)
+        with self.assertRaisesRegex(RuntimeError, "receive_age_seconds.*11.0"):
+            self.frame(s, 1, 3130, 2970)
+        self.assertFalse(s.runner.accept_bars)
+        self.assertFalse(s.client.report_errors)
+        self.assertTrue(s.runner.failure_readiness["stale_instruments"])
+
+    def test_model_report_failure_is_included_in_closed_gate_reason(self):
+        s = self.session(model=True)
+        self.frame(s, 0, 3100, 3000)
+
+        def fail_report(event):
+            raise ValueError("injected-model-handler-failure")
+
+        s.client.register_execution_event_handler(fail_report)
+        with self.assertRaisesRegex(RuntimeError, "report_errors.*injected-model-handler-failure"):
+            self.frame(s, 1, 3130, 2970)
+        self.assertFalse(s.runner.accept_bars)
+        self.assertTrue(s.client.report_errors)
 
     def test_model_runtime_build_has_no_td_connection_or_account_lock(self):
         args = live.parse_args(self.command("--mode", "model", "--state-file", str(self.root / "model.json")))
