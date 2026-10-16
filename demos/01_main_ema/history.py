@@ -7,7 +7,7 @@ from pathlib import Path
 
 from bomber.framework.dataprep.history import (
     HistoryService, DolphinDbHistoryConfig, HistoryError, HistoryBar, ReferenceFactorAdjuster,
-    SessionReferenceFactorAdjuster)
+    SessionReferenceFactorAdjuster, HistoryUnavailable)
 from bomber.framework.dataprep.sources import DolphinDbReferenceConfig
 
 
@@ -45,6 +45,38 @@ def build_history(args, *, calendar=None):
         file_path=args.history_file, missing_policy=args.history_missing_policy, price_adjuster=adjuster)
 
 
+def load_startup_history(runner, stamps, before_ns, *, phase, live_bars):
+    """只等待启动时最新一分钟的落库延迟；请求窗口固定，指标尚不推进。"""
+    service = runner.history_service
+    eligible = (not runner.ema_checkpoint.strategy.bars_used and phase == "recovery"
+        and service.backend == "dolphindb" and service.missing_policy == "fail"
+        and bool(stamps) and 0 < before_ns - stamps[-1] <= 30_000_000_000)
+    deadline = time.monotonic() + 20
+    while True:
+        previous_audit = service.last_audit
+        try:
+            return service.load(runner.ema_checkpoint.instrument, stamps, phase=phase, live_bars=live_bars)
+        except HistoryUnavailable:
+            audit = service.last_audit
+            remaining = deadline - time.monotonic()
+            if (not eligible or audit is previous_audit or not audit or remaining <= 0
+                    or audit.get("missing") != 1 or audit.get("first_missing_ns") != stamps[-1]
+                    or audit.get("unavailable_sources") or service.backend not in audit.get("sources", ())):
+                raise
+            if runner.accept_bars:
+                raise HistoryError("等待历史落库时实时决策必须保持关闭")
+            runner.references.refresh()
+            if not runner.session_ready() or not runner.reference_is_current():
+                raise HistoryUnavailable("等待历史落库时行情或参考失效，保持闭闸")
+            print(f"等待最新历史分钟落库: instrument={runner.ema_checkpoint.instrument} "
+                  f"ts_event={stamps[-1]} remaining_seconds={remaining:.1f}", flush=True)
+            time.sleep(min(2, remaining))
+            runner.references.refresh()
+            if not runner.session_ready() or not runner.reference_is_current():
+                raise HistoryUnavailable("等待历史落库时行情或参考失效，保持闭闸")
+            live_bars = buffered_bars(runner)
+
+
 def warm_history(runner, before_ns, *, phase):
     checkpoint = runner.ema_checkpoint
     strategy = checkpoint.strategy
@@ -67,7 +99,7 @@ def warm_history(runner, before_ns, *, phase):
               f"first_ns={stamps[0]} last_ns={stamps[-1]} "
               f"missing_policy={runner.history_service.missing_policy}", flush=True)
     try:
-        result = runner.history_service.load(checkpoint.instrument, stamps, phase=phase, live_bars=live_bars)
+        result = load_startup_history(runner, stamps, before_ns, phase=phase, live_bars=live_bars)
         prices = []
         # 全部转换成功才推进指标；没有历史复权口径时不拿当前因子补造。
         for bar in result.bars:

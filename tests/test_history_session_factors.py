@@ -2,6 +2,7 @@
 from datetime import date
 from decimal import Decimal
 from types import SimpleNamespace
+from threading import RLock
 from unittest.mock import Mock, patch
 from importlib import import_module
 import unittest
@@ -11,7 +12,7 @@ from bomber.framework.calendars import (
 from bomber.framework.calendars.sessions import datetime_ns
 from bomber.framework.dataprep.history import (
     HistoryBar, HistoryError, HistoryRequest, DolphinDbHistoryConfig,
-    DolphinDbHistoryProvider, SessionReferenceFactorAdjuster)
+    DolphinDbHistoryProvider, SessionReferenceFactorAdjuster, HistoryService, HistoryUnavailable)
 from bomber.framework.dataprep.sources import (
     DolphinDbReferenceConfig, ReferenceBatch, ReferenceDataset)
 
@@ -125,6 +126,98 @@ class SessionFactorTests(unittest.TestCase):
         self.assertIsInstance(service.price_adjuster, SessionReferenceFactorAdjuster)
         self.assertEqual(service.config.time_label, "end")
         self.assertNotIn("adjusted_close", service.config.columns)
+
+
+class StartupHistoryDelayTests(unittest.TestCase):
+    def setUp(self):
+        self.module = import_module("demos.01_main_ema.history")
+        self.stamps = (1792118519999999999, 1792118579999999999)
+        self.before = self.stamps[-1] + 4_000_000_001
+        self.rows = [HistoryBar("IM2610.CFFEX", stamp, adjusted_close=100) for stamp in self.stamps]
+        self.queries, self.warmed = [], []
+        self.elapsed = 0
+        owner = self
+
+        class Provider:
+            def open(self): pass
+            def close(self): pass
+            def read(self, request):
+                owner.queries.append(request)
+                return tuple(owner.rows)
+
+        factory = SimpleNamespace(create_for=lambda *args: Provider())
+        strategy = SimpleNamespace(bars_used=0, last_processed_ns=-1,
+            fast=SimpleNamespace(value=100), slow=SimpleNamespace(value=100, initialized=True))
+
+        def warm(stamp, price):
+            self.warmed.append((stamp, price))
+            strategy.bars_used += 1
+            strategy.last_processed_ns = stamp
+
+        self.runner = SimpleNamespace(ema_checkpoint=SimpleNamespace(strategy=strategy,
+            instrument="IM2610.CFFEX", warm_closed=warm),
+            history_service=HistoryService(database_config={}, factory=factory), history_minutes=2,
+            calendar=SimpleNamespace(last_minutes=lambda *args: self.stamps),
+            accept_bars=False, references=SimpleNamespace(refresh=Mock()),
+            session_ready=lambda: True, reference_is_current=lambda: True,
+            _submit_lock=RLock(), _clients={"recording": SimpleNamespace(_submit_lock=RLock())})
+        self.sleep_action = lambda: None
+
+        def sleep(seconds):
+            self.assertEqual(self.warmed, [])
+            self.assertFalse(self.runner.accept_bars)
+            self.elapsed += seconds
+            self.sleep_action()
+
+        for target, replacement in (("monotonic", lambda: self.elapsed), ("sleep", sleep)):
+            patched = patch.object(self.module.time, target, side_effect=replacement)
+            patched.start()
+            self.addCleanup(patched.stop)
+
+    def warm(self):
+        return self.module.warm_history(self.runner, self.before, phase="recovery")
+
+    def test_delayed_tail_retries_fixed_window_and_warms_exactly_once(self):
+        tail = self.rows.pop()
+        self.sleep_action = lambda: self.rows.append(tail)
+        result = self.warm()
+        self.assertEqual(result.missing, ())
+        self.assertEqual(len(self.queries), 2)
+        self.assertEqual(self.queries[0], self.queries[1])
+        self.assertEqual([stamp for stamp, price in self.warmed], list(self.stamps))
+        self.assertFalse(self.runner.accept_bars)
+
+    def test_persistent_tail_gap_times_out_without_partial_indicator_state(self):
+        self.rows.pop()
+        with self.assertRaises(HistoryUnavailable): self.warm()
+        self.assertEqual(self.elapsed, 20)
+        self.assertEqual(self.warmed, [])
+
+    def test_older_gap_does_not_wait(self):
+        self.rows.pop(0)
+        with self.assertRaises(HistoryUnavailable): self.warm()
+        self.assertEqual(len(self.queries), 1)
+        self.assertEqual(self.elapsed, 0)
+
+    def test_old_tail_outside_settlement_window_does_not_wait(self):
+        self.rows.pop()
+        self.before += 60_000_000_000
+        with self.assertRaises(HistoryUnavailable): self.warm()
+        self.assertEqual(len(self.queries), 1)
+
+    def test_market_loss_while_waiting_keeps_gate_closed(self):
+        self.rows.pop()
+        self.sleep_action = lambda: setattr(self.runner, "session_ready", lambda: False)
+        with self.assertRaisesRegex(HistoryUnavailable, "行情或参考失效"): self.warm()
+        self.assertEqual(len(self.queries), 1)
+        self.assertEqual(self.warmed, [])
+
+    def test_database_failure_is_not_treated_as_settlement_delay(self):
+        def unavailable(*args):
+            raise HistoryUnavailable("database connection unavailable")
+        self.runner.history_service.factory.create_for = unavailable
+        with self.assertRaises(HistoryUnavailable): self.warm()
+        self.assertEqual(self.elapsed, 0)
 
 
 if __name__ == "__main__":
