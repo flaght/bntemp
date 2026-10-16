@@ -90,7 +90,7 @@ def _main(argv):
 def _run(args, config, stop_event):
     row = next(row for row in config["strategies"] if row["strategy_id"] == args.strategy_id)
     from bomber.framework.trader.runtime.live.continuous import StopRequested
-    from bomber.framework.trader.execution.contracts import OrderBudgetExhausted
+    from bomber.framework.trader.execution.contracts import MarketDataUnavailable, OrderBudgetExhausted
     from dotenv import load_dotenv
     from .run import PROJECT_ROOT
     from .factories import strategy_arguments, assemble_strategy_session
@@ -206,6 +206,14 @@ def _run(args, config, stop_event):
             status = "completed"
         except OrderBudgetExhausted:
             stop_reason, status = "order_budget_exhausted", "completed"
+        except MarketDataUnavailable as error:
+            stop_reason, status = "market_data_unavailable", "completed"
+            try:
+                context = capture_session_failure(session)
+            except Exception as diagnostic_error:
+                context = {"diagnostic_error": str(diagnostic_error)}
+            context["account_valuation"] = error.readiness
+            session.runner.failure_readiness = context
         except StopRequested:
             status = "completed"
         except BaseException as error:

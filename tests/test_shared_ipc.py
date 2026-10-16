@@ -70,19 +70,35 @@ class SharedIpcTests(unittest.TestCase):
             account.stop()
 
     def test_actual_server_budget_stop_drains_three_clients_and_writes_completed_report(self):
+        self.actual_server_controlled_stop("order_budget_exhausted")
+
+    def test_actual_server_market_stop_keeps_socket_until_three_clients_ack_late_fill(self):
+        self.actual_server_controlled_stop("market_data_unavailable")
+
+    def actual_server_controlled_stop(self, reason):
         from unittest.mock import patch
         from contextlib import redirect_stdout
+        from importlib import import_module
         from io import StringIO
-        from scripts.integration.shared_account import server, run
+        self.native_modules()
         from bomber.framework.trader.execution.ipc import UnixExecutionConnection
         from bomber.framework.trader.execution.ipc_client import RemoteAccountService
         from bomber.framework.trader.execution.shared import SharedRiskBudget
-        from bomber.framework.trader.execution.contracts import OrderBudgetExhausted
+        from bomber.framework.trader.execution.contracts import MarketDataUnavailable, OrderBudgetExhausted
+        from bomber.framework.trader.runtime.live.contracts import ChannelIdentity, ReadinessIssue, ReadinessResult
         import json
         with nullcontext(self.enterContext(TemporaryDirectory(dir="/tmp"))) as directory:
             root = Path(directory)
             _, account, service, transport, _ = self.prepare(root/"account.json")
-            account.driver._max_session_orders = 1
+            server = import_module("scripts.integration.shared_account.server")
+            run = import_module("scripts.integration.shared_account.run")
+            account.driver._max_session_orders = 1 if reason == "order_budget_exhausted" else 20
+            identity = ChannelIdentity("market", "ctp", "test-valuation")
+            healthy = ReadinessResult((identity,), ())
+            stale = ReadinessResult((identity,), (ReadinessIssue(identity, "INSTRUMENT_UNHEALTHY", str(self.instrument),
+                {"event_age_seconds": 10.034990955, "receive_age_seconds": 8.928532011, "max_age_seconds": 10.0}),))
+            current = [healthy]
+            valuation = SimpleNamespace(check=lambda: current[0]) if reason == "market_data_unavailable" else None
             cancel = transport.cancel_order
             def late_fill_before_cancel(ref):
                 transport.fill(ref, 1)
@@ -95,13 +111,14 @@ class SharedIpcTests(unittest.TestCase):
             args = SimpleNamespace(socket=root/"exec.sock", credentials_dir=root/"keys", resume=False,
                 remaining_orders=None)
             errors = []
+            stop_event = threading.Event()
             def control():
                 try:
-                    server._run(args, {"seconds": 10, "trading_day": "20261013", "report_dir": str(root)}, threading.Event())
+                    server._run(args, {"seconds": 10, "trading_day": "20261013", "report_dir": str(root)}, stop_event)
                 except BaseException as error:
                     errors.append(error)
             with patch.object(run, "build_host", return_value=host), \
-                    patch.object(server, "connect_valuation_market", return_value=None), \
+                    patch.object(server, "connect_valuation_market", return_value=valuation), \
                     patch.dict("sys.modules", {"dotenv": SimpleNamespace(load_dotenv=lambda *_: None)}), \
                     redirect_stdout(StringIO()):
                 thread = threading.Thread(target=control)
@@ -110,6 +127,8 @@ class SharedIpcTests(unittest.TestCase):
                 try:
                     until = time.monotonic() + 5
                     while not (args.credentials_dir/"three.json").exists() and time.monotonic() < until:
+                        if errors:
+                            raise errors[0]
                         time.sleep(0.01)
                     for sid, original in service._ports.items():
                         credentials = json.loads((args.credentials_dir/f"{sid}.json").read_text())
@@ -122,23 +141,106 @@ class SharedIpcTests(unittest.TestCase):
                         ports.append(port)
                     ports[0].service.prices.update(self.instrument, 100, self.now)
                     ports[0].submit_targets(self.request(service.client_id, strategy="one", quantity=2, timestamp=self.now))
+                    current[0] = stale
                     for port in ports:
-                        with self.assertRaises(OrderBudgetExhausted):
-                            port.drain_events()
+                        error_type = OrderBudgetExhausted if reason == "order_budget_exhausted" else MarketDataUnavailable
+                        # 真实socket轮询；首个poll可以先于账户线程检测行情失效。
+                        until = time.monotonic() + 5
+                        while True:
+                            try:
+                                port.drain_events()
+                            except error_type:
+                                break
+                            self.assertLess(time.monotonic(), until)
+                            time.sleep(0.01)
+                        # 停止后的新请求在写前日志/版本更新前拒绝，不产生未决请求。
+                        before = dict(service.event_journal.requests)
+                        port.submit_targets(self.request(service.client_id, strategy=port.strategy_id, quantity=3, timestamp=self.now))
+                        self.assertEqual(service.event_journal.requests, before)
                         port.begin_stop()
                 finally:
                     thread.join(8)
+                    if thread.is_alive():
+                        stop_event.set()
+                        thread.join(8)
                 self.assertFalse(thread.is_alive())
                 self.assertFalse(errors, errors)
             report = json.loads(next(root.glob("shared-account-server-*/summary.json")).read_text())
             self.assertEqual(report["status"], "completed")
-            self.assertEqual(report["stop_reason"], "order_budget_exhausted")
+            self.assertEqual(report["stop_reason"], reason)
+            self.assertEqual(report["execution_stop"]["reason"], reason)
+            if reason == "market_data_unavailable":
+                self.assertEqual(report["execution_stop"]["readiness"], stale.as_dict())
             self.assertIsNone(report["failure"])
             self.assertIsNone(report["shutdown_failure"])
             self.assertEqual(report["final_active_orders"], 0)
             self.assertEqual(len(transport.sent), 1)
             self.assertFalse(args.socket.exists())
             self.assertEqual(ports[0].position_manager.position("one", "main"), 1)
+            self.assertTrue(all(row["status"] == "completed" for row in service.event_journal.requests.values()))
+            self.assertTrue(all(service.event_journal.ack[sid] == len(rows)
+                for sid, rows in service.event_journal.events.items()))
+
+    def test_market_stop_between_native_batch_legs_rolls_back_unsent_and_cancels_sent_leg(self):
+        from scripts.integration.shared_account.server import guard_valuation_submission
+        from bomber.framework.trader.execution.shared import SharedRiskBudget
+        modules = self.native_modules()
+        from bomber.framework.trader.runtime.live.contracts import ChannelIdentity, ReadinessIssue, ReadinessResult
+        identity = ChannelIdentity("market", "ctp", "test-valuation")
+        healthy = ReadinessResult((identity,), ())
+        stale = ReadinessResult((identity,), (ReadinessIssue(identity, "INSTRUMENT_UNHEALTHY", str(self.instrument)),))
+        with TemporaryDirectory() as directory:
+            extra = type(self.instrument).from_str("HC.SHFE")
+            account, service, transport, _, _ = self.native_account(Path(directory)/"account.json", modules,
+                scoped=True, execution_mode="independent", extra_instruments=(extra,))
+            pair = service.strategy_client("pair", routes={"a": self.instrument, "b": extra}, budget=SharedRiskBudget(5, 50000))
+            pair.register_execution_event_handler(lambda event: None)
+            account.start(resume=False); service.start(); pair.start(); account.authorize()
+            service.prices.update(extra, 3000, self.now)
+            checks = []
+            def check():
+                checks.append(True)
+                return healthy if len(checks) == 1 else stale
+            guard_valuation_submission(account.execution.backend, SimpleNamespace(check=check))
+            targets = {self.instrument: Decimal(1), extra: Decimal(-1)}
+            pair.submit_targets(replace(self.request(service.client_id, strategy="pair", timestamp=self.now),
+                targets=targets, metadata={"position_attribution": tuple(dict(strategy_id="pair", target_key=k,
+                    instrument_id=str(i), quantity=str(q)) for k, i, q in (("a", self.instrument, 1), ("b", extra, -1)))}))
+            service.poll()
+            self.assertEqual(len(transport.sent), 1)
+            self.assertEqual(len(transport.canceled), 1)
+            self.assertEqual(service.execution_stop["reason"], "market_data_unavailable")
+            self.assertFalse(service._failed or service._pending)
+            self.assertTrue(service.client.is_reconciled)
+            self.assertFalse(service._active_instruments())
+            self.assertFalse(any(service.position_manager.working_quantity(service.client_id, i) for i in targets))
+            pair.begin_stop(); self.assertTrue(pair.finish_stop_events()); pair.stop(); account.stop()
+
+    def test_market_stop_resume_requires_fresh_precheck_and_preserves_positions_and_used_quota(self):
+        with TemporaryDirectory() as directory:
+            path = Path(directory)/"account.json"
+            _, account, service, transport, protocol = self.prepare(path)
+            from bomber.framework.trader.runtime.live.contracts import ChannelIdentity, ReadinessIssue, ReadinessResult
+            identity = ChannelIdentity("market", "ctp", "test-valuation")
+            healthy = ReadinessResult((identity,), ())
+            stale = ReadinessResult((identity,), (ReadinessIssue(identity, "INSTRUMENT_UNHEALTHY", str(self.instrument)),))
+            lease = self.attach(protocol, "one")
+            self.call(protocol, "one", "submit", self.target(protocol, "one", 2), lease=lease)
+            transport.fill(transport.sent[-1]["OrderRef"], 1)
+            service.stop_for_market_data(stale.as_dict())
+            with self.assertRaisesRegex(RuntimeError, "预检后显式重启"):
+                service.resume_market_data(healthy)
+            protocol.stop_owner("one"); account.stop()
+            _, resumed, service2, broker2, _ = self.prepare(path, resume=True, gross=transport.gross)
+            self.assertEqual(service2.execution_stop["reason"], "market_data_unavailable")
+            with self.assertRaisesRegex(RuntimeError, "预检后显式重启"):
+                service2.resume_market_data(stale)
+            service2.resume_market_data(healthy)
+            self.assertIsNone(service2.execution_stop)
+            self.assertEqual(service2.position_manager.position("one", "main"), 1)
+            self.assertEqual(resumed.driver.order_budget["submitted"], 1)
+            self.assertFalse(broker2.sent)
+            resumed.stop()
 
     def test_poll_publishes_owned_route_prices_before_signals_and_rejects_future_or_foreign(self):
         with nullcontext(self.enterContext(TemporaryDirectory())) as directory:

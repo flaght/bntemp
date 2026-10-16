@@ -1,4 +1,4 @@
-# IM／IH／IC／IF 四品种横截面联合运行（REV34）
+# IM／IH／IC／IF 四品种横截面联合运行（REV35）
 
 本页用于用户已成交的IM/IF三策略会话扩品种。原01 EMA仍为IM，原03跨期仍为
 IM main+secondary；04横截面改为IM、IH、IC、IF，group_fraction=0.5，多空各选两名。
@@ -28,7 +28,7 @@ source /workspace/worker/env/uv-nautilus/bin/activate
 cd /workspace/worker/pj/Chrono/nautilus_trader_demo/pro
 set +e
 
-sha256sum -c doc/evidence/checksums/GAP10_SCOPE_MIGRATION_LOCK_20261016_REV34_SHA256.txt
+sha256sum -c doc/evidence/checksums/GAP10_MARKET_STOP_DRAIN_20261016_REV35_SHA256.txt
 
 python -u -m tests.run_main_ema_acceptance \
   --only shared-ipc --only shared-discovery --only cross-history --only cross-live
@@ -174,6 +174,21 @@ PY
 ```
 
 ## 4. 回传与结束
+
+REV35保留逐合约10秒事件/接收时效检查。账户已有归属或活动单合约的估值行情
+失效时，停止本轮交易，记录stop_reason=market_data_unavailable及原readiness；
+不自动等待后续行情恢复后继续报单，也不提高时效上限。复用额度停止的撤单/
+回报确认流程，IPC保持在线，worker排空并确认最终回调后才关闭socket。
+status=completed表示本次保护停机完成，不表示行情健康或联合验收通过；30秒内
+未排空回报或撤单失败仍为failed。逐腿发送前发现行情失效也走该流程，未发送
+部分撤回，在途部分撤单且保留已成交归属。
+
+现场shared-account-server-1792131678726453624为旧版直接抛异常的路径。同步后
+复测shared-account/shared-ipc，再沿用cffex_four_joint.json做preflight --resume
+--connect；通过后按第3节同名恢复服务与worker，不重新迁移、不生成新账本。
+显式恢复时账户权威对账和健康行情预检通过、无活动单/待停止端口后，才解除旧
+行情停止状态；保留原仓位、日志、回报游标及已用订单额度。真实发送未决或回报
+冲突不因行情恢复解除。额度停止仍须原有明确的新窗口授权，不能按行情停止清除。
 
 原worker正常停止不会自动清仓，恢复后的新目标继续管理原归属仓位。指标重新
 预热，原版本上递增，不把历史窗口转为交易。账户200笔额度不会因迁移重新获得

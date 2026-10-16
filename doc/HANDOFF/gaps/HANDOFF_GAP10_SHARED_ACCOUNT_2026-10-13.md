@@ -637,3 +637,25 @@ orders_submitted=0。原因是migrate_scope已锁目标账户，build_host另开
 shared-ipc共34项通过（含实际Unix socket及三客户端）；不连接柜台或数据库。
 现场只需同步后复测shared-ipc，沿用已生成配置重跑只读迁移及resume预检。
 证据：doc/evidence/live/GAP10_SCOPE_MIGRATION_LOCK_20261016_REV34.json；GAP10仍开放。
+
+## 2026-10-16 REV35：估值行情失效时保持IPC完成回报收尾
+
+现场shared-account-server-1792131678726453624因IM2610.CFFEX事件年龄
+10.034990955秒超过10秒阈值直接退出，接收年龄8.928532011秒；其他worker随后
+失去执行连接。日志仅能证明时效检查失败，不证明柜台、网络或策略算法的具体原因。
+
+新增MarketDataUnavailable已知停止类型，复用execution_stop与既有额度收尾路径。
+账户估值失效及逐腿发送前失效均停止新目标、撤单、保存readiness，并保持Unix
+socket直至所有worker回报/停止确认完成。未发送预留撤回，已发送腿正常撤单，
+迟到成交照常入账及分发；撤单失败、未知执行状态、30秒确认超时仍记failed。
+正常收尾记completed/stop_reason=market_data_unavailable，不代表行情或验收通过。
+
+不放宽10秒时效，不自动重启算法。显式resume仍先权威对账及行情预检，之后只
+解除上一轮市场停止；原配额计数、持仓、版本和回报游标保留，不解除额度停止或
+发送未决。三个原策略的信号、参考合约选择、历史窗口与配置身份不变。
+
+本机共享账户83项、IPC/配置/迁移37项离线通过；包括实际server._run和Unix socket
+三客户端，停止时迟到部分成交、确认前不关socket、停止后不新建发送请求，以及
+双腿第二腿前失效撤回未发预留、显式恢复保持原仓及已用额度。仅SDK/柜台传输及
+健康输入为替身，原策略完整原生运行及现场断流原因仍需Linux报告核对。
+证据：doc/evidence/live/GAP10_MARKET_STOP_DRAIN_20261016_REV35.json；GAP10仍开放。

@@ -215,7 +215,7 @@ class SharedAccountLiveHost:
         if self.service.execution_stop is not None:
             for item in self.strategies.values():
                 if item.active:
-                    self.stop_strategy(item.strategy_id, reason="order_budget_exhausted")
+                    self.stop_strategy(item.strategy_id, reason=self.service.execution_stop["reason"])
             return
         for item in self.strategies.values():
             if not item.active:

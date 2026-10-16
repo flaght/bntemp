@@ -81,6 +81,20 @@ def connect_valuation_market(host, config):
     return ValuationChannel(feed, config["trading_day"], instrument_health=gate)
 
 
+def guard_valuation_submission(backend, valuation):
+    """复用逐腿发送闸门；已知行情失效在发送前中止，不写成发送状态不明。"""
+    from bomber.framework.trader.execution.contracts import MarketDataUnavailable
+    submission_check = backend.submission_check
+    def check():
+        if not submission_check():
+            return False
+        result = valuation.check()
+        if not result.ready:
+            raise MarketDataUnavailable(result.as_dict())
+        return True
+    backend.submission_check = check
+
+
 def _main(argv):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, required=True)
@@ -120,7 +134,7 @@ def _run(args, config, stop_event):
     diagnostics, failure, shutdown_failure, status = {}, None, None, "failed"
     failure_execution_diagnostics = None
     stop_reason = None
-    budget_stop_started = None
+    execution_stop_started = None
     try:
         if args.socket.exists():
             raise RuntimeError("执行socket已存在；禁止接管其他账户服务")
@@ -141,8 +155,8 @@ def _run(args, config, stop_event):
                 raise RuntimeError(f"账户估值行情未就绪: {valuation.check().as_dict()}")
             time.sleep(0.05)
         if valuation is not None:
-            submission_check = host.account.execution.backend.submission_check
-            host.account.execution.backend.submission_check = lambda: submission_check() and valuation.check().ready
+            host.service.resume_market_data(valuation.check())
+            guard_valuation_submission(host.account.execution.backend, valuation)
         if stop_event.is_set():
             raise StopRequested()
         host.account.authorize()
@@ -169,22 +183,25 @@ def _run(args, config, stop_event):
 
         print(f"账户服务就绪：socket={args.socket}；策略客户端文件目录={args.credentials_dir}", flush=True)
         until = time.monotonic() + config["seconds"] + 120  # 给分终端启动和策略先停机留出时间。
-        while not stop_event.is_set() and (time.monotonic() < until or budget_stop_started is not None):
-            if host.service.execution_stop is None and valuation is not None and not valuation.check().ready:
-                raise RuntimeError(f"账户估值行情失效: {valuation.check().as_dict()}")
+        while not stop_event.is_set() and (time.monotonic() < until or execution_stop_started is not None):
+            if host.service.execution_stop is None and valuation is not None:
+                readiness = valuation.check()
+                if not readiness.ready:
+                    host.service.stop_for_market_data(readiness.as_dict())
+                    print(f"账户估值行情失效，停止新目标并等待撤单/回报确认: {readiness.as_dict()}", flush=True)
             server.poll()
             protocol.poll()
             host.account.poll()
             if host.service.execution_stop is not None:
-                stop_reason = "order_budget_exhausted"
-                budget_stop_started = budget_stop_started or time.monotonic()
+                stop_reason = host.service.execution_stop["reason"]
+                execution_stop_started = execution_stop_started or time.monotonic()
                 journal = protocol.journal
                 acknowledged = all(journal.ack[sid] == len(rows) for sid, rows in journal.events.items())
                 stopped = protocol.closed_tokens.keys() <= protocol.stopped_acknowledged
                 if not protocol.leases and not host.service._active_instruments() and acknowledged and stopped:
                     break
-                if time.monotonic() - budget_stop_started > 30:
-                    raise RuntimeError("额度耗尽后回报/策略停止未在期限内确认，保留检查点")
+                if time.monotonic() - execution_stop_started > 30:
+                    raise RuntimeError(f"账户停止后回报/策略停止未在期限内确认: {stop_reason}，保留检查点")
             time.sleep(0.02)
         status = "completed"
     except StopRequested:
@@ -217,6 +234,7 @@ def _run(args, config, stop_event):
                 shutdown_failure, status = "; ".join(cleanup_errors), "failed"
             report.write(status=status, fields={"failure": failure, "shutdown_failure": shutdown_failure,
                 "stop_reason": stop_reason,
+                "execution_stop": host.service.execution_stop if host else None,
                 "failure_execution_diagnostics": failure_execution_diagnostics,
                 "td_preflight": diagnostics, "account": host.service.snapshot_state() if host else None,
                 "final_gross": host.account.final_gross if host else None,

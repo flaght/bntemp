@@ -68,6 +68,17 @@ class OrderBudgetExhausted(RuntimeError):
                 "submitted": self.submitted, "requested": self.requested}
 
 
+class MarketDataUnavailable(RuntimeError):
+    """已知估值行情失效；停止新增执行，保持回报通道完成撤单与确认。"""
+
+    def __init__(self, readiness):
+        self.readiness = readiness
+        super().__init__(f"账户估值行情失效: {readiness}")
+
+    def state(self):
+        return {"reason": "market_data_unavailable", "readiness": self.readiness}
+
+
 @dataclass(frozen=True)
 class AccountPositionSnapshot:
     """交易柜台返回的账户级权威净仓快照。"""

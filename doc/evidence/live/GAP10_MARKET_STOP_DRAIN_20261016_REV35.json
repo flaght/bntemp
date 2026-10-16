@@ -1,0 +1,77 @@
+{
+  "revision": "REV35",
+  "status": "offline_passed_remote_market_stop_drain_pending",
+  "reported_session": "shared-account-server-1792131678726453624",
+  "reported_failure": {
+    "instrument": "IM2610.CFFEX",
+    "event_age_seconds": 10.034990955,
+    "receive_age_seconds": 8.928532011,
+    "max_age_seconds": 10.0,
+    "conclusion": "Account valuation freshness expired; raw report does not establish upstream outage root cause"
+  },
+  "behavior": [
+    "Keep existing 10-second market freshness policy",
+    "Known market valuation failure stops new targets and cancels active owned orders",
+    "Keep Unix IPC active until three workers drain fill/order callbacks and acknowledge stopping",
+    "Check every native batch leg; roll back unsent reservations and cancel already sent legs",
+    "Preserve first stop reason and original readiness evidence in checkpoint and report",
+    "Clean protective stop uses completed plus market_data_unavailable, not joint acceptance passed",
+    "Cancel failure, ambiguous execution, callback conflict and acknowledgement timeout remain failed",
+    "Explicit server resume clears only market stop after authoritative account recovery, no active/draining/started ports and healthy valuation; retains positions, journals and used quota",
+    "No automatic strategy restart or freshness threshold increase"
+  ],
+  "validation": {
+    "report_dir": "tests/results/main-ema-acceptance-1792133550544267000",
+    "modules": {
+      "shared-account": 83,
+      "shared-ipc": 37
+    },
+    "total_tests": 120,
+    "actual_components": [
+      "server._run",
+      "UnixExecutionServer and three IPC clients",
+      "CtpSharedAccountLifecycle",
+      "SharedAccountExecutionService",
+      "native CTP driver and planner",
+      "JsonStateStore"
+    ],
+    "substitutes": [
+      "SDK market types",
+      "broker transport",
+      "app host assembly",
+      "market readiness input"
+    ],
+    "new_cases": [
+      "three-client market stop retains socket until late partial fill, cancellation and final acknowledgement",
+      "stop rejects further submit before creating pending journal requests",
+      "second native batch leg becomes stale; unsent reservation rolled back and first leg cancelled",
+      "explicit resume rejects stale market and active port; healthy restored resume preserves owned position and used quota"
+    ],
+    "unchanged_cases": [
+      "order budget protective stop",
+      "unknown order/callback failures",
+      "checkpoint and scope migration",
+      "request deduplication"
+    ]
+  },
+  "broker_connected": false,
+  "database_connected": false,
+  "real_broker_orders_submitted": 0,
+  "user_runtime_files_modified": false,
+  "remote_remaining": [
+    "synchronize REV35",
+    "shared-account/shared-ipc regression",
+    "same configuration readonly resume preflight",
+    "original three workers joint native strategy run",
+    "inspect original full report and raw market continuity to establish quote-gap cause"
+  ],
+  "sources": {
+    "bomber/framework/trader/execution/contracts.py": "5fb623588a615719e59f0b26337bcabb113c2c5e368272af78f7a9231d665a60",
+    "bomber/framework/trader/execution/ipc_client.py": "50fbb17b20d535c07aace054f2fa866d1b10d8d2c97a5721df4eb570ea916232",
+    "bomber/framework/trader/execution/shared.py": "0e48f8ecdfe13622d6e291dd94fe74e887baab810afcc5579a1f212c0ebe1be0",
+    "bomber/framework/trader/runtime/live/shared.py": "3b69702159d16524fa77fb3a209d90339df29ea5bf347e0cda17f75f170e6e51",
+    "scripts/integration/shared_account/server.py": "a40b5f314f42c5addc39c5a61c44497f7c51cf7f7fbda7a48fc1a3cd2c0ef4dc",
+    "scripts/integration/shared_account/worker.py": "e11ea8671144125afddb4026b0fce43e9d9e0e46b7fb1f6c34bb16a6384e595d",
+    "tests/test_shared_ipc.py": "47bea00f657f1b3961bcfebb92f15044258c1f4798aedd06cec6cb2fda6129be"
+  }
+}

@@ -117,8 +117,12 @@ class RemoteStrategyExecutionClient:
             self.service.connection.call("poll", {"cursor": self.cursor, "ready": bool(not self._stopping and self.ready_check())})
         stopped = self.state.get("execution_stop")
         if stopped:
-            from .contracts import OrderBudgetExhausted
-            raise OrderBudgetExhausted(stopped["limit"], stopped["submitted"], stopped["requested"])
+            from .contracts import MarketDataUnavailable, OrderBudgetExhausted
+            if stopped["reason"] == "order_budget_exhausted":
+                raise OrderBudgetExhausted(stopped["limit"], stopped["submitted"], stopped["requested"])
+            if stopped["reason"] == "market_data_unavailable":
+                raise MarketDataUnavailable(stopped["readiness"])
+            raise RuntimeError(f"未知账户停止原因: {stopped['reason']}")
 
     def price_state(self, *, fresh_only=False):
         now = time.time_ns()

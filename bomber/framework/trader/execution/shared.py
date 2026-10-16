@@ -237,20 +237,44 @@ class SharedAccountExecutionService(AccountExecutionService):
             for order in self.position_manager.attribution.state()["orders"].values())
 
     def _send(self, request):
-        from .contracts import OrderBudgetExhausted
+        from .contracts import MarketDataUnavailable, OrderBudgetExhausted
         if self.execution_stop is not None:
             return
         try:
             self._send_available(request)
-        except OrderBudgetExhausted as error:
-            self.stop_for_order_budget(error)
+        except (OrderBudgetExhausted, MarketDataUnavailable) as error:
+            self._stop_execution(error.state())
 
     def stop_for_order_budget(self, error):
-        self.execution_stop = error.state()
-        for sid, port in self._ports.items():
-            if port._started and sid not in self._suspended:
-                self.suspend_strategy(sid)
-        self._save()
+        self._stop_execution(error.state())
+
+    def stop_for_market_data(self, readiness):
+        from .contracts import MarketDataUnavailable
+        self._stop_execution(MarketDataUnavailable(readiness).state())
+
+    def _stop_execution(self, state):
+        with self._dispatch_lock:
+            if self.execution_stop is not None:
+                return  # 保留首个已知停止原因；不能覆盖额度耗尽或行情诊断。
+            self.execution_stop = deepcopy(state)
+            for sid, port in self._ports.items():
+                if port._started and sid not in self._suspended:
+                    self.suspend_strategy(sid)
+            self._save()
+
+    def resume_market_data(self, readiness):
+        """仅供显式重启且完成权威恢复、行情预检后解除上一轮行情停止；不重置额度。"""
+        with self._dispatch_lock:
+            if not self.execution_stop or self.execution_stop["reason"] != "market_data_unavailable":
+                return
+            if (not readiness.ready or self._failed or self._pending or self._draining
+                    or not self.client.is_reconciled or self.client.report_errors
+                    or self.position_manager.is_recovery_required(self.client_id)
+                    or getattr(self.client, "portfolio_failure", None)
+                    or self._active_instruments() or any(port._started for port in self._ports.values())):
+                raise RuntimeError("行情停止须完成账户恢复、撤单及健康预检后显式重启")
+            self.execution_stop = None
+            self._save()
 
     def _send_available(self, request):
         now = self.clock_ns()
