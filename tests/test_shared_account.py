@@ -1789,6 +1789,7 @@ class SharedAccountTests(unittest.TestCase):
             original_strategy_identity = {sid: row.identity for sid, row in host.strategies.items()}
             host.resources.close()  # 原宿主已停止；释放新增的检查点文件锁后重建。
             config["seconds"] = 600
+            config["ctp_instrument_max_age_seconds"] = 30
             config["strategies"][0]["stop_after_seconds"] = 480
             with patch.object(ctp_channel, "build_simnow_transport", return_value=transport), \
                     patch.object(ctp_channel, "required", return_value="tcp://fake:30011"), \

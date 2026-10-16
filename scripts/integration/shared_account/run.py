@@ -8,7 +8,7 @@ import time
 import os
 from types import SimpleNamespace
 
-from .config import read_config, validate_budget_increase
+from .config import read_config, validate_budget_increase, ctp_instrument_max_age_seconds
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
@@ -43,6 +43,7 @@ def validate_td_preflight(config, driver, *, md_front, td_front, diagnostics):
         observed_td_trading_day=driver.trading_day, md_front=md_front, td_front=td_front,
         preflight_orders_submitted=driver.submitted_orders)
     diagnostics["position_scope_policy"] = config.get("position_scope", "account")
+    diagnostics["ctp_instrument_max_age_seconds"] = ctp_instrument_max_age_seconds(config)
     print(f"共享账户TD预检: environment={diagnostics['environment']} "
           f"actual_TD={diagnostics['observed_td_trading_day']} "
           f"expected_TD={diagnostics['expected_td_trading_day']} MD={md_front} TD={td_front} "

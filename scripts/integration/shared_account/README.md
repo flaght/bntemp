@@ -1,11 +1,96 @@
 # 同账户多策略 SimNow 宿主
 
+## 当前夜盘逐合约时效30秒（REV39，2026-10-17）
+
+用户确认将本轮CTP逐合约时效设为30秒。配置顶层增加
+`"ctp_instrument_max_age_seconds": 30`，01/03/04工厂及账户估值/参考价两道门
+使用同一值；未配置的会话保持原行为，账户估值默认10秒。仅支持这三个策略的
+CTP源，值须为(0,120]内有限数。该配置优先于原argv中的逐合约时效，实际值打印
+到worker启动日志，并记录在worker报告和TD预检诊断。整体CTP流接收心跳仍为
+10秒，参考资料观测和分钟Bar时效保持原值。30秒后仍走既有保护停止/撤单/回报
+确认流程，不承诺遇到静默行情自动恢复交易。
+
+本轮专用配置为[night_cu_au_ag_sc_age30.json](night_cu_au_ag_sc_age30.json)。
+它与用户原night-cu-au-ag-sc-1792157494436899523/session.json仅相差这个顶层字段；
+原策略ID、argv、文件路径、仓位、游标、OrderRef及已使用报单额度保留，历史加载
+继续关闭。运行监督参数不进入原账户/worker恢复身份；实际build_host恢复回归
+核验身份不变。不能把逐合约时效改写进已有策略argv而绕过身份核验。
+
+同步代码及新配置后，先正常停止旧三个worker及账户服务，待退出后再恢复；
+不要与占用同一账本的旧进程并行启动。每个终端先执行以下公共环境块：
+
+```bash
+source /workspace/worker/env/uv-nautilus/bin/activate
+cd /workspace/worker/pj/Chrono/nautilus_trader_demo/pro
+set +e
+export CTP_MD_ADDRESS=tcp://182.254.243.31:30011
+export CTP_TD_ADDRESS=tcp://182.254.243.31:30001
+export CTP_PRODUCTION_MODE=true
+export NIGHT_CONFIG="$PWD/scripts/integration/shared_account/night_cu_au_ag_sc_age30.json"
+```
+
+终端1先做原账本只读预检；必须prechecked、零报单，且柜台仍是TD20261019。
+若日期或合约已变，停止本流程，使用既有跨日/换月恢复流程。
+
+```bash
+python -u -m scripts.integration.shared_account.preflight \
+  --config "$NIGHT_CONFIG" --resume --connect
+```
+
+预检通过后，同一终端启动账户服务，等待“账户服务就绪”和“逐合约估值时效: 30秒”：
+
+```bash
+python -u -m scripts.integration.shared_account.server \
+  --config "$NIGHT_CONFIG" \
+  --socket /tmp/bomber-night-1792157494436899523/exec.sock \
+  --credentials-dir /tmp/bomber-night-1792157494436899523/keys \
+  --resume --connect --enable-orders --confirm-simnow
+```
+
+终端2（已执行公共环境块）：
+
+```bash
+python -u -m scripts.integration.shared_account.worker \
+  --config "$NIGHT_CONFIG" --strategy-id ema-cu-n1792157494436899523 \
+  --credentials /tmp/bomber-night-1792157494436899523/keys/ema-cu-n1792157494436899523.json \
+  --resume --connect --enable-orders --confirm-simnow
+```
+
+终端3（已执行公共环境块）：
+
+```bash
+python -u -m scripts.integration.shared_account.worker \
+  --config "$NIGHT_CONFIG" --strategy-id calendar-cu-n1792157494436899523 \
+  --credentials /tmp/bomber-night-1792157494436899523/keys/calendar-cu-n1792157494436899523.json \
+  --resume --connect --enable-orders --confirm-simnow
+```
+
+终端4（已执行公共环境块）：
+
+```bash
+python -u -m scripts.integration.shared_account.worker \
+  --config "$NIGHT_CONFIG" --strategy-id cross-cu-au-ag-sc-n1792157494436899523 \
+  --credentials /tmp/bomber-night-1792157494436899523/keys/cross-cu-au-ag-sc-n1792157494436899523.json \
+  --resume --connect --enable-orders --confirm-simnow
+```
+
+三个worker启动日志均应打印“策略CTP逐合约时效: 30秒”。报告仍写原夜盘目录的
+reports下，不覆盖旧报告。shared-account83、shared-ipc45、live-common120，共248项
+离线通过；仍待同步后实际三策略恢复运行，不能据此宣布GAP10关闭。
+
 REV37修复独立worker就绪轮询与Tick发送之间的时序：submit/continue携带本次
 runner.session_ready()结果，账户校验布尔声明及价格后更新该租约的就绪状态，
 避免本地已恢复但服务端仍使用上次False。当前False、无效价格、租约失效及账户
 保护停止仍拒绝；旧客户端未传新字段时沿用最近poll。无策略算法/时效阈值变更。
 现场夜盘跨期报同名错误，但仍须完整failure_readiness与执行日志确认是否对应该
 边界；该修复的离线回归不能代替现场成因核实或三策略联合验收。
+
+原夜盘完整目录已复核：EMA5、跨期10、截面33次成交，合计48笔，与账户原始
+回报、worker事件/游标及最终自有仓位一致；外部基线加自有仓位与报告柜台多空
+总仓一致。本轮账户及另外两worker因cu2701估值超10秒正常保护收尾，跨期仍有
+ready校验失败，整体不登记为通过。仅需用REV37代码及原session.json同日resume
+再验证，不重新生成或迁移账本；AU四路行情已覆盖但本轮未报单。详细边界见
+[夜盘证据](../../../doc/evidence/live/GAP10_NIGHT_THREE_STRATEGIES_REMOTE_20261016_REV38.json)。
 
 ## CU／AU／AG／SC夜盘实时预热（REV36）
 

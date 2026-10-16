@@ -16,6 +16,57 @@ from scripts.integration.shared_account import config, prepare_session, prepare_
 
 
 class ProcessCliTests(unittest.TestCase):
+    def test_ctp_age_policy_validates_without_changing_worker_recovery_identity(self):
+        from copy import deepcopy
+        from scripts.integration.shared_account.migrate_scope import worker_identity
+        with TemporaryDirectory() as directory:
+            p = Path(directory)/"session.json"
+            with redirect_stdout(StringIO()):
+                prepare_session.main(["--output", str(p), "--environment", "realtime",
+                    "--execution-mode", "independent", "--trading-day", "20261019", "--source-day", "20261016"])
+            original = config.read_config(p)
+            raw = json.loads(p.read_text())
+            raw["ctp_instrument_max_age_seconds"] = 30
+            p.write_text(json.dumps(raw))
+            updated = config.read_config(p)
+            self.assertEqual(config.ctp_instrument_max_age_seconds(updated), 30)
+            for old, new in zip(original["strategies"], updated["strategies"]):
+                self.assertEqual(worker_identity(old, original), worker_identity(new, updated))
+            for invalid in (False, True, 0, -1, 121, "30", float("nan"), float("inf")):
+                candidate = deepcopy(raw)
+                candidate["ctp_instrument_max_age_seconds"] = invalid
+                p.write_text(json.dumps(candidate))
+                with self.assertRaisesRegex(ValueError, "ctp_instrument_max_age_seconds"):
+                    config.read_config(p)
+            self.assertEqual(config.ctp_instrument_max_age_seconds(original), 10)
+
+    def test_ctp_age_policy_reaches_all_three_factories_without_editing_original_argv(self):
+        from scripts.integration.shared_account import factories
+        from copy import deepcopy
+        from argparse import Namespace
+        class Entry:
+            def parse_args(self, argv, **kwargs):
+                parser = argparse.ArgumentParser()
+                parser.add_argument("--instrument-max-age-seconds", type=float, default=10)
+                parsed, _ = parser.parse_known_args(argv)
+                return parsed
+        row = {"kind": "main_ema", "argv": ["--instrument-max-age-seconds", "10"], "state_file": "old-worker.json"}
+        c = {"trading_day": "20261019", "seconds": 60, "environment": "realtime", "ctp_instrument_max_age_seconds": 30}
+        original = deepcopy(row["argv"])
+        with patch.object(factories, "import_module", return_value=Entry()):
+            for kind in ("main_ema", "calendar_spread", "cross_section"):
+                row["kind"] = kind
+                _, args = factories.strategy_arguments(row, c, resume=True)
+                self.assertEqual(args.instrument_max_age_seconds, 30)
+                self.assertEqual(row["argv"], original)
+            c.pop("ctp_instrument_max_age_seconds")
+            self.assertEqual(factories.strategy_arguments(row, c, resume=True)[1].instrument_max_age_seconds, 10)
+        entry = SimpleNamespace(parse_args=lambda *args, **kwargs: Namespace(market_source="dolphindb", market_bar_table="bars",
+            market_bar_timestamp="end", market_volume_mode="per-bar"))
+        c["ctp_instrument_max_age_seconds"] = 30
+        with patch.object(factories, "import_module", return_value=entry), self.assertRaisesRegex(ValueError, "CTP行情"):
+            factories.strategy_arguments(row, c, resume=False)
+
     def night_observation(self, path):
         contracts = {p: {"main": p.lower()+"2612."+("INE" if p == "SC" else "SHFE")}
                      for p in prepare_night.PRODUCTS}

@@ -1,0 +1,107 @@
+{
+  "revision": "REV39",
+  "date": "2026-10-17",
+  "status": "offline_passed_remote_resume_pending",
+  "user_instruction": "好。使用30秒",
+  "verification": "controlled_offline_tests_no_broker_connection",
+  "network_connected": false,
+  "real_broker_orders_submitted": 0,
+  "policy": {
+    "top_level_field": "ctp_instrument_max_age_seconds",
+    "selected_seconds": 30,
+    "scope": [
+      "01_main_ema CTP instrument freshness",
+      "03_calendar_spread CTP instrument freshness",
+      "04_cross_section CTP instrument freshness",
+      "account valuation instrument gate",
+      "account reference quote gate"
+    ],
+    "absent_field": "preserves original worker argv/defaults; account valuation defaults to 10 seconds",
+    "unchanged": [
+      "overall CTP receive heartbeat 10 seconds",
+      "reference observation policy",
+      "minute Bar risk age",
+      "existing market protective stop and callback drain"
+    ],
+    "automatic_resume_added": false
+  },
+  "config": {
+    "source": "scripts/integration/shared_account/results/night-cu-au-ag-sc-1792157494436899523/session.json",
+    "source_sha256": "3b5cf0249212bdfc361dacc7a7370e86ae80e51804f8cbb306d3f0f5e7025a65",
+    "output": "scripts/integration/shared_account/night_cu_au_ag_sc_age30.json",
+    "output_sha256": "b7774064912333cb7b0dc108fb8b1be4605a6b075be02c92468d7ba459130c3c",
+    "only_added_field": {
+      "ctp_instrument_max_age_seconds": 30
+    },
+    "strategy_argv_and_identity_unchanged": true,
+    "account_and_worker_checkpoint_paths_unchanged": true,
+    "no_checkpoint_migration": true,
+    "original_17_input_files_unchanged": true,
+    "history_loading_disabled": true,
+    "trading_day": "20261019",
+    "source_day": "20261016"
+  },
+  "regression_runs": [
+    {
+      "report": "tests/results/main-ema-acceptance-1792166631370355000/summary.json",
+      "sha256": "a501a7537f33aa905a8293737b81c13c2285e29d37970972e28136fa2d1ac8b5",
+      "status": "passed",
+      "counts": {
+        "shared-account": 83,
+        "shared-ipc": 45,
+        "live-common": 120
+      },
+      "modules": [
+        {
+          "module": "shared-account",
+          "exit_code": 0,
+          "seconds": 3.114
+        },
+        {
+          "module": "shared-ipc",
+          "exit_code": 0,
+          "seconds": 2.785
+        },
+        {
+          "module": "live-common",
+          "exit_code": 0,
+          "seconds": 0.59
+        }
+      ]
+    },
+    {
+      "report": "tests/results/main-ema-acceptance-1792166691194104000/summary.json",
+      "sha256": "d40ad144ed39d0b4309ec399bba2e542a9237db24f2326df06041bb6b9837c7f",
+      "status": "passed",
+      "counts": {
+        "shared-ipc": 45
+      },
+      "modules": [
+        {
+          "module": "shared-ipc",
+          "exit_code": 0,
+          "seconds": 2.804
+        }
+      ]
+    }
+  ],
+  "unique_tests_passed": 248,
+  "assertions": [
+    "all three strategy argument factories receive 30 without mutating argv",
+    "non-CTP and unsupported strategies rejected for this policy",
+    "invalid type/range/nonfinite values rejected",
+    "actual build_host assembly/checkpoint restore preserves identity with policy added (controlled factories and transport)",
+    "worker identities equal for original versus age30 config",
+    "a single 15-second-old quote remains ready when overall stream receives fresh quotes",
+    "account quote reference gate and owned/active instrument gate both use 30",
+    "a 31-second-old quote is rejected with max_age_seconds=30",
+    "incorrect TD, timestamp regression and overall-stream receive timeout remain rejected"
+  ],
+  "remaining": [
+    "sync source and new config to Linux",
+    "stop original processes before restoring same checkpoints",
+    "same-day authoritative read-only preflight",
+    "resume account plus all three workers using the new config",
+    "collect actual per-contract freshness/stop and callback/accounting reports; GAP10 remains open"
+  ]
+}

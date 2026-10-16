@@ -396,6 +396,40 @@ class SharedIpcTests(unittest.TestCase):
             self.assertTrue(market.check().ready)
             host.service._active_instruments = lambda: {str(extra)}
             self.assertFalse(market.check().ready)
+            # 同一配置的估值/参考价门均采用30秒；其他合约仍更新，逐腿静默15秒
+            # 不应被默认10秒的门拦住，超过30秒仍须闭闸。
+            from unittest.mock import patch
+            age30 = connect_valuation_market(host, {"environment": "realtime", "trading_day": "20261013",
+                                                   "ctp_instrument_max_age_seconds": 30})
+            base, mono = time.time_ns(), time.monotonic_ns()
+            for row in first.depth_observations.values():
+                row.ts_event, row.received_monotonic_ns = base, mono
+            now = [15_000_000_000]
+            def advance_active_quote():
+                first.latest_receive_monotonic_ns = mono + now[0]
+                first.depth_observations[self.instrument].ts_event = base + now[0]
+                first.depth_observations[self.instrument].received_monotonic_ns = mono + now[0]
+            with patch.object(time, "time_ns", side_effect=lambda: base+now[0]), \
+                    patch.object(time, "monotonic_ns", side_effect=lambda: mono+now[0]):
+                advance_active_quote()
+                self.assertTrue(age30.check().ready)
+                self.assertFalse(market.check().ready)
+                first.depth_observations[extra].trading_day = "20261012"
+                self.assertFalse(age30.check().ready)
+                first.depth_observations[extra].trading_day = "20261013"
+                first.depth_observations[extra].timestamp_regressed = True
+                self.assertFalse(age30.check().ready)
+                first.depth_observations[extra].timestamp_regressed = False
+                # 整体流接收心跳仍为10秒，不因逐合约阈值上调放宽。
+                first.latest_receive_monotonic_ns = mono
+                self.assertFalse(age30.check().ready)
+                advance_active_quote()
+                self.assertTrue(age30.check().ready)
+                now[0] = 31_000_000_000
+                advance_active_quote()
+                result = age30.check()
+                self.assertFalse(result.ready)
+                self.assertEqual(result.issues[0].context["max_age_seconds"], 30)
 
     def test_readonly_preflight_connects_raw_depth_without_bar_or_runner_start(self):
         from scripts.integration.shared_account.preflight import connect_session_market

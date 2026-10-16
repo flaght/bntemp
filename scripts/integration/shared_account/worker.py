@@ -105,7 +105,10 @@ def _run(args, config, stop_event):
     identity = {"strategy_id": row["strategy_id"], "kind": row["kind"], "argv": row["argv"],
         "trading_day": config["trading_day"], "environment": config["environment"],
         "replay_md_trading_day": config.get("replay_md_trading_day"), "execution_mode": "independent"}
-    report = LiveRunReport(config["report_dir"], prefix=row["strategy_id"], metadata=identity)
+    metadata = dict(identity)
+    if "ctp_instrument_max_age_seconds" in config:
+        metadata["ctp_instrument_max_age_seconds"] = config["ctp_instrument_max_age_seconds"]
+    report = LiveRunReport(config["report_dir"], prefix=row["strategy_id"], metadata=metadata)
     report.begin()
     session, failure, shutdown_failure, status = None, None, None, "failed"
     stop_reason = None
@@ -131,6 +134,8 @@ def _run(args, config, stop_event):
             service = RemoteAccountService(connection, credentials["configuration"], state)
             driver = RemoteTraderSession(service, config["trading_day"])
             entry, strategy_args = strategy_arguments(row, config, resume=args.resume)
+            print(f"策略CTP逐合约时效: {getattr(strategy_args, 'instrument_max_age_seconds', 10)}秒；"
+                  f"策略={args.strategy_id}", flush=True)
             import os
             from bomber.framework.market.sources import source_config
             lifecycle = SimpleNamespace(md_front=(required("CTP_MD_ADDRESS") if

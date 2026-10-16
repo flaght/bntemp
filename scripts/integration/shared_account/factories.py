@@ -19,6 +19,13 @@ def strategy_arguments(row, config, *, resume):
         argv += ["--resume"]
     args = (entry.parse_args(argv, shared_execution=True) if row["kind"] in {"main_ema", "calendar_spread", "cross_section"}
             else entry.parse_args(argv))
+    if "ctp_instrument_max_age_seconds" in config:
+        from .config import ctp_instrument_max_age_seconds
+        from bomber.framework.market.sources import source_config
+        if row["kind"] not in {"main_ema", "calendar_spread", "cross_section"} or source_config(args).source != "ctp":
+            raise ValueError("会话CTP逐合约时效仅用于01/03/04的CTP行情")
+        # 运行监督参数独立于原argv身份；同账本恢复不改旧策略信号/限额声明。
+        args.instrument_max_age_seconds = ctp_instrument_max_age_seconds(config)
     history_enabled = any(getattr(args, name, None) for name in
         ("history_minutes", "history_config", "history_file"))
     if getattr(args, "run_forever", False) or (history_enabled and row["kind"] not in {"main_ema", "calendar_spread", "cross_section"}):

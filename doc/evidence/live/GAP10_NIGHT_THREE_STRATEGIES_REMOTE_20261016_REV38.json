@@ -1,0 +1,843 @@
+{
+  "review_revision": "REV38",
+  "session": "night-cu-au-ag-sc-1792157494436899523",
+  "status": "accounting_callbacks_verified_calendar_runtime_not_passed",
+  "verification": "offline_review_of_user_supplied_remote_simnow_artifacts",
+  "trading_day": "20261019",
+  "source_day": "20261016",
+  "strategy_results": [
+    {
+      "kind": "main_ema",
+      "strategy_id": "ema-cu-n1792157494436899523",
+      "status": "completed",
+      "failure": null,
+      "shutdown_failure": null,
+      "stop_reason": "market_data_unavailable",
+      "fills": 5,
+      "events": 15,
+      "cursor": 15,
+      "ack": 15,
+      "revision": 3,
+      "positions": {
+        "cu_main": "-1"
+      },
+      "first_fill": "2026-10-16T22:02:03.224816+08:00",
+      "last_fill": "2026-10-16T22:18:03.914164+08:00",
+      "failure_readiness": {
+        "observed_at_ns": 1792160330023921745,
+        "channel_readiness": {
+          "ready": true,
+          "sources": [
+            {
+              "domain": "market",
+              "channel": "ctp",
+              "source_id": "CTP_LIVE_SOURCE"
+            },
+            {
+              "domain": "execution",
+              "channel": "ctp",
+              "source_id": "night-cu-1792157494436899523"
+            }
+          ],
+          "issues": []
+        },
+        "runner_failure": null,
+        "stale_instruments": {},
+        "reference_current": true,
+        "execution_port": {
+          "started": true,
+          "stopping": false,
+          "reconciled": true,
+          "account_reconciled": true,
+          "observation_age_seconds": 0.0002803485840559006
+        },
+        "account_valuation": {
+          "issues": [
+            {
+              "channel": "ctp",
+              "code": "INSTRUMENT_UNHEALTHY",
+              "context": {
+                "event_age_seconds": 10.117900541,
+                "max_age_seconds": 10.0,
+                "receive_age_seconds": 8.945279993,
+                "timestamp_regressed": false,
+                "trading_day": "20261019"
+              },
+              "detail": "cu2701.SHFE",
+              "domain": "market",
+              "source_id": "CTP_LIVE_SOURCE"
+            }
+          ],
+          "ready": false,
+          "sources": [
+            {
+              "channel": "ctp",
+              "domain": "market",
+              "source_id": "CTP_LIVE_SOURCE"
+            }
+          ]
+        }
+      },
+      "summary": "scripts/integration/shared_account/results/night-cu-au-ag-sc-1792157494436899523/reports/ema-cu-n1792157494436899523-1792158956392895851/summary.json"
+    },
+    {
+      "kind": "cross_section",
+      "strategy_id": "cross-cu-au-ag-sc-n1792157494436899523",
+      "status": "completed",
+      "failure": null,
+      "shutdown_failure": null,
+      "stop_reason": "market_data_unavailable",
+      "fills": 33,
+      "events": 99,
+      "cursor": 99,
+      "ack": 99,
+      "revision": 17,
+      "positions": {
+        "ag2612.SHFE": "1",
+        "au2612.SHFE": "0",
+        "cu2611.SHFE": "-1",
+        "sc2612.INE": "1"
+      },
+      "first_fill": "2026-10-16T22:02:03.541747+08:00",
+      "last_fill": "2026-10-16T22:18:12.693499+08:00",
+      "failure_readiness": {
+        "observed_at_ns": 1792160330572674882,
+        "channel_readiness": {
+          "ready": true,
+          "sources": [
+            {
+              "domain": "market",
+              "channel": "ctp",
+              "source_id": "CTP_LIVE_SOURCE"
+            },
+            {
+              "domain": "execution",
+              "channel": "ctp",
+              "source_id": "night-cu-1792157494436899523"
+            }
+          ],
+          "issues": []
+        },
+        "runner_failure": null,
+        "stale_instruments": {},
+        "reference_current": true,
+        "execution_port": {
+          "started": true,
+          "stopping": false,
+          "reconciled": true,
+          "account_reconciled": true,
+          "observation_age_seconds": 0.0004365183413028717
+        },
+        "account_valuation": {
+          "issues": [
+            {
+              "channel": "ctp",
+              "code": "INSTRUMENT_UNHEALTHY",
+              "context": {
+                "event_age_seconds": 10.117900541,
+                "max_age_seconds": 10.0,
+                "receive_age_seconds": 8.945279993,
+                "timestamp_regressed": false,
+                "trading_day": "20261019"
+              },
+              "detail": "cu2701.SHFE",
+              "domain": "market",
+              "source_id": "CTP_LIVE_SOURCE"
+            }
+          ],
+          "ready": false,
+          "sources": [
+            {
+              "channel": "ctp",
+              "domain": "market",
+              "source_id": "CTP_LIVE_SOURCE"
+            }
+          ]
+        }
+      },
+      "summary": "scripts/integration/shared_account/results/night-cu-au-ag-sc-1792157494436899523/reports/cross-cu-au-ag-sc-n1792157494436899523-1792158990031120792/summary.json"
+    },
+    {
+      "kind": "calendar_spread",
+      "strategy_id": "calendar-cu-n1792157494436899523",
+      "status": "failed",
+      "failure": "策略行情/参考尚未就绪",
+      "shutdown_failure": null,
+      "stop_reason": null,
+      "fills": 10,
+      "events": 30,
+      "cursor": 30,
+      "ack": 30,
+      "revision": 6,
+      "positions": {
+        "cu2612.SHFE": "1",
+        "cu2701.SHFE": "-1"
+      },
+      "first_fill": "2026-10-16T22:01:07.356558+08:00",
+      "last_fill": "2026-10-16T22:11:15.565806+08:00",
+      "failure_readiness": {
+        "observed_at_ns": 1792159927730872513,
+        "channel_readiness": null,
+        "runner_failure": "策略行情/参考尚未就绪",
+        "stale_instruments": {},
+        "reference_current": true,
+        "execution_port": {
+          "started": false,
+          "stopping": true,
+          "reconciled": false,
+          "account_reconciled": true,
+          "observation_age_seconds": 0.24079483561217785
+        }
+      },
+      "summary": "scripts/integration/shared_account/results/night-cu-au-ag-sc-1792157494436899523/reports/calendar-cu-n1792157494436899523-1792158974099380960/summary.json"
+    }
+  ],
+  "totals": {
+    "orders": 48,
+    "raw_accepted_reports": 48,
+    "raw_fill_reports": 48,
+    "worker_fill_callbacks": 48,
+    "worker_events": 144,
+    "completed_requests": 26,
+    "pending_requests": 0,
+    "final_active_orders": 0
+  },
+  "checks": {
+    "passed": 361,
+    "failed": 0,
+    "results": {
+      "server_snapshot_equals_final_checkpoint": true,
+      "all_26_requests_completed": true,
+      "no_account_failure_or_pending": true,
+      "no_remaining_draining": true,
+      "no_recovery_required": true,
+      "zero_working_quantities": true,
+      "driver_associations_empty": true,
+      "48_orders_all_filled": true,
+      "raw_48_accepted_and_48_filled": true,
+      "raw_reports_unique": true,
+      "ema-cu-n1792157494436899523_events_match_journal_exactly": true,
+      "ema-cu-n1792157494436899523_cursor_ack_count_match": true,
+      "ema-cu-n1792157494436899523_signal_revision_preserved": true,
+      "ema-cu-n1792157494436899523_identity_preserved": true,
+      "ema-cu-n1792157494436899523_fill_count_match": true,
+      "CTP-9999-097561-20261019-4:1:ema-cu-n1792157494436899523:cu_main_recipient_route": true,
+      "CTP-9999-097561-20261019-4:2:ema-cu-n1792157494436899523:cu_main_recipient_route": true,
+      "CTP-9999-097561-20261019-4:2:fill:ema-cu-n1792157494436899523:cu_main_recipient_route": true,
+      "CTP-9999-097561-20261019-32:1:ema-cu-n1792157494436899523:cu_main_recipient_route": true,
+      "CTP-9999-097561-20261019-32:2:ema-cu-n1792157494436899523:cu_main_recipient_route": true,
+      "CTP-9999-097561-20261019-32:2:fill:ema-cu-n1792157494436899523:cu_main_recipient_route": true,
+      "CTP-9999-097561-20261019-39:1:ema-cu-n1792157494436899523:cu_main_recipient_route": true,
+      "CTP-9999-097561-20261019-39:2:ema-cu-n1792157494436899523:cu_main_recipient_route": true,
+      "CTP-9999-097561-20261019-39:2:fill:ema-cu-n1792157494436899523:cu_main_recipient_route": true,
+      "CTP-9999-097561-20261019-46:1:ema-cu-n1792157494436899523:cu_main_recipient_route": true,
+      "CTP-9999-097561-20261019-46:2:ema-cu-n1792157494436899523:cu_main_recipient_route": true,
+      "CTP-9999-097561-20261019-46:2:fill:ema-cu-n1792157494436899523:cu_main_recipient_route": true,
+      "CTP-9999-097561-20261019-47:1:ema-cu-n1792157494436899523:cu_main_recipient_route": true,
+      "CTP-9999-097561-20261019-47:2:ema-cu-n1792157494436899523:cu_main_recipient_route": true,
+      "CTP-9999-097561-20261019-47:2:fill:ema-cu-n1792157494436899523:cu_main_recipient_route": true,
+      "CTP-9999-097561-20261019-4:2:fill:ema-cu-n1792157494436899523:cu_main_known_effect": true,
+      "CTP-9999-097561-20261019-4:2:fill:ema-cu-n1792157494436899523:cu_main_own_close_capacity": true,
+      "CTP-9999-097561-20261019-4:2:fill:ema-cu-n1792157494436899523:cu_main_matches_raw_report": true,
+      "CTP-9999-097561-20261019-32:2:fill:ema-cu-n1792157494436899523:cu_main_known_effect": true,
+      "CTP-9999-097561-20261019-32:2:fill:ema-cu-n1792157494436899523:cu_main_own_close_capacity": true,
+      "CTP-9999-097561-20261019-32:2:fill:ema-cu-n1792157494436899523:cu_main_matches_raw_report": true,
+      "CTP-9999-097561-20261019-39:2:fill:ema-cu-n1792157494436899523:cu_main_known_effect": true,
+      "CTP-9999-097561-20261019-39:2:fill:ema-cu-n1792157494436899523:cu_main_own_close_capacity": true,
+      "CTP-9999-097561-20261019-39:2:fill:ema-cu-n1792157494436899523:cu_main_matches_raw_report": true,
+      "CTP-9999-097561-20261019-46:2:fill:ema-cu-n1792157494436899523:cu_main_known_effect": true,
+      "CTP-9999-097561-20261019-46:2:fill:ema-cu-n1792157494436899523:cu_main_own_close_capacity": true,
+      "CTP-9999-097561-20261019-46:2:fill:ema-cu-n1792157494436899523:cu_main_matches_raw_report": true,
+      "CTP-9999-097561-20261019-47:2:fill:ema-cu-n1792157494436899523:cu_main_known_effect": true,
+      "CTP-9999-097561-20261019-47:2:fill:ema-cu-n1792157494436899523:cu_main_own_close_capacity": true,
+      "CTP-9999-097561-20261019-47:2:fill:ema-cu-n1792157494436899523:cu_main_matches_raw_report": true,
+      "ema-cu-n1792157494436899523_net_fills_equal_owned_and_worker_positions": true,
+      "ema-cu-n1792157494436899523_history_disabled": true,
+      "cross-cu-au-ag-sc-n1792157494436899523_events_match_journal_exactly": true,
+      "cross-cu-au-ag-sc-n1792157494436899523_cursor_ack_count_match": true,
+      "cross-cu-au-ag-sc-n1792157494436899523_signal_revision_preserved": true,
+      "cross-cu-au-ag-sc-n1792157494436899523_identity_preserved": true,
+      "cross-cu-au-ag-sc-n1792157494436899523_fill_count_match": true,
+      "CTP-9999-097561-20261019-5:1:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-5:2:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-5:2:fill:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-6:1:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-6:2:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-6:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-7:1:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_recipient_route": true,
+      "CTP-9999-097561-20261019-7:2:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_recipient_route": true,
+      "CTP-9999-097561-20261019-7:2:fill:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_recipient_route": true,
+      "CTP-9999-097561-20261019-10:1:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-11:1:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-11:2:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-11:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-10:2:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-10:2:fill:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-12:1:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_recipient_route": true,
+      "CTP-9999-097561-20261019-12:2:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_recipient_route": true,
+      "CTP-9999-097561-20261019-12:2:fill:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_recipient_route": true,
+      "CTP-9999-097561-20261019-13:1:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_recipient_route": true,
+      "CTP-9999-097561-20261019-13:2:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_recipient_route": true,
+      "CTP-9999-097561-20261019-13:2:fill:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_recipient_route": true,
+      "CTP-9999-097561-20261019-14:1:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-14:2:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-14:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-15:1:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-15:2:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-15:2:fill:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-16:1:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-16:2:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-16:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-17:1:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-17:2:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-17:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-18:1:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-18:2:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-18:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-19:1:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-19:2:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-19:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-20:1:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-20:2:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-20:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-21:1:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-21:2:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-21:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-22:1:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-22:2:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-22:2:fill:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-23:1:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-23:2:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-23:2:fill:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-28:1:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_recipient_route": true,
+      "CTP-9999-097561-20261019-28:2:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_recipient_route": true,
+      "CTP-9999-097561-20261019-28:2:fill:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_recipient_route": true,
+      "CTP-9999-097561-20261019-29:1:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_recipient_route": true,
+      "CTP-9999-097561-20261019-29:2:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_recipient_route": true,
+      "CTP-9999-097561-20261019-29:2:fill:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_recipient_route": true,
+      "CTP-9999-097561-20261019-33:1:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-33:2:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-33:2:fill:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-34:1:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_recipient_route": true,
+      "CTP-9999-097561-20261019-34:2:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_recipient_route": true,
+      "CTP-9999-097561-20261019-34:2:fill:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_recipient_route": true,
+      "CTP-9999-097561-20261019-35:1:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_recipient_route": true,
+      "CTP-9999-097561-20261019-35:2:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_recipient_route": true,
+      "CTP-9999-097561-20261019-35:2:fill:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_recipient_route": true,
+      "CTP-9999-097561-20261019-36:1:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-36:2:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-36:2:fill:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-37:1:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-37:2:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-37:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-38:1:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-38:2:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-38:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-40:1:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-40:2:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-40:2:fill:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-41:1:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_recipient_route": true,
+      "CTP-9999-097561-20261019-41:2:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_recipient_route": true,
+      "CTP-9999-097561-20261019-41:2:fill:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_recipient_route": true,
+      "CTP-9999-097561-20261019-42:1:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-43:1:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_recipient_route": true,
+      "CTP-9999-097561-20261019-43:2:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_recipient_route": true,
+      "CTP-9999-097561-20261019-43:2:fill:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_recipient_route": true,
+      "CTP-9999-097561-20261019-42:2:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-42:2:fill:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-44:1:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-44:2:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-44:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-45:1:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-45:2:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-45:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-48:1:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_recipient_route": true,
+      "CTP-9999-097561-20261019-48:2:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_recipient_route": true,
+      "CTP-9999-097561-20261019-48:2:fill:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_recipient_route": true,
+      "CTP-9999-097561-20261019-49:1:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_recipient_route": true,
+      "CTP-9999-097561-20261019-49:2:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_recipient_route": true,
+      "CTP-9999-097561-20261019-49:2:fill:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_recipient_route": true,
+      "CTP-9999-097561-20261019-5:2:fill:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_known_effect": true,
+      "CTP-9999-097561-20261019-5:2:fill:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_own_close_capacity": true,
+      "CTP-9999-097561-20261019-5:2:fill:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_matches_raw_report": true,
+      "CTP-9999-097561-20261019-6:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_known_effect": true,
+      "CTP-9999-097561-20261019-6:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_own_close_capacity": true,
+      "CTP-9999-097561-20261019-6:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_matches_raw_report": true,
+      "CTP-9999-097561-20261019-7:2:fill:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_known_effect": true,
+      "CTP-9999-097561-20261019-7:2:fill:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_own_close_capacity": true,
+      "CTP-9999-097561-20261019-7:2:fill:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_matches_raw_report": true,
+      "CTP-9999-097561-20261019-11:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_known_effect": true,
+      "CTP-9999-097561-20261019-11:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_own_close_capacity": true,
+      "CTP-9999-097561-20261019-11:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_matches_raw_report": true,
+      "CTP-9999-097561-20261019-10:2:fill:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_known_effect": true,
+      "CTP-9999-097561-20261019-10:2:fill:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_own_close_capacity": true,
+      "CTP-9999-097561-20261019-10:2:fill:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_matches_raw_report": true,
+      "CTP-9999-097561-20261019-12:2:fill:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_known_effect": true,
+      "CTP-9999-097561-20261019-12:2:fill:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_own_close_capacity": true,
+      "CTP-9999-097561-20261019-12:2:fill:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_matches_raw_report": true,
+      "CTP-9999-097561-20261019-13:2:fill:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_known_effect": true,
+      "CTP-9999-097561-20261019-13:2:fill:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_own_close_capacity": true,
+      "CTP-9999-097561-20261019-13:2:fill:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_matches_raw_report": true,
+      "CTP-9999-097561-20261019-14:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_known_effect": true,
+      "CTP-9999-097561-20261019-14:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_own_close_capacity": true,
+      "CTP-9999-097561-20261019-14:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_matches_raw_report": true,
+      "CTP-9999-097561-20261019-15:2:fill:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_known_effect": true,
+      "CTP-9999-097561-20261019-15:2:fill:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_own_close_capacity": true,
+      "CTP-9999-097561-20261019-15:2:fill:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_matches_raw_report": true,
+      "CTP-9999-097561-20261019-16:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_known_effect": true,
+      "CTP-9999-097561-20261019-16:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_own_close_capacity": true,
+      "CTP-9999-097561-20261019-16:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_matches_raw_report": true,
+      "CTP-9999-097561-20261019-17:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_known_effect": true,
+      "CTP-9999-097561-20261019-17:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_own_close_capacity": true,
+      "CTP-9999-097561-20261019-17:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_matches_raw_report": true,
+      "CTP-9999-097561-20261019-18:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_known_effect": true,
+      "CTP-9999-097561-20261019-18:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_own_close_capacity": true,
+      "CTP-9999-097561-20261019-18:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_matches_raw_report": true,
+      "CTP-9999-097561-20261019-19:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_known_effect": true,
+      "CTP-9999-097561-20261019-19:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_own_close_capacity": true,
+      "CTP-9999-097561-20261019-19:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_matches_raw_report": true,
+      "CTP-9999-097561-20261019-20:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_known_effect": true,
+      "CTP-9999-097561-20261019-20:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_own_close_capacity": true,
+      "CTP-9999-097561-20261019-20:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_matches_raw_report": true,
+      "CTP-9999-097561-20261019-21:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_known_effect": true,
+      "CTP-9999-097561-20261019-21:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_own_close_capacity": true,
+      "CTP-9999-097561-20261019-21:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_matches_raw_report": true,
+      "CTP-9999-097561-20261019-22:2:fill:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_known_effect": true,
+      "CTP-9999-097561-20261019-22:2:fill:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_own_close_capacity": true,
+      "CTP-9999-097561-20261019-22:2:fill:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_matches_raw_report": true,
+      "CTP-9999-097561-20261019-23:2:fill:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_known_effect": true,
+      "CTP-9999-097561-20261019-23:2:fill:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_own_close_capacity": true,
+      "CTP-9999-097561-20261019-23:2:fill:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_matches_raw_report": true,
+      "CTP-9999-097561-20261019-28:2:fill:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_known_effect": true,
+      "CTP-9999-097561-20261019-28:2:fill:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_own_close_capacity": true,
+      "CTP-9999-097561-20261019-28:2:fill:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_matches_raw_report": true,
+      "CTP-9999-097561-20261019-29:2:fill:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_known_effect": true,
+      "CTP-9999-097561-20261019-29:2:fill:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_own_close_capacity": true,
+      "CTP-9999-097561-20261019-29:2:fill:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_matches_raw_report": true,
+      "CTP-9999-097561-20261019-33:2:fill:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_known_effect": true,
+      "CTP-9999-097561-20261019-33:2:fill:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_own_close_capacity": true,
+      "CTP-9999-097561-20261019-33:2:fill:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_matches_raw_report": true,
+      "CTP-9999-097561-20261019-34:2:fill:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_known_effect": true,
+      "CTP-9999-097561-20261019-34:2:fill:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_own_close_capacity": true,
+      "CTP-9999-097561-20261019-34:2:fill:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_matches_raw_report": true,
+      "CTP-9999-097561-20261019-35:2:fill:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_known_effect": true,
+      "CTP-9999-097561-20261019-35:2:fill:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_own_close_capacity": true,
+      "CTP-9999-097561-20261019-35:2:fill:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_matches_raw_report": true,
+      "CTP-9999-097561-20261019-36:2:fill:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_known_effect": true,
+      "CTP-9999-097561-20261019-36:2:fill:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_own_close_capacity": true,
+      "CTP-9999-097561-20261019-36:2:fill:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_matches_raw_report": true,
+      "CTP-9999-097561-20261019-37:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_known_effect": true,
+      "CTP-9999-097561-20261019-37:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_own_close_capacity": true,
+      "CTP-9999-097561-20261019-37:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_matches_raw_report": true,
+      "CTP-9999-097561-20261019-38:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_known_effect": true,
+      "CTP-9999-097561-20261019-38:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_own_close_capacity": true,
+      "CTP-9999-097561-20261019-38:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_matches_raw_report": true,
+      "CTP-9999-097561-20261019-40:2:fill:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_known_effect": true,
+      "CTP-9999-097561-20261019-40:2:fill:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_own_close_capacity": true,
+      "CTP-9999-097561-20261019-40:2:fill:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_matches_raw_report": true,
+      "CTP-9999-097561-20261019-41:2:fill:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_known_effect": true,
+      "CTP-9999-097561-20261019-41:2:fill:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_own_close_capacity": true,
+      "CTP-9999-097561-20261019-41:2:fill:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_matches_raw_report": true,
+      "CTP-9999-097561-20261019-43:2:fill:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_known_effect": true,
+      "CTP-9999-097561-20261019-43:2:fill:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_own_close_capacity": true,
+      "CTP-9999-097561-20261019-43:2:fill:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_matches_raw_report": true,
+      "CTP-9999-097561-20261019-42:2:fill:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_known_effect": true,
+      "CTP-9999-097561-20261019-42:2:fill:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_own_close_capacity": true,
+      "CTP-9999-097561-20261019-42:2:fill:cross-cu-au-ag-sc-n1792157494436899523:ag2612.SHFE_matches_raw_report": true,
+      "CTP-9999-097561-20261019-44:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_known_effect": true,
+      "CTP-9999-097561-20261019-44:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_own_close_capacity": true,
+      "CTP-9999-097561-20261019-44:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_matches_raw_report": true,
+      "CTP-9999-097561-20261019-45:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_known_effect": true,
+      "CTP-9999-097561-20261019-45:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_own_close_capacity": true,
+      "CTP-9999-097561-20261019-45:2:fill:cross-cu-au-ag-sc-n1792157494436899523:cu2611.SHFE_matches_raw_report": true,
+      "CTP-9999-097561-20261019-48:2:fill:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_known_effect": true,
+      "CTP-9999-097561-20261019-48:2:fill:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_own_close_capacity": true,
+      "CTP-9999-097561-20261019-48:2:fill:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_matches_raw_report": true,
+      "CTP-9999-097561-20261019-49:2:fill:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_known_effect": true,
+      "CTP-9999-097561-20261019-49:2:fill:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_own_close_capacity": true,
+      "CTP-9999-097561-20261019-49:2:fill:cross-cu-au-ag-sc-n1792157494436899523:sc2612.INE_matches_raw_report": true,
+      "cross-cu-au-ag-sc-n1792157494436899523_net_fills_equal_owned_and_worker_positions": true,
+      "cross-cu-au-ag-sc-n1792157494436899523_history_disabled": true,
+      "calendar-cu-n1792157494436899523_events_match_journal_exactly": true,
+      "calendar-cu-n1792157494436899523_cursor_ack_count_match": true,
+      "calendar-cu-n1792157494436899523_signal_revision_preserved": true,
+      "calendar-cu-n1792157494436899523_identity_preserved": true,
+      "calendar-cu-n1792157494436899523_fill_count_match": true,
+      "CTP-9999-097561-20261019-2:1:calendar-cu-n1792157494436899523:cu2612.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-2:2:calendar-cu-n1792157494436899523:cu2612.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-2:2:fill:calendar-cu-n1792157494436899523:cu2612.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-3:1:calendar-cu-n1792157494436899523:cu2701.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-3:2:calendar-cu-n1792157494436899523:cu2701.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-3:2:fill:calendar-cu-n1792157494436899523:cu2701.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-8:1:calendar-cu-n1792157494436899523:cu2612.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-8:2:calendar-cu-n1792157494436899523:cu2612.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-8:2:fill:calendar-cu-n1792157494436899523:cu2612.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-9:1:calendar-cu-n1792157494436899523:cu2701.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-9:2:calendar-cu-n1792157494436899523:cu2701.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-9:2:fill:calendar-cu-n1792157494436899523:cu2701.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-24:1:calendar-cu-n1792157494436899523:cu2612.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-24:2:calendar-cu-n1792157494436899523:cu2612.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-24:2:fill:calendar-cu-n1792157494436899523:cu2612.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-25:1:calendar-cu-n1792157494436899523:cu2701.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-25:2:calendar-cu-n1792157494436899523:cu2701.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-25:2:fill:calendar-cu-n1792157494436899523:cu2701.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-26:1:calendar-cu-n1792157494436899523:cu2612.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-26:2:calendar-cu-n1792157494436899523:cu2612.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-26:2:fill:calendar-cu-n1792157494436899523:cu2612.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-27:1:calendar-cu-n1792157494436899523:cu2701.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-27:2:calendar-cu-n1792157494436899523:cu2701.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-27:2:fill:calendar-cu-n1792157494436899523:cu2701.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-30:1:calendar-cu-n1792157494436899523:cu2612.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-30:2:calendar-cu-n1792157494436899523:cu2612.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-30:2:fill:calendar-cu-n1792157494436899523:cu2612.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-31:1:calendar-cu-n1792157494436899523:cu2701.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-31:2:calendar-cu-n1792157494436899523:cu2701.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-31:2:fill:calendar-cu-n1792157494436899523:cu2701.SHFE_recipient_route": true,
+      "CTP-9999-097561-20261019-2:2:fill:calendar-cu-n1792157494436899523:cu2612.SHFE_known_effect": true,
+      "CTP-9999-097561-20261019-2:2:fill:calendar-cu-n1792157494436899523:cu2612.SHFE_own_close_capacity": true,
+      "CTP-9999-097561-20261019-2:2:fill:calendar-cu-n1792157494436899523:cu2612.SHFE_matches_raw_report": true,
+      "CTP-9999-097561-20261019-3:2:fill:calendar-cu-n1792157494436899523:cu2701.SHFE_known_effect": true,
+      "CTP-9999-097561-20261019-3:2:fill:calendar-cu-n1792157494436899523:cu2701.SHFE_own_close_capacity": true,
+      "CTP-9999-097561-20261019-3:2:fill:calendar-cu-n1792157494436899523:cu2701.SHFE_matches_raw_report": true,
+      "CTP-9999-097561-20261019-8:2:fill:calendar-cu-n1792157494436899523:cu2612.SHFE_known_effect": true,
+      "CTP-9999-097561-20261019-8:2:fill:calendar-cu-n1792157494436899523:cu2612.SHFE_own_close_capacity": true,
+      "CTP-9999-097561-20261019-8:2:fill:calendar-cu-n1792157494436899523:cu2612.SHFE_matches_raw_report": true,
+      "CTP-9999-097561-20261019-9:2:fill:calendar-cu-n1792157494436899523:cu2701.SHFE_known_effect": true,
+      "CTP-9999-097561-20261019-9:2:fill:calendar-cu-n1792157494436899523:cu2701.SHFE_own_close_capacity": true,
+      "CTP-9999-097561-20261019-9:2:fill:calendar-cu-n1792157494436899523:cu2701.SHFE_matches_raw_report": true,
+      "CTP-9999-097561-20261019-24:2:fill:calendar-cu-n1792157494436899523:cu2612.SHFE_known_effect": true,
+      "CTP-9999-097561-20261019-24:2:fill:calendar-cu-n1792157494436899523:cu2612.SHFE_own_close_capacity": true,
+      "CTP-9999-097561-20261019-24:2:fill:calendar-cu-n1792157494436899523:cu2612.SHFE_matches_raw_report": true,
+      "CTP-9999-097561-20261019-25:2:fill:calendar-cu-n1792157494436899523:cu2701.SHFE_known_effect": true,
+      "CTP-9999-097561-20261019-25:2:fill:calendar-cu-n1792157494436899523:cu2701.SHFE_own_close_capacity": true,
+      "CTP-9999-097561-20261019-25:2:fill:calendar-cu-n1792157494436899523:cu2701.SHFE_matches_raw_report": true,
+      "CTP-9999-097561-20261019-26:2:fill:calendar-cu-n1792157494436899523:cu2612.SHFE_known_effect": true,
+      "CTP-9999-097561-20261019-26:2:fill:calendar-cu-n1792157494436899523:cu2612.SHFE_own_close_capacity": true,
+      "CTP-9999-097561-20261019-26:2:fill:calendar-cu-n1792157494436899523:cu2612.SHFE_matches_raw_report": true,
+      "CTP-9999-097561-20261019-27:2:fill:calendar-cu-n1792157494436899523:cu2701.SHFE_known_effect": true,
+      "CTP-9999-097561-20261019-27:2:fill:calendar-cu-n1792157494436899523:cu2701.SHFE_own_close_capacity": true,
+      "CTP-9999-097561-20261019-27:2:fill:calendar-cu-n1792157494436899523:cu2701.SHFE_matches_raw_report": true,
+      "CTP-9999-097561-20261019-30:2:fill:calendar-cu-n1792157494436899523:cu2612.SHFE_known_effect": true,
+      "CTP-9999-097561-20261019-30:2:fill:calendar-cu-n1792157494436899523:cu2612.SHFE_own_close_capacity": true,
+      "CTP-9999-097561-20261019-30:2:fill:calendar-cu-n1792157494436899523:cu2612.SHFE_matches_raw_report": true,
+      "CTP-9999-097561-20261019-31:2:fill:calendar-cu-n1792157494436899523:cu2701.SHFE_known_effect": true,
+      "CTP-9999-097561-20261019-31:2:fill:calendar-cu-n1792157494436899523:cu2701.SHFE_own_close_capacity": true,
+      "CTP-9999-097561-20261019-31:2:fill:calendar-cu-n1792157494436899523:cu2701.SHFE_matches_raw_report": true,
+      "calendar-cu-n1792157494436899523_net_fills_equal_owned_and_worker_positions": true,
+      "calendar-cu-n1792157494436899523_history_disabled": true,
+      "all_recipient_events_unique": true,
+      "every_raw_fill_delivered_exactly_once": true,
+      "independent_no_internal_transfers": true,
+      "48_single_owner_allocations_fully_filled": true,
+      "MO2611-C-7100.CFFEX_external_plus_owned_equals_broker_final_gross": true,
+      "ag2612.SHFE_external_plus_owned_equals_broker_final_gross": true,
+      "al2611.SHFE_external_plus_owned_equals_broker_final_gross": true,
+      "au2612.SHFE_external_plus_owned_equals_broker_final_gross": true,
+      "cu2611.SHFE_external_plus_owned_equals_broker_final_gross": true,
+      "cu2612.SHFE_external_plus_owned_equals_broker_final_gross": true,
+      "cu2701.SHFE_external_plus_owned_equals_broker_final_gross": true,
+      "hc2701.SHFE_external_plus_owned_equals_broker_final_gross": true,
+      "i2701.DCE_external_plus_owned_equals_broker_final_gross": true,
+      "ni2611.SHFE_external_plus_owned_equals_broker_final_gross": true,
+      "sc2611.INE_external_plus_owned_equals_broker_final_gross": true,
+      "sc2612.INE_external_plus_owned_equals_broker_final_gross": true,
+      "cu2611.SHFE_system_ledger_equals_attributed_gross": true,
+      "ag2612.SHFE_system_ledger_equals_attributed_gross": true,
+      "sc2612.INE_system_ledger_equals_attributed_gross": true,
+      "cu2612.SHFE_system_ledger_equals_attributed_gross": true,
+      "cu2701.SHFE_system_ledger_equals_attributed_gross": true,
+      "zero_final_active_orders": true,
+      "normal_protective_stop": true,
+      "quota_used_48_of_200": true,
+      "calendar_failure_is_protocol_ready_gate": true,
+      "scripts/integration/shared_account/results/night-cu-au-ag-sc-1792157494436899523/session.json_input_unchanged": true,
+      "scripts/integration/shared_account/results/night-cu-au-ag-sc-1792157494436899523/generated.json_input_unchanged": true,
+      "scripts/integration/shared_account/results/night-cu-au-ag-sc-1792157494436899523/account.json_input_unchanged": true,
+      "scripts/integration/shared_account/results/night-cu-au-ag-sc-1792157494436899523/calendar_spread.json_input_unchanged": true,
+      "scripts/integration/shared_account/results/night-cu-au-ag-sc-1792157494436899523/main_ema.json_input_unchanged": true,
+      "scripts/integration/shared_account/results/night-cu-au-ag-sc-1792157494436899523/observed.json_input_unchanged": true,
+      "scripts/integration/shared_account/results/night-cu-au-ag-sc-1792157494436899523/cross_section.json_input_unchanged": true,
+      "scripts/integration/shared_account/results/night-cu-au-ag-sc-1792157494436899523/reports/ema-cu-n1792157494436899523-1792158956392895851/summary.json_input_unchanged": true,
+      "scripts/integration/shared_account/results/night-cu-au-ag-sc-1792157494436899523/reports/ema-cu-n1792157494436899523-1792158956392895851/events.txt_input_unchanged": true,
+      "scripts/integration/shared_account/results/night-cu-au-ag-sc-1792157494436899523/reports/cross-cu-au-ag-sc-n1792157494436899523-1792158990031120792/summary.json_input_unchanged": true,
+      "scripts/integration/shared_account/results/night-cu-au-ag-sc-1792157494436899523/reports/cross-cu-au-ag-sc-n1792157494436899523-1792158990031120792/events.txt_input_unchanged": true,
+      "scripts/integration/shared_account/results/night-cu-au-ag-sc-1792157494436899523/reports/calendar-cu-n1792157494436899523-1792158974099380960/summary.json_input_unchanged": true,
+      "scripts/integration/shared_account/results/night-cu-au-ag-sc-1792157494436899523/reports/calendar-cu-n1792157494436899523-1792158974099380960/events.txt_input_unchanged": true,
+      "scripts/integration/shared_account/results/night-cu-au-ag-sc-1792157494436899523/reports/shared-account-server-1792158674312835206/summary.json_input_unchanged": true,
+      "scripts/integration/shared_account/results/night-cu-au-ag-sc-1792157494436899523/reports/shared-account-server-1792158674312835206/events.txt_input_unchanged": true,
+      "scripts/integration/shared_account/results/night-cu-au-ag-sc-1792157494436899523/reports/three-readonly-1792158571217023301/summary.json_input_unchanged": true,
+      "scripts/integration/shared_account/results/night-cu-au-ag-sc-1792157494436899523/reports/three-readonly-1792158571217023301/events.txt_input_unchanged": true
+    }
+  },
+  "gross_reconciliation": {
+    "MO2611-C-7100.CFFEX": {
+      "external_gross": [
+        "0",
+        "1"
+      ],
+      "owned_gross": [
+        "0",
+        "0"
+      ],
+      "reported_broker_final_gross": [
+        "0",
+        "1"
+      ]
+    },
+    "ag2612.SHFE": {
+      "external_gross": [
+        "0",
+        "3"
+      ],
+      "owned_gross": [
+        "1",
+        "0"
+      ],
+      "reported_broker_final_gross": [
+        "1",
+        "3"
+      ]
+    },
+    "al2611.SHFE": {
+      "external_gross": [
+        "2",
+        "0"
+      ],
+      "owned_gross": [
+        "0",
+        "0"
+      ],
+      "reported_broker_final_gross": [
+        "2",
+        "0"
+      ]
+    },
+    "au2612.SHFE": {
+      "external_gross": [
+        "0",
+        "2"
+      ],
+      "owned_gross": [
+        "0",
+        "0"
+      ],
+      "reported_broker_final_gross": [
+        "0",
+        "2"
+      ]
+    },
+    "cu2611.SHFE": {
+      "external_gross": [
+        "1",
+        "1"
+      ],
+      "owned_gross": [
+        "0",
+        "2"
+      ],
+      "reported_broker_final_gross": [
+        "1",
+        "3"
+      ]
+    },
+    "cu2612.SHFE": {
+      "external_gross": [
+        "2",
+        "1"
+      ],
+      "owned_gross": [
+        "1",
+        "0"
+      ],
+      "reported_broker_final_gross": [
+        "3",
+        "1"
+      ]
+    },
+    "cu2701.SHFE": {
+      "external_gross": [
+        "1",
+        "2"
+      ],
+      "owned_gross": [
+        "0",
+        "1"
+      ],
+      "reported_broker_final_gross": [
+        "1",
+        "3"
+      ]
+    },
+    "hc2701.SHFE": {
+      "external_gross": [
+        "1",
+        "0"
+      ],
+      "owned_gross": [
+        "0",
+        "0"
+      ],
+      "reported_broker_final_gross": [
+        "1",
+        "0"
+      ]
+    },
+    "i2701.DCE": {
+      "external_gross": [
+        "0",
+        "1"
+      ],
+      "owned_gross": [
+        "0",
+        "0"
+      ],
+      "reported_broker_final_gross": [
+        "0",
+        "1"
+      ]
+    },
+    "ni2611.SHFE": {
+      "external_gross": [
+        "1",
+        "0"
+      ],
+      "owned_gross": [
+        "0",
+        "0"
+      ],
+      "reported_broker_final_gross": [
+        "1",
+        "0"
+      ]
+    },
+    "sc2611.INE": {
+      "external_gross": [
+        "1",
+        "0"
+      ],
+      "owned_gross": [
+        "0",
+        "0"
+      ],
+      "reported_broker_final_gross": [
+        "1",
+        "0"
+      ]
+    },
+    "sc2612.INE": {
+      "external_gross": [
+        "0",
+        "0"
+      ],
+      "owned_gross": [
+        "1",
+        "0"
+      ],
+      "reported_broker_final_gross": [
+        "1",
+        "0"
+      ]
+    }
+  },
+  "quota": {
+    "limit": 200,
+    "submitted": 48
+  },
+  "account_flags": {
+    "failed": false,
+    "pending": false,
+    "portfolio_revision": 31,
+    "strategy_revisions": {
+      "calendar-cu-n1792157494436899523": 7,
+      "cross-cu-au-ag-sc-n1792157494436899523": 19,
+      "ema-cu-n1792157494436899523": 5
+    }
+  },
+  "end_reason": {
+    "reason": "market_data_unavailable",
+    "readiness": {
+      "ready": false,
+      "sources": [
+        {
+          "domain": "market",
+          "channel": "ctp",
+          "source_id": "CTP_LIVE_SOURCE"
+        }
+      ],
+      "issues": [
+        {
+          "domain": "market",
+          "channel": "ctp",
+          "source_id": "CTP_LIVE_SOURCE",
+          "code": "INSTRUMENT_UNHEALTHY",
+          "detail": "cu2701.SHFE",
+          "context": {
+            "event_age_seconds": 10.117900541,
+            "receive_age_seconds": 8.945279993,
+            "trading_day": "20261019",
+            "max_age_seconds": 10.0,
+            "timestamp_regressed": false
+          }
+        }
+      ]
+    }
+  },
+  "calendar_incident": {
+    "first_failure_context_at": "2026-10-16T22:12:07.730873+08:00",
+    "last_fill_at": "2026-10-16T22:11:15.565806+08:00",
+    "confirmed": "Failure text originates at IPC lease ready check; clean account and full final calendar callback acknowledgement",
+    "inference": "Consistent with reproduced previous-poll False/current-Tick True race fixed in REV37",
+    "limit": "No per-poll readiness/action trace; failure context was sampled after calendar port had begun stopping. Exact live race cannot be proven from these files."
+  },
+  "au_coverage": {
+    "received_bars": 20,
+    "signal_frames": 20,
+    "fills": 0,
+    "per_side_notional": "1800000",
+    "equal_budget_per_selected_product": "900000",
+    "evidence": "cross source metadata incomplete_group_products=[AU], require_full_groups=false; AU participates in ranking but target remains zero",
+    "inference": "Original allocator floors AU quantity to zero when raw AU price times multiplier exceeds the 900000 allocation. Raw live AU closes are not stored in this bundle, so no exact live price claimed.",
+    "acceptance_limit": "Four-product market/signal flow covered; AU actual order/fill not exercised"
+  },
+  "next": {
+    "ledger": "Keep original session/account/worker files and IDs; authoritative same-TD resume preflight before restarting",
+    "code": "Synchronize REV37 current-readiness fix and run shared-ipc regression",
+    "runtime": "Repeat calendar and three-worker same-ledger run without protocol ready refusal; protective market stop remains a separate recorded condition",
+    "not_exercised": [
+      "AU actual fill",
+      "partial fill/rejection/cancel in this session (all 48 orders completely filled)",
+      "post-stop restart continuity"
+    ]
+  },
+  "input_files_sha256": {
+    "scripts/integration/shared_account/results/night-cu-au-ag-sc-1792157494436899523/session.json": "3b5cf0249212bdfc361dacc7a7370e86ae80e51804f8cbb306d3f0f5e7025a65",
+    "scripts/integration/shared_account/results/night-cu-au-ag-sc-1792157494436899523/generated.json": "631f8e66b51fb7e7c0c31cf39c4e9e9e2a37fd59ee1ed2b9cc3ebae02bd2a2fe",
+    "scripts/integration/shared_account/results/night-cu-au-ag-sc-1792157494436899523/account.json": "f02a28ea1f15b7350d0bca20dd681edcea6753149a1376ec84384748ac779c14",
+    "scripts/integration/shared_account/results/night-cu-au-ag-sc-1792157494436899523/calendar_spread.json": "bc2434d211359b7c86118e4792d1da43452f98540d896f2428f6c195c24fc738",
+    "scripts/integration/shared_account/results/night-cu-au-ag-sc-1792157494436899523/main_ema.json": "846802d0651b903006a875de19a2a5822e85c317add0a21999af9c374e247eba",
+    "scripts/integration/shared_account/results/night-cu-au-ag-sc-1792157494436899523/observed.json": "d734bbc12439aa7bdd11b56b6dbf5e0be770c6b9a148b3af522e70e3560b09f1",
+    "scripts/integration/shared_account/results/night-cu-au-ag-sc-1792157494436899523/cross_section.json": "cbc21f0843077e766f5b7d11cfa962fc4a1d47b6a15b5887af35cb21ec9e2f37",
+    "scripts/integration/shared_account/results/night-cu-au-ag-sc-1792157494436899523/reports/ema-cu-n1792157494436899523-1792158956392895851/summary.json": "b7950560abfbc737118a4975be2f461f577640691cd3af7dae95f46245080054",
+    "scripts/integration/shared_account/results/night-cu-au-ag-sc-1792157494436899523/reports/ema-cu-n1792157494436899523-1792158956392895851/events.txt": "a2c7d2d91c8f26408bcbeeb1339584d3e576d32fca9b61ad2554828b7f1c5900",
+    "scripts/integration/shared_account/results/night-cu-au-ag-sc-1792157494436899523/reports/cross-cu-au-ag-sc-n1792157494436899523-1792158990031120792/summary.json": "dd9afdd5d793286a40ecd3fa16e9d24621e0400273a364a43d7592e96a53ddec",
+    "scripts/integration/shared_account/results/night-cu-au-ag-sc-1792157494436899523/reports/cross-cu-au-ag-sc-n1792157494436899523-1792158990031120792/events.txt": "4536b53c2576b5ab1bb0fc4ee95025c880b69b03cfa7f6b9cd89bcf30be51663",
+    "scripts/integration/shared_account/results/night-cu-au-ag-sc-1792157494436899523/reports/calendar-cu-n1792157494436899523-1792158974099380960/summary.json": "3163080377ac724b5753a19f2a48548bb256a8c1ccd223705798c6ef0b3d7f90",
+    "scripts/integration/shared_account/results/night-cu-au-ag-sc-1792157494436899523/reports/calendar-cu-n1792157494436899523-1792158974099380960/events.txt": "792e661ac09de411dd82eb53585a8fc528b4e73c755c407b02df99c102c861b1",
+    "scripts/integration/shared_account/results/night-cu-au-ag-sc-1792157494436899523/reports/shared-account-server-1792158674312835206/summary.json": "5baecd5df4e7905e68bf8efb12b7200d69f5df6eb0a7956d8c7499bfb2215053",
+    "scripts/integration/shared_account/results/night-cu-au-ag-sc-1792157494436899523/reports/shared-account-server-1792158674312835206/events.txt": "b8db76ecb3fea44acc1af19f2072e0ad4f5e74624012511371d900c270b0969d",
+    "scripts/integration/shared_account/results/night-cu-au-ag-sc-1792157494436899523/reports/three-readonly-1792158571217023301/summary.json": "77e813f0c5f563f3109027a949b5495aa56e814ca84b10dd2dc7cc52a6ba3ec8",
+    "scripts/integration/shared_account/results/night-cu-au-ag-sc-1792157494436899523/reports/three-readonly-1792158571217023301/events.txt": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+  },
+  "review_connected_to_broker": false,
+  "user_runtime_files_modified": false,
+  "independent_opposite_ownership_evidence": {
+    "at": "2026-10-16T22:04:05.373126+08:00",
+    "instrument": "cu2611.SHFE",
+    "owned": {
+      "ema-cu-n1792157494436899523": "-1",
+      "cross-cu-au-ag-sc-n1792157494436899523": "1"
+    },
+    "trigger_order_id": "CTP-9999-097561-20261019-14",
+    "position_effect": "OPEN"
+  }
+}

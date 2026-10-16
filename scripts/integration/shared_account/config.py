@@ -16,14 +16,24 @@ PROTECTED = frozenset(("--connect", "--mode", "--enable-orders", "--confirm-simn
     "--replay-md-trading-day"))
 
 
+def ctp_instrument_max_age_seconds(config):
+    """会话级CTP运行时效；不改变策略身份、目标版本、路由及账本恢复身份。"""
+    seconds = config.get("ctp_instrument_max_age_seconds", 10)
+    if (isinstance(seconds, bool) or not isinstance(seconds, (int, float))
+            or not math.isfinite(seconds) or not 0 < seconds <= 120):
+        raise ValueError("ctp_instrument_max_age_seconds须为(0,120]内有限数")
+    return seconds
+
+
 def read_config(path):
     path = Path(path).resolve()
     config = json.loads(path.read_text(encoding="utf-8"))
     allowed = {"version", "trading_day", "environment", "replay_md_trading_day", "seconds",
         "account_state_file", "report_dir", "account", "strategies", "position_scope", "execution_mode",
-        "existing_position_policy"}
+        "existing_position_policy", "ctp_instrument_max_age_seconds"}
     if set(config) - allowed or config.get("version") != 1:
         raise ValueError("共享配置版本无效或存在未知字段")
+    ctp_instrument_max_age_seconds(config)
     if config.get("position_scope", "account") not in {"account", "strategy_instruments"}:
         raise ValueError("position_scope须为account或strategy_instruments")
     if config.get("execution_mode", "netted") not in {"netted", "independent"}:
@@ -77,6 +87,8 @@ def read_config(path):
             raise ValueError("策略独立停止时间须在会话时长以内")
         if row["kind"] not in {"main_ema", "cross_section", "calendar_spread", "option_vega"}:
             raise ValueError("策略工厂支持main_ema、cross_section、calendar_spread和option_vega")
+        if "ctp_instrument_max_age_seconds" in config and row["kind"] not in {"main_ema", "calendar_spread", "cross_section"}:
+            raise ValueError("会话CTP逐合约时效仅支持01/03/04；其他通道使用原有时效配置")
         if not isinstance(row["argv"], list) or any(not isinstance(arg, str) for arg in row["argv"]):
             raise ValueError("策略argv须为字符串数组")
         if any(arg.split("=", 1)[0] in PROTECTED for arg in row["argv"]):

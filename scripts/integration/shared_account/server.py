@@ -5,7 +5,7 @@ from pathlib import Path
 import secrets
 import time
 
-from .config import read_config
+from .config import read_config, ctp_instrument_max_age_seconds
 
 
 def capture_execution_failure(host):
@@ -49,8 +49,9 @@ def connect_valuation_market(host, config):
         feed.subscribe(instrument, DataType.QUOTE_TICK)
     host.resources.callback(feed.disconnect)
     feed.connect()
-    gate = InstrumentHealthGate(feed, instruments, config["trading_day"])
-    quote_gate = InstrumentHealthGate(feed, instruments, config["trading_day"])
+    max_age = ctp_instrument_max_age_seconds(config)
+    gate = InstrumentHealthGate(feed, instruments, config["trading_day"], max_age_seconds=max_age)
+    quote_gate = InstrumentHealthGate(feed, instruments, config["trading_day"], max_age_seconds=max_age)
     class ValuationChannel(CtpMarketChannel):
         def check(self):
             positions = getattr(host.service, "position_manager", None)
@@ -182,6 +183,7 @@ def _run(args, config, stop_event):
                     temporary.unlink(missing_ok=True)
 
         print(f"账户服务就绪：socket={args.socket}；策略客户端文件目录={args.credentials_dir}", flush=True)
+        print(f"账户CTP逐合约估值时效: {ctp_instrument_max_age_seconds(config)}秒", flush=True)
         until = time.monotonic() + config["seconds"] + 120  # 给分终端启动和策略先停机留出时间。
         while not stop_event.is_set() and (time.monotonic() < until or execution_stop_started is not None):
             if host.service.execution_stop is None and valuation is not None:
