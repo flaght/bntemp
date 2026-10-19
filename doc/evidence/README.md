@@ -182,3 +182,7 @@ sha256sum -c doc/evidence/checksums/DOCUMENTATION_20261010_SHA256.txt
 ### 2026-10-16：同合约多策略归属与08恢复
 
 修复候选MO/IM范围被当成仓位所有权边界的问题。08共享持续入口启用成交归属加外部基线恢复；多个策略可以同合约持有同向或反向份额，平仓仅减少发起策略份额。通用平仓不再排除同合约外部基线；旧检查点带备份续接，不将柜台剩余数量分配给策略。349项离线回归通过，包括真实三工作进程共用一个执行端，线上恢复待验。见[说明](../HANDOFF/live/HANDOFF_OPTION_VEGA_OWNED_POSITIONS_2026-10-16.md)、[包](archives/OPTION_VEGA_OWNED_POSITIONS_20261016.tar.gz)、[SHA清单](checksums/OPTION_VEGA_OWNED_POSITIONS_20261016_SHA256.txt)、[范围](live/OPTION_VEGA_OWNED_POSITIONS_20261016.json)。本补充扩展此前范围外跨日修复，不包含14:57窗口方案。
+
+### 2026-10-19：终态draining跨日恢复
+
+修复08终态订单已完成但停止标志残留导致跨日拒绝；先核验本地终态及柜台，再冻结贡献清理标志并提交，重复停止幂等。未决/未知状态不放宽。250项离线回归通过，线上待验。见[说明](../HANDOFF/live/HANDOFF_OPTION_VEGA_DRAINING_RECOVERY_2026-10-19.md)、[补充包](archives/OPTION_VEGA_DRAINING_RECOVERY_20261019.tar.gz)、[SHA清单](checksums/OPTION_VEGA_DRAINING_RECOVERY_20261019_SHA256.txt)。

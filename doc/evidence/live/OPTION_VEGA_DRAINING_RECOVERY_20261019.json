@@ -1,0 +1,21 @@
+{
+  "date": "2026-10-19",
+  "status": "offline_passed_online_pending",
+  "scope": "terminal_draining_recovery_and_idempotent_stop",
+  "tests": {
+    "option_base": 91,
+    "option_shared": 28,
+    "shared_account": 84,
+    "shared_ipc": 47,
+    "total": 250
+  },
+  "network_connected": false,
+  "real_orders_submitted": 0,
+  "source_sha256": {
+    "bomber/framework/trader/execution/shared.py": "f1d87e8a8d83dbd6c01d5cfdf0394f3a1db9eadf6229efb097be38c05770c0bb",
+    "bomber/framework/trader/runtime/live/channels/ctp_shared.py": "56cc5c80990b5c4dc2ed644c94bba20133940658de1885167fafb37748c805f1",
+    "scripts/integration/shared_account/rollover.py": "595aa61b9e4e2884a6cb858a41703579262ac3318e7dd7a91b6704a33646d0e5",
+    "tests/test_option_shared_rollover.py": "93b601912e7be9367d9a9b686666659e258a592bd268d59df5bea23552e60734",
+    "tests/test_shared_account.py": "060ae40a919c6bc6fed9cbc6e972e4b9e27f880b04a4d7d195fc1c196c9f6c29"
+  }
+}

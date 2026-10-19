@@ -251,6 +251,49 @@ class OptionSharedRolloverTests(unittest.TestCase):
         self.assertFalse(tomorrow.sent)
         later.stop()
 
+    def test_cross_day_terminal_draining_finishes_after_authoritative_check(self):
+        account, _, _, _, _ = self.shared(preserve_external=True)
+        account.start(resume=True); account.authorize(); account.stop()
+        store = JsonStateStore(self.source)
+        saved = store.load(); payload = deepcopy(saved.payload)
+        payload["component_states"]["shared_account"]["shared"].update(
+            draining=[CLIENT], suspended=[CLIENT])
+        store.save(payload, expected_generation=saved.generation)
+        before = self.source.read_bytes()
+        transport = DetailsTransport("20260817"); transport.bucket = "2"
+        new, service, _, _, _ = self.shared(current=inputs(date(2026, 8, 17), "dolphindb"),
+            transport=transport, preserve_external=True)
+        new.start(resume=True)
+        self.assertFalse(service._draining)
+        self.assertEqual(new.rollover_audit["completed_draining"], [CLIENT])
+        self.assertEqual(service.position_manager.position(CLIENT, OPTION), -1)
+        self.assertFalse(transport.sent)
+        self.assertTrue(any(p.read_bytes() == before for p in self.root.glob(self.source.name+".before-rollover-g*.json")))
+        new.authorize(); new.stop()
+        self.assertFalse(store.load().payload["component_states"]["shared_account"]["shared"]["draining"])
+
+    def test_draining_does_not_hide_failed_pending_or_query_failure(self):
+        for mode in ("failed", "pending", "query"):
+            path = self.root / (mode+".json"); path.write_bytes(self.before)
+            account, _, _, _, _ = self.shared(path=path, preserve_external=True)
+            account.start(resume=True); account.authorize(); account.stop()
+            store = JsonStateStore(path); saved = store.load(); payload = deepcopy(saved.payload)
+            shared = payload["component_states"]["shared_account"]
+            shared["shared"]["draining"] = [CLIENT]
+            if mode != "query": shared[mode] = True
+            store.save(payload, expected_generation=saved.generation)
+            before = path.read_bytes()
+            transport = DetailsTransport("20260817")
+            if mode == "query":
+                transport.query_gross_positions = lambda: (_ for _ in ()).throw(RuntimeError("fixture query failure"))
+            new, _, _, _, _ = self.shared(path=path, current=inputs(date(2026, 8, 17), "dolphindb"),
+                transport=transport, preserve_external=True)
+            with self.assertRaises((ValueError, RuntimeError)):
+                new.start(resume=True)
+            new.stop()
+            self.assertEqual(path.read_bytes(), before)
+            self.assertFalse(transport.sent)
+
     def test_owned_migration_rejects_missing_owned_quantity_without_overwriting_checkpoint(self):
         account, _, _, _, _ = self.shared()
         account.start(resume=True); account.authorize(); account.stop()

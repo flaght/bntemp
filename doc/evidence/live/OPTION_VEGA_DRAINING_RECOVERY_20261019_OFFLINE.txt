@@ -1,0 +1,7 @@
+2026-10-19 offline only, no real orders or broker/database connections.
+08 base: Ran 91 tests, OK.
+Option shared rollover: Ran 28 tests, OK.
+Shared account: Ran 84 tests, OK.
+IPC / real processes / scope migration: Ran 47 tests, OK (local Unix socket permission granted).
+Total 250 passed.
+New regressions: terminal draining resumes across day only after authoritative account checks; actual owned short retained; old checkpoint backup retained; failure/pending/query error preserve original bytes; repeated completed suspend does not recreate draining.

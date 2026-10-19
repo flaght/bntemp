@@ -238,6 +238,19 @@ class CtpSharedAccountLifecycle:
             if any(not state.status.is_terminal for state in self.client.order_state_machine.states()):
                 raise RuntimeError("首期共享恢复要求已结束订单，保留原文件并先对账")
             self._validate_account()
+            if self.service._draining:
+                draining = sorted(self.service._draining)
+                checkpoint = self.service._checkpoint
+                self.service._checkpoint = None
+                try:
+                    self.service.poll()  # 尚未授权；只完成终态贡献冻结，不重发旧目标。
+                finally:
+                    self.service._checkpoint = checkpoint
+                if self.service._draining:
+                    raise RuntimeError("权威核验后仍有未完成策略停止")
+                if self.rollover_audit is None:
+                    self.rollover_audit = {}
+                self.rollover_audit["completed_draining"] = draining
             if transform is not None and commit_restored:
                 self.manager.commit_restore()
         else:

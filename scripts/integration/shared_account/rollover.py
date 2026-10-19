@@ -53,8 +53,21 @@ def payload_for_day(account, payload):
     if candidate != new:
         raise ValueError("跨日不能更改账户身份、执行模式或管理范围")
     shared = payload["component_states"]["shared_account"]
-    if shared.get("failed") or shared.get("pending") or shared.get("shared", {}).get("draining"):
+    if shared.get("failed") or shared.get("pending"):
         raise ValueError("共享跨日存在未决发送或未完成停止")
+    if shared.get("shared", {}).get("draining"):
+        from bomber.framework.trader import persistence as storage
+        orders = [row for rows in payload["orders"].values() for row in storage._decode_orders(rows)]
+        positions = storage._decode_positions(payload["positions"])
+        from bomber.framework.trader.execution.attribution import PositionAttributionLedger
+        PositionAttributionLedger.validate_checkpoints(positions.attribution,
+            {key: storage._decode_orders(rows) for key, rows in payload["orders"].items()})
+        if (any(not row.state.status.is_terminal for row in orders)
+                or any(positions.snapshot.working_quantities.values())
+                or any(row.get("orders") for row in payload["ctp_drivers"].values())
+                or any(not row["released"] for row in positions.attribution.get("orders", {}).values())):
+            raise ValueError("共享跨日停止尚有未终结订单、冻结份额或Driver关联")
+        # 保留draining供恢复后poll按实际归属冻结目标；柜台核验前不写原文件。
     journal = shared.get("shared", {}).get("event_journal", {})
     if any(row["status"] != "completed" for row in journal.get("requests", {}).values()):
         raise ValueError("共享跨日存在未决跨进程请求")

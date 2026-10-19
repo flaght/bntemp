@@ -602,6 +602,26 @@ class SharedAccountTests(unittest.TestCase):
             self.assertEqual(account.external_gross[str(self.instrument)], (0, 1))
             account.stop()
 
+    def test_repeated_stop_after_contribution_frozen_does_not_persist_draining_again(self):
+        modules = self.native_modules()
+        with TemporaryDirectory() as directory:
+            path = Path(directory)/"account.json"
+            account, service, transport, (one, two), _ = self.native_account(path, modules,
+                scoped=True, execution_mode="independent", preserve_external=True)
+            one.register_execution_event_handler(lambda event: None)
+            two.register_execution_event_handler(lambda event: None)
+            account.start(resume=False); service.start(); one.start(); two.start(); account.authorize()
+            self.submit(one, 1); transport.fill(transport.sent[-1]["OrderRef"])
+            one.begin_stop(); service.poll()
+            self.assertTrue(one.finish_stop_events())
+            one.stop()
+            service.suspend_strategy("one")  # Runner/disconnect重复清理。
+            self.assertNotIn("one", service._draining)
+            self.assertNotIn("one", account.manager.repository.load().payload[
+                "component_states"]["shared_account"]["shared"]["draining"])
+            self.assertEqual(service.position_manager.position("one", "main"), 1)
+            two.begin_stop(); service.poll(); two.finish_stop_events(); two.stop(); account.stop()
+
     def test_same_contract_two_owners_and_external_are_isolated_across_venues(self):
         modules = self.native_modules()
         for venue in ("CFFEX", "DCE", "CZCE", "SHFE", "INE"):

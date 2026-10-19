@@ -1338,3 +1338,7 @@ CTP期权/期货缺失Bar不自动补查DolphinDB；日志不改变查询、等�
 本入口已接入统一 `--market-config` / `--market-source`。回测使用文件，Live默认CTP，
 可配置DolphinDB共享分钟流；行情选择独立于执行与历史来源。
 参数、BN业务输入限制、共享worker用法及验证见[公共配置说明](../market_sources/README.md)。
+
+### 跨日残留停止标志恢复（2026-10-19）
+
+若failed/pending为false但draining仍含策略，不能直接手改JSON清标志。跨日入口现先核验原订单终态、在途量、Driver关联与归属计划；柜台权威对账通过后，在未授权状态冻结旧目标为实际归属量、完成draining，再备份提交。重复停止已完成策略不再重新挂draining。未决发送/订单/IPC及查询失败仍保留原文件。250项离线回归通过；[同步说明](../../doc/HANDOFF/live/HANDOFF_OPTION_VEGA_DRAINING_RECOVERY_2026-10-19.md)，线上恢复待验。

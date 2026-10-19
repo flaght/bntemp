@@ -329,6 +329,9 @@ class SharedAccountExecutionService(AccountExecutionService):
             if strategy_id not in self._ports:
                 raise ValueError("未知策略")
             with self._lock:
+                if (strategy_id in self._suspended and strategy_id not in self._draining
+                        and not self._owner_working(strategy_id)):
+                    return  # 已冻结的停止不重复挂入draining，避免清理/断开时再次落盘。
                 self._suspended.add(strategy_id)
                 self._draining.add(strategy_id)
             self._cancel_owner(strategy_id)
