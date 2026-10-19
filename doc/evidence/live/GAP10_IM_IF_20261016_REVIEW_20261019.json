@@ -1,0 +1,25 @@
+{
+  "status": "reviewed_not_full_acceptance",
+  "account_sha256": "73e0671ce92e86c0be9d02dece0ab2ea6abe55ed29d34b2ab94e93fee31f92d5",
+  "account_generation": 2470,
+  "checkpoint_modified": false,
+  "orders": 5,
+  "all_orders_filled": true,
+  "ema_fills": 5,
+  "ema_events": 15,
+  "ema_ack": 15,
+  "worker_cursor": 15,
+  "worker_fills_received": 5,
+  "server_status": "failed",
+  "server_failure": "账户估值行情失效: {'ready': False, 'sources': [{'domain': 'market', 'channel': 'ctp', 'source_id': 'CTP_LIVE_SOURCE'}], 'issues': [{'domain': 'market', 'channel': 'ctp', 'source_id': 'CTP_LIVE_SOURCE', 'code': 'INSTRUMENT_UNHEALTHY', 'detail': 'IM2610.CFFEX', 'context': {'event_age_seconds': 10.025154137, 'receive_age_seconds': 8.979555212, 'trading_day': '20261016', 'max_age_seconds': 10.0, 'timestamp_regressed': False}}]}",
+  "final_active_orders": 0,
+  "historical_owned_position": {
+    "strategy_id": "ema-im-three",
+    "instrument": "IM2610.CFFEX",
+    "quantity": "-1"
+  },
+  "current_broker_disappearance_reason": "not_proven_by_supplied_files",
+  "calendar_fills": 0,
+  "cross_fills": 0,
+  "conclusion": "Server failed on 10-second IM2610 market freshness; worker shutdown errors followed server loss. Historical ownership remains archived; do not resume under new IM2611 routes or overwrite ledger."
+}

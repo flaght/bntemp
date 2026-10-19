@@ -159,11 +159,31 @@ def occupied_positions(transport):
     return {str(key): value for key, value in transport.query_gross_positions().items() if any(value)}
 
 
+def _query_preflight(stage, query):
+    """启动前只读查询最多两次；不重试登录、授权、报单或业务校验。"""
+    for attempt in (1, 2):
+        started = time.monotonic()
+        print(f"CTP只读预检查询: stage={stage} attempt={attempt}/2", flush=True)
+        try:
+            result = query()
+        except TimeoutError:
+            print(f"CTP只读预检查询超时: stage={stage} attempt={attempt}/2 "
+                  f"elapsed_seconds={time.monotonic() - started:.3f} "
+                  f"retry={attempt == 1}", flush=True)
+            if attempt == 2:
+                raise
+            time.sleep(1)
+        else:
+            print(f"CTP只读预检查询完成: stage={stage} attempt={attempt}/2 "
+                  f"elapsed_seconds={time.monotonic() - started:.3f}", flush=True)
+            return result
+
+
 def assert_account_ready(driver, *, reconcile_positions=True):
     if reconcile_positions:
-        driver.reconcile()
-    account = driver.reconcile_account_state()
-    if driver.reconcile_active_orders().orders:
+        _query_preflight("positions", driver.reconcile)
+    account = _query_preflight("account", driver.reconcile_account_state)
+    if _query_preflight("orders", driver.reconcile_active_orders).orders:
         raise RuntimeError("账户已有活动订单，拒绝自动接管")
     if "CNY" not in account.balances or account.balances["CNY"].available <= 0:
         raise RuntimeError("权威查询未取得可用CNY资金")

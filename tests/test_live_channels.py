@@ -9,7 +9,7 @@ import json
 import sys
 from types import SimpleNamespace as NS
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from tests.test_live_common import ROOT, NOW, MONO, load
 
@@ -26,6 +26,62 @@ def feed():
         latest_receive_monotonic_ns=MONO,
         health_snapshot=NS(state="ready", reason="healthy", last_event_ts=NOW,
                            last_event_received_ns=NOW))
+
+
+class PreflightQueryTests(unittest.TestCase):
+    def setUp(self):
+        self.account = NS(balances={"CNY": NS(available=Decimal(100))})
+        self.driver = NS(reconcile=Mock(return_value={}),
+            reconcile_account_state=Mock(return_value=self.account),
+            reconcile_active_orders=Mock(return_value=NS(orders=())))
+        sleeper = patch.object(ctp.time, "sleep")
+        self.sleep = sleeper.start()
+        self.addCleanup(sleeper.stop)
+
+    def test_each_readonly_stage_can_timeout_once_then_succeed(self):
+        for method, result in (("reconcile", {}), ("reconcile_account_state", self.account),
+                               ("reconcile_active_orders", NS(orders=()))):
+            with self.subTest(stage=method):
+                for name in ("reconcile", "reconcile_account_state", "reconcile_active_orders"):
+                    getattr(self.driver, name).reset_mock(side_effect=True)
+                getattr(self.driver, method).side_effect = [TimeoutError("query timeout"), result]
+                self.assertIs(ctp.assert_account_ready(self.driver), self.account)
+                self.assertEqual(getattr(self.driver, method).call_count, 2)
+
+    def test_persistent_timeout_keeps_original_failure_and_stops_preflight(self):
+        original = TimeoutError("orders final response timed out")
+        self.driver.reconcile_active_orders.side_effect = original
+        with self.assertRaises(TimeoutError) as caught:
+            ctp.assert_account_ready(self.driver)
+        self.assertIs(caught.exception, original)
+        self.assertEqual(self.driver.reconcile_active_orders.call_count, 2)
+        self.sleep.assert_called_once_with(1)
+
+    def test_disconnect_or_query_rejection_is_not_retried(self):
+        for error in (RuntimeError("disconnected"), RuntimeError("request rejected: -2"), ValueError("bad snapshot")):
+            with self.subTest(error=error):
+                self.driver.reconcile.reset_mock(side_effect=True)
+                self.driver.reconcile.side_effect = error
+                with self.assertRaises(type(error)):
+                    ctp.assert_account_ready(self.driver)
+                self.assertEqual(self.driver.reconcile.call_count, 1)
+        self.sleep.assert_not_called()
+        self.driver.reconcile_account_state.assert_not_called()
+
+    def test_active_order_after_retry_is_not_treated_as_empty(self):
+        self.driver.reconcile_active_orders.side_effect = [TimeoutError(), NS(orders=(object(),))]
+        with self.assertRaisesRegex(RuntimeError, "账户已有活动订单"):
+            ctp.assert_account_ready(self.driver)
+
+    def test_insufficient_funds_still_rejects(self):
+        self.account.balances["CNY"].available = 0
+        with self.assertRaisesRegex(RuntimeError, "可用CNY资金"):
+            ctp.assert_account_ready(self.driver)
+        self.sleep.assert_not_called()
+
+    def test_optional_positions_query_remains_skipped(self):
+        self.assertIs(ctp.assert_account_ready(self.driver, reconcile_positions=False), self.account)
+        self.driver.reconcile.assert_not_called()
 
 
 class ChannelTests(unittest.TestCase):
