@@ -292,11 +292,11 @@ def main() -> None:
     parser.add_argument("--products", required=True, help="逗号分隔的品种，例如 RB,HC,I")
     parser.add_argument("--start-day", required=True, type=date.fromisoformat)
     parser.add_argument("--end-day", required=True, type=date.fromisoformat)
-    parser.add_argument("--bars-dir", type=Path, help="覆盖 FUT_KLINE_DATA_DIR")
-    parser.add_argument("--data-root", type=Path, help="CTP 数据根目录")
+    parser.add_argument("--bars-dir", type=Path, help="期货分钟文件目录；未提供时从 --data-root 推导")
+    parser.add_argument("--data-root", type=Path, help="显式指定文件根目录；或逐项指定行情和资料路径，不从环境变量补齐")
     parser.add_argument("--bar-timestamp", choices=("start", "end"), default="end", help="源分钟标签；公共层统一为结束时刻")
     parser.add_argument("--contract-struct", type=Path, help="覆盖角色表路径")
-    parser.add_argument("--fut-basic", type=Path, help="覆盖 FUT_ROLE_DATA_DIR/fut_basic.feather")
+    parser.add_argument("--fut-basic", type=Path, help="合约基础资料文件；未提供时从 --data-root 推导")
     parser.add_argument("--factors", type=Path, help="默认角色表同目录 fut_adjustment_factors.feather")
     parser.add_argument("--factor-availability", choices=("aligned", "explicit"), default="aligned",
                         help="默认上游已对齐当日因子；explicit 要求 available_ns")
@@ -323,7 +323,7 @@ def main() -> None:
     started = perf_counter()
     phase = _start_phase("输入路径解析")
     try:
-        paths = resolve_futures_args(args)
+        paths = resolve_futures_args(args, use_environment=False)
     except (ValueError, FileNotFoundError) as exc:
         parser.error(str(exc))
     _finish_phase("输入路径解析", phase)

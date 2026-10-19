@@ -123,7 +123,7 @@ if args.market_sources:
  sys.modules[indicators.__name__] = indicators
  names = ['tests.test_market_sources']
 else:
- names = ['tests.test_option_vega_assembly', 'tests.test_position_attribution', 'tests.test_index_query_feed',
+ names = ['tests.test_option_feature_backtest', 'tests.test_option_vega_assembly', 'tests.test_position_attribution', 'tests.test_index_query_feed',
   'tests.test_option_replay_test', 'tests.test_option_execution_audit', 'tests.test_option_dolphin_stream']
 suite=unittest.defaultTestLoader.loadTestsFromNames(names)
 result=unittest.TextTestRunner(verbosity=2).run(suite)

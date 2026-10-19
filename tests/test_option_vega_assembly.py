@@ -71,6 +71,7 @@ class AssemblyTests(unittest.TestCase):
             "--calendar-id", "china.cffex", "--simnow-environment", "replay",
             "--replay-md-trading-day", "20260813"]
         recording = entry.parse_args(common)
+        self.assertEqual(recording.index_source, "dolphindb-dfs")
         self.assertEqual(recording.mode, "recording")
         self.assertEqual(recording.valuation_day, "20260813")
         self.assertEqual(recording.execution_policy.account_reconciliation.value, "off")
@@ -88,7 +89,7 @@ class AssemblyTests(unittest.TestCase):
             entry.parse_args(common + ["--valuation-day", "20261009"])
         mapped = entry.parse_args(common + ["--index-source", "dolphindb-dfs", "--replay-test-start-time", "13:55"])
         self.assertEqual(mapped.replay_test_start_time, "13:55")
-        for extras in (["--replay-test-start-time", "13:55"], ["--replay-test-source-time", "16:00"],
+        for extras in (["--index-source", "dolphindb", "--replay-test-start-time", "13:55"], ["--replay-test-source-time", "16:00"],
                 ["--index-source", "dolphindb-dfs", "--replay-test-start-time", "25:00"],
                 ["--index-source", "dolphindb-dfs", "--replay-test-start-time", "13:55", "--resume"]):
             with redirect_stderr(StringIO()), self.assertRaises(SystemExit):

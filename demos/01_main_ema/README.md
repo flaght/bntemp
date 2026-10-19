@@ -193,12 +193,13 @@ IF实际时段从部署的时段表读取，日期从 `china.cffex` Provider 获
 
 ### 启动命令
 
-从 pro 根目录、在已安装运行依赖的环境中执行，先设置 `export PYTHONPATH=.`。入口自动读取已有 `.env` 配置；没有配置数据路径时，可通过可选的 `--data-root` 或各文件路径参数指定。示例日期需与实际数据匹配。
+从 pro 根目录、在已安装运行依赖的环境中执行。回测只读取文件，必须显式提供 `--data-root /实际数据根目录`，或逐项提供所需文件／目录路径；不再从 `.env` 或环境变量补数据路径。下面的 `/path/to/market-data` 是占位符，请替换为真实路径，日期也须匹配实际文件。
 
 **完整执行（显式设置常用参数）：**
 
 ```bash
 python demos/01_main_ema/run_backtest.py \
+  --data-root /path/to/market-data \
   --product RB \
   --start-day 2026-01-05 --end-day 2026-05-26 \
   --fast 3 --slow 5 --quantity 1 \
@@ -209,15 +210,16 @@ python demos/01_main_ema/run_backtest.py \
 
 ```bash
 python demos/01_main_ema/run_backtest.py \
+  --data-root /path/to/market-data \
   --product RB \
   --start-day 2026-01-05 --end-day 2026-05-26
 ```
 
-默认执行采用参数表中的默认值及已有数据路径配置；例如默认启用绩效图，不要求必须产生成交。
+默认执行采用参数表中的策略默认值；文件路径仍须显式指定。例如默认启用绩效图，不要求必须产生成交。
 
 ### 参数说明
 
-“必选”表示启动时必须传入；“可选”表示有默认值或可由已有配置解析。数据路径虽然是可选参数，但运行前必须能解析到有效文件。
+“可选”路径可由显式 `--data-root` 推导；如果不传根目录，就须逐项提供所需路径，不能全部省略。
 
 | 参数 | 必选 / 可选 | 含义与默认值 |
 | --- | --- | --- |

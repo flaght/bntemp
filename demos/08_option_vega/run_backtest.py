@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import argparse
+from collections import defaultdict
 from datetime import date
 from decimal import Decimal
 import json
+import math
 from pathlib import Path
 import sys
 from time import perf_counter
@@ -68,14 +70,18 @@ def run_case(args):
     from bomber.model.identifiers import InstrumentId, TraderId
     from bomber.framework.market.basic.base import DataType, InstrumentMeta
     from bomber.framework.trader import (CtpFuturesBasicProfile, MarketStreamBinding,
-        NautilusMarketFeedAdapter, NautilusSimExecutionBackend, RuntimeMode,
-        UnifiedHistoricalRuntime, UnifiedStrategyRunner)
+        NautilusMarketFeedAdapter, NautilusSimExecutionBackend,
+        UnifiedHistoricalRuntime)
     from bomber.framework.trader.instrument_factory import instrument_meta, make_future, make_option
     assemble_strategy_components = import_module("demos.08_option_vega.assembly").assemble_strategy_components
 
     started = perf_counter()
     phase = _start_phase("输入路径解析与配置校验")
-    args = resolve_option_args(args, require_futures=True)
+    args = resolve_option_args(args, require_futures=True, require_index=False, use_environment=False)
+    features = import_module("demos.08_option_vega.features")
+    index_bundle, index_binding, index_records, index_identity = features.read_index_features(args,
+        int(pd.Timestamp(args.start_day, tz="Asia/Shanghai").value),
+        int((pd.Timestamp(args.end_day, tz="Asia/Shanghai") + pd.Timedelta(days=1)).value)-1)
     config = OptionVegaConfig(
         nav=args.nav if args.nav is not None else args.starting_balance, vega_budget=args.vega_budget,
         delta_targets=tuple(float(item.strip()) for item in args.delta_targets.split(",")),
@@ -99,7 +105,7 @@ def run_case(args):
         calendar = load_calendar(args.calendar, args.start_day, args.end_day)
         calendar_source = str(args.calendar)
     else:
-        calendar = infer_market_calendar((args.fut_dir, args.opt_dir, args.index_dir),
+        calendar = infer_market_calendar((args.fut_dir, args.opt_dir),
                                          args.start_day, args.end_day)
         calendar_source = "MARKET_DATES"
     print(f"交易日来源={calendar_source} 日期范围={calendar[0]}..{calendar[-1]}")
@@ -114,14 +120,17 @@ def run_case(args):
     phase = _start_phase("行情目录扫描与同月对冲资格组装")
     opt_paths = inventory(args.opt_dir, args.start_day, args.end_day, lambda key: key in contracts)
     fut_paths = inventory(args.fut_dir, args.start_day, args.end_day, lambda key: key in future_rows)
-    idx_paths = inventory(args.index_dir, args.start_day, args.end_day, lambda key: key == args.index_code)
+    index_minutes = defaultdict(set)
+    for record in index_records:
+        minute = pd.Timestamp(record.ts_event, tz="UTC").tz_convert("Asia/Shanghai")
+        index_minutes[minute.date()].add(minute)
     needed = {}
     options_by_day = {}
     skipped_hedges = []
     for day in days:
         candidates = tuple(sorted(key for candidate_day, key in opt_paths
             if candidate_day == day and contracts[key].list_day <= day <= contracts[key].last_day))
-        if not candidates or (day, args.index_code) not in idx_paths:
+        if not candidates or not index_minutes[day]:
             raise FileNotFoundError(f"{day}: 缺少{args.option_product}认购链或指数{args.index_code}，不截断回测")
         candidates, skipped = filter_hedgeable_options(candidates, contracts, future_rows, day)
         for key in skipped:
@@ -131,7 +140,6 @@ def run_case(args):
             skipped_hedges.append({"date": str(day), "future": key, "reason": reason})
         if not candidates:
             raise ValueError(f"{day}: 无可用已上市同月期货对冲的期权候选，跳过的期货={skipped}")
-        needed[(day, args.index_code)] = idx_paths[(day, args.index_code)]
         for key in candidates:
             info = contracts[key]
             if info.future not in future_rows:
@@ -165,14 +173,14 @@ def run_case(args):
 
     _finish_phase("行情目录扫描与同月对冲资格组装", phase)
     phase = _start_phase("期权链、期货与指数行情加载校验")
-    # 三类资产分别索引，严格准备完成后由回放源消费，不再次读取原文件。
+    # 交易腿使用行情文件；指数单独经标准特征文件及可见时钟消费。
     plan = plan_option_chain((BarFileKey(
-        "option" if key in contracts else "index" if key == args.index_code else "future", key, day,
+        "option" if key in contracts else "future", key, day,
     ) for day, key in needed), requested=(args.start_day, args.end_day))
     spec = BarReadSpec(timestamp_label=args.bar_timestamp, trading_day_policy="day_session")
     bundle = prepare_option_chain(
-        {"option": args.opt_dir, "future": args.fut_dir, "index": args.index_dir}, plan,
-        specs={kind: spec for kind in ("option", "future", "index")},
+        {"option": args.opt_dir, "future": args.fut_dir}, plan,
+        specs={kind: spec for kind in ("option", "future")},
     )
     prepared = {(source.result.key.trading_day, source.result.key.symbol): source.result for source in bundle.sources}
     frames = {identity: source.frame for identity, source in prepared.items()}
@@ -181,11 +189,10 @@ def run_case(args):
     # 指数提供最终清仓的信号时钟。候选合约可能未交易或已提前平仓，
     # 不应要求每个候选都有收盘行情；实际持仓的新鲜报价由策略逐分钟检查。
     final_cutoff = pd.Timestamp(f"{days[-1]} {config.flatten_slot}", tz="Asia/Shanghai")
-    final_index = frames[(days[-1], args.index_code)]
-    if final_index.datetime.max() < final_cutoff + pd.Timedelta(minutes=2):
+    if max(index_minutes[days[-1]]) < final_cutoff + pd.Timedelta(minutes=2):
         raise ValueError(f"{days[-1]}/{args.index_code}: 指数在最终清仓时点后不足两分钟行情，调早--flatten-slot")
     for day in days:
-        minutes = set(frames[(day, args.index_code)].datetime)
+        minutes = index_minutes[day]
         synchronized = any(pd.Timestamp(f"{day} {config.option_slot}", tz="Asia/Shanghai") in
             minutes & set(frames[(day, key)].datetime) & set(frames[(day, contracts[key].future)].datetime)
             for key in options_by_day[day])
@@ -235,13 +242,18 @@ def run_case(args):
         execution = build_simulation_execution(backend, instrument_limits=risk_limits(
             config, contracts, instruments, multipliers, args.max_notional))
         positions, prices, client = execution.positions, execution.prices, execution.client
-        runner = UnifiedStrategyRunner(RuntimeMode.HISTORICAL, position_manager=positions)
+        runner_type = import_module("demos.08_option_vega.backtest_runtime").OptionFeatureBacktestRunner
+        runner = runner_type(positions=positions, feed=feed, backend=backend,
+            bundle=index_bundle, binding=index_binding, records=index_records,
+            index_key=args.index_code, wait_seconds=args.frame_wait_seconds,
+            max_market_age_seconds=args.max_market_age_seconds)
         strategy = assemble_strategy_components(runner, execution, config=config,
             contracts=contracts, futures=future_rows, instruments=instruments,
             index_key=args.index_code, index_id=index_id, trading_days=calendar,
             options_by_day=options_by_day, feeds={"option-bars": feed},
             feed_by_key={key: "option-bars" for key in all_ids}, final_day=days[-1],
             strategy_id="option-vega")
+        runner.strategy = strategy
         adapter = NautilusMarketFeedAdapter("option-vega-clock", feed, backend,
             tuple(MarketStreamBinding(item, DataType.BAR, "1-MINUTE") for item in instruments.values()), manage_lifecycle=False)
         runtime = UnifiedHistoricalRuntime("option-vega-runtime", runner, adapter)
@@ -277,12 +289,15 @@ def run_case(args):
                 "calendar_range": [str(calendar[0]), str(calendar[-1])],
                 "option_product": args.option_product, "future_product": args.future_product,
                 "index": args.index_code, "bar_timestamp": args.bar_timestamp,
+                "index_feature": index_identity, "frame_wait_seconds": args.frame_wait_seconds,
+                "skipped_index_frames": sum(row["status"] == "SKIPPED" for row in runner.frame_audit),
                 "bars": result.replay_summary.bars, "frames": strategy.frames,
                 "entry_decisions": strategy.entry_decisions, "submissions": strategy.submissions,
                 "orders": len(orders), "fills": len(fills), "remaining_positions_or_working": remaining,
                 "report_errors": errors, "config": vars(config),
                 "simulation": "NETTING/BAR/FIXED_FEE/PREMIUM_PERCENT_MARGIN; NO_EXPIRY_SETTLEMENT",
                 "backend": str(result.backend_result)}
+            (output / "feature_frames.json").write_text(json.dumps(runner.frame_audit, ensure_ascii=False, indent=2) + "\n")
             (output / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2, default=str) + "\n")
             print(f"frames={strategy.frames} entries={strategy.entry_decisions} orders={len(orders)} fills={len(fills)} 报表={output}")
             if remaining or errors or not strategy.flatten_requested:
@@ -316,9 +331,15 @@ def main():
     add_market_source_arguments(parser, backtest=True)
     parser.add_argument("--start-day", type=date.fromisoformat, required=True)
     parser.add_argument("--end-day", type=date.fromisoformat, required=True)
-    parser.add_argument("--data-root", type=Path)
-    for name in ("fut-dir", "opt-dir", "index-dir", "fut-basic", "opt-basic"):
+    parser.add_argument("--data-root", type=Path,
+        help="显式文件根目录；或逐项指定交易腿和基础资料路径，不从环境变量补齐")
+    for name in ("fut-dir", "opt-dir", "fut-basic", "opt-basic"):
         parser.add_argument("--" + name, type=Path)
+    import_module("demos.08_option_vega.features").add_index_feature_arguments(parser)
+    parser.add_argument("--index-feature-file", type=Path, required=True,
+        help="标准指数特征CSV/Parquet及同名.manifest.json；保留版本和可见时间")
+    parser.add_argument("--frame-wait-seconds", type=float, default=2,
+        help="与Live相同的分钟等待预算，范围[0,30]秒")
     parser.add_argument("--calendar", type=Path, help="可选交易日历；未配置时由完整行情日期自动推导")
     parser.add_argument("--option-product", default="MO")
     parser.add_argument("--future-product", default="IM")
@@ -353,6 +374,8 @@ def main():
     parser.add_argument("--no-tearsheet", action="store_true")
     parser.add_argument("--require-fills", action="store_true")
     args = parser.parse_args()
+    if not math.isfinite(args.frame_wait_seconds) or not 0 <= args.frame_wait_seconds <= min(30, args.max_market_age_seconds):
+        parser.error("frame-wait-seconds须在[0,min(30,max-market-age-seconds)]秒")
     try:
         market_config_from_args(args)
     except (ValueError, TypeError, OSError) as error:

@@ -16,6 +16,8 @@ from bomber.framework.dataprep.calendar import load_calendar, infer_calendar_fro
 from bomber.framework.dataprep.metadata import load_futures_basic, load_options_basic
 from bomber.framework.dataprep.references import load_role_assignments
 from bomber.framework.dataprep.scenarios import plan_fixed_contracts, prepare_fixed_contracts, prepare_option_chain, plan_option_chain
+from bomber.framework.dataprep.paths import resolve_futures_args, resolve_option_args
+from types import SimpleNamespace
 
 DAY = date(2026, 9, 11)
 
@@ -40,6 +42,26 @@ class InputContractsTests(unittest.TestCase):
             env={"FUT_KLINE_DATA_DIR": str(self.root / "env")}, validate=False)
         self.assertEqual(paths.fut, self.root / "explicit")
         self.assertEqual(paths.sources["fut"], "explicit:bars_dir")
+
+    def test_backtest_paths_do_not_fall_back_to_environment(self):
+        (self.root / "kline/fut").mkdir(parents=True)
+        (self.root / "role").mkdir()
+        for name in ("fut_basic.feather", "fut_contract.feather"):
+            (self.root / "role" / name).touch()
+        with patch.dict("os.environ", {"CTP_DATA_DIR": str(self.root)}):
+            with self.assertRaisesRegex(InputError, "PATH_NOT_FOUND"):
+                resolve_futures_args(SimpleNamespace(), use_environment=False)
+            paths = resolve_futures_args(SimpleNamespace(data_root=self.root), use_environment=False)
+        self.assertEqual(paths.fut, self.root / "kline/fut")
+
+    def test_option_feature_file_does_not_require_legacy_index_directory(self):
+        for name in ("kline/fut", "kline/opt", "role"):
+            (self.root / name).mkdir(parents=True)
+        for name in ("fut_basic.feather", "opt_basic.feather"):
+            (self.root / "role" / name).touch()
+        args = resolve_option_args(SimpleNamespace(data_root=self.root), require_futures=True,
+            require_index=False, use_environment=False)
+        self.assertEqual(args.opt_dir, self.root / "kline/opt")
 
     def test_new_kline_parent_overrides_root_legacy_does_not(self):
         parent = self.root / "new"

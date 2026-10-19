@@ -329,11 +329,11 @@ def main() -> None:
     parser.add_argument("--product", required=True, help="品种代码，例如 RB、I、HC")
     parser.add_argument("--start-day", type=date.fromisoformat, required=True)
     parser.add_argument("--end-day", type=date.fromisoformat, required=True)
-    parser.add_argument("--bars-dir", type=Path, help="覆盖 KLINE_DIR")
-    parser.add_argument("--data-root", type=Path, help="CTP 数据根目录")
+    parser.add_argument("--bars-dir", type=Path, help="期货分钟文件目录；未提供时从 --data-root 推导")
+    parser.add_argument("--data-root", type=Path, help="显式指定文件根目录；或逐项指定行情和资料路径，不从环境变量补齐")
     parser.add_argument("--bar-timestamp", choices=("start", "end"), default="end", help="源分钟标签；公共层统一为结束时刻")
-    parser.add_argument("--contract-struct", type=Path, help="覆盖 ROLE_DIR 中的合约角色表")
-    parser.add_argument("--fut-basic", type=Path, help="覆盖 ROLE_DIR 中的合约基础表")
+    parser.add_argument("--contract-struct", type=Path, help="合约角色表文件；未提供时从 --data-root 推导")
+    parser.add_argument("--fut-basic", type=Path, help="合约基础资料文件；未提供时从 --data-root 推导")
     parser.add_argument("--factors", type=Path, help="外部累计复权因子；默认角色表同目录 fut_adjustment_factors.feather")
     parser.add_argument("--factor-availability", choices=("aligned", "explicit"), default="aligned",
                         help="默认使用上游已对齐当日因子；explicit 强制要求 available_ns")
@@ -359,7 +359,7 @@ def main() -> None:
     phase_started_at = _start_phase("输入路径解析")
     try:
         # 这里只解析并检查路径；资料内容在 run_case 中读取。
-        paths = resolve_futures_args(args)
+        paths = resolve_futures_args(args, use_environment=False)
     except (ValueError, FileNotFoundError) as exc:
         parser.error(str(exc))
     _finish_phase("输入路径解析", phase_started_at)

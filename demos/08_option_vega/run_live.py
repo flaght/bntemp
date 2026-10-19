@@ -21,6 +21,7 @@ if __package__ in (None, ""):
 from bomber.framework.market.sources import (add_market_source_arguments, market_config_from_args,
     source_config, create_market_feed, assemble_minute_market)
 from .vega_signal import OptionVegaConfig
+from .features import add_index_feature_arguments, index_bundle
 
 
 def parse_args(argv=None):
@@ -29,11 +30,9 @@ def parse_args(argv=None):
     p.add_argument("--log-level", choices=("DEBUG", "INFO", "WARNING", "ERROR"), default="INFO")
     p.add_argument("--mode", choices=("recording", "model", "simnow"), default="recording")
     add_market_source_arguments(p, table_env="DDB_OPTION_BAR_TABLE")
-    p.add_argument("--index-source", choices=("dolphindb", "dolphindb-dfs"), default="dolphindb")
-    p.add_argument("--index-feature-config", type=Path, default=Path(__file__).resolve().parents[2] /
-        "bomber/framework/dataprep/features/configs/features.json")
-    p.add_argument("--index-dataset", default="index.minute")
-    p.add_argument("--index-schema-version", type=int, default=1)
+    p.add_argument("--index-source", choices=("dolphindb", "dolphindb-dfs"), default="dolphindb-dfs",
+        help="默认使用与回测共用声明的DFS特征；dolphindb保留旧分钟流兼容入口")
+    add_index_feature_arguments(p)
     p.add_argument("--index-database", help="可选覆盖配置中的DFS路径")
     p.add_argument("--index-table", help="可选覆盖配置中的原表名")
     p.add_argument("--index-availability", choices=("observed", "source-time", "update-time"),
@@ -239,14 +238,12 @@ def prepare_inputs(args, context, lifecycle):
     index_id = InstrumentId.from_str(args.index_code + ".XSHG")
     index_query_feed = None
     if args.index_source == "dolphindb-dfs":
-        from bomber.framework.dataprep.features import load_feature_bundle, FeatureProviderFactory, FeatureQueryCache
+        from bomber.framework.dataprep.features import FeatureProviderFactory, FeatureQueryCache
         from bomber.framework.dataprep.sources.policy import DataSourcePurpose
         from bomber.framework.market.stream.feature_query import FeatureQueryBarFeed
-        bundle = load_feature_bundle(args.index_feature_config, DolphinDbReferenceConfig.from_env(
-            read_timeout_seconds=args.index_query_timeout))
-        binding = bundle.binding(args.index_dataset, args.index_schema_version)
-        if binding.spec.frequency.period_ns != 60_000_000_000 or binding.bar_projection is None:
-            raise ValueError("08策略指数输入须声明一分钟真实OHLCV投影")
+        bundle, binding = index_bundle(args.index_feature_config, args.index_dataset,
+            args.index_schema_version, connection=DolphinDbReferenceConfig.from_env(
+                read_timeout_seconds=args.index_query_timeout))
         raw_config = binding.source_config
         overrides = {}
         for name in ("database", "table", "availability"):
@@ -271,6 +268,8 @@ def prepare_inputs(args, context, lifecycle):
         index_identity = {"channel": "dolphindb-dfs", "source": raw_config.identity,
             "dataset_id": binding.spec.dataset_id, "schema_version": binding.spec.schema_version,
             "schema_fingerprint": binding.spec.fingerprint,
+            "computation_version": binding.spec.computation_version,
+            "alignment": binding.spec.default_alignment.value,
             "database": raw_config.database, "table": raw_config.table,
             "availability": raw_config.availability, "timestamp_label": raw_config.timestamp_label,
             "poll_seconds": args.index_poll_seconds, "query_timeout": args.index_query_timeout,

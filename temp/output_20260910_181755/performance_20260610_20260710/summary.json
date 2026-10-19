@@ -1,0 +1,18 @@
+{
+  "start": "2026-06-10",
+  "end": "2026-07-10",
+  "baseline": "2026-06-09",
+  "baseline_equity": 60719078.89000019,
+  "ending_equity": 60977496.23000017,
+  "profit": 258417.33999998122,
+  "return": 0.004255949607999465,
+  "max_drawdown": -0.003417717151714461,
+  "max_drawdown_date": "2026-06-22",
+  "fill_count": 165,
+  "fill_days": 22,
+  "quantity": 565,
+  "commission": 93816.46799999998,
+  "best_day": "2026-06-17",
+  "worst_day": "2026-06-22",
+  "method": "Account equity from net_value.csv. Baseline is 2026-06-09 close. Fees are shown separately and not deducted again. Calendar-day series retained. No annualization."
+}

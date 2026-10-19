@@ -108,16 +108,19 @@ def resolve_paths(overrides=None, env=None, required_kinds=(), project_root=None
     return result
 
 
-def resolve_futures_args(args, *, require_roles=True, project_root=None):
-    paths = resolve_paths(vars(args), project_root=project_root, required_kinds=("future",),
+def resolve_futures_args(args, *, require_roles=True, project_root=None, use_environment=True):
+    paths = resolve_paths(vars(args), env=None if use_environment else {},
+        project_root=project_root, required_kinds=("future",),
         required_files=("fut_basic", "contract_struct") if require_roles else ("fut_basic",))
     return paths
 
 
-def resolve_option_args(args, *, require_futures, validate=True, project_root=None):
-    kinds = ("option", "index", "future") if require_futures else ("option", "index")
+def resolve_option_args(args, *, require_futures, validate=True, project_root=None,
+                        require_index=True, use_environment=True):
+    kinds = ("option",) + (("index",) if require_index else ()) + (("future",) if require_futures else ())
     files = ("opt_basic", "fut_basic") if require_futures else ("opt_basic",)
-    paths = resolve_paths(vars(args), project_root=project_root, required_kinds=kinds,
+    paths = resolve_paths(vars(args), env=None if use_environment else {},
+                          project_root=project_root, required_kinds=kinds,
                           required_files=files, validate=validate)
     for attribute, value in (("opt_dir", paths.opt), ("index_dir", paths.index),
                              ("fut_dir", paths.fut), ("opt_basic", paths.opt_basic),

@@ -226,12 +226,14 @@ MO/IM持仓的CFFEX通用平仓根据当日权威总仓规划，按当前今昨�
 
 ### 启动命令
 
-从 pro 根目录、在已安装运行依赖的环境中执行，先设置 `export PYTHONPATH=.`。入口自动读取已有 `.env` 配置；没有配置数据路径时，可通过可选的 `--data-root` 或各文件路径参数指定。示例日期需与实际数据匹配。
+从 pro 根目录、在已安装运行依赖的环境中执行。回测只读取文件，必须显式提供 `--data-root /实际数据根目录`，或逐项提供所需文件／目录路径；不再从 `.env` 或环境变量补数据路径。下面的 `/path/to/market-data` 是占位符，请替换为真实路径，日期也须匹配实际文件。
 
 **完整执行（显式设置常用参数）：**
 
 ```bash
 python demos/08_option_vega/run_backtest.py \
+  --index-feature-file /path/to/features/index-minute.csv \
+  --data-root /path/to/market-data \
   --option-product MO --future-product IM --index-code 000852 \
   --start-day 2026-09-01 --end-day 2026-09-11 \
   --bar-timestamp end --log-level WARNING --no-tearsheet
@@ -241,24 +243,29 @@ python demos/08_option_vega/run_backtest.py \
 
 ```bash
 python demos/08_option_vega/run_backtest.py \
+  --index-feature-file /path/to/features/index-minute.csv \
+  --data-root /path/to/market-data \
   --start-day 2026-09-01 --end-day 2026-09-11
 ```
 
-默认执行采用参数表中的默认值及已有数据路径配置；例如默认启用绩效图，不要求必须产生成交。
+默认执行采用参数表中的策略默认值；文件路径仍须显式指定。例如默认启用绩效图，不要求必须产生成交。
 
 ### 参数说明
 
-“必选”表示启动时必须传入；“可选”表示有默认值或可由已有配置解析。数据路径虽然是可选参数，但运行前必须能解析到有效文件。
+“可选”路径可由显式 `--data-root` 推导；如果不传根目录，就须逐项提供所需路径，不能全部省略。
 
 | 参数 | 必选 / 可选 | 含义与默认值 |
 | --- | --- | --- |
 | `--start-day / --end-day` | 必选 | 必填，请求日期闭区间 |
-| `--data-root` | 可选 | 数据根目录，通常包含 role、kline/fut、kline/opt、kline/index |
-| `--fut-dir / --opt-dir / --index-dir` | 可选 | 显式覆盖期货、期权、指数真实分钟行情目录 |
+| `--data-root` | 二选一 | 显式根目录，包含 role、kline/fut、kline/opt；或逐项指定下列行情和资料路径 |
+| `--fut-dir / --opt-dir` | 可选 | 期货、期权分钟文件目录；省略时从显式根目录推导 |
+| `--index-feature-file` | 必选 | 标准特征 CSV/Parquet，旁边须有同名 `.manifest.json` |
+| `--index-feature-config / --index-dataset / --index-schema-version` | 可选 | 与默认 Live 共用声明；默认 features.json / index.minute / 1 |
+| `--frame-wait-seconds` | 可选 | 与 Live 相同的分钟等待预算，默认 2 秒，范围 [0,30] |
 | `--fut-basic / --opt-basic` | 可选 | 显式覆盖基础条款文件，默认 role 目录下 fut_basic.feather / opt_basic.feather |
 | `--option-product / --future-product / --index-code` | 可选 | 默认 MO / IM / 000852；期权必须有可用同月期货对冲，指数只用于信号 |
 | `--bar-timestamp` | 可选 | 可省略，默认 end；源分钟标签为 start 时须显式指定，公共层只移动一次到分钟结束 |
-| `--calendar` | 可选 | 可选显式交易日历；未提供时由三类行情全部已知文件日期的并集推导，信任上游交易日完整性，不自动补工作日 |
+| `--calendar` | 可选 | 可选显式交易日历；未提供时由期货／期权全部已知文件日期的并集推导，信任上游交易日完整性，不自动补工作日 |
 | `--starting-balance / --nav` | 可选 | 初始资金默认 40000000；固定策略规模基准默认同初始资金，不随账户权益自动更新 |
 | `--vega-budget` | 可选 | 默认 1.25；每一个百分点波动率变化的现金风险预算为 nav × 参数 / 10000 |
 | `--delta-targets` | 可选 | 默认 0.2,0.25,0.3,0.35，按最接近各档位的 Delta 选择认购；重复合约合并 |
@@ -278,7 +285,7 @@ python demos/08_option_vega/run_backtest.py \
 
 ### 数据要求
 
-需要 opt_basic.feather、fut_basic.feather、认购链、同月期货与指数行情。期权最小变动价位直接读取 tickNum，缺失或为空时兼容 minChgPriceNum / price_increment，必须为有限正数；tickUnit 仅为单位说明。未指定 calendar 时用全部已知行情文件日期并集推导交易日；需覆盖期限判断所需的未来日期。末日指数须在清仓时点后至少还有两分钟行情，实际交易腿也须有退出报价和后续撮合机会。
+需要 opt_basic.feather、fut_basic.feather、认购链、同月期货分钟文件与标准指数特征导出包。期权最小变动价位直接读取 tickNum，缺失或为空时兼容 minChgPriceNum / price_increment，必须为有限正数；tickUnit 仅为单位说明。未指定 calendar 时用期货／期权全部已知行情文件日期并集推导交易日；需覆盖期限判断所需的未来日期。末日指数须在清仓时点后至少还有两分钟行情，实际交易腿也须有退出报价和后续撮合机会。
 
 | 数据项 | 要求 |
 | --- | --- |
@@ -309,12 +316,12 @@ python demos/08_option_vega/run_backtest.py \
   role/opt_basic.feather
   kline/fut/20260901/IM2609_20260901.feather
   kline/opt/20260901/MO2609-C-7300_20260901.feather
-  kline/index/20260901/000852_20260901.feather
+  # 指数另由 --index-feature-file 显式指定标准特征导出包
 ```
 
-路径优先使用显式 `--fut-dir / --opt-dir / --index-dir / --fut-basic / --opt-basic`。环境变量可以配置 `CTP_DATA_DIR`、`FUT_ROLE_DATA_DIR`、`FUT_KLINE_DATA_DIR`、`OPT_KLINE_DATA_DIR`、`INDEX_KLINE_DATA_DIR`、`KLINE_DATA_DIR` 和 `CTP_CALENDAR_PATH`；专用目录优先于通用根目录推导。`--data-root` 设置根目录，但不会覆盖已配置的资产专用环境变量。完整兼容规则见[公共输入层](../../bomber/framework/dataprep/README.md#路径配置)。
+回测路径仅取命令行：逐项路径优先于 `--data-root` 推导，不读环境变量。指数使用单独的 `--index-feature-file`，不再使用 `--index-dir`。
 
-分钟文件需要时间列（`datetime`，兼容 `timestamp`）和 `open/high/low/close/volume`，`volume` 为分钟增量；按日盘规则校验时间、身份和 OHLCV，不前填价格或补造分钟。`--bar-timestamp start` 会在准备层加一分钟，默认 `end` 不移动。该参数同时用于三类文件，因此上游标签需一致。期权基础条款需要合约代码、类型、行权价、乘数、标的指数、交易所和上市/最后交易/到期日期；字段契约见[基础条款说明](../../doc/data/BASIC_METADATA_ALIGNMENT.md)。
+分钟文件需要时间列（`datetime`，兼容 `timestamp`）和 `open/high/low/close/volume`，`volume` 为分钟增量；按日盘规则校验时间、身份和 OHLCV，不前填价格或补造分钟。`--bar-timestamp start` 会在准备层加一分钟，默认 `end` 不移动。该参数用于交易腿文件；标准指数特征包已统一为结束标签，不再移动时间。期权基础条款需要合约代码、类型、行权价、乘数、标的指数、交易所和上市/最后交易/到期日期；字段契约见[基础条款说明](../../doc/data/BASIC_METADATA_ALIGNMENT.md)。
 
 可从 Live 使用的公共日历导出同版本文件，避免由缺文件误判休市：
 
@@ -324,60 +331,26 @@ python -m scripts.integration.reference_data.calendar_export \
   --output demos/08_option_vega/results/cffex-2026.csv
 
 python demos/08_option_vega/run_backtest.py \
+  --index-feature-file /path/to/features/index-minute.csv \
   --data-root /path/to/market-data \
   --calendar demos/08_option_vega/results/cffex-2026.csv \
   --start-day 2026-09-01 --end-day 2026-09-11 \
   --bar-timestamp end --require-fills --no-tearsheet
 ```
 
-`/path/to/market-data` 替换为实际根目录。导出 CSV 旁的 manifest 保存规则版本与摘要，回测加载时核验；普通 CSV/Feather 日历仍兼容。不传日历时由三类行情**全部已知文件日期的并集**推导，默认信任上游完整性；应让日期覆盖结束日之后足够多的交易日，以判断剩余期限。
+`/path/to/market-data` 替换为实际根目录。导出 CSV 旁的 manifest 保存规则版本与摘要，回测加载时核验；普通 CSV/Feather 日历仍兼容。不传日历时由期货／期权**全部已知文件日期的并集**推导，默认信任上游完整性；应让日期覆盖结束日之后足够多的交易日，以判断剩余期限。
 
-### 回测指数如何接入、未传路径为何仍能运行
+### 回测与Live共用指数特征契约
 
-**当前 08 回测读取本地指数 Feather 分钟文件。** Live 的 `dolphindb-dfs` 指数使用声明式特征 Provider、Schema 与查询缓存；回测入口目前没有调用这条特征查询链，也不使用 Live 的 `features.json` 或 `--index-source` 参数。两个入口最终都向同一个策略提供指数价格，但输入装配不同：
+回测必须传 `--index-feature-file`，读取既有 `export_features` 导出的 CSV/Parquet 和同名 manifest。旧指数 Feather 不能直接作为标准特征文件使用。Live 默认 `--index-source dolphindb-dfs`，从 DolphinDB 读取；显式 `--index-source dolphindb` 保留旧分钟流兼容方式，不属于这条统一版本链路。
 
-| 场景 | 指数输入链路 | 策略如何接收 |
-| --- | --- | --- |
-| 当前文件回测 | 本地 `000852_YYYYMMDD.feather` → 公共 dataprep 校验/标准化 → `FileReplayFeed` | `DataBinding("000852", …, DataType.BAR, "1-MINUTE")` → `on_bar` → `latest["000852"]` |
-| Live DFS 指数 | DolphinDB 原表 → 声明式 `index.minute` 特征 Provider/缓存 → `FeatureQueryBarFeed` → 封闭分钟帧 | `on_market_frame` → `latest["000852"]` |
-| Live 标准指数流 | DolphinDB 已收盘 Bar 流 → 独立 Feed → 封闭分钟帧 | `on_market_frame` → `latest["000852"]` |
+两端共用 [features.py](features.py) 和同一份 `--index-feature-config`：默认数据集 `index.minute`、Schema 1、计算版本 `raw-index-minute-v1`、一分钟结束标签及 EXACT 对齐。文件 manifest 校验 Schema／计算版本指纹；不匹配就报错，不隐式降级。
 
-指数只用于选约、时间价值及清仓时钟，没有执行路由，不作为可成交期货加入账户。当前回测中，指数、期权和期货共用名为 `option-bars` 的回放 Feed 绑定；这个名字不表示其中只有期权。
+回测保留文件的 `ts_event`、`available_ns`、`received_ns` 和 `revision`，按 `max(available_ns, received_ns)` 推进模拟可见时钟。与 Live 一样，同一分钟首次可见版本投影后固定，后续修订不重做旧决策；截止边界允许到达，超过 `--frame-wait-seconds` 或缺失则跳过该分钟，不用前一分钟指数填充。市场腿也只使用期限内到达的数据。策略统一走原 `on_market_frame`，指数没有执行路由。
 
-回测代码位置按调用顺序如下：
+`observed` 来源今天读取历史数据，只能证明今天已看到，不能恢复过去的可见时间。正式历史回测需使用保留当时发布时间／观测时间的导出包；不会把导出时间自动回写成分钟结束时间。已有只读导出工具见 [特征接入说明](../../scripts/integration/features/README.md)。
 
-| 位置 | 做什么 |
-| --- | --- |
-| [run_backtest.py](run_backtest.py)：模块初始化的 `load_dotenv()`、`run_case` 中 `resolve_option_args` | 加载环境配置，解析并验证 `args.index_dir` |
-| [dataprep/paths.py](../../bomber/framework/dataprep/paths.py)：`resolve_paths / resolve_option_args` | 指数优先级：显式 `--index-dir` → `INDEX_KLINE_DATA_DIR` → `KLINE_DATA_DIR/index` → 根目录的 `kline/index`；根目录可来自 `--data-root` 或 `CTP_DATA_DIR`；无这些来源时兼容 `KLINE_DIR/index` 或旧直接目录 |
-| [run_backtest.py](run_backtest.py)：`idx_paths = inventory(...)`、每日 `needed[(day, args.index_code)]` | 索引目标指数文件，缺少任一回测日指数文件会抛异常 |
-| [run_backtest.py](run_backtest.py)：`prepare_option_chain(...)`；[scenarios/option_chain.py](../../bomber/framework/dataprep/scenarios/option_chain.py)：`prepare_option_chain` | 把指数作为 `asset_kind="index"` 加入输入计划，读取文件并校验时间和 OHLCV |
-| [run_backtest.py](run_backtest.py)：`index_id` 注册及 `add_prepared_bar_source`；[dataprep/bars.py](../../bomber/framework/dataprep/bars.py)：`add_prepared_bar_source` | 注册指数行情元信息；将已准备数据用 `PreparedFrameReader + FixedInstrumentBarParser` 加入回放，不再读取原文件或重复移动标签 |
-| [assembly.py](assembly.py)：`all_ids`、`DataBinding`；[strategy.py](strategy.py)：`on_bar` | 绑定包括指数在内的所有行情，回放送入策略缓存并参与分钟决策 |
-
-因此，不显式传 `--index-dir` 也能运行，表示已有配置解析出了有效目录、目录中已有指数文件；不能据此推定没有指数输入。该入口不会自动下载指数、查询 DolphinDB 补数据、生成假指数或用 IM 价格替代指数。
-
-2026-10-12 用户返回的 9 月 1—9 日回测成功日志已通过文件校验、每日选约三腿同步、最终结果检查，说明该运行环境具备所需指数输入。**控制台未展示实际目录，当前尚不能仅凭日志确定是哪个环境变量提供了它。** 已保存的输入报告可直接回答这个问题，比读取当前可能已经变化的 `.env` 更准确。
-
-在运行机 `pro` 目录执行以下只读命令，读取本次成功报告中的路径和来源，不输出账户凭据：
-
-```bash
-python - <<'PYCODE'
-import json
-from pathlib import Path
-report = Path("demos/08_option_vega/results/70d4ca7d-e457-4f78-a7f2-0b2a4f7d7bed")
-manifest = json.loads((report / "input_manifest.json").read_text())
-coverage = json.loads((report / "input_coverage.json").read_text())
-for entry in manifest.get("paths", []):
-    print("指数目录:", entry.get("resolved", {}).get("index"))
-    print("路径来源:", entry.get("sources", {}).get("index"))
-for filename, info in coverage.get("files", {}).items():
-    if "asset_kind='index'" in info.get("identity", ""):
-        print("指数文件:", filename, "行数:", info.get("rows"))
-PYCODE
-```
-
-来源为 `env:INDEX_KLINE_DATA_DIR` 表示专用环境变量；`derived` 表示由行情父目录或根目录推导；`legacy_kline` 表示旧目录兼容解析。这些环境值可能由已有进程环境或 `.env` 提供，manifest 的 `env:` 本身不区分两者。`input_coverage.json` 另记录每个文件的行数、首末纳秒时间与标签，`input_manifest.json` 记录实际读取文件的大小与修改时间。
+`summary.json` 记录特征文件路径、摘要身份、Schema／计算版本、等待预算和跳过数；`feature_frames.json` 逐分钟记录选中的修订号、可见时间及决策时间。文件结尾需保留后续真实行情推进模拟时钟，未封闭的最后一分钟不产生决策，末日清仓仍核对实际仓位和在途订单。
 
 ### 回测完成条件与模拟边界
 
@@ -396,7 +369,7 @@ python demos/08_option_vega/check_backtest_data.py \
   --day 2026-09-10 --symbol IM2609 --at 09:37 --bar-timestamp end
 ```
 
-若原回测提供了 `--data-root / --fut-dir / --index-dir`，检查命令也传相同值。它复用公共路径解析、文件索引、分钟标签转换及 OHLCV 校验，输出实际路径、原始/完成分钟范围、决策前最新价格时间、后续首条和附近样例；零成交量行保留。检查范围为原文件覆盖，不能独立证明回放送达。
+这段为旧Feather回测诊断。当前检查交易腿仍须显式传相同的 `--data-root / --fut-dir`；该工具的 `--index-dir` 只检查旧指数Feather，不验证新标准特征文件。新指数的版本和可见时间检查由回测文件Provider与 `feature_frames.json` 提供。它复用公共路径解析、文件索引、分钟标签转换及 OHLCV 校验，输出实际路径、原始/完成分钟范围、决策前最新价格时间、后续首条和附近样例；零成交量行保留。检查范围为原文件覆盖，不能独立证明回放送达。
 
 | 诊断结果 | 处理方向 |
 | --- | --- |
@@ -418,8 +391,8 @@ python demos/08_option_vega/check_backtest_data.py \
 | --- | --- | --- |
 | 期权及同月期货 | `--market-source ctp`（默认） | CTP 原始深度聚合一分钟 Bar；`last` 使用成交，`mid` 使用盘口中间价 |
 | 期权及同月期货 | `--market-source dolphindb` | 显式提供已收盘期权/期货标准分钟流表 |
-| 指数 | `--index-source dolphindb`（默认） | 独立标准分钟流表，只有行情绑定，无交易路由 |
-| 指数 | `--index-source dolphindb-dfs` | 只读查询配置声明的指数分钟原表，默认 `dfs://min_bar/index_1min` |
+| 指数 | `--index-source dolphindb`（显式兼容） | 独立标准分钟流表，只有行情绑定，无交易路由 |
+| 指数 | `--index-source dolphindb-dfs`（默认） | 只读查询配置声明的指数分钟原表，默认 `dfs://min_bar/index_1min` |
 | 参考资料 | `--reference-source dolphindb`（默认） | 读取期权、期货条款快照；按估值日检查有效性 |
 | 参考资料 | `--reference-source file` | 仅显式测试：同时提供 `--allow-file-reference-test --opt-basic ... --fut-basic ...` |
 | 日历 | `--calendar-id china.cffex`（默认） | 公共编译日历；Live 不接受 `--calendar` 文件参数 |
@@ -932,7 +905,7 @@ Live 停机撤销自身活动订单并保存已成交仓位，默认不主动平
 
 ### 6.1 是否每个文件都必须
 
-**不是每次运行都需要全部 12 个 Python 文件。** 三个文件实现共用策略核心；其余承担回测入口、在线装配与生命周期、状态保存、工程测试、诊断或报告验收。按当前源码统计，目录内约 2200 行 Python，其中 `vega_signal.py + strategy.py` 为 465 行，约占五分之一；其他代码用于输入、运行、执行和验证。行数是本次阅读时的快照，不是后续版本的固定指标。
+**不是每次运行都需要全部 Python 文件。** 三个文件实现共用策略核心；其余承担输入特征、回测入口、在线装配与生命周期、状态保存、工程测试、诊断或报告验收。
 
 要区分两个问题：**功能是否需要**，以及**当前入口是否依赖该文件**。例如报单价格诊断不决定策略算法，但当前 SimNow 自动装配它，删掉文件就会启动失败；Recording 不保存检查点，但当前在线装配模块仍导入检查点文件。下面按当前实现说明，不把“本次没有调用”当作“可以直接删除”。
 
@@ -943,6 +916,8 @@ Live 停机撤销自身活动订单并保存已成交仓位，默认不主动平
 | [vega_signal.py](vega_signal.py) | `Contract`、`OptionVegaConfig`、`tau`、`implied_greeks`、`allocate_short`、`filter_hedgeable_options` | 保存条款和配置；计算剩余期限、Black76 认购价格、IV、Delta/Gamma/Vega；按 Delta 档及 Vega 预算分配空头手数，过滤无同月有效期货的候选。纯数值和业务规则，不打开行情/执行连接 | **策略核心**；回测和所有 Live 模式需要 |
 | [strategy.py](strategy.py) | `OptionVegaStrategy` | 接收分钟行情；管理每日选约、目标替换、实际成交后 Delta 对冲、到期/时间价值退出、末日清仓及订单异常；检查新鲜报价和场次恢复等待。数学计算调用 `vega_signal.py` | **策略核心**；回测和所有 Live 模式需要 |
 | [assembly.py](assembly.py) | `risk_limits`、`assemble_strategy_components` | 共用策略装配：创建手数/名义金额风控、数据绑定和执行路由，注册同一个策略；指数只绑定行情。调用方提供 Feed 与执行积木，它不打开连接 | **共用装配**；当前回测和所有 Live 模式需要，保证两种入口使用相同策略与路由规则 |
+| [features.py](features.py) | `index_bundle`、`read_index_features` | 共用指数声明；离线替换为标准文件Provider，校验Schema／计算版本，不改可见时间 | 回测和默认DFS Live共用 |
+| [backtest_runtime.py](backtest_runtime.py) | `OptionFeatureBacktestRunner` | 复用模拟可见时钟，封闭分钟帧后交给原策略；原生时钟推进撮合 | 文件回测需要 |
 | [run_backtest.py](run_backtest.py) | `load_contracts`、`run_case`、`main` | 解析回测参数，读取文件/日历/基础条款，准备期权链和旧持仓腿；检查选约同步和最终清仓时钟；装配原生模拟账户与历史 Runtime，输出报表并核对实际全平 | **文件回测入口**；直接 Live 不依赖它 |
 | [run_live.py](run_live.py) | `parse_args`、`prepare_inputs`、`build_runtime`、`describe`、`main` | 解析在线模式、来源、交易日和执行政策；准备 CTP/DolphinDB 行情、独立指数、参考资料与编译日历；选择生命周期/执行模式并生成在线报告 | **在线入口**；所有 Live 模式需要，文件回测不依赖它 |
 | [live_runtime.py](live_runtime.py) | `OptionReferences`、`OptionSessionRunner`、`assemble` | 把公共条款快照投影为本策略的认购与同月期货关系；收集/封闭多源分钟帧、查询指数、检查日期与时效、跳过缺指数帧；选择 Recording/Model/CTP 执行并装配状态管理 | **在线运行装配**；所有 Live 模式需要。分钟帧缓冲、执行、归属和持久化基础能力复用公共框架 |
@@ -963,6 +938,8 @@ Live 停机撤销自身活动订单并保存已成交仓位，默认不主动平
 | `strategy.py` | 必需 | 必需 | 必需 | 必需 |
 | `assembly.py` | 必需 | 必需 | 必需 | 必需 |
 | `run_backtest.py` | 必需 | — | — | — |
+| `features.py` | 必需 | 默认DFS指数必需 | 默认DFS指数必需 | 默认DFS指数必需 |
+| `backtest_runtime.py` | 必需 | — | — | — |
 | `run_live.py` | — | 必需 | 必需 | 必需 |
 | `live_runtime.py` | — | 必需 | 必需 | 必需 |
 | `recovery.py` | — | 必需 | 必需 | 必需 |
@@ -972,7 +949,7 @@ Live 停机撤销自身活动订单并保存已成交仓位，默认不主动平
 | `acceptance.py` | — | — | — | — |
 | `check_backtest_data.py` | — | — | — | — |
 
-因此，**只运行文件回测时，本目录内的代码依赖为 4 个文件**：`run_backtest.py`、`assembly.py`、`strategy.py`、`vega_signal.py`。这是最小代码依赖说明，不能把这四个文件单独复制到空目录就认为所有依赖已满足。
+因此，**只运行文件回测时，本目录内的代码依赖为 6 个文件**：`run_backtest.py`、`features.py`、`backtest_runtime.py`、`assembly.py`、`strategy.py`、`vega_signal.py`。这是最小代码依赖说明，不能把这六个文件单独复制到空目录就认为所有依赖已满足。
 
 直接 Live 的基础源码依赖为 Recording/Model 7 个文件、SimNow 8 个文件；启用 Replay 工程映射再增加 `replay_test.py`。使用自动 Recording 运行/复核工具时，再需要本目录的 `acceptance.py` 和目录外 `scripts/integration/options/recording.py`。只读回测数据诊断则单独运行 `check_backtest_data.py`，不依赖策略或执行模块。
 
@@ -983,6 +960,8 @@ Live 停机撤销自身活动订单并保存已成交仓位，默认不主动平
 ```text
 文件回测：
   run_backtest.py
+  features.py          # 回测/默认Live共用指数声明
+  backtest_runtime.py  # 特征可见时钟及封闭分钟帧
     → assembly.py → strategy.py → vega_signal.py
 
 在线运行：
@@ -1056,6 +1035,14 @@ Live 停机撤销自身活动订单并保存已成交仓位，默认不主动平
 | UnifiedStrategyRunner / NautilusMarketFeedAdapter / UnifiedHistoricalRuntime | 串联真实行情、策略、模拟执行与历史回放生命周期 |
 
 ## 7. 验证方法与现有证据
+
+2026-10-19新增特征回测与显式文件路径回归。在具备Bomber原生依赖的环境执行（无网络）：
+
+```bash
+python -m unittest tests.test_option_feature_backtest tests.test_dataprep_common -v
+```
+
+本机已通过91项08离线装配回归（使用SDK实体替身）及118项数据契约／策略用例；未运行完整原生撮合或真实DolphinDB连接，不据此登记D4整包通过。
 
 具备原生 SDK 的目标环境可运行离线验收；这些命令使用行情/执行夹具，不连接数据库或柜台：
 
