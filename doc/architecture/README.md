@@ -24,5 +24,6 @@
 | [STRATEGY_ARCHITECTURE](STRATEGY_ARCHITECTURE.md) | 统一策略框架的运行结构、模块职责和实现验证状态台账，区别于系统级目标设计 |
 | [PROJECT_PROGRESS](PROJECT_PROGRESS.md) | 截至 2026-09-22 的台账摘要，保留当时进度；后续状态查实现台账和专项证据 |
 | [MARKET_DATA_CYTHON_EVALUATION](MARKET_DATA_CYTHON_EVALUATION.md) | 行情订阅与调度保留 Python、原生对象和 SDK 热路径采用 Cython/C++ 的分层选型讨论 |
+| [M02 执行客户端替换设计](M02_EXECUTION_CLIENT_DESIGN_2026-10-19.md) | CTP／BN／LXGBN 的最小接入设计及逐文件改动清单；LXGBN 使用 Windows 交易端内嵌 Python，当前仅设计 |
 
 相关入口：[项目文档导航](../README.md)、[GAP 评估](../audits/ARCHITECTURE_GAP_REVIEW_2026-10-09.md)、[历史启动与恢复规则](../HANDOFF/history/HANDOFF_HISTORY_STARTUP_POLICY_2026-10-09.md)。
