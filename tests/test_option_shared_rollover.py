@@ -34,6 +34,34 @@ class OptionSharedRolloverTests(unittest.TestCase):
     setUp = fixture.MigrationTests.setUp
     identity = fixture.MigrationTests.identity
 
+    def test_legacy_index_metadata_addition_requires_same_verified_declaration(self):
+        import json
+        from bomber.framework.dataprep.features import DEFAULT_FEATURE_CONFIG
+        from bomber.framework.datahub.features.schema import dataset_from_definition
+        module = import_module("demos.08_option_vega.rollover")
+        spec = dataset_from_definition(json.loads(DEFAULT_FEATURE_CONFIG.read_text())["datasets"][0]["schema"])
+        old, new = deepcopy(self.identity), deepcopy(self.new_identity)
+        index = old["sources"]["index"]
+        index.update(channel="dolphindb-dfs", dataset_id=spec.dataset_id, schema_version=spec.schema_version,
+            schema_fingerprint=spec.fingerprint)
+        index.pop("alignment", None); index.pop("computation_version", None)
+        new["sources"]["index"] = {**index, "alignment": "EXACT", "computation_version": spec.computation_version}
+        # 本次实际问题发生在DolphinDB到DolphinDB，不是CTP来源迁移。
+        old["sources"]["market"] = deepcopy(new["sources"]["market"])
+        old["labels"] = deepcopy(new["labels"])
+        before = deepcopy(old)
+        module.validate_identity(old, new)
+        self.assertEqual(old, before)
+        for key, value in (("alignment", "ASOF"), ("computation_version", "other-calculation"),
+                           ("schema_fingerprint", "other"), ("table", "other"), ("availability", "source-time")):
+            changed = deepcopy(new); changed["sources"]["index"][key] = value
+            with self.subTest(key=key), self.assertRaisesRegex(ValueError, "差异字段"):
+                module.validate_identity(old, changed)
+        # 已存在的字段不能覆盖，包括显式声明的旧计算版本。
+        declared = deepcopy(old); declared["sources"]["index"]["computation_version"] = "older-explicit"
+        with self.assertRaisesRegex(ValueError, "差异字段"):
+            module.validate_identity(declared, new)
+
     def standalone(self, transport=None):
         args = deepcopy(self.new_args); args.state_file = self.source; args.resume = True
         transport = transport or DetailsTransport("20260814")
@@ -252,16 +280,28 @@ class OptionSharedRolloverTests(unittest.TestCase):
         later.stop()
 
     def test_cross_day_terminal_draining_finishes_after_authoritative_check(self):
+        import json
+        from bomber.framework.dataprep.features import DEFAULT_FEATURE_CONFIG
+        from bomber.framework.datahub.features.schema import dataset_from_definition
+        spec = dataset_from_definition(json.loads(DEFAULT_FEATURE_CONFIG.read_text())["datasets"][0]["schema"])
         account, _, _, _, _ = self.shared(preserve_external=True)
         account.start(resume=True); account.authorize(); account.stop()
         store = JsonStateStore(self.source)
         saved = store.load(); payload = deepcopy(saved.payload)
         payload["component_states"]["shared_account"]["shared"].update(
             draining=[CLIENT], suspended=[CLIENT])
+        previous_index = payload["component_states"]["session_identity"]["identity"]["strategies"][CLIENT][
+            "reference"]["sources"]["index"]
+        previous_index.update(dataset_id=spec.dataset_id, schema_version=spec.schema_version,
+            schema_fingerprint=spec.fingerprint)
+        previous_index.pop("alignment", None); previous_index.pop("computation_version", None)
         store.save(payload, expected_generation=saved.generation)
         before = self.source.read_bytes()
         transport = DetailsTransport("20260817"); transport.bucket = "2"
-        new, service, _, _, _ = self.shared(current=inputs(date(2026, 8, 17), "dolphindb"),
+        current = inputs(date(2026, 8, 17), "dolphindb")
+        current.source_identity["index"] = {**previous_index,
+            "alignment": "EXACT", "computation_version": spec.computation_version}
+        new, service, _, _, _ = self.shared(current=current,
             transport=transport, preserve_external=True)
         new.start(resume=True)
         self.assertFalse(service._draining)

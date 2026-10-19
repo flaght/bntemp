@@ -1342,3 +1342,7 @@ CTP期权/期货缺失Bar不自动补查DolphinDB；日志不改变查询、等�
 ### 跨日残留停止标志恢复（2026-10-19）
 
 若failed/pending为false但draining仍含策略，不能直接手改JSON清标志。跨日入口现先核验原订单终态、在途量、Driver关联与归属计划；柜台权威对账通过后，在未授权状态冻结旧目标为实际归属量、完成draining，再备份提交。重复停止已完成策略不再重新挂draining。未决发送/订单/IPC及查询失败仍保留原文件。250项离线回归通过；[同步说明](../../doc/HANDOFF/live/HANDOFF_OPTION_VEGA_DRAINING_RECOVERY_2026-10-19.md)，线上恢复待验。
+
+### 旧指数身份元数据兼容（2026-10-19）
+
+新版补入alignment/computation_version可能使旧跨日来源比较误报。现在仅在dolphindb-dfs的默认index.minute/Schema1及Schema指纹完全匹配时，从同一声明补齐缺失字段，再严格比较；已有字段、其他来源配置不覆盖，真实变化仍拒绝并给出差异字段路径。旧元数据与残留draining组合恢复已离线验证，原归属及备份保留。见[同步说明](../../doc/HANDOFF/live/HANDOFF_OPTION_VEGA_SOURCE_METADATA_COMPAT_2026-10-19.md)。

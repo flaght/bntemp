@@ -1,0 +1,16 @@
+{
+  "date": "2026-10-19",
+  "status": "offline_passed_online_pending",
+  "scope": "legacy_index_identity_missing_metadata",
+  "tests": {
+    "option_base": 91,
+    "shared_rollover": 29,
+    "total": 120
+  },
+  "network_connected": false,
+  "real_orders_submitted": 0,
+  "source_sha256": {
+    "demos/08_option_vega/rollover.py": "24f962ab996c629c4cb978d1b55cac6ac4ae7d08d35ef9a354040513344a0565",
+    "tests/test_option_shared_rollover.py": "6003ebaf1346165e73b30519e1bda8244c86cbf3da32998f3aa77efd82224d02"
+  }
+}

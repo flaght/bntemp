@@ -1,0 +1,5 @@
+2026-10-19 offline only; no network or real orders.
+08 SDK entity shim plus actual core: Ran 91 tests, OK.
+Shared rollover: Ran 29 tests, OK.
+Total 120 passed.
+Source compatibility accepts only missing metadata under verified default dataset/schema fingerprint. Alignment, computation version, schema fingerprint, source table and availability changes rejected. Existing explicit version never overwritten. Actual cross-day restore with old metadata and terminal draining retains ownership and backup, no order submission.

@@ -1,0 +1,44 @@
+{
+  "item": "M05",
+  "delivery": "D4",
+  "architecture_gap": "GAP08",
+  "date": "2026-10-19",
+  "timezone": "Asia/Shanghai",
+  "source": "user_returned_remote_unittest_output",
+  "environment": {
+    "name": "uv-nautilus",
+    "project": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro"
+  },
+  "first_batch": {
+    "modules": [
+      "tests.test_option_feature_backtest",
+      "tests.test_dataprep_common",
+      "tests.test_option_vega_assembly",
+      "tests.test_index_query_feed"
+    ],
+    "reported_tests": 63,
+    "elapsed_seconds": 0.993,
+    "errors": 1,
+    "passed_tests": 62,
+    "error": "ModuleNotFoundError: No module named 'tests.test_option_feature_backtest'"
+  },
+  "supplementary_batch": {
+    "command": "python -u -m unittest -v tests.test_option_feature_backtest",
+    "tests": 10,
+    "elapsed_seconds": 0.012,
+    "result": "OK"
+  },
+  "result": {
+    "status": "remote_offline_passed",
+    "passed_tests": 72,
+    "deployment_import_error_resolved": true
+  },
+  "remote_source_sha256": null,
+  "scope": "Explicit file paths, shared feature schema/computation version, file manifest compatibility, visibility and revisions, EXACT alignment, arrival deadlines, missing/late input and strategy assembly.",
+  "limitations": [
+    "Results are user-returned console output; remote source checksums and full report artifacts were not supplied.",
+    "The clock scheduling unit test uses a clock fixture, so passing in the installed native environment does not demonstrate an end-to-end native matching run.",
+    "Complete 08 backtest using actual market files and a standard index feature export remains pending.",
+    "No new real DolphinDB Live run or D4 complete-package acceptance is established by these tests."
+  ]
+}

@@ -186,3 +186,7 @@ sha256sum -c doc/evidence/checksums/DOCUMENTATION_20261010_SHA256.txt
 ### 2026-10-19：终态draining跨日恢复
 
 修复08终态订单已完成但停止标志残留导致跨日拒绝；先核验本地终态及柜台，再冻结贡献清理标志并提交，重复停止幂等。未决/未知状态不放宽。250项离线回归通过，线上待验。见[说明](../HANDOFF/live/HANDOFF_OPTION_VEGA_DRAINING_RECOVERY_2026-10-19.md)、[补充包](archives/OPTION_VEGA_DRAINING_RECOVERY_20261019.tar.gz)、[SHA清单](checksums/OPTION_VEGA_DRAINING_RECOVERY_20261019_SHA256.txt)。
+
+### 2026-10-19：08来源新增身份字段兼容
+
+精确匹配默认指数声明指纹后只补旧身份缺失的alignment/computation_version，不放宽真实来源变化。120项离线测试通过，包含旧元数据与draining组合跨日恢复，服务器待验。[说明](../HANDOFF/live/HANDOFF_OPTION_VEGA_SOURCE_METADATA_COMPAT_2026-10-19.md)、[包](archives/OPTION_VEGA_SOURCE_METADATA_COMPAT_20261019.tar.gz)、[SHA](checksums/OPTION_VEGA_SOURCE_METADATA_COMPAT_20261019_SHA256.txt)。

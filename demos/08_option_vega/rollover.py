@@ -5,6 +5,28 @@ from decimal import Decimal
 from bomber.framework.trader.runtime.live.channels.ctp_rollover import observe_rollover
 
 
+def source_identity_with_legacy_metadata(sources):
+    """只补旧版默认指数声明缺失的身份字段，指纹/来源仍须完全匹配。"""
+    result = deepcopy(sources)
+    index = result.get("index", {})
+    missing = {key for key in ("alignment", "computation_version") if key not in index}
+    if not missing or index.get("channel") != "dolphindb-dfs":
+        return result
+    import json
+    from bomber.framework.dataprep.features import DEFAULT_FEATURE_CONFIG
+    from bomber.framework.datahub.features.schema import dataset_from_definition
+    definition = json.loads(DEFAULT_FEATURE_CONFIG.read_text())
+    schema = next(row["schema"] for row in definition["datasets"]
+                  if row["schema"]["dataset_id"] == "index.minute" and row["schema"]["schema_version"] == 1)
+    spec = dataset_from_definition(schema)
+    if (index.get("dataset_id"), index.get("schema_version"), index.get("schema_fingerprint")) == (
+            spec.dataset_id, spec.schema_version, spec.fingerprint):
+        values = {"alignment": spec.default_alignment.value, "computation_version": spec.computation_version}
+        for key in missing:
+            index[key] = values[key]
+    return result
+
+
 def validate_identity(old, new):
     allowed = {"td_day", "valuation_day", "calendar", "calendar_manifest", "reference_fingerprint", "contracts"}
     if old.get("mode") != "simnow" or old.get("environment") != "realtime" or new.get("environment") != "realtime":
@@ -15,12 +37,19 @@ def validate_identity(old, new):
         raise ValueError("08恢复须向前跨日并使用当日估值日")
     if old["calendar_manifest"]["calendar_id"] != new["calendar_manifest"]["calendar_id"]:
         raise ValueError("08跨日不能更换交易日历")
-    if old.get("sources") != new.get("sources") or old.get("labels") != new.get("labels"):
-        if (old["sources"]["market"]["channel"] != "ctp" or new["sources"]["market"]["channel"] != "dolphindb"
-                or old["sources"]["index"] != new["sources"]["index"]
+    sources = source_identity_with_legacy_metadata(old["sources"])
+    if sources != new.get("sources") or old.get("labels") != new.get("labels"):
+        if (sources["market"]["channel"] != "ctp" or new["sources"]["market"]["channel"] != "dolphindb"
+                or sources["index"] != new["sources"]["index"]
                 or old["labels"]["index-bars"] != new["labels"]["index-bars"]):
-            raise ValueError("08跨日不能隐式更换指数特征或已有DolphinDB来源")
+            from bomber.framework.trader.runtime.live.recovery import identity_difference_paths
+            raise ValueError("08跨日不能隐式更换指数特征或已有DolphinDB来源；差异字段="
+                + ", ".join(identity_difference_paths(
+                    {"sources": sources, "labels": old["labels"]},
+                    {"sources": new["sources"], "labels": new["labels"]})))
         allowed.update(("sources", "labels"))
+    elif sources != old["sources"]:
+        allowed.add("sources")
     if any(old.get(key) != new.get(key) for key in old.keys() | new.keys() if key not in allowed):
         raise ValueError("08跨日恢复不能改变策略、风险或执行配置")
 
