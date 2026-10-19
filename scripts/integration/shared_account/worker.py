@@ -106,6 +106,8 @@ def _run(args, config, stop_event):
         "trading_day": config["trading_day"], "environment": config["environment"],
         "replay_md_trading_day": config.get("replay_md_trading_day"), "execution_mode": "independent"}
     metadata = dict(identity)
+    if "history_missing_policy" in config:
+        metadata["history_missing_policy"] = config["history_missing_policy"]
     if "ctp_instrument_max_age_seconds" in config:
         metadata["ctp_instrument_max_age_seconds"] = config["ctp_instrument_max_age_seconds"]
     report = LiveRunReport(config["report_dir"], prefix=row["strategy_id"], metadata=metadata)

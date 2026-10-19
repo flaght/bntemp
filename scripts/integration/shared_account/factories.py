@@ -28,6 +28,12 @@ def strategy_arguments(row, config, *, resume):
         args.instrument_max_age_seconds = ctp_instrument_max_age_seconds(config)
     history_enabled = any(getattr(args, name, None) for name in
         ("history_minutes", "history_config", "history_file"))
+    if "history_missing_policy" in config:
+        if config["history_missing_policy"] not in ("fail", "allow"):
+            raise ValueError("history_missing_policy须为fail或allow")
+        if row["kind"] not in {"main_ema", "calendar_spread", "cross_section"}:
+            raise ValueError("会话历史缺失政策仅支持01/03/04")
+        args.history_missing_policy = config["history_missing_policy"]
     if getattr(args, "run_forever", False) or (history_enabled and row["kind"] not in {"main_ema", "calendar_spread", "cross_section"}):
         raise ValueError("共享入口仅支持01/03/04历史预热；持续模式及其他策略历史预热尚未接入")
     return entry, args

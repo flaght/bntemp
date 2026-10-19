@@ -16,6 +16,31 @@ from scripts.integration.shared_account import config, prepare_session, prepare_
 
 
 class ProcessCliTests(unittest.TestCase):
+    def test_history_missing_policy_override_preserves_original_worker_identity(self):
+        from scripts.integration.shared_account import factories
+        from scripts.integration.shared_account.migrate_scope import worker_identity
+        with TemporaryDirectory() as directory:
+            p = Path(directory) / "session.json"
+            with redirect_stdout(StringIO()):
+                prepare_session.main(["--output", str(p), "--environment", "realtime",
+                    "--execution-mode", "independent", "--trading-day", "20261019", "--source-day", "20261016"])
+            original = config.read_config(p)
+            raw = json.loads(p.read_text())
+            raw["history_missing_policy"] = "allow"
+            p.write_text(json.dumps(raw))
+            updated = config.read_config(p)
+            entry = SimpleNamespace(parse_args=lambda *a, **kw: SimpleNamespace(history_missing_policy="fail"))
+            with patch.object(factories, "import_module", return_value=entry):
+                for old, new in zip(original["strategies"], updated["strategies"]):
+                    self.assertEqual(worker_identity(old, original), worker_identity(new, updated))
+                    self.assertEqual(old["argv"], new["argv"])
+                    self.assertEqual(factories.strategy_arguments(new, updated, resume=True)[1].history_missing_policy, "allow")
+                    self.assertEqual(factories.strategy_arguments(old, original, resume=True)[1].history_missing_policy, "fail")
+            raw["history_missing_policy"] = "ignore"
+            p.write_text(json.dumps(raw))
+            with self.assertRaisesRegex(ValueError, "history_missing_policy"):
+                config.read_config(p)
+
     def test_ctp_age_policy_validates_without_changing_worker_recovery_identity(self):
         from copy import deepcopy
         from scripts.integration.shared_account.migrate_scope import worker_identity

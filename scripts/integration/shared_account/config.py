@@ -30,10 +30,12 @@ def read_config(path):
     config = json.loads(path.read_text(encoding="utf-8"))
     allowed = {"version", "trading_day", "environment", "replay_md_trading_day", "seconds",
         "account_state_file", "report_dir", "account", "strategies", "position_scope", "execution_mode",
-        "existing_position_policy", "ctp_instrument_max_age_seconds"}
+        "existing_position_policy", "ctp_instrument_max_age_seconds", "history_missing_policy"}
     if set(config) - allowed or config.get("version") != 1:
         raise ValueError("共享配置版本无效或存在未知字段")
     ctp_instrument_max_age_seconds(config)
+    if "history_missing_policy" in config and config["history_missing_policy"] not in ("fail", "allow"):
+        raise ValueError("history_missing_policy须为fail或allow")
     if config.get("position_scope", "account") not in {"account", "strategy_instruments"}:
         raise ValueError("position_scope须为account或strategy_instruments")
     if config.get("execution_mode", "netted") not in {"netted", "independent"}:
@@ -87,6 +89,8 @@ def read_config(path):
             raise ValueError("策略独立停止时间须在会话时长以内")
         if row["kind"] not in {"main_ema", "cross_section", "calendar_spread", "option_vega"}:
             raise ValueError("策略工厂支持main_ema、cross_section、calendar_spread和option_vega")
+        if "history_missing_policy" in config and row["kind"] == "option_vega":
+            raise ValueError("会话历史缺失政策仅支持01/03/04")
         if "ctp_instrument_max_age_seconds" in config and row["kind"] not in {"main_ema", "calendar_spread", "cross_section"}:
             raise ValueError("会话CTP逐合约时效仅支持01/03/04；其他通道使用原有时效配置")
         if not isinstance(row["argv"], list) or any(not isinstance(arg, str) for arg in row["argv"]):
