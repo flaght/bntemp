@@ -16,6 +16,37 @@ from scripts.integration.shared_account import config, prepare_session, prepare_
 
 
 class ProcessCliTests(unittest.TestCase):
+    def test_history_minutes_override_preserves_resume_identity_and_other_strategy(self):
+        from scripts.integration.shared_account import factories
+        from scripts.integration.shared_account.migrate_scope import worker_identity
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "session.json"
+            with redirect_stdout(StringIO()):
+                prepare_session.main(["--output", str(path), "--environment", "realtime",
+                    "--execution-mode", "independent", "--trading-day", "20261019", "--source-day", "20261016"])
+            old = config.read_config(path)
+            raw = json.loads(path.read_text())
+            sid = raw["strategies"][0]["strategy_id"]
+            raw["strategy_history_minutes"] = {sid: 30}
+            path.write_text(json.dumps(raw))
+            new = config.read_config(path)
+            entry = SimpleNamespace(parse_args=lambda *a, **kw: SimpleNamespace(history_minutes=240))
+            with patch.object(factories, "import_module", return_value=entry):
+                for before, after in zip(old["strategies"], new["strategies"]):
+                    self.assertEqual(worker_identity(before, old), worker_identity(after, new))
+                    self.assertEqual(before["argv"], after["argv"])
+                    expected = 30 if after["strategy_id"] == sid else 240
+                    self.assertEqual(factories.strategy_arguments(after, new, resume=True)[1].history_minutes, expected)
+            for invalid in (0, -1, 10001, True, "30", 1.5):
+                raw["strategy_history_minutes"] = {sid: invalid}
+                path.write_text(json.dumps(raw))
+                with self.assertRaisesRegex(ValueError, "strategy_history_minutes"):
+                    config.read_config(path)
+            raw["strategy_history_minutes"] = {"unknown-strategy": 30}
+            path.write_text(json.dumps(raw))
+            with self.assertRaisesRegex(ValueError, "未声明的策略ID"):
+                config.read_config(path)
+
     def test_history_missing_policy_override_preserves_original_worker_identity(self):
         from scripts.integration.shared_account import factories
         from scripts.integration.shared_account.migrate_scope import worker_identity

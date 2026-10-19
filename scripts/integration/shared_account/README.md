@@ -1,5 +1,12 @@
 # 同账户多策略 SimNow 宿主
 
+预热数量可用顶层`strategy_history_minutes`按策略ID覆盖，例如
+`{"ema-im-three":30,"calendar-im-three":120,"cross-im-if-three":21}`。
+取值为1至10000的整数，仅支持01/03/04；未列出的策略沿用原argv数量。
+它只控制本次历史请求长度，不改变EMA周期/信号lookback、持仓、来源版本或事件游标，
+原argv和检查点身份保留。worker报告的`effective_history_minutes`记录覆盖值；
+修改前应停止原worker/账户服务并保留原配置备份，恢复后重新预热，不重放历史目标。
+
 ## 固定合约历史缺因子时的allow语义（2026-10-19）
 
 01/04预热继续使用当前固定合约，不自动改成历史主力连续序列。配置顶层

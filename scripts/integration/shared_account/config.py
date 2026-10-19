@@ -30,12 +30,19 @@ def read_config(path):
     config = json.loads(path.read_text(encoding="utf-8"))
     allowed = {"version", "trading_day", "environment", "replay_md_trading_day", "seconds",
         "account_state_file", "report_dir", "account", "strategies", "position_scope", "execution_mode",
-        "existing_position_policy", "ctp_instrument_max_age_seconds", "history_missing_policy"}
+        "existing_position_policy", "ctp_instrument_max_age_seconds", "history_missing_policy",
+        "strategy_history_minutes"}
     if set(config) - allowed or config.get("version") != 1:
         raise ValueError("共享配置版本无效或存在未知字段")
     ctp_instrument_max_age_seconds(config)
     if "history_missing_policy" in config and config["history_missing_policy"] not in ("fail", "allow"):
         raise ValueError("history_missing_policy须为fail或allow")
+    history_minutes = config.get("strategy_history_minutes", {})
+    if (not isinstance(history_minutes, dict) or any(type(v) is not int or not 1 <= v <= 10000
+                                                    for v in history_minutes.values())):
+        raise ValueError("strategy_history_minutes须为策略ID到1至10000整数分钟的映射")
+    if set(history_minutes) - {r["strategy_id"] for r in config["strategies"]}:
+        raise ValueError("strategy_history_minutes包含未声明的策略ID")
     if config.get("position_scope", "account") not in {"account", "strategy_instruments"}:
         raise ValueError("position_scope须为account或strategy_instruments")
     if config.get("execution_mode", "netted") not in {"netted", "independent"}:
@@ -89,6 +96,8 @@ def read_config(path):
             raise ValueError("策略独立停止时间须在会话时长以内")
         if row["kind"] not in {"main_ema", "cross_section", "calendar_spread", "option_vega"}:
             raise ValueError("策略工厂支持main_ema、cross_section、calendar_spread和option_vega")
+        if row["strategy_id"] in history_minutes and row["kind"] == "option_vega":
+            raise ValueError("自定义历史预热数量仅支持01/03/04")
         if "history_missing_policy" in config and row["kind"] == "option_vega":
             raise ValueError("会话历史缺失政策仅支持01/03/04")
         if "ctp_instrument_max_age_seconds" in config and row["kind"] not in {"main_ema", "calendar_spread", "cross_section"}:

@@ -26,6 +26,11 @@ def strategy_arguments(row, config, *, resume):
             raise ValueError("会话CTP逐合约时效仅用于01/03/04的CTP行情")
         # 运行监督参数独立于原argv身份；同账本恢复不改旧策略信号/限额声明。
         args.instrument_max_age_seconds = ctp_instrument_max_age_seconds(config)
+    minutes = config.get("strategy_history_minutes", {}).get(row.get("strategy_id"))
+    if minutes is not None:
+        if row["kind"] not in {"main_ema", "calendar_spread", "cross_section"} or type(minutes) is not int or not 1 <= minutes <= 10000:
+            raise ValueError("自定义历史预热数量仅支持01/03/04的1至10000整数分钟")
+        args.history_minutes = minutes
     history_enabled = any(getattr(args, name, None) for name in
         ("history_minutes", "history_config", "history_file"))
     if "history_missing_policy" in config:
