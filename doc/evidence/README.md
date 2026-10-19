@@ -190,3 +190,7 @@ sha256sum -c doc/evidence/checksums/DOCUMENTATION_20261010_SHA256.txt
 ### 2026-10-19：08来源新增身份字段兼容
 
 精确匹配默认指数声明指纹后只补旧身份缺失的alignment/computation_version，不放宽真实来源变化。120项离线测试通过，包含旧元数据与draining组合跨日恢复，服务器待验。[说明](../HANDOFF/live/HANDOFF_OPTION_VEGA_SOURCE_METADATA_COMPAT_2026-10-19.md)、[包](archives/OPTION_VEGA_SOURCE_METADATA_COMPAT_20261019.tar.gz)、[SHA](checksums/OPTION_VEGA_SOURCE_METADATA_COMPAT_20261019_SHA256.txt)。
+
+### 2026-10-19：全成历史计划冻结量检查修复
+
+修复跨日draining检查误把released=false的全成历史计划当活动冻结；实际按leg剩余量核验，并增加具体失败项。120项离线回归通过，线上待验。[说明](../HANDOFF/live/HANDOFF_OPTION_VEGA_FILLED_DRAINING_FIX_2026-10-19.md)、[包](archives/OPTION_VEGA_FILLED_DRAINING_FIX_20261019.tar.gz)、[SHA](checksums/OPTION_VEGA_FILLED_DRAINING_FIX_20261019_SHA256.txt)。

@@ -62,11 +62,19 @@ def payload_for_day(account, payload):
         from bomber.framework.trader.execution.attribution import PositionAttributionLedger
         PositionAttributionLedger.validate_checkpoints(positions.attribution,
             {key: storage._decode_orders(rows) for key, rows in payload["orders"].items()})
-        if (any(not row.state.status.is_terminal for row in orders)
-                or any(positions.snapshot.working_quantities.values())
-                or any(row.get("orders") for row in payload["ctp_drivers"].values())
-                or any(not row["released"] for row in positions.attribution.get("orders", {}).values())):
-            raise ValueError("共享跨日停止尚有未终结订单、冻结份额或Driver关联")
+        reasons = []
+        if any(not row.state.status.is_terminal for row in orders):
+            reasons.append("orders_nonterminal")
+        if any(positions.snapshot.working_quantities.values()):
+            reasons.append("working_quantity_nonzero")
+        if any(row.get("orders") for row in payload["ctp_drivers"].values()):
+            reasons.append("driver_associations_nonempty")
+        # FILLED历史计划保留released=False，但剩余量为零，并非活动冻结。
+        if any(not row["released"] and any(Decimal(leg["filled"]) < Decimal(leg["quantity"])
+                for leg in row["legs"]) for row in positions.attribution.get("orders", {}).values()):
+            reasons.append("attribution_remaining_nonzero")
+        if reasons:
+            raise ValueError("共享跨日停止尚有未终结订单、冻结份额或Driver关联；检查项=" + ",".join(reasons))
         # 保留draining供恢复后poll按实际归属冻结目标；柜台核验前不写原文件。
     journal = shared.get("shared", {}).get("event_journal", {})
     if any(row["status"] != "completed" for row in journal.get("requests", {}).values()):

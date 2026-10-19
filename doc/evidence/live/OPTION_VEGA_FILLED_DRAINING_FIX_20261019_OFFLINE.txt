@@ -1,0 +1,2 @@
+2026-10-19 offline tests: 08 base 91 OK; shared rollover 29 OK; total120.
+Combined actual restore covers old missing feature metadata, terminal draining, historical FILLED attributed order released=False with zero remaining; ownership and backup retained. Unreleased plan with remaining quantity rejected with original bytes preserved. No broker/database connection or real orders. Online pending.

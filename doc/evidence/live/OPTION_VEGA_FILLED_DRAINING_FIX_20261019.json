@@ -1,0 +1,16 @@
+{
+  "date": "2026-10-19",
+  "status": "offline_passed_online_pending",
+  "tests": {
+    "option_base": 91,
+    "shared_rollover": 29,
+    "total": 120
+  },
+  "scope": "filled_attribution_zero_remaining_is_not_active",
+  "network_connected": false,
+  "real_orders_submitted": 0,
+  "source_sha256": {
+    "scripts/integration/shared_account/rollover.py": "aa6bfe5efe978b8a72fda2ecc0e2339cc1fd3b0837f25becc413b4b36784b182",
+    "tests/test_option_shared_rollover.py": "9ed42ac6e2565c43b0a75a2e0dd302f4503858de785a5740e62312406296c698"
+  }
+}

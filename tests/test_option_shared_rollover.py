@@ -290,6 +290,12 @@ class OptionSharedRolloverTests(unittest.TestCase):
         saved = store.load(); payload = deepcopy(saved.payload)
         payload["component_states"]["shared_account"]["shared"].update(
             draining=[CLIENT], suspended=[CLIENT])
+        # 实际归属组件对全成订单保留released=False，冻结剩余量为0。
+        historical = payload["orders"][CLIENT][0]
+        payload["positions"]["attribution"]["orders"]["filled-history"] = dict(
+            client_id=CLIENT, client_order_id=historical["client_order_id"], instrument_id=OPTION,
+            submitting_strategy=CLIENT, direction=-1, quantity="1", released=False,
+            legs=[dict(strategy_id=CLIENT, target_key=OPTION, quantity="1", filled="1")])
         previous_index = payload["component_states"]["session_identity"]["identity"]["strategies"][CLIENT][
             "reference"]["sources"]["index"]
         previous_index.update(dataset_id=spec.dataset_id, schema_version=spec.schema_version,
@@ -313,14 +319,19 @@ class OptionSharedRolloverTests(unittest.TestCase):
         self.assertFalse(store.load().payload["component_states"]["shared_account"]["shared"]["draining"])
 
     def test_draining_does_not_hide_failed_pending_or_query_failure(self):
-        for mode in ("failed", "pending", "query"):
+        for mode in ("failed", "pending", "query", "attribution_remaining"):
             path = self.root / (mode+".json"); path.write_bytes(self.before)
             account, _, _, _, _ = self.shared(path=path, preserve_external=True)
             account.start(resume=True); account.authorize(); account.stop()
             store = JsonStateStore(path); saved = store.load(); payload = deepcopy(saved.payload)
             shared = payload["component_states"]["shared_account"]
             shared["shared"]["draining"] = [CLIENT]
-            if mode != "query": shared[mode] = True
+            if mode in {"failed", "pending"}: shared[mode] = True
+            if mode == "attribution_remaining":
+                payload["positions"]["attribution"]["orders"]["pending-plan"] = dict(
+                    client_id=CLIENT, client_order_id=None, instrument_id=OPTION,
+                    submitting_strategy=CLIENT, direction=-1, quantity="1", released=False,
+                    legs=[dict(strategy_id=CLIENT, target_key=OPTION, quantity="1", filled="0")])
             store.save(payload, expected_generation=saved.generation)
             before = path.read_bytes()
             transport = DetailsTransport("20260817")
