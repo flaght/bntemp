@@ -1,5 +1,5 @@
 """按显式来源日及固定合约复权；不解释或覆盖主力角色。"""
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 import re
@@ -8,6 +8,13 @@ from zoneinfo import ZoneInfo
 
 from .base import HistoryError
 from ..sources import ReferenceSourceFactory, ReferenceQuery, DataSourcePurpose
+
+
+@dataclass(frozen=True)
+class FactorAdjustmentResult:
+    bars: tuple
+    excluded: tuple[tuple[str, int], ...]
+    missing_factors: tuple[dict, ...]
 
 
 class ReferenceFactorAdjuster:
@@ -40,6 +47,14 @@ class ReferenceFactorAdjuster:
         return source.adjustment_factors(query)
 
     def __call__(self, bars):
+        return self._adjust(bars, allow_missing=False).bars
+
+    def adjust_available(self, bars):
+        """仅豁免成功查询得到零行的因子；保留每根被排除分钟及原因。"""
+        return self._adjust(bars, allow_missing=True)
+
+    def _adjust(self, bars, *, allow_missing):
+        self.last_audit = []
         bars = tuple(bars)
         required = {}
         for bar in bars:
@@ -52,7 +67,7 @@ class ReferenceFactorAdjuster:
             symbol = bar.instrument_id.rsplit(".", 1)[0].upper()
             key = (day, bar.instrument_id)
             required[key] = (match[1].upper(), symbol, self._declared_source_day(day))
-        factors, audits = {}, []
+        factors, audits, missing_keys = {}, [], {}
         if required:
             source = self.factory.create_for(DataSourcePurpose.LIVE_REFERENCE, self.backend, self.config)
             try:
@@ -61,6 +76,11 @@ class ReferenceFactorAdjuster:
                     source_day = self._resolve_source_day(source, key[0], product, source_day)
                     batch = self._factor_batch(source, ReferenceQuery(products=(product,), symbols=(symbol,),
                         start_date=source_day, end_date=source_day))
+                    if not batch.rows and allow_missing:
+                        missing_keys[key] = {"trading_day": str(key[0]), "instrument": key[1],
+                            "source_day": str(source_day), "reason": "missing_historical_factor",
+                            "source": batch.source, "fingerprint": batch.fingerprint}
+                        continue
                     if len(batch.rows) != 1:
                         raise HistoryError(f"{source_day}/{symbol}须有唯一累计因子，实际{len(batch.rows)}行")
                     row = batch.rows[0]
@@ -84,18 +104,27 @@ class ReferenceFactorAdjuster:
                         "version_evidence": "current_read_not_historical_revision_asof"})
             finally:
                 source.close()
-        adjusted = []
+        adjusted, excluded, excluded_by_day = [], [], {}
         for bar in bars:
             if bar.adjusted_close is not None:
                 adjusted.append(bar)
                 continue
             day = self._day(bar)
+            if (day, bar.instrument_id) in missing_keys:
+                excluded.append((bar.instrument_id, bar.ts_event))
+                excluded_by_day.setdefault((day, bar.instrument_id), []).append(bar.ts_event)
+                continue
             factor, available = factors[(day, bar.instrument_id)]
             if available > bar.ts_event:
                 raise HistoryError("因子在该分钟尚不可用，禁止提前复权")
             adjusted.append(replace(bar, adjusted_close=bar.close * factor, cumulative_factor=factor))
         self.last_audit = audits
-        return tuple(adjusted)
+        missing_audit = []
+        for (day, instrument), evidence in sorted(missing_keys.items()):
+            stamps = excluded_by_day[(day, instrument)]
+            missing_audit.append({**evidence, "bars": len(stamps),
+                "first_ns": min(stamps), "last_ns": max(stamps)})
+        return FactorAdjustmentResult(tuple(adjusted), tuple(excluded), tuple(missing_audit))
 
 
 class SessionReferenceFactorAdjuster(ReferenceFactorAdjuster):
@@ -111,10 +140,13 @@ class SessionReferenceFactorAdjuster(ReferenceFactorAdjuster):
         self.calendar, self.factor_date_basis = calendar, factor_date_basis
         self.max_source_age_days = max_source_age_days
 
-    def __call__(self, bars):
-        result = super().__call__(bars)
+    def _adjust(self, bars, *, allow_missing):
+        result = super()._adjust(bars, allow_missing=allow_missing)
         observed = clock_time.time_ns()
         for audit in self.last_audit:
+            audit.update(observed_at_ns=observed, factor_date_basis=self.factor_date_basis,
+                         purpose="live_indicator_warmup_not_historical_replay")
+        for audit in result.missing_factors:
             audit.update(observed_at_ns=observed, factor_date_basis=self.factor_date_basis,
                          purpose="live_indicator_warmup_not_historical_replay")
         return result

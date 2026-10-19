@@ -199,6 +199,36 @@ class CrossHistoryTests(unittest.TestCase):
         self.assertTrue(all(isinstance(s.price_adjuster, self.api.SessionReferenceFactorAdjuster)
                             for s in history.services.values()))
 
+    def install_missing_im_factor(self):
+        from bomber.framework.dataprep.sources import ReferenceBatch, ReferenceDataset
+        source = NS(open=lambda: None, close=lambda: None,
+            adjustment_factors=lambda query: ReferenceBatch(ReferenceDataset.ADJUSTMENT_FACTORS, (),
+                ("trade_date", "code", "symbol", "pcr_cumfactor"), "empty-im-factor"))
+        self.services["IM"].price_adjuster = self.api.ReferenceFactorAdjuster("config",
+            {date(2026, 10, 16): date(2026, 10, 15)},
+            factory=NS(create_for=lambda *args: source))
+
+    def test_missing_factor_allow_keeps_only_valid_synchronized_frames(self):
+        self.install_missing_im_factor()
+        self.history.missing_policy = "allow"
+        instrument = str(self.ids["IM"])
+        # 一根已明确复权的输入可用，另两根原始价格缺因子；IF仍有完整三根。
+        self.rows[instrument][0] = replace(self.rows[instrument][0], adjusted_close=Decimal(200))
+        self.warm()
+        self.assertEqual(self.runner.history_frame_count, 1)
+        self.assertEqual(self.strategy.synchronized_frames, 1)
+        self.assertEqual(self.history.last_audit["missing"], 2)
+        self.assertEqual(self.history.last_audit["products"]["IM"]["missing_factor_bars"], 2)
+        self.assertEqual(self.history.last_audit["products"]["IF"]["loaded"], 3)
+        self.strategy.set_targets.assert_not_called()
+
+    def test_missing_factor_fail_rejects_without_advancing_any_product(self):
+        self.install_missing_im_factor()
+        with self.assertRaises(self.api.HistoryUnavailable):
+            self.warm()
+        self.assertEqual(self.runner.history_frame_count, 0)
+        self.assertEqual(self.strategy.synchronized_frames, 0)
+
     def test_cffex_portfolio_is_opt_in_and_symbol_case_matches_database(self):
         import sys
         sys.modules["bomber.framework.market.basic.base"].InstrumentMeta = NS

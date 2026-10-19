@@ -98,6 +98,66 @@ class SessionFactorTests(unittest.TestCase):
         with self.assertRaisesRegex(HistoryError, "请求不一致"):
             self.adjuster((self.bar("2026-10-15T21:01:00"),))
 
+    def factor_gap_service(self, policy="allow", *, market_gap=False):
+        bars = (self.bar("2026-10-16T11:01:00"), self.bar("2026-10-16T11:02:00"),
+                self.bar("2026-10-19T10:01:00"))
+        def factors(query):
+            batch = self.factors(query)
+            if query.start_date == date(2026, 10, 15):
+                return ReferenceBatch(batch.dataset, (), batch.columns, "missing-previous-factor")
+            return batch
+        self.source.adjustment_factors.side_effect = factors
+        class Provider:
+            def open(self): pass
+            def close(self): pass
+            def read(self, request): return bars
+        factory = SimpleNamespace(create_for=lambda *args: Provider())
+        service = HistoryService(database_config={}, factory=factory, missing_policy=policy,
+                                 price_adjuster=self.adjuster)
+        stamps = tuple(b.ts_event for b in bars)
+        if market_gap:
+            stamps += (self.bar("2026-10-19T10:02:00").ts_event,)
+        return service, bars, stamps
+
+    def test_allow_skips_missing_historical_factor_without_borrowing_current_factor(self):
+        service, bars, stamps = self.factor_gap_service(market_gap=True)
+        result = service.load(bars[0].instrument_id, stamps, phase="recovery")
+        self.assertEqual([b.ts_event for b in result.bars], [bars[-1].ts_event])
+        self.assertEqual(result.bars[0].adjusted_close, Decimal(160))
+        self.assertEqual(set(result.missing), {bars[0].ts_event, bars[1].ts_event, stamps[-1]})
+        audit = service.last_audit
+        self.assertEqual((audit["required"], audit["loaded"], audit["missing"]), (4, 1, 3))
+        self.assertEqual(audit["missing_market_bars"], 1)
+        self.assertEqual(audit["missing_factor_bars"], 2)
+        self.assertEqual(audit["missing_factors"][0]["source_day"], "2026-10-15")
+        self.assertEqual(audit["missing_factors"][0]["bars"], 2)
+        self.assertTrue(all(b.adjusted_close is None for b in bars))
+
+    def test_fail_still_rejects_missing_historical_factor(self):
+        service, bars, stamps = self.factor_gap_service(policy="fail")
+        with self.assertRaisesRegex(HistoryError, "唯一累计因子"):
+            service.load(bars[0].instrument_id, stamps, phase="recovery")
+
+    def test_allow_does_not_hide_duplicate_invalid_or_future_factor(self):
+        for failure in ("duplicate", "invalid", "future"):
+            with self.subTest(failure=failure):
+                service, bars, stamps = self.factor_gap_service()
+                def factors(query):
+                    batch = self.factors(query)
+                    rows = batch.rows * 2 if failure == "duplicate" else (
+                        dict(batch.rows[0], **({"pcr_cumfactor": "0"} if failure == "invalid" else
+                             {"available_ns": bars[-1].ts_event + 1})),)
+                    return ReferenceBatch(batch.dataset, rows, batch.columns, failure)
+                self.source.adjustment_factors.side_effect = factors
+                with self.assertRaises(HistoryError):
+                    service.load(bars[0].instrument_id, stamps, phase="recovery")
+
+    def test_allow_does_not_hide_factor_source_failure(self):
+        service, bars, stamps = self.factor_gap_service()
+        self.source.adjustment_factors.side_effect = RuntimeError("factor source unavailable")
+        with self.assertRaisesRegex(RuntimeError, "factor source unavailable"):
+            service.load(bars[0].instrument_id, stamps, phase="recovery")
+
     def test_completed_minute_query_matches_exact_framework_timestamp(self):
         connection = DolphinDbReferenceConfig("fake", 8848, "fake", "fake")
         config = DolphinDbHistoryConfig(connection, "dfs://min_bar", "shfe_1min",

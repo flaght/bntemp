@@ -2,6 +2,7 @@
 from dataclasses import dataclass
 from .base import HistoryRequest, HistoryError, HistoryUnavailable, select_bars
 from .factory import HistoryProviderFactory
+from .factors import FactorAdjustmentResult
 from ..sources.policy import DataSourcePurpose
 
 
@@ -73,13 +74,28 @@ class HistoryService:
                 else:
                     self._load_database(request, needed, selected, sources, unavailable, phase)
         missing = tuple(stamp for stamp in stamps if stamp not in selected)
+        market_missing = missing
         bars = tuple(selected[key] for key in sorted(selected))
-        price_audit = None
+        price_audit, missing_factors, factor_excluded = None, (), ()
         if self.price_adjuster is not None and (not missing or self.missing_policy == "allow"):
-            adjusted = tuple(self.price_adjuster(bars))
-            if [(bar.instrument_id, bar.ts_event) for bar in adjusted] != [(bar.instrument_id, bar.ts_event) for bar in bars]:
+            adjust_available = getattr(self.price_adjuster, "adjust_available", None)
+            if self.missing_policy == "allow" and callable(adjust_available):
+                adjustment = adjust_available(bars)
+                if not isinstance(adjustment, FactorAdjustmentResult):
+                    raise HistoryError("因子缺失处理须返回明确的排除分钟和审计")
+                adjusted, factor_excluded, missing_factors = adjustment.bars, adjustment.excluded, adjustment.missing_factors
+            else:
+                adjusted = tuple(self.price_adjuster(bars))
+            excluded = set(factor_excluded)
+            original = {(bar.instrument_id, bar.ts_event) for bar in bars}
+            if len(excluded) != len(factor_excluded) or not excluded <= original:
+                raise HistoryError("因子缺失不能排除重复或不属于请求的分钟")
+            expected = [(bar.instrument_id, bar.ts_event) for bar in bars
+                        if (bar.instrument_id, bar.ts_event) not in excluded]
+            if [(bar.instrument_id, bar.ts_event) for bar in adjusted] != expected:
                 raise HistoryError("历史价格处理不能增删/改写分钟身份或顺序")
-            bars = adjusted
+            bars = tuple(adjusted)
+            missing = tuple(sorted(set(missing) | {stamp for _, stamp in excluded}))
             price_audit = getattr(self.price_adjuster, "last_audit", None)
         result = HistoryResult(bars, missing,
             tuple(sources), self.missing_policy == "allow", tuple(unavailable))
@@ -87,6 +103,9 @@ class HistoryService:
             self.last_audit = {"phase": phase, **result.audit()}
             if self.price_adjuster is not None:
                 self.last_audit["price_adjustment"] = price_audit
+                self.last_audit["missing_market_bars"] = len(market_missing)
+                self.last_audit["missing_factor_bars"] = len(factor_excluded)
+                self.last_audit["missing_factors"] = list(missing_factors)
             self.audit_history.append(self.last_audit)
             self.audit_history = self.audit_history[-50:]
         if missing and self.missing_policy == "fail":
