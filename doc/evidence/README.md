@@ -194,3 +194,7 @@ sha256sum -c doc/evidence/checksums/DOCUMENTATION_20261010_SHA256.txt
 ### 2026-10-19：全成历史计划冻结量检查修复
 
 修复跨日draining检查误把released=false的全成历史计划当活动冻结；实际按leg剩余量核验，并增加具体失败项。120项离线回归通过，线上待验。[说明](../HANDOFF/live/HANDOFF_OPTION_VEGA_FILLED_DRAINING_FIX_2026-10-19.md)、[包](archives/OPTION_VEGA_FILLED_DRAINING_FIX_20261019.tar.gz)、[SHA](checksums/OPTION_VEGA_FILLED_DRAINING_FIX_20261019_SHA256.txt)。
+
+### 2026-10-19：订单查询超时受控停止
+
+合并定期重复查询；停止只排空回报和冻结目标，再做最多两轮超时重查，核验通过才保存，不自动恢复交易。原始failure和cleanup结果分开记录。376项离线回归通过，线上待验。[说明](../HANDOFF/live/HANDOFF_OPTION_VEGA_QUERY_TIMEOUT_STOP_2026-10-19.md)、[包](archives/OPTION_VEGA_QUERY_TIMEOUT_STOP_20261019.tar.gz)、[SHA](checksums/OPTION_VEGA_QUERY_TIMEOUT_STOP_20261019_SHA256.txt)。

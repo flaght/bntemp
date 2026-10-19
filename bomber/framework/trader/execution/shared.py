@@ -364,6 +364,14 @@ class SharedAccountExecutionService(AccountExecutionService):
                            and now > source["deadline_ns"]]
             for sid in expired:
                 self.suspend_strategy(sid)
+            self.poll_stopping()
+
+    def poll_stopping(self):
+        """只排空停止贡献，不检查交易健康、不续单；账本/回报错误仍拒绝。"""
+        with self._dispatch_lock:
+            if self._failed or self._pending or self.client.report_errors or getattr(self.client, "portfolio_failure", None):
+                raise RuntimeError("停止期间执行账本或回报冲突，保持闭闸")
+            now = self.clock_ns()
             self._cancelled = {sid for sid in self._cancelled if self._owner_working(sid)}
             for sid in tuple(self._draining):
                 port = self._ports[sid]

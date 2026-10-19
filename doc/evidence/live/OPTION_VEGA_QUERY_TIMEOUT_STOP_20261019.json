@@ -1,0 +1,23 @@
+{
+  "date": "2026-10-19",
+  "status": "offline_passed_online_pending",
+  "scope": "query_dedup_and_fail_closed_controlled_stop",
+  "tests": {
+    "option_base": 91,
+    "option_shared": 29,
+    "shared_account": 89,
+    "live_common": 120,
+    "shared_ipc": 47,
+    "total": 376
+  },
+  "network_connected": false,
+  "real_orders_submitted": 0,
+  "automatic_trading_resume": false,
+  "stop_timeout_attempts": 2,
+  "source_sha256": {
+    "bomber/framework/trader/execution/shared.py": "50cf170b02c1216c678460b40ccbf3943b37cc5db229234cd7e500d563109b83",
+    "bomber/framework/trader/runtime/live/shared.py": "b1b5c33395178e6bbfa1ed49456b2af2633357972927469d43f0e573c631d4d9",
+    "bomber/framework/trader/runtime/live/channels/ctp_shared.py": "00494ad94bd51fe2c2181ebd3d03964dc1ab24582e5dc70f3ce5cc885ee345a1",
+    "tests/test_shared_account.py": "2a4ea7be50333d274043d4a05825a7925eff14101c5895f6f775cd7b05e91628"
+  }
+}

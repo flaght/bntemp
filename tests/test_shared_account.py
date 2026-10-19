@@ -513,6 +513,116 @@ class SharedAccountTests(unittest.TestCase):
         self.addCleanup(client.stop)
         return lifecycle, service, transport, ports, resources
 
+    def test_late_order_query_final_reply_cannot_complete_next_request(self):
+        self.native_modules()
+        from tests.run_p4_ctp_td_transport import FakeTdApi, _transport
+        class Api(FakeTdApi):
+            previous = None
+            def reqQryOrder(self, data, reqid):
+                if self.previous is None:
+                    self.previous = reqid
+                    return 0  # 首次请求没有最终回报。
+                super().reqQryOrder(data, self.previous)  # 旧请求迟到，含一笔活动单。
+                self.onRspQryOrder({}, {}, reqid, True)  # 新查询正常完成且无活动单。
+                return 0
+        transport = _transport(Api)
+        transport.connect(lambda event: None, lambda event: None, lambda reason: None)
+        transport.activate()
+        self.addCleanup(transport.close)
+        with self.assertRaises(TimeoutError): transport.query_active_orders()
+        self.assertFalse(transport.query_active_orders().orders)
+
+    def test_periodic_owned_reconciliation_queries_orders_once(self):
+        modules = self.native_modules()
+        with TemporaryDirectory() as directory:
+            account, service, transport, _, _ = self.native_account(Path(directory)/"account.json", modules,
+                scoped=True, execution_mode="independent", preserve_external=True)
+            account.start(resume=False); account.authorize()
+            original = transport.query_active_orders
+            calls = []
+            def query():
+                calls.append(1)
+                return original()
+            transport.query_active_orders = query
+            account._next_check = 0
+            account.poll()
+            self.assertEqual(len(calls), 1)
+            account.stop()
+
+    def test_order_query_timeout_host_stop_drains_partial_fill_and_reconciles_without_rearming(self):
+        with TemporaryDirectory() as directory:
+            host, transport, rows = self.callback_host(Path(directory))
+            service, account = host.service, host.account
+            # netted会话同样需要异常停止支持；当时正有本系统部分成交订单。
+            self.submit(rows[0].session.client, 2)
+            ref = transport.sent[-1]["OrderRef"]
+            transport.fill(ref, 1)
+            original = transport.query_active_orders
+            calls = [0]
+            def query():
+                calls[0] += 1
+                if calls[0] in (1, 2):
+                    raise TimeoutError("fixture orders timeout")
+                return original()
+            # 强制走运行检查中的订单查询（原callback_host为全账户策略）。
+            scope = import_module("bomber.framework.trader.runtime.live.recovery").InstrumentPositionScope([self.instrument])
+            account.position_scope = scope
+            transport.query_active_orders = query
+            account._next_check = 0
+            with self.assertRaisesRegex(TimeoutError, "orders timeout"):
+                host.poll()
+            sends = len(transport.sent)
+            host.stop()
+            self.assertEqual(len(transport.sent), sends)
+            self.assertEqual(account.stop_query_attempts, 2)
+            self.assertFalse(account.client.is_armed)
+            self.assertEqual(account.final_active_orders, 0)
+            self.assertEqual(service.position_manager.position("one", "main"), 1)
+            self.assertTrue(rows[0].session.strategy.fills)
+            self.assertFalse(service.position_manager.is_recovery_required(service.client_id))
+            self.assertTrue(all(not row.active for row in rows))
+            self.assertFalse(host.snapshot()["strategies"]["one"]["execution_events"]["pending_fills"])
+
+    def test_funds_query_timeout_can_finish_stop_without_client_reauthorization(self):
+        modules = self.native_modules()
+        with TemporaryDirectory() as directory:
+            account, service, transport, _, _ = self.native_account(Path(directory)/"account.json", modules,
+                scoped=True, execution_mode="independent", preserve_external=True)
+            account.start(resume=False); account.authorize()
+            original = transport.query_account
+            calls = [0]
+            def query():
+                calls[0] += 1
+                if calls[0] == 1: raise TimeoutError("fixture funds timeout")
+                return original()
+            transport.query_account = query
+            account._next_check = 0
+            with self.assertRaises(TimeoutError): account.poll()
+            self.assertFalse(account.client.is_reconciled)
+            account.stop()
+            self.assertEqual(account.final_active_orders, 0)
+            self.assertFalse(account.client.is_armed)
+            self.assertFalse(transport.sent)
+
+    def test_stop_query_timeout_exhaustion_keeps_recovery_marker_and_does_not_send(self):
+        modules = self.native_modules()
+        with TemporaryDirectory() as directory:
+            account, service, transport, _, _ = self.native_account(Path(directory)/"account.json", modules,
+                scoped=True, execution_mode="independent", preserve_external=True)
+            account.start(resume=False); account.authorize()
+            original = transport.query_active_orders
+            transport.query_active_orders = lambda: (_ for _ in ()).throw(TimeoutError("fixture timeout"))
+            account._next_check = 0
+            with self.assertRaises(TimeoutError): account.poll()
+            with self.assertRaises(TimeoutError): account.stop()
+            self.assertEqual(account.stop_query_attempts, 2)
+            self.assertTrue(account.execution.positions.is_recovery_required(service.client_id))
+            self.assertIsNone(account.final_active_orders)
+            self.assertFalse(transport.sent)
+            self.assertFalse(account.client.is_armed)
+            transport.query_active_orders = original
+            account.stop()
+
     def test_independent_same_instrument_external_baseline_never_becomes_owned_or_closed(self):
         modules = self.native_modules()
         with TemporaryDirectory() as directory:

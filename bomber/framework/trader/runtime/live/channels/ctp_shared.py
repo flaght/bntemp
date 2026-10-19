@@ -2,6 +2,7 @@
 
 import time
 import os
+import logging
 from copy import deepcopy
 from decimal import Decimal
 
@@ -50,6 +51,8 @@ class CtpSharedAccountLifecycle:
         self._restored = False
         self._ready = False
         self.final_gross = self.final_active_orders = None
+        self.query_failure = None
+        self.stop_query_attempts = 0
 
     @staticmethod
     def acquire(resources, transport, *, environment):
@@ -76,7 +79,7 @@ class CtpSharedAccountLifecycle:
                 if before != (self.ledger.state(), self.execution.positions.state()):
                     continue
                 self._validate_account_snapshot(gross, buckets, active)
-                return
+                return gross, active
         raise RuntimeError("共享账户权威查询期间成交持续变化，保留账本并重新核验")
 
     def _validate_account_snapshot(self, gross, buckets, active):
@@ -357,21 +360,24 @@ class CtpSharedAccountLifecycle:
                 or getattr(self.client, "portfolio_failure", None)):
             raise RuntimeError("共享账户断线、回报冲突或交易日变化，账户闭闸")
         if time.monotonic() >= self._next_check:
-            self.client.refresh_account_state()
-            if self.position_scope is not None:
-                try:
-                    gross, buckets = self._observe_positions(external_only=True)
-                    self._validate_external(gross, buckets)
+            try:
+                self.client.refresh_account_state()
+                if self.position_scope is not None:
                     # 活动单期间权威总仓与回报可能处于不同瞬间；终态后核对完整基线+归属。
                     if self.preserve_external and not self.service._active_instruments():
-                        self._validate_account()
-                    if any(not self.position_scope.contains(order.instrument_id)
-                           for order in self.driver.reconcile_active_orders().orders):
-                        raise RuntimeError("共享账户出现范围外活动订单，账户闭闸")
-                except Exception:
-                    self.client.disarm("external_position_check_failed")
-                    self.execution.positions.mark_recovery_required(self.service.client_id)
-                    raise
+                        self._validate_account()  # 已包含本轮唯一的活动订单查询。
+                    else:
+                        gross, buckets = self._observe_positions(external_only=True)
+                        self._validate_external(gross, buckets)
+                        if any(not self.position_scope.contains(order.instrument_id)
+                               for order in self.driver.reconcile_active_orders().orders):
+                            raise RuntimeError("共享账户出现范围外活动订单，账户闭闸")
+            except Exception as error:
+                if isinstance(error, TimeoutError):
+                    self.query_failure = str(error)
+                self.client.disarm("external_position_check_failed")
+                self.execution.positions.mark_recovery_required(self.service.client_id)
+                raise
             self._next_check = time.monotonic() + self.reconcile_seconds
 
     def stop(self):
@@ -387,15 +393,41 @@ class CtpSharedAccountLifecycle:
             return
         self.client.set_risk_mode("HALTED", cancel_active_orders=True)
         deadline = time.monotonic() + self.cancel_seconds
-        while self.driver.reconcile_active_orders().orders:
+        # 等本地已知订单的终态，不因每0.2秒查全账户而产生查询风暴。
+        while self.service._active_instruments():
             if time.monotonic() > deadline:
                 raise RuntimeError("共享账户停机撤单未确认，账户锁保留")
+            self.service.poll_stopping()
             time.sleep(0.2)
-        self.service.poll()
-        self._validate_account()
+        self.service.poll_stopping()
+        for attempt in range(2):
+            self.stop_query_attempts = attempt + 1
+            logging.getLogger("SharedAccountStop").info(
+                "停机权威对账: attempt=%s/2 original_query_failure=%s；禁止自动恢复交易",
+                self.stop_query_attempts, self.query_failure)
+            try:
+                # 停机只读核验，不重新授权；资金心跳失败可能已撤销client.reconciled。
+                if not self.driver.is_simnow_session or self.driver.trading_day != self.expected_day:
+                    raise RuntimeError("停机核验时柜台连接或交易日不符")
+                self.driver.reconcile_account_state()
+                gross, active = self._validate_account()
+                break
+            except TimeoutError:
+                if attempt == 1:
+                    raise
+        if self.query_failure is not None:
+            # 仅解除此次查询超时留下的恢复标志，且已确认全账户无活动单和本地终态。
+            if (self.client.report_errors or self.service._failed or self.service._pending
+                    or self.service._active_instruments()
+                    or any(self.execution.positions.snapshot().working_quantities.values())):
+                raise RuntimeError("最终查询成功但仍有未决执行状态，禁止完成停止")
+            self.execution.positions.complete_working_recovery(self.service.client_id, {})
         self.manager.save()
-        self.final_gross = occupied_positions(self.transport)
-        self.final_active_orders = len(self.driver.reconcile_active_orders().orders)
+        self.final_gross = gross
+        self.final_active_orders = len(active)
+        logging.getLogger("SharedAccountStop").info(
+            "停机权威对账完成: active_orders=%s attempts=%s；归属仓位已保存，未重新授权",
+            self.final_active_orders, self.stop_query_attempts)
         self.client.stop()
         self.driver.stop()
         self._started = False

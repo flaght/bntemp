@@ -195,7 +195,7 @@ class SharedAccountLiveHost:
         if self._prepared:
             deadline = time.monotonic() + getattr(self.account, "cancel_seconds", 15)
             while True:
-                self.service.poll()
+                self.service.poll_stopping()
                 port.drain_events()
                 if port.finish_stop_events():
                     break
@@ -307,6 +307,8 @@ class SharedAccountLiveHost:
             "strategy_positions": [{"strategy_id": sid, "target_key": key, "quantity": str(q)}
                 for (sid, key), q in positions.strategy_positions.items()],
             "execution_positions": {str(key.instrument_id): str(q) for key, q in positions.account_positions.items()},
+            "stop_reconciliation": {"query_failure": getattr(getattr(self, "account", None), "query_failure", None),
+                "attempts": getattr(getattr(self, "account", None), "stop_query_attempts", 0)},
             "strategies": {sid: {"active": item.active, "failure": item.failure,
                 **history_snapshot(item.session),
                 "failure_readiness": getattr(item.session.runner, "failure_readiness", None),

@@ -1,0 +1,4 @@
+2026-10-19 offline only. No real CTP/DolphinDB connection or real orders.
+08 base 91 OK; option shared rollover29 OK; shared account89 OK; live-common120 OK; shared-ipc47 OK. Total376.
+New regressions: order queries once per periodic idle-owned check; runtime orders timeout with queued partial fill, known order cancel, drain and second stop query succeeds without new sends/rearming; exhausted timeout leaves recovery marker and final_active_orders=None; funds heartbeat timeout can finish read-only stop without reconciled client; stale reqid final reply cannot complete next query.
+IPC runs real local child processes and Unix sockets with local permission; entity/broker transport fixtures only.

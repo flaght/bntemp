@@ -1348,3 +1348,7 @@ CTP期权/期货缺失Bar不自动补查DolphinDB；日志不改变查询、等�
 新版补入alignment/computation_version可能使旧跨日来源比较误报。现在仅在dolphindb-dfs的默认index.minute/Schema1及Schema指纹完全匹配时，从同一声明补齐缺失字段，再严格比较；已有字段、其他来源配置不覆盖，真实变化仍拒绝并给出差异字段路径。旧元数据与残留draining组合恢复已离线验证，原归属及备份保留。见[同步说明](../../doc/HANDOFF/live/HANDOFF_OPTION_VEGA_SOURCE_METADATA_COMPAT_2026-10-19.md)。
 
 跨日停止检查补充：全成历史计划可能正常保留`released=false`，实际冻结量取各leg的quantity-filled；仅“未释放且有剩余量”才阻止恢复。不能把历史记录本身当成活动订单。原订单终态、工作量、Driver关联及权威柜台核验仍保留，失败信息明确列出检查项。见[全成计划兼容修复](../../doc/HANDOFF/live/HANDOFF_OPTION_VEGA_FILLED_DRAINING_FIX_2026-10-19.md)。
+
+### CTP查询超时后的停止（2026-10-19）
+
+定期独立归属对账复用一次活动订单查询；异常停止使用只排空回报/冻结贡献的公共路径，避免查询超时撤销健康状态后普通poll反过来阻止停止。本系统已知委托撤销并终结后，最多两轮只读资金/仓位/订单核验；成功后保存归属并停止，不自动授权续跑。失败仍保留未完成状态。报告stop_reconciliation记录query_failure及attempts，原超时仍为failure；只有最终对账成功才填final_active_orders=0。376项离线回归通过，服务器待验。[部署说明](../../doc/HANDOFF/live/HANDOFF_OPTION_VEGA_QUERY_TIMEOUT_STOP_2026-10-19.md)。
