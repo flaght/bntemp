@@ -1,0 +1,275 @@
+{
+  "config": {
+    "version": 1,
+    "trading_day": "20261016",
+    "environment": "realtime",
+    "position_scope": "strategy_instruments",
+    "execution_mode": "independent",
+    "seconds": 3600.0,
+    "account_state_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/three-realtime-independent-20261016-im-if/account.json",
+    "report_dir": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/three-realtime-independent-20261016-im-if",
+    "account": {
+      "client_id": "three-im-if-independent",
+      "max_gross_quantity": "5",
+      "max_gross_notional": "6600000",
+      "max_session_orders": 200,
+      "limit_offset_ticks": 1
+    },
+    "strategies": [
+      {
+        "strategy_id": "ema-im-three",
+        "kind": "main_ema",
+        "state_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/three-realtime-independent-20261016-im-if/ema.json",
+        "argv": [
+          "--product",
+          "IM",
+          "--expected-source-day",
+          "20261015",
+          "--factor-date-basis",
+          "source",
+          "--factor-availability",
+          "observed-on-read",
+          "--fast",
+          "3",
+          "--slow",
+          "5",
+          "--quantity",
+          "1",
+          "--max-notional",
+          "3000000",
+          "--ctp-future-buffer-ms",
+          "100",
+          "--expected-instrument",
+          "IM2610.CFFEX",
+          "--calendar-id",
+          "china.cffex",
+          "--trading-hours-database",
+          "dfs://bomber_static",
+          "--trading-hours-table",
+          "fut_trading_session",
+          "--no-session-overrides",
+          "--history-stage",
+          "recovery",
+          "--history-missing-policy",
+          "fail",
+          "--history-db",
+          "dolphindb",
+          "--history-minutes",
+          "240",
+          "--history-config",
+          "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/demos/01_main_ema/history_im_raw.json"
+        ]
+      },
+      {
+        "strategy_id": "cross-im-if-three",
+        "kind": "cross_section",
+        "state_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/three-realtime-independent-20261016-im-if/cross.json",
+        "argv": [
+          "--products",
+          "IM,IF",
+          "--expected-source-day",
+          "20261015",
+          "--factor-date-basis",
+          "source",
+          "--factor-availability",
+          "observed-on-read",
+          "--lookback",
+          "20",
+          "--rebalance-interval",
+          "5",
+          "--group-fraction",
+          "0.5",
+          "--target-notional",
+          "3000000",
+          "--target-quantity-cap",
+          "1",
+          "--max-quantity",
+          "1",
+          "--max-notional",
+          "3000000",
+          "--ctp-future-buffer-ms",
+          "100",
+          "--expected-instrument",
+          "IM=IM2610.CFFEX",
+          "--expected-instrument",
+          "IF=IF2610.CFFEX",
+          "--calendar-id",
+          "china.cffex",
+          "--trading-hours-database",
+          "dfs://bomber_static",
+          "--trading-hours-table",
+          "fut_trading_session",
+          "--no-session-overrides",
+          "--history-stage",
+          "recovery",
+          "--history-missing-policy",
+          "fail",
+          "--history-db",
+          "dolphindb",
+          "--history-minutes",
+          "21",
+          "--history-config",
+          "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/demos/04_cross_section/history_cffex.json"
+        ]
+      },
+      {
+        "strategy_id": "calendar-im-three",
+        "kind": "calendar_spread",
+        "state_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/scripts/integration/shared_account/results/three-realtime-independent-20261016-im-if/calendar.json",
+        "argv": [
+          "--product",
+          "IM",
+          "--expected-source-day",
+          "20261015",
+          "--leg1-role",
+          "main",
+          "--leg2-role",
+          "secondary",
+          "--quantity",
+          "1",
+          "--lookback",
+          "120",
+          "--rebalance-interval",
+          "5",
+          "--entry-z",
+          "2",
+          "--exit-z",
+          "0.5",
+          "--max-notional",
+          "3000000",
+          "--ctp-future-buffer-ms",
+          "100",
+          "--expected-instrument",
+          "main=IM2612.CFFEX",
+          "--expected-instrument",
+          "secondary=IM2703.CFFEX",
+          "--calendar-id",
+          "china.cffex",
+          "--trading-hours-database",
+          "dfs://bomber_static",
+          "--trading-hours-table",
+          "fut_trading_session",
+          "--no-session-overrides",
+          "--history-stage",
+          "recovery",
+          "--history-missing-policy",
+          "fail",
+          "--history-db",
+          "dolphindb",
+          "--history-minutes",
+          "120",
+          "--history-config",
+          "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/demos/03_calendar_spread/history_im.json"
+        ]
+      }
+    ]
+  },
+  "failure": null,
+  "td_preflight": {
+    "environment": "realtime",
+    "expected_td_trading_day": "20261016",
+    "observed_td_trading_day": "20261016",
+    "md_front": "tcp://182.254.243.31:30011",
+    "td_front": "tcp://182.254.243.31:30001",
+    "preflight_orders_submitted": 0,
+    "position_scope_policy": "strategy_instruments",
+    "managed_instruments": [
+      "IF2610.CFFEX",
+      "IM2610.CFFEX",
+      "IM2612.CFFEX",
+      "IM2703.CFFEX"
+    ],
+    "external_gross": {
+      "MO2611-C-7100.CFFEX": [
+        "0",
+        "1"
+      ],
+      "cu2701.SHFE": [
+        "1",
+        "2"
+      ],
+      "cu2612.SHFE": [
+        "2",
+        "1"
+      ],
+      "al2611.SHFE": [
+        "2",
+        "0"
+      ],
+      "ag2612.SHFE": [
+        "0",
+        "3"
+      ],
+      "cu2611.SHFE": [
+        "1",
+        "1"
+      ],
+      "sc2611.INE": [
+        "1",
+        "0"
+      ],
+      "ni2611.SHFE": [
+        "1",
+        "0"
+      ],
+      "i2701.DCE": [
+        "0",
+        "1"
+      ],
+      "hc2701.SHFE": [
+        "1",
+        "0"
+      ],
+      "au2612.SHFE": [
+        "0",
+        "2"
+      ]
+    }
+  },
+  "markets": {
+    "ema-im-three": {
+      "IM2610.CFFEX": {
+        "trading_day": "20261016",
+        "ts_event": 1792129218000000000,
+        "received_monotonic_ns": 15095195022540156,
+        "timestamp_regressed": false,
+        "reference_price": "6741.2"
+      }
+    },
+    "cross-im-if-three": {
+      "IF2610.CFFEX": {
+        "trading_day": "20261016",
+        "ts_event": 1792129215500000000,
+        "received_monotonic_ns": 15095195024227886,
+        "timestamp_regressed": false,
+        "reference_price": "4168.5"
+      },
+      "IM2610.CFFEX": {
+        "trading_day": "20261016",
+        "ts_event": 1792129218000000000,
+        "received_monotonic_ns": 15095195024769693,
+        "timestamp_regressed": false,
+        "reference_price": "6741.2"
+      }
+    },
+    "calendar-im-three": {
+      "IM2612.CFFEX": {
+        "trading_day": "20261016",
+        "ts_event": 1792129219500000000,
+        "received_monotonic_ns": 15095195063079330,
+        "timestamp_regressed": false,
+        "reference_price": "6628.3"
+      },
+      "IM2703.CFFEX": {
+        "trading_day": "20261016",
+        "ts_event": 1792129219500000000,
+        "received_monotonic_ns": 15095195063417698,
+        "timestamp_regressed": false,
+        "reference_price": "6462.6"
+      }
+    }
+  },
+  "verification": "readonly_no_strategy_no_orders",
+  "orders_submitted": 0,
+  "status": "prechecked"
+}

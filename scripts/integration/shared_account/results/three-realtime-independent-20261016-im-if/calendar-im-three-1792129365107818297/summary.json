@@ -1,0 +1,260 @@
+{
+  "strategy_id": "calendar-im-three",
+  "kind": "calendar_spread",
+  "argv": [
+    "--product",
+    "IM",
+    "--expected-source-day",
+    "20261015",
+    "--leg1-role",
+    "main",
+    "--leg2-role",
+    "secondary",
+    "--quantity",
+    "1",
+    "--lookback",
+    "120",
+    "--rebalance-interval",
+    "5",
+    "--entry-z",
+    "2",
+    "--exit-z",
+    "0.5",
+    "--max-notional",
+    "3000000",
+    "--ctp-future-buffer-ms",
+    "100",
+    "--expected-instrument",
+    "main=IM2612.CFFEX",
+    "--expected-instrument",
+    "secondary=IM2703.CFFEX",
+    "--calendar-id",
+    "china.cffex",
+    "--trading-hours-database",
+    "dfs://bomber_static",
+    "--trading-hours-table",
+    "fut_trading_session",
+    "--no-session-overrides",
+    "--history-stage",
+    "recovery",
+    "--history-missing-policy",
+    "fail",
+    "--history-db",
+    "dolphindb",
+    "--history-minutes",
+    "120",
+    "--history-config",
+    "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/demos/03_calendar_spread/history_im.json"
+  ],
+  "trading_day": "20261016",
+  "environment": "realtime",
+  "replay_md_trading_day": null,
+  "execution_mode": "independent",
+  "failure": "[Errno 104] Connection reset by peer",
+  "shutdown_failure": "[Errno 2] No such file or directory",
+  "stop_reason": null,
+  "history": {
+    "phase": "recovery",
+    "required": 1,
+    "loaded": 1,
+    "missing": 0,
+    "first_missing_ns": null,
+    "last_missing_ns": null,
+    "sources": [
+      "dolphindb"
+    ],
+    "allowed_missing": false,
+    "legs": {
+      "IM2612.CFFEX": {
+        "phase": "recovery",
+        "required": 1,
+        "loaded": 1,
+        "missing": 0,
+        "first_missing_ns": null,
+        "last_missing_ns": null,
+        "sources": [
+          "dolphindb"
+        ],
+        "allowed_missing": false,
+        "unavailable_sources": []
+      },
+      "IM2703.CFFEX": {
+        "phase": "recovery",
+        "required": 1,
+        "loaded": 1,
+        "missing": 0,
+        "first_missing_ns": null,
+        "last_missing_ns": null,
+        "sources": [
+          "dolphindb"
+        ],
+        "allowed_missing": false,
+        "unavailable_sources": []
+      }
+    },
+    "load_seconds": 0.022
+  },
+  "history_audit": [
+    {
+      "phase": "recovery",
+      "required": 120,
+      "loaded": 120,
+      "missing": 0,
+      "first_missing_ns": null,
+      "last_missing_ns": null,
+      "sources": [
+        "dolphindb"
+      ],
+      "allowed_missing": false,
+      "legs": {
+        "IM2612.CFFEX": {
+          "phase": "recovery",
+          "required": 120,
+          "loaded": 120,
+          "missing": 0,
+          "first_missing_ns": null,
+          "last_missing_ns": null,
+          "sources": [
+            "dolphindb"
+          ],
+          "allowed_missing": false,
+          "unavailable_sources": []
+        },
+        "IM2703.CFFEX": {
+          "phase": "recovery",
+          "required": 120,
+          "loaded": 120,
+          "missing": 0,
+          "first_missing_ns": null,
+          "last_missing_ns": null,
+          "sources": [
+            "dolphindb"
+          ],
+          "allowed_missing": false,
+          "unavailable_sources": []
+        }
+      },
+      "load_seconds": 0.029
+    },
+    {
+      "phase": "recovery",
+      "required": 1,
+      "loaded": 1,
+      "missing": 0,
+      "first_missing_ns": null,
+      "last_missing_ns": null,
+      "sources": [
+        "dolphindb"
+      ],
+      "allowed_missing": false,
+      "legs": {
+        "IM2612.CFFEX": {
+          "phase": "recovery",
+          "required": 1,
+          "loaded": 1,
+          "missing": 0,
+          "first_missing_ns": null,
+          "last_missing_ns": null,
+          "sources": [
+            "dolphindb"
+          ],
+          "allowed_missing": false,
+          "unavailable_sources": []
+        },
+        "IM2703.CFFEX": {
+          "phase": "recovery",
+          "required": 1,
+          "loaded": 1,
+          "missing": 0,
+          "first_missing_ns": null,
+          "last_missing_ns": null,
+          "sources": [
+            "dolphindb"
+          ],
+          "allowed_missing": false,
+          "unavailable_sources": []
+        }
+      },
+      "load_seconds": 0.022
+    }
+  ],
+  "complete_frames": 131,
+  "synchronized_frames": null,
+  "history_frames": 121,
+  "live_frames": 10,
+  "bars_used": null,
+  "failure_readiness": {
+    "observed_at_ns": 1792130022630116670,
+    "channel_readiness": null,
+    "runner_failure": null,
+    "stale_instruments": {},
+    "reference_current": true,
+    "execution_port": {
+      "started": true,
+      "stopping": false,
+      "reconciled": true,
+      "account_reconciled": true,
+      "observation_age_seconds": 2.6721226051449776
+    }
+  },
+  "verification": "independent_strategy_process",
+  "positions": {
+    "IM2612.CFFEX": "0",
+    "IM2703.CFFEX": "0"
+  },
+  "cursor": 0,
+  "fills_received": 0,
+  "source_revision": 0,
+  "last_targets": null,
+  "reference_manifest": {
+    "backend": "DolphinDbReferenceSource",
+    "trading_day": "2026-10-16",
+    "factor_date_basis": "source",
+    "factor_date": "2026-10-15",
+    "factor_availability": "source-day-end",
+    "factor_publication_policy": "source-day-end",
+    "role_source_day": "2026-10-15",
+    "freshness_policy": {
+      "expected_source_day": "2026-10-15",
+      "role_and_factor_max_source_age_days": 14,
+      "basic_age_basis": "contract_lifecycle_and_successful_observation_not_listing_date",
+      "max_observation_age_seconds": 30,
+      "max_refresh_duration_seconds": 30,
+      "source_day_evidence": "operator_declared_day"
+    },
+    "reference_date_selection": "latest_role_source_before_td_requires_upstream_completeness",
+    "role_date_basis": "previous_source_day",
+    "fingerprint": "bab4495a4aad69920a4c3e501b757f8da7c168617233f7feffa8305a6f1b7591",
+    "observed_at_ns": 1792130018864925357,
+    "first_observed_ns": 1792129367633962881,
+    "effective_ns": 1792129365340542731,
+    "available_ns": 1792129365340542731,
+    "evidence": "content_hash_not_publication_version",
+    "sources": {
+      "contract_structure": {
+        "source": "dolphindb:dfs://bomber_daily/fut_contract",
+        "sha256": "4f936014f54a5224eff4dee037190ad9cee8c6a20810d94b1ddf5f68a9cdc64e",
+        "rows": 1021
+      },
+      "futures_basic": {
+        "source": "dolphindb:dfs://bomber_daily/fut_basic",
+        "sha256": "e90ae7931d97785eec34ea1a3da8d876595c1ae6c73d60fa9c012674f4fcf2ec",
+        "rows": 4
+      }
+    },
+    "ready": true,
+    "failure": null,
+    "signal_price_basis": "raw_contract_close",
+    "requested_roles": [
+      "main",
+      "secondary"
+    ],
+    "adjustment_factors_used": false
+  },
+  "bar_counts": {
+    "IM2612.CFFEX": 10,
+    "IM2703.CFFEX": 10
+  },
+  "last_processed_ns": null,
+  "status": "failed"
+}
