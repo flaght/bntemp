@@ -112,6 +112,7 @@ cdef class Schedule(object):
         # calendar needed for endOfMonth adjustment
         nullCalendar = Calendar("Null")
         periods = 1
+        seed = effectiveDate
 
         if self._rule == DateGeneration.Zero:
             self._tenor = Period(length=0, units=TimeUnits.Years)
