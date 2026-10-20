@@ -128,3 +128,41 @@ class NetTargetOrderPlanner:
             reduce_only=reduce_only,
             metadata=metadata,
         )
+
+
+class LimitTargetOrderPlanner:
+    """通用净目标的保护限价；先确认平仓，再由下一目标推进反向开仓。"""
+    planner_id = "limit-net-target"
+
+    def __init__(self, positions, prices, ticks, offset_ticks=1):
+        self.positions, self.prices = positions, prices
+        self.planner = NetTargetOrderPlanner(positions)
+        self.ticks = {i: Decimal(str(v)) for i, v in ticks.items()}
+        if not self.ticks or any(not v.is_finite() or v <= 0 for v in self.ticks.values()):
+            raise ValueError("价格步长须为正且有限")
+        if type(offset_ticks) is not int or offset_ticks < 0:
+            raise ValueError("限价偏移须为非负整数")
+        self.offset_ticks = offset_ticks
+
+    def plan(self, request):
+        from dataclasses import replace
+        from decimal import ROUND_CEILING, ROUND_FLOOR
+        from .contracts import OrderType
+        planned = self.planner.plan(request)
+        closing = {o.instrument_id for o in planned if o.position_effect is not PositionEffect.OPEN}
+        result = []
+        for order in planned:
+            if self.positions.working_quantity(request.client_id, order.instrument_id):
+                continue
+            if order.position_effect is PositionEffect.OPEN and order.instrument_id in closing:
+                continue
+            tick = self.ticks[order.instrument_id]
+            ref = self.prices.get(order.instrument_id)
+            if ref is None or not ref.price.is_finite():
+                raise ValueError("执行缺少有效参考价")
+            raw = ref.price + tick * self.offset_ticks * (1 if order.side is OrderSide.BUY else -1)
+            price = (raw / tick).to_integral_value(rounding=ROUND_CEILING if order.side is OrderSide.BUY else ROUND_FLOOR) * tick
+            if price <= 0:
+                raise ValueError("保护限价须为正数")
+            result.append(replace(order, order_type=OrderType.LIMIT, price=price))
+        return tuple(result)

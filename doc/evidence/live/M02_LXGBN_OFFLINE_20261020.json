@@ -1,0 +1,85 @@
+{
+  "date": "2026-10-20",
+  "timezone": "Asia/Shanghai",
+  "kind": "offline_sdk_contract_and_public_execution_regression",
+  "architecture": "Windows LXGBN host calls project SDK within embedded CPython; no Linux/HTTP bridge",
+  "base_commit": "bf7ed7abdc48407f3c1e13c059c4d10488d16d18",
+  "python": "3.12",
+  "platform": "Darwin",
+  "tests": {
+    "total": 239,
+    "lxgbn_sdk": 36,
+    "result": "passed",
+    "modules": [
+      "tests.test_lxgbn_execution",
+      "tests.test_shared_account",
+      "tests.test_execution_composition",
+      "tests.test_shared_process_cli",
+      "tests.test_live_common",
+      "tests.test_live_channels"
+    ]
+  },
+  "checks": {
+    "python_files_compiled": 9,
+    "independent_contract_import": "passed; no trader or bomber.model imported",
+    "diff_check": "passed"
+  },
+  "real_components": [
+    "StrategyTemplate",
+    "UnifiedStrategyRunner",
+    "PreTradeRiskManager",
+    "LimitTargetOrderPlanner",
+    "BackendExecutionClient",
+    "OrderReportStateMachine",
+    "PositionManager",
+    "PositionAttributionLedger",
+    "RuntimeStateManager",
+    "JsonStateStore"
+  ],
+  "controlled_replacements": [
+    "LXGBN HostPort",
+    "native callback structures converted to value snapshots",
+    "native market/model types"
+  ],
+  "supersedes": "Previous 227-test HTTPS bridge evidence is invalid for the corrected architecture and must not be reused.",
+  "limits": [
+    "test environment only",
+    "one strategy/binding/instrument",
+    "Normal limit and Speculation only",
+    "host explicitly owns generic close conversion",
+    "automatic recovery only same-identity terminal-order checkpoints",
+    "active/uncertain/unknown orders require read-only recovery; no automatic resend",
+    "host provides a consistent delivery sequence/snapshot boundary and one active session per binding",
+    "strategy indicator state requires existing state_components"
+  ],
+  "not_verified": [
+    "Windows embedded CPython load",
+    "native Bomber engine on Windows and ABI compatibility",
+    "actual host native field copies and GIL/thread scheduling",
+    "actual snapshot/stream boundary",
+    "real connection/acceptance/cancel/fill/stable identifiers",
+    "production environment",
+    "Market/FAK/FOK",
+    "multi-account/shared-strategy/cross-end execution"
+  ],
+  "real_orders_sent": false,
+  "live_verified": false,
+  "m02_complete": false,
+  "d5_complete": false,
+  "gap10_closed": false,
+  "log": {
+    "path": "doc/evidence/live/M02_LXGBN_OFFLINE_20261020.txt",
+    "sha256": "1f85bd4cde07cf07702357ec0e8a8544e9ac4ecad4f42e4ca5534550d7268ef3"
+  },
+  "source_sha256": {
+    "bomber/framework/lxgbn.py": "785c1738b117ec54ad6c17897e3c4e3b90eacd86a9edc5acb35d8757b9674072",
+    "bomber/framework/trader/execution/contracts.py": "eea46528b83714fdaffd6883364de18348b321e5883321ae43d4746d7fb44dec",
+    "bomber/framework/trader/execution/live/client.py": "f9759822b35839a930230a0b99423f2be2742402122f2ece44ec11c555e57c18",
+    "bomber/framework/trader/execution/lxgbn.py": "5cc95dd60fefa95418604da73c15a419e20650940262c565ff6d357a5cb45c1b",
+    "bomber/framework/trader/execution/planner.py": "32b6ec1500fa8dc387dc987a6f41bd03735375853b261583b4d085b38ae9831e",
+    "bomber/framework/trader/persistence.py": "c9ce25e6b1331c7bb5656b2567fb4149a26ae29844ff499352efb069d2470b98",
+    "bomber/framework/trader/runtime/lxgbn.py": "4c95a8782a203735c56404667133a0cc7b0f12b126a360686c755982f98182e9",
+    "scripts/integration/lxgbn/embedded_example.py": "8eb2447bdb4f9841d1cea517aa21b10ee49d21c8d32ba84b64a28e610df0e08b",
+    "tests/test_lxgbn_execution.py": "4e3b34d24999656b052f2a97aea3b62cc15005649875f29da9b45a50b1881057"
+  }
+}

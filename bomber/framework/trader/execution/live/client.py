@@ -16,7 +16,7 @@ from bomber.framework.trader.execution.order_state import (
     OrderStateCheckpoint,
     OrderStateError,
 )
-from bomber.framework.trader.execution.ports import LiveExecutionBackendPort, OrderPlannerPort
+from bomber.framework.trader.execution.ports import ExecutionBackendPort, OrderPlannerPort
 from bomber.framework.trader.execution.risk import KillSwitchMode, PreTradeRiskManager
 from bomber.framework.trader.execution.policy import AccountReconciliationMode
 from bomber.framework.trader.portfolio import PositionManager
@@ -29,7 +29,7 @@ class BackendExecutionClient:
         self,
         client_id: str,
         planner: OrderPlannerPort,
-        backend: LiveExecutionBackendPort,
+        backend: ExecutionBackendPort,
         position_manager: PositionManager,
         risk_manager: PreTradeRiskManager | None = None,
         *,

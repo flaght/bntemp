@@ -203,6 +203,32 @@ class RuntimeStateManager:
     def generation(self) -> int:
         return self._generation
 
+    def enable_execution_autosave(self, client, backend):
+        """非CTP适配器的写前/回报后保存；组件状态由state_components承接。"""
+        client_id = client.client_id
+        machine = self.order_machines.get(client_id)
+        if (machine is not client.order_state_machine or self.position_manager is not client.position_manager
+                or self.state_components.get("execution_backend") is not backend):
+            raise ValueError("执行自动保存必须共享订单机、仓位及执行组件")
+
+        def before_send(order_id, intent):
+            with client._submit_lock:
+                self.position_manager.attribution.bind(order_id, intent)
+                machine.register_pending(order_id, intent)
+                try:
+                    self.save()
+                except Exception:
+                    machine.discard_pending(order_id)
+                    raise
+
+        def unsent(order_id):
+            with client._submit_lock:
+                machine.discard_pending(order_id)
+
+        self._ctp_submit_locks[client_id] = client._submit_lock
+        client.register_submit_failure_handler(self.save)
+        backend.bind_durability(before_send, self.save, unsent, transition_lock=client._submit_lock)
+
     def enable_ctp_autosave(
         self, client_id: str, client: BackendExecutionClient,
     ) -> None:

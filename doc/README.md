@@ -17,7 +17,7 @@
 | 当前 Live 渠道及策略恢复 | [渠道分层](HANDOFF/live/HANDOFF_LIVE_CHANNELS_2026-10-10.md) → [持仓接管与恢复](HANDOFF/live/HANDOFF_LIVE_POSITION_RECOVERY_2026-10-10.md) → [REV3 验证证据](HANDOFF/live/HANDOFF_LIVE_REV3_EVIDENCE_2026-10-10.md) | 按源码版本和验收范围阅读，离线结果与实际柜台结果分别确认 |
 | 历史预热和盘中回补 | [历史启动规则](HANDOFF/history/HANDOFF_HISTORY_STARTUP_POLICY_2026-10-09.md) → [Provider 实施](HANDOFF/history/HANDOFF_HISTORY_PROVIDER_2026-10-09.md) → [历史数据交接索引](HANDOFF/README.md#历史行情预热与恢复) | 后续规则补充了早期架构中的“在线历史仅本地”表述 |
 | 与 DXBM LXG 系统对接 | [接口规范](integration/DXBM_LXG_INTEGRATION_SPEC.md) | 双方评审草案，包含建议契约与验收标准 |
-| M02 执行客户端替换 | [设计与代码改动清单](architecture/M02_EXECUTION_CLIENT_DESIGN_2026-10-19.md) | 关联 D5／GAP10；LXGBN 的 Windows 内嵌 Python 接入，当前仅设计 |
+| M02 执行客户端替换 | [设计与代码改动清单](architecture/M02_EXECUTION_CLIENT_DESIGN_2026-10-19.md) | 关联 D5／GAP10；LXGBN Windows 宿主调用项目 SDK；已实现离线链路，实机待验 |
 | 接续某个具体任务 | [交接记录索引](HANDOFF/README.md) | 按主题找交接，再核对对应版本和证据 |
 | 同步或定位旧文件 | [证据材料索引](evidence/README.md)和[路径对照](MIGRATION_2026-10-10.md#新旧路径对照) | 校验清单从项目根目录使用；原始材料已备份 |
 

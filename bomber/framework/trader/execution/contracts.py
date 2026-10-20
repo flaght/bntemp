@@ -61,7 +61,7 @@ class OrderBudgetExhausted(RuntimeError):
 
     def __init__(self, limit, submitted, requested=1):
         self.limit, self.submitted, self.requested = limit, submitted, requested
-        super().__init__(f"CTP会话报单上限不足: limit={limit} submitted={submitted} requested={requested}")
+        super().__init__(f"执行会话报单上限不足: limit={limit} submitted={submitted} requested={requested}")
 
     def state(self):
         return {"reason": "order_budget_exhausted", "limit": self.limit,
