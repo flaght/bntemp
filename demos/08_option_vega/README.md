@@ -188,9 +188,11 @@ MO/IM持仓的CFFEX通用平仓根据当日权威总仓规划，按当前今昨�
 
 这是按固定 Vega 预算卖出虚值认购、再用同月期货管理 Delta 的组合策略。它不比较隐含波动率与预测波动率，也不以 IV 高低设置择时门槛；IV 和风险指标主要用于选约、配仓与对冲。
 
-每日默认 13:58，要求认购、同月期货和指数同一分钟价格都已到达。候选须在生命周期内、行权价高于指数、至少剩余 5 个交易日，并能得到有效 Greeks。先保留合格候选中最近的最后交易日，再为各 Delta 档选择最接近的认购；距离相同时按合约代码排序。
+2026-10-20 起以用户提供的 `strategy1.py` 的 `_noddb` 可执行逻辑为依据，原文件快照见 [strategy1.py](../../tests/fixtures/option_vega/strategy1.py)，修改及差异见 [交付说明](../../doc/HANDOFF/live/HANDOFF_OPTION_VEGA_SOURCE_LOGIC_2026-10-20.md)。
 
-同月期货作为 Black76 定价输入，认购真实权利金用于反解 IV。期限按距离最后交易日 15:00 的自然年化时间计算；开平仓天数阈值则使用交易日计数，两者用途不同。
+每日默认 13:58，要求认购、同月期货和指数同一分钟价格都已到达。候选须在生命周期内、行权价高于指数、至少剩余 5 个交易日。先选择最近到期月份，再计算该月 IV/Greeks；该月无有效 IV 时不跳到远月。各 Delta 档选距离最近的认购，距离相同保留候选输入顺序。
+
+同月期货作为 Black76 定价输入，认购真实权利金用于反解 IV，不读取主力映射或复权因子。开仓期限 `T=剩余交易日/252`；对冲期限另加 `当日剩余交易分钟/(240×252)`。交易日不含当日、含最后交易日，IV计算要求日历完整覆盖到期日，不能以未来日期的下界估计代替。Delta为 `N(d1)`，Gamma为 `pdf(d1)/(F×IV×sqrt(T))`，均不折现；Vega为 `pdf(d1)×F×sqrt(T)×exp(-r×剩余自然日/365)`。这是原文件口径，和通用 Black76 理论价格的折现导数不同。
 
 ### Vega 预算与卖方手数
 
@@ -203,7 +205,7 @@ MO/IM持仓的CFFEX通用平仓根据当日权威总仓规划，按当前今昨�
 该档未取整手数 = B × a_i / Σ(a_j × Vega_j × m_j)
 ```
 
-同一认购可匹配多个 Delta 档，先合并数量，再向下取整并应用单合约、总手数上限，最终目标取负数。默认 NAV 40000000、b=1.25，对应每一个百分点的现金预算 5000。NAV 是固定配仓基准，不随回测账户权益更新；每日重新计算替换总目标，不向原仓位累加。取整或手数上限可能使实际 Vega 低于预算。
+同一认购可匹配多个 Delta 档，先合并数量，再四舍五入到整手（半整数取偶，与原文件 `np.round` 一致）并应用原有手数限制，取负数作为**当日新增手数**。默认 NAV 40000000、b=1.25，对应每一个百分点的现金预算 5000。NAV 是固定配仓基准，不随账户权益更新。每日新增数量累加到已有期权目标，其他未选中的旧期权不自动平仓；累加后超过单合约或总手数上限时，拒绝本次增仓并记录 `RISK_LIMIT`，仍按原规则评估已有仓位退出。取整和风控限制会使实际 Vega 偏离理论预算。
 
 ### 实际持仓对冲与退出
 
@@ -212,15 +214,15 @@ MO/IM持仓的CFFEX通用平仓根据当日权威总仓规划，按当前今昨�
 | 对冲基础 | 使用实际已成交认购仓位，不用尚未成交的目标仓位代替敞口 |
 | 分月汇总 | 每个同月期货分别汇总其对应认购的 `实际手数 × 乘数 × Delta` |
 | 期货目标 | `round(-汇总敞口 / 期货乘数)`；卖方认购通常对应多头期货保护 |
-| 复核触发 | 目标变化、实际认购持仓变化或指定对冲时点 |
-| 在途门控 | 相应订单在途时等待；对冲需求超过上限则停止 |
-| 认购退出 | 剩余交易日不超过 2，或以指数计算的时间价值不大于零 |
-| 风险指标失效 | 仍需持有的认购无法可靠计算 Delta 时停止；待平认购暂保留已有对冲直到实际退出 |
+| 复核触发 | 仅指定对冲时点，每日每时点一次；持仓变化不再额外触发 |
+| 在途门控 | 期权选约等待本策略期权订单终结；已有期货订单在途时等待对冲；期权部分成交可按实际份额对冲；需求超过期货上限则停止 |
+| 认购退出 | 仅每日期权交易时点，在增仓评估后按 `期权价格-(同月期货价格-行权价)≤0` 将目标归零；无额外到期前2日退出 |
+| 风险指标失效 | 有新鲜行情但IV及有效缓存均不可用时，记录 `hedge_missing_iv` 并保留该月份已有期货目标，其他月份继续计算；缺少必需行情仍受现有闸门约束 |
 | 最后回测日 | 默认 14:50 起全部期权和期货目标归零，结束核对实际仓位与在途订单 |
 
 成功 IV 可在有效期内缓存，但重算 Greeks 仍使用当前价格与期限；缓存不代替新鲜行情。场次恢复后等待持仓相关腿的新报价，超时会停止，不能将昨日价格当作今天的对冲依据。默认真实价格与 IV 缓存年龄均为 300 秒。
 
-新分钟到达时先处理上一分钟，避免用尚未送达的同帧行情选约。批量组合目标不保证认购与期货同步成交。本例没有额外止损或价格预测，验收重点是卖方方向、Vega 分配、实际成交后对冲、过期报价诊断和末日实际全平。
+每分钟记录行情与决策状态；非选约／对冲时点显示等待，不代表每分钟交易。新分钟到达时先处理上一分钟，避免用尚未送达的同帧行情选约。批量组合目标不保证认购与期货同步成交。本例没有额外止损或价格预测，验收重点是卖方方向、Vega 分配、实际成交后对冲、过期报价诊断和末日实际全平。
 
 ## 2. 文件回测
 
@@ -270,7 +272,7 @@ python demos/08_option_vega/run_backtest.py \
 | `--vega-budget` | 可选 | 默认 1.25；每一个百分点波动率变化的现金风险预算为 nav × 参数 / 10000 |
 | `--delta-targets` | 可选 | 默认 0.2,0.25,0.3,0.35，按最接近各档位的 Delta 选择认购；重复合约合并 |
 | `--option-slot / --hedge-slots` | 可选 | 每日选约默认 13:58；对冲复核默认 10:00,11:00,13:30,14:00,14:55；实际期权仓位变化也触发对冲 |
-| `--min-remaining-days / --close-remaining-days` | 可选 | 开仓至少剩余 5 个交易日，到期前剩余不超过 2 日清仓；计数不含当天、含最后交易日 |
+| `--min-remaining-days / --close-remaining-days` | 可选 | 开仓至少剩余 5 个交易日；close参数保留旧检查点兼容，不触发到期前清仓；计数不含当天、含最后交易日 |
 | `--flatten-slot` | 可选 | 最后回测日开始全组合清仓，默认 14:50；指数必须在该时点之后至少有两分钟行情 |
 | `--rate / --min-time-value` | 可选 | 默认 0.02 / 5；固定年化利率及允许反解隐含波动率的最少期权时间价值 |
 | `--max-market-age-seconds / --max-iv-age-seconds` | 可选 | 默认 300 / 300 秒，真实价格及成功波动率缓存的最长允许年龄 |
@@ -738,10 +740,10 @@ python -u -m demos.08_option_vega.run_live \
 | `--vega-budget` | 1.25 | 每一百分点波动率变化的现金预算为 `nav × b / 10000` |
 | `--delta-targets` | 0.2,0.25,0.3,0.35 | 逗号分隔，每档在 (0,1)；重复合约合并，小手数验收可显式用 0.25 |
 | `--option-slot` | 13:58 | 每日选约时点，必须早于 `flatten-slot` |
-| `--hedge-slots` | 10:00,11:00,13:30,14:00,14:55 | 逗号分隔的对冲复核时点；实际归属持仓变化也触发 |
+| `--hedge-slots` | 10:00,11:00,13:30,14:00,14:55 | 逗号分隔，仅这些时点复核，每日每时点一次 |
 | `--flatten-slot` | 14:50 | Live 仅在配置清仓日时执行最终组合清仓；回测默认末日清仓 |
 | `--flatten-day` | 不设置 | 主动清仓日，须为估值日当天或之后的已知交易日；不设置则停机保留仓位 |
-| `--min-remaining-days / --close-remaining-days` | 5 / 2 | 开仓最少剩余交易日 / 清仓阈值；须满足 `0 ≤ close < min` |
+| `--min-remaining-days / --close-remaining-days` | 5 / 2 | 开仓最少剩余交易日 / 旧参数兼容保留，close不触发退出；仍校验 `0 ≤ close < min` |
 | `--rate / --min-time-value` | 0.02 / 5 | Black76 年化利率 / 反解 IV 的最少时间价值，后者非负 |
 | `--max-market-age-seconds / --max-iv-age-seconds` | 300 / 300 | 策略真实价格 / 成功 IV 缓存最长年龄，正整数秒 |
 | `--max-option-lots` | **1** | 单认购上限，回测默认 **100** |
@@ -913,8 +915,8 @@ Live 停机撤销自身活动订单并保存已成交仓位，默认不主动平
 
 | 文件 | 主要对象 / 入口 | 具体作用 | 必要性 |
 | --- | --- | --- | --- |
-| [vega_signal.py](vega_signal.py) | `Contract`、`OptionVegaConfig`、`tau`、`implied_greeks`、`allocate_short`、`filter_hedgeable_options` | 保存条款和配置；计算剩余期限、Black76 认购价格、IV、Delta/Gamma/Vega；按 Delta 档及 Vega 预算分配空头手数，过滤无同月有效期货的候选。纯数值和业务规则，不打开行情/执行连接 | **策略核心**；回测和所有 Live 模式需要 |
-| [strategy.py](strategy.py) | `OptionVegaStrategy` | 接收分钟行情；管理每日选约、目标替换、实际成交后 Delta 对冲、到期/时间价值退出、末日清仓及订单异常；检查新鲜报价和场次恢复等待。数学计算调用 `vega_signal.py` | **策略核心**；回测和所有 Live 模式需要 |
+| [vega_signal.py](vega_signal.py) | `Contract`、`OptionVegaConfig`、`source_years`、`source_iv`、`source_greeks`、`allocate_short`、`filter_hedgeable_options` | 保存条款和配置；计算剩余期限、Black76 认购价格、IV、Delta/Gamma/Vega；按 Delta 档及 Vega 预算分配空头手数，过滤无同月有效期货的候选。纯数值和业务规则，不打开行情/执行连接 | **策略核心**；回测和所有 Live 模式需要 |
+| [strategy.py](strategy.py) | `OptionVegaStrategy` | 接收分钟行情；管理每日选约增仓、指定时点按实际归属仓位 Delta 对冲、指定时点时间价值退出、末日清仓及订单异常；检查新鲜报价和场次恢复等待。数学计算调用 `vega_signal.py` | **策略核心**；回测和所有 Live 模式需要 |
 | [assembly.py](assembly.py) | `risk_limits`、`assemble_strategy_components` | 共用策略装配：创建手数/名义金额风控、数据绑定和执行路由，注册同一个策略；指数只绑定行情。调用方提供 Feed 与执行积木，它不打开连接 | **共用装配**；当前回测和所有 Live 模式需要，保证两种入口使用相同策略与路由规则 |
 | [features.py](features.py) | `index_bundle`、`read_index_features` | 共用指数声明；离线替换为标准文件Provider，校验Schema／计算版本，不改可见时间 | 回测和默认DFS Live共用 |
 | [backtest_runtime.py](backtest_runtime.py) | `OptionFeatureBacktestRunner` | 复用模拟可见时钟，封闭分钟帧后交给原策略；原生时钟推进撮合 | 文件回测需要 |
@@ -922,7 +924,7 @@ Live 停机撤销自身活动订单并保存已成交仓位，默认不主动平
 | [run_live.py](run_live.py) | `parse_args`、`prepare_inputs`、`build_runtime`、`describe`、`main` | 解析在线模式、来源、交易日和执行政策；准备 CTP/DolphinDB 行情、独立指数、参考资料与编译日历；选择生命周期/执行模式并生成在线报告 | **在线入口**；所有 Live 模式需要，文件回测不依赖它 |
 | [live_runtime.py](live_runtime.py) | `OptionReferences`、`OptionSessionRunner`、`assemble` | 把公共条款快照投影为本策略的认购与同月期货关系；收集/封闭多源分钟帧、查询指数、检查日期与时效、跳过缺指数帧；选择 Recording/Model/CTP 执行并装配状态管理 | **在线运行装配**；所有 Live 模式需要。分钟帧缓冲、执行、归属和持久化基础能力复用公共框架 |
 | [recovery.py](recovery.py) | `OptionControl`、`OptionLocalLifecycle`、`OptionCtpLifecycle` | 负责启动就绪、控制线程轮询、参考刷新、行情检查、成交验收、停机报告；Local 处理 Recording/Model，CTP 处理 TD 对账、授权、报单上限、撤单与保存；恢复时核对归属及目标版本 | **在线生命周期**；即使不传 `--resume`，首次 Live 启动与停机也需要。文件名包含 recovery，但职责覆盖整个会话 |
-| [checkpoint.py](checkpoint.py) | `OptionVegaCheckpoint` | 保存期权/期货目标、已选约日期、提交/选约计数和清仓状态；恢复时校验数量、合约、日历，清空旧价格与 IV 缓存，并标记等待新鲜行情。公共持久化另存成交、归属及订单 | **Model/SimNow 必需**；新会话也要保存，不只用于重启。Recording 不使用状态保存，但 `live_runtime.py` 顶层导入它，当前仍须随 Live 源码提供 |
+| [checkpoint.py](checkpoint.py) | `OptionVegaCheckpoint` | 保存期权/期货目标、已选约日期、已对冲时点、逻辑版本、提交/选约计数和清仓状态；恢复时校验数量、合约、日历，清空旧价格与 IV 缓存，并标记等待新鲜行情。公共持久化另存成交、归属及订单 | **Model/SimNow 必需**；新会话也要保存，不只用于重启。Recording 不使用状态保存，但 `live_runtime.py` 顶层导入它，当前仍须随 Live 源码提供 |
 | [replay_test.py](replay_test.py) | `ReplayTestTimeMap`、`mapped_bar_feed` | 在完成 CTP Bar 的副本上施加所有合约共用的时间偏移，让 Replay 流推进到指定估值时点；校验源日期/跨日，保存映射样例。文件名含 test，但它是可被入口调用的工程适配器，不是 unittest 文件 | **条件使用**；仅显式 `--replay-test-start-time` 时导入/调用。普通实时和原始时间 Replay 不需要该功能 |
 | [execution_audit.py](execution_audit.py) | `AuditedExecutionBackend` | 包装原生执行 Backend，记录实际限价、分钟参考价、已观测盘口及年龄、是否跨价、提交调用结果。原订单发送一次，异常继续抛出；不调整定价或模拟成交 | **诊断功能**；当前 SimNow 无条件装配、没有关闭 CLI 开关，因此现有 SimNow 启动必须保留。回测/Recording/Model 不使用 |
 | [acceptance.py](acceptance.py) | `review_recording` | 离线检查真实 Recording 的 summary：日期、模式、编译日历、指数查询、选约同分钟/接收期限，以及客户端实际非零目标。返回 target_chain 或 decision_only 验收结果，不连接网络 | **验收工具**；直接 `run_live.py` 不调用。`scripts.integration.options.recording` 在自动运行或复核已有报告时需要它 |
@@ -1352,3 +1354,9 @@ CTP期权/期货缺失Bar不自动补查DolphinDB；日志不改变查询、等�
 ### CTP查询超时后的停止（2026-10-19）
 
 定期独立归属对账复用一次活动订单查询；异常停止使用只排空回报/冻结贡献的公共路径，避免查询超时撤销健康状态后普通poll反过来阻止停止。本系统已知委托撤销并终结后，最多两轮只读资金/仓位/订单核验；成功后保存归属并停止，不自动授权续跑。失败仍保留未完成状态。报告stop_reconciliation记录query_failure及attempts，原超时仍为failure；只有最终对账成功才填final_active_orders=0。376项离线回归通过，服务器待验。[部署说明](../../doc/HANDOFF/live/HANDOFF_OPTION_VEGA_QUERY_TIMEOUT_STOP_2026-10-19.md)。
+
+### 2026-10-20：按原 strategy1.py 恢复交易逻辑
+
+新分钟决策日志带 `logic_version=strategy1-noddb-v1`。`entry_audit.increments`（及兼容字段targets）是当日增量，`entry_audit.option_goals` 是退出检查后的累计期权目标；实际仓位仍看 `positions`／柜台归属。旧检查点缺少逻辑版本／已对冲时点时可读取，原目标、归属、计数和已选约日期保留，恢复时仍以真实归属重建目标、等待新鲜行情。保存新检查点后，旧版代码不能再直接作为回退方式，应使用升级前完整备份。
+
+DolphinDB期权期货分钟流、指数自定义特征、共享账户、跨日恢复及持续运行入口继续使用。旧检查点中的13:36、单合约1手等参数不会被默认13:58或更大手数覆盖。该修改不会自动更换IM主力，也不解决上游缺失行情、盘前就绪超时或14:57阶段问题。

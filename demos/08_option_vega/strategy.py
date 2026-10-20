@@ -4,7 +4,7 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from bomber.framework.trader.template import StrategyTemplate
-from .vega_signal import remaining_trading_days, tau, allocate_short, cached_greeks, implied_greeks
+from .vega_signal import remaining_trading_days, allocate_short, source_iv, source_years, source_greeks
 
 
 class OptionVegaStrategy(StrategyTemplate):
@@ -32,6 +32,7 @@ class OptionVegaStrategy(StrategyTemplate):
         self.future_goals = {key: Decimal(0) for key in self.futures}
         self.iv_cache = {}
         self.sent_days = set()
+        self.hedge_sent = set()
         self.last_actual = None
         self.submissions = 0
         self.entry_decisions = 0
@@ -114,21 +115,28 @@ class OptionVegaStrategy(StrategyTemplate):
             )
         return value[1]
 
-    def _greeks(self, symbol, signal_ns, now):
+    def _greeks(self, symbol, signal_ns, now, *, hedge=False):
         """以同月期货和期权价格反解风险指标，必要时使用有限期波动率缓存。"""
         info = self.contracts[symbol]
         forward = self._price(info.future, signal_ns)
         premium = self._price(symbol, signal_ns)
-        years = tau(now, info.last_day)
+        if info.last_day > self.trading_days[-1]:
+            raise ValueError(f"{symbol}IV需要完整交易日期限，日历须覆盖最后交易日{info.last_day}")
+        days = self._remaining_days(now.date(), info.last_day)
+        years = source_years(now, days, hedge=hedge)
         greeks = None
         if premium - max(forward - info.strike, 0) >= self.config.min_time_value:
-            greeks = implied_greeks(forward, info.strike, years, self.config.rate, premium)
+            iv = source_iv(forward, info.strike, years, self.config.rate, premium)
+            if iv is not None:
+                greeks = source_greeks(forward, info.strike, years, self.config.rate, iv,
+                    (info.last_day-now.date()).days/365)
         if greeks is not None:
             self.iv_cache[symbol] = (signal_ns, greeks.iv)
         else:
             cached = self.iv_cache.get(symbol)
             if cached and signal_ns - cached[0] <= self.config.max_iv_age_seconds * 1_000_000_000:
-                greeks = cached_greeks(forward, info.strike, years, self.config.rate, cached[1])
+                greeks = source_greeks(forward, info.strike, years, self.config.rate, cached[1],
+                    (info.last_day-now.date()).days/365)
         return greeks
 
     def _frame(self, signal_ns, request_ns):
@@ -140,7 +148,7 @@ class OptionVegaStrategy(StrategyTemplate):
         working = {key: self.strategy_working_quantity(str(instrument)) for key, instrument in self.instruments.items()}
         current = tuple((key, actual[key]) for key in sorted(self.contracts))
         self.last_decision = decision = {
-            "status": "EVALUATING", "positions": {k: str(v) for k, v in actual.items() if v},
+            "logic_version": "strategy1-noddb-v1", "status": "EVALUATING", "positions": {k: str(v) for k, v in actual.items() if v},
             "working": {k: str(v) for k, v in working.items() if v},
             "entry_slot": self.config.option_slot,
             "entry": "ALREADY_SELECTED" if day in self.sent_days else
@@ -185,28 +193,11 @@ class OptionVegaStrategy(StrategyTemplate):
             return
 
         changed = False
-        # 每分钟管理已有目标/实际持仓，禁止通过删除字典冒充平仓。
-        held = [key for key in self.contracts if actual[key] or self.option_goals[key] or working[key]]
-        for key in held:
-            info = self.contracts[key]
-            if day > info.last_day and actual[key]:
+        # 到期仍有实际仓位必须核验结算，不能像原脚本删除字典冒充平仓。
+        for key in self.contracts:
+            if day > self.contracts[key].last_day and actual[key]:
                 raise RuntimeError(f"{key}已过最后交易日但仍有实际持仓")
-            if not working[key]:
-                close = self._price(key, signal_ns)
-                index = self._price(self.index_id, signal_ns)
-                remaining = self._remaining_days(day, info.last_day, self.config.close_remaining_days + 1)
-                time_value = close - max(index - info.strike, 0)
-                should_close = remaining <= self.config.close_remaining_days or time_value <= 0
-                decision["exit_checks"].append({"key": key, "price": close, "index": index,
-                    "remaining_days": remaining, "close_remaining_days": self.config.close_remaining_days,
-                    "remaining_days_exact": info.last_day <= self.trading_days[-1],
-                    "time_value": time_value, "should_close": should_close})
-                if should_close and self.option_goals[key] != 0:
-                    self.option_goals[key] = Decimal(0)
-                    changed = True
-            if actual[key] and self.option_goals[key] and self._greeks(key, signal_ns, now) is None:
-                raise RuntimeError(f"{key}无法计算可靠Delta，停止而不撤掉保护性对冲")
-
+        option_due = slot == self.config.option_slot and day not in self.sent_days
         if slot == self.config.option_slot and day not in self.sent_days:
             audit = {"signal_ns": signal_ns, "request_ns": request_ns, "date": str(day),
                 "slot": slot, "outcome": "WORKING_ORDERS", "candidate_count": 0, "targets": {}}
@@ -215,15 +206,17 @@ class OptionVegaStrategy(StrategyTemplate):
             if not any(working[key] for key in self.contracts):
                 index = self._price(self.index_id, signal_ns)
                 candidates = []
-                for key in self.options_by_day.get(day, ()):
+                eligible = [key for key in self.options_by_day.get(day, ())
+                    if self.contracts[key].list_day <= day <= self.contracts[key].last_day
+                    and self.contracts[key].strike > index
+                    and self._remaining_days(day, self.contracts[key].last_day) >= self.config.min_remaining_days
+                    and all(self.latest.get(name, (None,))[0] == signal_ns
+                        for name in (key, self.contracts[key].future, self.index_id))]
+                nearest = min((self.contracts[key].last_day for key in eligible), default=None)
+                for key in eligible:
+                    if self.contracts[key].last_day != nearest:
+                        continue
                     info = self.contracts[key]
-                    if not info.list_day <= day <= info.last_day or info.strike <= index:
-                        continue
-                    if self._remaining_days(day, info.last_day) < self.config.min_remaining_days:
-                        continue
-                    # 开仓只使用期权、期货、指数同一分钟价格，不向前填充。
-                    if any(self.latest.get(name, (None,))[0] != signal_ns for name in (key, info.future, self.index_id)):
-                        continue
                     greeks = self._greeks(key, signal_ns, now)
                     if greeks is not None:
                         candidates.append((key, greeks, info.multiplier))
@@ -231,44 +224,69 @@ class OptionVegaStrategy(StrategyTemplate):
                 audit["candidate_count"] = len(candidates)
                 audit["outcome"] = "NO_VALID_ENTRY"
                 if candidates:
-                    nearest = min(self.contracts[item[0]].last_day for item in candidates)
-                    candidates = [item for item in candidates if self.contracts[item[0]].last_day == nearest]
                     goals = allocate_short(candidates, self.config.delta_targets, self.config.vega_cash_per_unit,
                                            self.config.max_option_lots, self.config.max_total_option_lots)
                     audit["outcome"] = "TARGET" if goals else "ZERO_ALLOCATION"
-                    audit["targets"] = {key: str(value) for key, value in goals.items()}
+                    audit["increments"] = {key: str(value) for key, value in goals.items()}
+                    audit["targets"] = dict(audit["increments"])
                     audit["future_bindings"] = {key: self.contracts[key].future for key in goals}
                     if goals:
-                        # 组合总目标替换，不将每日计算数量累加到昨日仓位。
-                        self.option_goals = {key: Decimal(goals.get(key, 0)) for key in self.contracts}
-                        self.entry_decisions += 1
-                        changed = True
+                        # strategy1：每日新增数量累加，其他期权旧仓不被新选约替换。
+                        proposed = {key: self.option_goals[key] + Decimal(goals.get(key, 0)) for key in self.contracts}
+                        if (any(abs(q) > self.config.max_option_lots for q in proposed.values())
+                                or sum(abs(q) for q in proposed.values()) > self.config.max_total_option_lots):
+                            audit["outcome"] = "RISK_LIMIT"
+                            audit["rejected_increments"] = audit["targets"]
+                            audit["targets"] = {}
+                        else:
+                            self.option_goals = proposed
+                            self.entry_decisions += 1
+                            changed = True
                 else:
                     self.signals.append({"signal_ns": signal_ns, "request_ns": request_ns,
                                          "action": "NO_VALID_ENTRY", "date": str(day)})
 
+        # strategy1在期权交易时点先增仓，再评估所有期权的时间价值退出。
+        if option_due and not any(working[key] for key in self.contracts):
+            self.sent_days.add(day)
+            for key, goal in tuple(self.option_goals.items()):
+                if not goal:
+                    continue
+                info = self.contracts[key]
+                close = self._price(key, signal_ns)
+                forward = self._price(info.future, signal_ns)
+                time_value = close - (forward-info.strike)
+                should_close = time_value <= 0
+                decision["exit_checks"].append({"key": key, "price": close, "future": info.future,
+                    "future_price": forward, "time_value": time_value, "should_close": should_close,
+                    "rule": "source_premium_minus_future_minus_strike"})
+                if should_close:
+                    self.option_goals[key] = Decimal(0)
+                    changed = True
+
         if self.entry_audit and self.entry_audit[-1]["signal_ns"] == signal_ns:
-            decision["entry_audit"] = dict(self.entry_audit[-1])
             decision["entry"] = self.entry_audit[-1]["outcome"]
-        hedge_due = changed or current != self.last_actual or slot in self.config.hedge_slots
-        decision["hedge_reasons"] = (["TARGET_CHANGED"] if changed else []) + (
-            ["POSITION_CHANGED"] if current != self.last_actual else []) + (
-            ["CONFIGURED_SLOT"] if slot in self.config.hedge_slots else [])
+            self.entry_audit[-1]["option_goals"] = {key: str(q) for key, q in self.option_goals.items() if q}
+            decision["entry_audit"] = dict(self.entry_audit[-1])
+        hedge_token = f"{day}_{slot}"
+        hedge_due = slot in self.config.hedge_slots and hedge_token not in self.hedge_sent
+        decision["hedge_reasons"] = ["CONFIGURED_SLOT"] if hedge_due else []
         decision["hedge"] = ("WAIT_WORKING_ORDERS" if hedge_due and any(working[key] for key in self.futures)
                              else "EVALUATED" if hedge_due else "NOT_DUE")
         if hedge_due and not any(working[key] for key in self.futures):
+            self.hedge_sent.add(hedge_token)
             totals = {key: 0.0 for key in self.futures}
             closing_without_iv = set()
             for key in self.contracts:
                 if not actual[key]:
                     continue
-                greeks = self._greeks(key, signal_ns, now)
+                greeks = self._greeks(key, signal_ns, now, hedge=True)
                 info = self.contracts[key]
                 if greeks is None:
-                    if self.option_goals[key] == 0:
-                        closing_without_iv.add(info.future)
-                        continue
-                    raise RuntimeError(f"{key}IV无效，无法对冲实际持仓")
+                    # 源代码跳过无IV合约；实盘保留该月份既有对冲，不因缺值清零。
+                    closing_without_iv.add(info.future)
+                    decision.setdefault("hedge_missing_iv", []).append(key)
+                    continue
                 totals[info.future] += float(actual[key]) * float(info.multiplier) * greeks.delta
             goals = {}
             for key, exposure in totals.items():

@@ -13,6 +13,7 @@ class OptionVegaCheckpoint:
             "option_goals": {key: str(value) for key, value in s.option_goals.items()},
             "future_goals": {key: str(value) for key, value in s.future_goals.items()},
             "sent_days": sorted(str(day) for day in s.sent_days),
+            "logic_version": "strategy1-noddb-v1", "hedge_sent": sorted(s.hedge_sent),
             "submissions": s.submissions, "entry_decisions": s.entry_decisions,
             "flatten_requested": s.flatten_requested}
 
@@ -20,6 +21,13 @@ class OptionVegaCheckpoint:
         if state.get("version") != 1:
             raise ValueError("不支持的Vega策略检查点")
         s = self.strategy
+        if state.get("logic_version", "strategy1-noddb-v1") != "strategy1-noddb-v1":
+            raise ValueError("不支持的Vega信号逻辑版本")
+        hedge_sent = set(state.get("hedge_sent", ()))
+        for token in hedge_sent:
+            day, slot = token.split("_", 1)
+            if date.fromisoformat(day) not in s.trading_days or slot not in s.config.hedge_slots:
+                raise ValueError("恢复对冲时点无效")
         restored = {}
         for name, expected, cap in (("option_goals", s.contracts, s.config.max_option_lots),
                                     ("future_goals", s.futures, s.config.max_future_lots)):
@@ -43,6 +51,7 @@ class OptionVegaCheckpoint:
             raise ValueError("恢复清仓状态无效")
         s.option_goals, s.future_goals = restored["option_goals"], restored["future_goals"]
         s.sent_days = days
+        s.hedge_sent = hedge_sent
         s.submissions, s.entry_decisions = state["submissions"], state["entry_decisions"]
         s.flatten_requested = state["flatten_requested"]
         s.latest.clear()

@@ -54,7 +54,7 @@ class MinuteDiagnosticsTests(unittest.TestCase):
         self.assertEqual(s.strategy.frames, 0)
         self.assertFalse(s.client.requests)
 
-    def test_restored_held_leg_wait_then_exit_check_is_visible(self):
+    def test_restored_held_leg_wait_then_scheduled_hedge_is_visible(self):
         s, lifecycle = self.build()
         self.start(s, lifecycle)
         self.bars(s, "2026-08-13 13:58")
@@ -71,8 +71,8 @@ class MinuteDiagnosticsTests(unittest.TestCase):
             self.bars(s, "2026-08-13 14:00")
         decision = self.rows(logs, "分钟决策汇总")[0]
         self.assertNotEqual(decision["status"], "RESUME_WAIT")
-        self.assertTrue(decision["exit_checks"])
-        self.assertFalse(decision["exit_checks"][0]["should_close"])
+        self.assertEqual(decision["exit_checks"], [])
+        self.assertEqual(decision["hedge"], "EVALUATED")
         self.assertEqual(decision["price_cache"]["MO2609-C-6600"]["age_seconds"], 0)
 
     def test_decision_error_is_logged_and_original_failure_still_propagates(self):

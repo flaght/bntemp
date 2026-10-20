@@ -1,0 +1,17 @@
+2026-10-20 本地离线验证，未连接数据库／柜台、未报单。
+Python=/Users/kerry/.local/bin/python3.12
+PYTHONPATH=.validation/packages:.
+1. python -m unittest tests.test_demo_option_vega tests.test_option_vega_live tests.test_option_source_logic -q
+----------------------------------------------------------------------
+Ran 46 tests in 0.229s
+
+OK
+
+2. 独立进程runpy.run_module('tests.run_option_vega_offline',run_name='__main__')：91项通过；保留同进程SDK实体替身，再加载 tests.test_option_shared_rollover、tests.test_option_minute_diagnostics：36项通过。
+Ran 91 tests in 0.279s
+OK
+Ran 36 tests in 1.197s
+OK
+合计173项通过。行情实体与柜台使用夹具，真实08策略、执行归属、恢复和帧链路使用项目实现。线上待验。
+独立test_option_vega_live必须在独立进程执行，避免与装配脚本中固定SDK类型的测试替身混用。
+原文件快照与用户文件逐字节一致，SHA256=aa72eab3417800f50a4eb9c8bf73968c504fad7f9bfeb698593d0c2f1a72c801

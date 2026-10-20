@@ -3,7 +3,7 @@ from bisect import bisect_right
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from decimal import Decimal
-from math import erf, exp, floor, isfinite, log, pi, sqrt
+from math import erf, exp, isfinite, log, pi, sqrt
 from typing import Mapping
 
 
@@ -22,7 +22,7 @@ class Contract:
 
 @dataclass(frozen=True)
 class OptionVegaConfig:
-    """固定规模的波动率风险预算、每日时点、退出规则和手数限制。"""
+    """源策略风险预算与时点；close_remaining_days仅保留旧检查点参数兼容。"""
     nav: Decimal = Decimal("40000000")
     vega_budget: float = 1.25
     delta_targets: tuple[float, ...] = (0.2, 0.25, 0.3, 0.35)
@@ -69,7 +69,7 @@ class OptionVegaConfig:
 
 
 def tau(now: datetime, last_day: date) -> float:
-    # 隐含波动率和风险指标统一使用自然年化剩余时间，不混用交易年与自然年。
+    # 保留旧自然年化辅助函数供历史夹具使用；当前策略使用source_years。
     expiry = datetime.combine(last_day, time(15), tzinfo=now.tzinfo)
     return max((expiry - now).total_seconds() / (365 * 86400), 0.0)
 
@@ -149,23 +149,59 @@ def cached_greeks(forward, strike, years, rate, iv):
     return implied_greeks(forward, strike, years, rate, call_price(forward, strike, years, rate, iv))
 
 
+def source_iv(forward, strike, years, rate, premium):
+    """原strategy1.py的Black76二分反解（边界、区间和64次迭代保持一致）。"""
+    if not all(isfinite(v) for v in (forward, strike, years, rate, premium)) or min(forward, strike, years, premium) <= 0:
+        return None
+    discount = exp(-rate*years)
+    if premium < discount*max(forward-strike, 0) or premium >= discount*forward:
+        return None
+    lo, hi = 1e-4, 5.0
+    for _ in range(64):
+        mid = (lo+hi)/2
+        if call_price(forward, strike, years, rate, mid) > premium:
+            hi = mid
+        else:
+            lo = mid
+    return (lo+hi)/2
+
+
+def source_years(now, remaining_days, *, hedge=False):
+    """strategy1.py：开仓仅交易日/252；对冲另加当日剩余交易分钟。"""
+    minute = now.hour * 60 + now.minute
+    remaining = (240 if minute < 570 else 240-(minute-570) if minute < 690 else
+                 120 if minute < 780 else 120-(minute-780) if minute < 900 else 0)
+    return remaining_days/252 + (remaining/(240*252) if hedge else 0)
+
+
+def source_greeks(forward, strike, years, rate, iv, discount_years):
+    """strategy1.py的未折现Delta/Gamma及按自然日折现的Vega。"""
+    if min(forward, strike, years, iv) <= 0:
+        return None
+    root = sqrt(years)
+    d1 = (log(forward/strike) + iv*iv*years/2)/(iv*root)
+    pdf = exp(-d1*d1/2)/sqrt(2*pi)
+    return Greeks(iv, cdf(d1), pdf/(forward*iv*root),
+                  pdf*forward*root*exp(-rate*discount_years))
+
+
 def allocate_short(candidates, delta_targets, cash_vega_budget, max_lots, max_total):
     """候选元组(symbol, Greeks, multiplier)；同一合约可对应多个Delta档。
 
-    向下取整；合并重复合约。单次组合现金Vega不超过预算，不每日累加。
+    按源代码先合并重复合约，再四舍五入到整手；外层限额仍保留。
     """
     if not candidates:
         return {}
-    choices = [min(candidates, key=lambda x: (abs(x[1].delta - target), x[0])) for target in delta_targets]
+    choices = [min(candidates, key=lambda x: abs(x[1].delta - target)) for target in delta_targets]
     weights = [1 / (item[1].gamma * float(item[2])) for item in choices]
     denominator = sum(w * item[1].vega * float(item[2]) for w, item in zip(weights, choices))
     raw = {}
     for weight, item in zip(weights, choices):
         raw[item[0]] = raw.get(item[0], 0) + cash_vega_budget * weight / denominator
-    quantities = {key: min(floor(value + 1e-10), max_lots) for key, value in raw.items()}
+    quantities = {key: min(round(value), max_lots) for key, value in raw.items()}
     total = sum(quantities.values())
     if total > max_total:
-        quantities = {key: floor(value * max_total / total) for key, value in quantities.items()}
+        quantities = {key: int(value * max_total / total) for key, value in quantities.items()}
     return {key: -value for key, value in quantities.items() if value > 0}
 
 

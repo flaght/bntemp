@@ -198,3 +198,7 @@ sha256sum -c doc/evidence/checksums/DOCUMENTATION_20261010_SHA256.txt
 ### 2026-10-19：订单查询超时受控停止
 
 合并定期重复查询；停止只排空回报和冻结目标，再做最多两轮超时重查，核验通过才保存，不自动恢复交易。原始failure和cleanup结果分开记录。376项离线回归通过，线上待验。[说明](../HANDOFF/live/HANDOFF_OPTION_VEGA_QUERY_TIMEOUT_STOP_2026-10-19.md)、[包](archives/OPTION_VEGA_QUERY_TIMEOUT_STOP_20261019.tar.gz)、[SHA](checksums/OPTION_VEGA_QUERY_TIMEOUT_STOP_20261019_SHA256.txt)。
+
+### 2026-10-20：08按用户原strategy1.py逻辑修改
+
+恢复每日增量累加、原交易日年化与Greeks、原时间价值退出公式及固定对冲时点；保留真实归属、风险限制和恢复。173项离线测试通过，含直接从原文件快照提取方法的对照，线上待验。原参数/仓位不自动改变，单合约满额时拒绝新增而继续管理。[说明](../HANDOFF/live/HANDOFF_OPTION_VEGA_SOURCE_LOGIC_2026-10-20.md)、[补充包](archives/OPTION_VEGA_SOURCE_LOGIC_20261020.tar.gz)、[SHA](checksums/OPTION_VEGA_SOURCE_LOGIC_20261020_SHA256.txt)、[范围](live/OPTION_VEGA_SOURCE_LOGIC_20261020.json)。不包含主力替代、盘前就绪及14:57阶段处理。

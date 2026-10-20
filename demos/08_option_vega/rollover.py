@@ -62,6 +62,8 @@ def restore_signal(session, state):
             raise ValueError("08恢复移除的合约仍有非零目标")
         signal[name] = {key: old.get(key, "0") for key in expected}
     signal["sent_days"] = [day for day in signal["sent_days"] if day in {str(d) for d in session.strategy.trading_days}]
+    signal["hedge_sent"] = [token for token in signal.get("hedge_sent", ())
+        if token.split("_", 1)[0] in {str(d) for d in session.strategy.trading_days}]
     session.signal_checkpoint.restore_state(signal)
 
 
@@ -102,6 +104,7 @@ def payload_for_day(session, payload, *, driver, transport, day):
     signal["option_goals"] = {key: values[str(ids[key])] for key in session.strategy.contracts}
     signal["future_goals"] = {key: values[str(ids[key])] for key in session.strategy.futures}
     signal["sent_days"] = [d for d in signal["sent_days"] if d in new["calendar"]]
+    signal["hedge_sent"] = [token for token in signal.get("hedge_sent", ()) if token.split("_", 1)[0] in new["calendar"]]
     signal["flatten_requested"] = False
     payload["component_states"]["session_identity"]["identity"] = new
     return payload

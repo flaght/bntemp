@@ -77,7 +77,8 @@ def parse_args(argv=None):
     p.add_argument("--flatten-day", type=lambda value: datetime.strptime(value, "%Y%m%d").date(),
         help="可选策略主动清仓日；省略则停机保留策略持仓")
     p.add_argument("--min-remaining-days", type=int, default=5)
-    p.add_argument("--close-remaining-days", type=int, default=2)
+    p.add_argument("--close-remaining-days", type=int, default=2,
+        help="旧检查点兼容参数；源策略按交易时点时间价值退出，不使用此阈值")
     p.add_argument("--rate", type=float, default=.02)
     p.add_argument("--min-time-value", type=float, default=5)
     p.add_argument("--max-market-age-seconds", type=int, default=300)

@@ -1,0 +1,12 @@
+{
+  "scope": "option_vega_source_algorithm_alignment",
+  "logic_version": "strategy1-noddb-v1",
+  "offline_status": "passed",
+  "offline_tests": 173,
+  "online_status": "pending",
+  "source_snapshot": "tests/fixtures/option_vega/strategy1.py",
+  "source_sha256": "aa72eab3417800f50a4eb9c8bf73968c504fad7f9bfeb698593d0c2f1a72c801",
+  "existing_ownership_preserved": true,
+  "main_contract_switch_added": false,
+  "auction_phase_changed": false
+}

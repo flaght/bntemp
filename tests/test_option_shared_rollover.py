@@ -142,7 +142,9 @@ class OptionSharedRolloverTests(unittest.TestCase):
         session.client._wall_clock_ns = lambda: session.runner.clock_ns()
         self.frame(session, "13:36")
         self.assertIn(date(2026, 8, 14), session.strategy.sent_days)
-        self.assertEqual(session.strategy.entry_audit[-1]["outcome"], "TARGET")
+        self.assertEqual(session.strategy.entry_audit[-1]["outcome"], "RISK_LIMIT")
+        # 原仓已占单合约1手上限；每日累加受限仍须继续管理原仓。
+        self.assertEqual(session.strategy.option_goals["MO2609-C-6600"], -1)
         self.assertEqual(session.strategy.position(OPTION), -1)
         self.assertFalse(transport.sent)
         lifecycle.shutdown(session, context)

@@ -355,7 +355,8 @@ def main():
     parser.add_argument("--hedge-slots", default="10:00,11:00,13:30,14:00,14:55")
     parser.add_argument("--flatten-slot", default="14:50")
     parser.add_argument("--min-remaining-days", type=int, default=5)
-    parser.add_argument("--close-remaining-days", type=int, default=2)
+    parser.add_argument("--close-remaining-days", type=int, default=2,
+        help="旧检查点兼容参数；源策略按交易时点时间价值退出，不使用此阈值")
     parser.add_argument("--rate", type=float, default=0.02)
     parser.add_argument("--min-time-value", type=float, default=5)
     parser.add_argument("--max-market-age-seconds", type=int, default=300)

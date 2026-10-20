@@ -4,6 +4,49 @@ LXGBN（DXBM-LXG）是 Windows 交易宿主，本项目是供其内嵌 Python �
 
 CTP 已有实际链路继续复用；BN 本期延后。首期仅测试环境，一个策略、一份绑定、一个合约，普通限价 Normal 与投机。实际 Windows/柜台联调尚未完成。
 
+## Python 3.12 已确认后的第一步
+
+先运行 [environment_probe.py](environment_probe.py)，再决定构建范围。探针本身只用标准库，记录系统、完整 Python 版本、解释器位数、二进制后缀和实际模块路径，分开检查契约、Bomber 内核、market/basic 扩展和完整会话工厂。只做导入，不构造会话、不调用报撤单端口；通过也不代表原生 ABI/数值、回调线程或真实交易已验收。
+
+下面假设本期源码位于 `D:\bomber-pro`，报告保存到 `D:\lxgbn-test`。先在匹配宿主版本和位数的 Windows Python 3.12 环境运行：
+
+```powershell
+cd D:\bomber-pro
+python scripts\integration\lxgbn\environment_probe.py --project-root D:\bomber-pro --output D:\lxgbn-test\standalone-environment.json
+```
+
+这里的 `python` 必须是选定的 3.12 解释器；不要根据系统默认命令推断它与宿主相同。没有独立 Python 时，可直接做下面的内嵌检查。
+
+**还需在 LXGBN 实际内嵌 Python 内运行一次**，它的 DLL 搜索路径、已加载模块和 Python 搜索路径可能与独立 Python 不同。通过宿主现有脚本入口执行下面的代码，不另起解释器：
+
+```python
+import runpy
+
+probe = runpy.run_path(r'D:\bomber-pro\scripts\integration\lxgbn\environment_probe.py')
+report = probe['collect_report'](project_root=r'D:\bomber-pro')
+probe['write_report'](report, r'D:\lxgbn-test\embedded-environment.json')
+```
+
+探针会临时加入显式源码目录，导入后恢复 `sys.path`；不会清除宿主已加载的模块。如果 framework 实际来自另一个目录，报告会阻止通过，应先统一部署路径并正常重启测试宿主，不在运行中强行替换原生模块。不要从 Linux/macOS 复制扩展二进制。
+
+| 报告结果 | 下一步 |
+| --- | --- |
+| `sdk_contract` 失败 | 检查本期源码是否部署完整、实际加载路径是否正确 |
+| `bomber_engine` 失败 | 先提供匹配 Windows/CPython 3.12/位数的 Bomber 内核；已有兼容产物复用，没有才构建内核 |
+| 内核通过、`market_basic` 失败 | 按具体错误核对 `.pyd` 和依赖；没有兼容产物才构建两个扩展 |
+| 前面通过、`session_factory` 失败 | 根据报告中的具体依赖/导入错误处理，不能把契约可导入当成 SDK 全部可用 |
+| 内嵌报告 `windows_imports_ready=true` | 做原生行情对象量价检查，再接 HostPort/字段复制及只读绑定；尚不授权实单 |
+
+需要构建 market/basic 时，在匹配宿主的 Python 3.12 构建环境、项目根目录执行：
+
+```powershell
+python bomber\framework\market\basic\setup.py build_ext --inplace
+```
+
+前提是已经提供匹配的 Bomber 内核及其 `.pxd`、Cython/NumPy/setuptools 和可用的 Windows C 编译工具。若内核尚缺失，不先执行这条命令。详见 [market/basic 构建说明](../../../bomber/framework/market/basic/README.md)。
+
+本期不要求因此重编译整个 LXGBN；只有需要修改其原生接口/回调转发或绑定时才涉及宿主构建。当前仍需由宿主接入 `send_order/cancel_order/query_binding` 和原生字段复制函数，并核对三个回调参数、线程/GIL、通用 CLOSE 及快照水位。Python 3.12 版本一致本身不能代替这些联调。
+
 ## 宿主调用顺序
 
 [embedded_example.py](embedded_example.py) 展示装配函数。宿主传入现有 `StrategyTemplate` 策略、绑定、`HostPort`、回调字段复制函数、行情绑定、跳价、风控和状态文件。策略算法无需识别厂商。

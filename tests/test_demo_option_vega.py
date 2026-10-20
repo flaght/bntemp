@@ -157,7 +157,7 @@ class StrategyTests(unittest.TestCase):
         self.assertIn(hedge,(Decimal(0),Decimal(1)))
         self.assertEqual(self.strategy.entry_decisions,1)
 
-    def test_daily_budget_replaces_instead_of_accumulates(self):
+    def test_daily_budget_accumulates_instead_of_replacing(self):
         self.frame("2026-08-13 13:58")
         self.frame("2026-08-13 13:59")
         first = abs(self.ctx.intents[-1].targets[self.ids[self.info.symbol]])
@@ -165,7 +165,8 @@ class StrategyTests(unittest.TestCase):
         self.frame("2026-08-14 13:58")
         self.frame("2026-08-14 13:59")
         second = abs(self.ctx.intents[-1].targets[self.ids[self.info.symbol]])
-        self.assertLessEqual(second, first+2)
+        self.assertGreater(second, first)
+        self.assertLessEqual(abs(second-2*first), 2)
         self.assertEqual(self.strategy.entry_decisions,2)
 
     def test_final_flat_contains_explicit_zero_targets(self):
