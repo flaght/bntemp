@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import threading
 import time
+import logging
+from collections import deque
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -12,6 +14,7 @@ from typing import Any, Callable, Mapping
 
 from bomber.framework.market.basic.base import InstrumentId
 from bomber.framework.trader.execution.ctp.native_driver import CtpTraderSession
+from bomber.framework.trader.execution.ctp.query_errors import CtpQueryRejected
 from bomber.framework.trader.execution.events import (
     AccountStateEvent,
     ActiveOrder,
@@ -27,6 +30,8 @@ class _Pending:
     rows: list[dict[str, Any]] = field(default_factory=list)
     error: str | None = None
     done: bool = False
+    timed_out: bool = False
+    started: float = field(default_factory=time.monotonic)
 
 
 class CtpTdApiTransport:
@@ -78,6 +83,7 @@ class CtpTdApiTransport:
         self._request_lock = threading.Lock()
         self._reqid = 0
         self._pending: _Pending | None = None
+        self._query_audit = deque(maxlen=32)
         self._front_connected = False
         self._disconnected = False
         self._ready = False
@@ -258,28 +264,72 @@ class CtpTdApiTransport:
     def _request(self, kind: str, method: str, fields: dict[str, Any]) -> list[dict[str, Any]]:
         with self._request_lock:
             with self._cv:
+                # 本地超时不表示API已结束旧请求。保留身份，只等旧最终回报，禁止覆盖。
+                drain_deadline = time.monotonic() + self.timeout_seconds
+                if self._pending is not None and not self._pending.done:
+                    self._audit_query("wait_previous", self._pending, next_method=method)
+                while self._pending is not None and not self._pending.done:
+                    if self._disconnected or self._api is None:
+                        raise RuntimeError("CTP等待旧查询结束时前置断开")
+                    remaining = drain_deadline - time.monotonic()
+                    if remaining <= 0:
+                        old = self._pending
+                        self._audit_query("drain_timeout", old)
+                        raise TimeoutError(f"CTP旧请求尚未结束: kind={old.kind} request_id={old.reqid}；未发送{method}")
+                    self._cv.wait(remaining)
                 if self._disconnected or self._api is None:
                     raise RuntimeError("CTP查询前置已断开")
+                if self._pending is not None:
+                    self._audit_query("drained", self._pending)
+                    self._pending = None  # 丢弃旧请求数据，不作为本次权威快照。
                 self._reqid += 1
                 pending = _Pending(kind, self._reqid)
                 self._pending = pending
-            code = getattr(self._api, method)(fields, pending.reqid)
+                self._audit_query("send", pending, method=method)
+            try:
+                code = getattr(self._api, method)(fields, pending.reqid)
+            except BaseException:
+                # 无法证明发送是否被API受理；后续查询仍须等待匹配最终回报或断线。
+                with self._cv:
+                    pending.timed_out = True
+                    pending.rows.clear()
+                    self._audit_query("send_exception", pending)
+                raise
             if code != 0:
                 with self._cv:
                     self._pending = None
-                raise RuntimeError(f"CTP {method}请求被拒绝: {code}")
+                    self._audit_query("rejected", pending, method=method, code=code)
+                raise CtpQueryRejected(kind, method, pending.reqid, code)
             deadline = time.monotonic() + self.timeout_seconds
             with self._cv:
                 while not pending.done and not self._disconnected:
                     remaining = deadline - time.monotonic()
                     if remaining <= 0:
-                        self._pending = None
-                        raise TimeoutError(f"等待CTP {kind}最终回报超时")
+                        pending.timed_out = True
+                        pending.rows.clear()
+                        self._audit_query("timeout", pending)
+                        raise TimeoutError(f"等待CTP {kind}最终回报超时 (request_id={pending.reqid})")
                     self._cv.wait(remaining)
                 self._pending = None
                 if self._disconnected or pending.error:
                     raise RuntimeError(pending.error or f"CTP {kind}查询期间前置断线")
                 return pending.rows
+
+    def _audit_query(self, event, pending, **detail):
+        """调用方持有_cv；不记录查询字段、凭据或资金数据。"""
+        row = {"event": event, "kind": pending.kind, "request_id": pending.reqid,
+               "elapsed_seconds": round(time.monotonic()-pending.started, 6), **detail}
+        self._query_audit.append(row)
+        level = (logging.WARNING if event in {"timeout", "drain_timeout", "rejected", "send_exception"}
+                 else logging.INFO if event in {"wait_previous", "late_final", "drained"} else logging.DEBUG)
+        logging.getLogger("CtpQuery").log(level, "CTP查询: %s", row)
+
+    def query_diagnostics(self):
+        with self._cv:
+            pending = self._pending
+            return {"pending": None if pending is None else {
+                "kind": pending.kind, "request_id": pending.reqid, "timed_out": pending.timed_out,
+                "final_received": pending.done}, "recent": [dict(row) for row in self._query_audit]}
 
     def _front_up(self) -> None:
         with self._cv:
@@ -309,10 +359,12 @@ class CtpTdApiTransport:
                     f"CTP {kind}回报错误: {error_id}"
                     + (f" ({message})" if message else "")
                 )
-            if data and not pending.error:
+            if data and not pending.error and not pending.timed_out:
                 pending.rows.append(dict(data))
-            if last or pending.error:
+            if last:
                 pending.done = True
+                self._audit_query("late_final" if pending.timed_out else "final", pending,
+                                  error=pending.error is not None)
                 self._cv.notify_all()
 
     def _order_push(self, data: Any) -> None:

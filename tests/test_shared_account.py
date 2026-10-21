@@ -522,7 +522,6 @@ class SharedAccountTests(unittest.TestCase):
                 if self.previous is None:
                     self.previous = reqid
                     return 0  # 首次请求没有最终回报。
-                super().reqQryOrder(data, self.previous)  # 旧请求迟到，含一笔活动单。
                 self.onRspQryOrder({}, {}, reqid, True)  # 新查询正常完成且无活动单。
                 return 0
         transport = _transport(Api)
@@ -530,6 +529,8 @@ class SharedAccountTests(unittest.TestCase):
         transport.activate()
         self.addCleanup(transport.close)
         with self.assertRaises(TimeoutError): transport.query_active_orders()
+        # 旧请求最终回报先到，才能发送新查询；旧的活动单数据不能成为新快照。
+        FakeTdApi.reqQryOrder(transport._api, {}, transport._api.previous)
         self.assertFalse(transport.query_active_orders().orders)
 
     def test_periodic_owned_reconciliation_queries_orders_once(self):
@@ -622,6 +623,80 @@ class SharedAccountTests(unittest.TestCase):
             self.assertFalse(account.client.is_armed)
             transport.query_active_orders = original
             account.stop()
+
+    def test_real_funds_timeout_then_rejected_stop_query_retries_without_rearming(self):
+        modules = self.native_modules()
+        from tests.run_p4_ctp_td_transport import FakeTdApi
+        td = import_module("bomber.framework.trader.execution.ctp.td_transport")
+        class Api(FakeTdApi):
+            def __init__(self):
+                super().__init__(); self.funds_calls = []
+            def reqQryTradingAccount(self, data, reqid):
+                self.funds_calls.append(reqid)
+                if len(self.funds_calls) == 1: return 0
+                if len(self.funds_calls) == 2: return -2
+                return super().reqQryTradingAccount(data, reqid)
+        with TemporaryDirectory() as directory:
+            account, service, transport, (one, _), _ = self.native_account(Path(directory)/"account.json", modules,
+                scoped=True, execution_mode="independent", preserve_external=True)
+            account.start(resume=False); service.start(); one.start(); account.authorize()
+            self.submit(one, -1)
+            transport.fill(transport.sent[-1]["OrderRef"])
+            real = td.CtpTdApiTransport(client_id="account", account_id="demo", front="tcp://fake:1234",
+                broker_id="9999", investor_id="demo", password="fake", app_id="fake", auth_code="fake",
+                td_api_base=Api, timeout_seconds=.01)
+            real.connect(lambda *_: None, lambda *_: None, lambda *_: None); real.activate()
+            self.addCleanup(real.close)
+            real._account_revision = transport.revision
+            transport.query_account = real.query_account
+            transport.query_diagnostics = real.query_diagnostics
+            account._next_check = 0
+            with self.assertRaises(TimeoutError): account.poll()
+            self.assertTrue(account.execution.positions.is_recovery_required(service.client_id))
+            old = real._pending.reqid
+            real._api.onRspQryTradingAccount({"Balance": 999999}, {}, old, True)
+            sent = len(transport.sent)
+            with patch.object(modules.lifecycle.time, "sleep") as sleep:
+                account.stop()
+            sleep.assert_called_once_with(1.0)
+            self.assertEqual(account.stop_query_attempts, 2)
+            self.assertEqual(account.stop_query_errors[0]["code"], -2)
+            self.assertIn("最终回报超时", account.query_failure)
+            self.assertEqual(account.final_active_orders, 0)
+            self.assertEqual(service.position_manager.position("one", "main"), -1)
+            self.assertFalse(account.execution.positions.is_recovery_required(service.client_id))
+            self.assertFalse(account.client.is_armed)
+            self.assertEqual(len(transport.sent), sent)
+            self.assertEqual(len(real._api.funds_calls), 3)
+
+    def test_stop_query_rejection_budget_and_fatal_errors_are_distinct(self):
+        modules = self.native_modules()
+        error_type = import_module("bomber.framework.trader.execution.ctp.query_errors").CtpQueryRejected
+        for code in (-2, -3, -1):
+            with self.subTest(code=code), TemporaryDirectory() as directory:
+                path = Path(directory)/"account.json"
+                account, service, transport, _, _ = self.native_account(path, modules,
+                    scoped=True, execution_mode="independent", preserve_external=True)
+                account.start(resume=False); account.authorize()
+                original, before, calls = transport.query_account, path.read_bytes(), []
+                def query():
+                    calls.append(1)
+                    raise error_type("account", "reqQryTradingAccount", len(calls), code)
+                transport.query_account = query
+                account._next_check = 0
+                with self.assertRaises(error_type): account.poll()
+                with patch.object(modules.lifecycle.time, "sleep") as sleep:
+                    with self.assertRaises(error_type): account.stop()
+                expected = 2 if code in (-2,-3) else 1
+                self.assertEqual(account.stop_query_attempts, expected)
+                self.assertEqual(len(calls), expected+1)
+                self.assertEqual(sleep.call_count, expected-1)
+                self.assertEqual(path.read_bytes(), before)
+                self.assertIsNone(account.final_active_orders)
+                self.assertTrue(account.execution.positions.is_recovery_required(service.client_id))
+                self.assertFalse(account.client.is_armed or transport.sent)
+                transport.query_account = original
+                account.stop()
 
     def test_independent_same_instrument_external_baseline_never_becomes_owned_or_closed(self):
         modules = self.native_modules()

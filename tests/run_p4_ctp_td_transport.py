@@ -135,6 +135,9 @@ def main() -> None:
         pass
     else:
         raise AssertionError("分片查询缺少最终回报不能使用部分仓位")
+    # 原请求直到最后一片到达才结束；超时不会释放API内部查询额度。
+    pending_id = transport._pending.reqid
+    api.onRspQryInvestorPosition({}, {}, pending_id, True)
     api.account_error = True
     try:
         transport.query_account()

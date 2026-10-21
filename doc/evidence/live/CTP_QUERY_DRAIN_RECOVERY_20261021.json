@@ -1,0 +1,16 @@
+{
+  "scope": "public_ctp_query_lifecycle_and_bounded_stop",
+  "offline_status": "passed",
+  "unittest_count": 402,
+  "transport_script_groups": 6,
+  "online_status": "pending",
+  "external_connections": false,
+  "orders_submitted": false,
+  "checkpoint_schema_changed": false,
+  "ownership_changed": false,
+  "auto_reconnect": false,
+  "auto_resume_trading": false,
+  "stop_query_rounds": 2,
+  "rejection_backoff_seconds": 1,
+  "query_event_retention": 32
+}

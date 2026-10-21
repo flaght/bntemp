@@ -16,7 +16,7 @@
 | 九个策略及公共输入层 | [策略框架交接](HANDOFF/demos/HANDOFF_DEMOS_FRAMEWORK_2026-10-07.md) → [输入层实现记录](strategies/DEMOS_INPUT_STAGE1_IMPLEMENTATION_2026-10-04.md) | 具体入口和参数继续查各 demo 的 README |
 | 当前 Live 渠道及策略恢复 | [渠道分层](HANDOFF/live/HANDOFF_LIVE_CHANNELS_2026-10-10.md) → [持仓接管与恢复](HANDOFF/live/HANDOFF_LIVE_POSITION_RECOVERY_2026-10-10.md) → [REV3 验证证据](HANDOFF/live/HANDOFF_LIVE_REV3_EVIDENCE_2026-10-10.md) | 按源码版本和验收范围阅读，离线结果与实际柜台结果分别确认 |
 | 历史预热和盘中回补 | [历史启动规则](HANDOFF/history/HANDOFF_HISTORY_STARTUP_POLICY_2026-10-09.md) → [Provider 实施](HANDOFF/history/HANDOFF_HISTORY_PROVIDER_2026-10-09.md) → [历史数据交接索引](HANDOFF/README.md#历史行情预热与恢复) | 后续规则补充了早期架构中的“在线历史仅本地”表述 |
-| 与 DXBM LXG 系统对接 | [接口规范](integration/DXBM_LXG_INTEGRATION_SPEC.md) | 双方评审草案，包含建议契约与验收标准 |
+| 与 LXGBN / DXBM LXG 系统对接 | [SDK 接入与测试指南](integration/LXGBN_SDK_INTEGRATION_GUIDE_2026-10-21.md) → [历史接口规范](integration/DXBM_LXG_INTEGRATION_SPEC.md) | 当前 Windows 内嵌接入、HostPort/回调、运行示例与实机验收；历史原生接口讨论另存 |
 | M02 执行客户端替换 | [设计与代码改动清单](architecture/M02_EXECUTION_CLIENT_DESIGN_2026-10-19.md) | 关联 D5／GAP10；LXGBN Windows 宿主调用项目 SDK；已实现离线链路，实机待验 |
 | 接续某个具体任务 | [交接记录索引](HANDOFF/README.md) | 按主题找交接，再核对对应版本和证据 |
 | 同步或定位旧文件 | [证据材料索引](evidence/README.md)和[路径对照](MIGRATION_2026-10-10.md#新旧路径对照) | 校验清单从项目根目录使用；原始材料已备份 |
@@ -30,7 +30,7 @@
 | [architecture](architecture/README.md) | 集成架构原稿与修订稿、框架状态、进度快照、行情分层评估 | 5 |
 | [data](#数据契约与会话规则) | DataHub、基础条款、期货期权数据及会话通用化两份关联稿 | 5 |
 | [strategies](#策略与公共输入设计) | 示例适配、输入层设计和实现交接 | 3 |
-| [integration](#系统对接) | DXBM LXG 外部系统接口 | 1 |
+| [integration](#系统对接) | LXGBN / DXBM LXG 外部系统接入 | 2 |
 | [audits](#架构审查与缺口) | GAP 清单、评估快照、品种专用代码审查 | 3 |
 | [HANDOFF](HANDOFF/README.md) | 按策略、实盘、历史、GAP、协调细分，历史版本随主题保存 | 36 |
 | [evidence](evidence/README.md) | 校验清单、补丁与同步脚本 | 54 |
@@ -69,6 +69,7 @@
 
 | 文档 | 用途和状态 |
 | --- | --- |
+| [LXGBN_SDK_INTEGRATION_GUIDE](integration/LXGBN_SDK_INTEGRATION_GUIDE_2026-10-21.md) | 已实现 SDK 的 Windows 内嵌接入指南，含宿主三端口、回调/线程/水位、八个可运行无柜台例子及实机验收清单 |
 | [DXBM_LXG_INTEGRATION_SPEC](integration/DXBM_LXG_INTEGRATION_SPEC.md) | v0.8 双方评审草案：订单命令、回调、策略归属、恢复和能力声明；不代表适配器已实现 |
 
 ## 架构审查与缺口

@@ -586,3 +586,11 @@ V5服务的具体首个故障仍须原summary/events确认；不清除失败/未
 原version1共享检查点通过稳定柜台查询暂存迁移至version2；仅允许持仓政策从原声明续接为`preserve_external`，其他策略、身份、参数、预算校验保留。迁移保留归属及订单历史，不将剩余柜台仓位分配给策略；最终恢复核对通过后才备份并提交。已有version2同日不自动重建外部基线。跨日只结转自有总量与系统成交成本，混合柜台均价不是策略成本。
 
 同进程与不同进程复用一个账户执行端，后者由IPC按策略ID隔离目标、回报和检查点。柜台没有策略标签；未知独立交易端的任意并发交易不是这一保证的范围。见[08及公共归属恢复说明](../../../doc/HANDOFF/live/HANDOFF_OPTION_VEGA_OWNED_POSITIONS_2026-10-16.md)。
+
+## CTP查询超时与停机流控（2026-10-21）
+
+公共CtpTdApiTransport在查询超时后保留原kind/request_id，只允许匹配的最终回报结束该请求。下一查询在原timeout_seconds内等待旧请求结束，超时则不发送；旧数据丢弃，不推进资金/订单快照版本。新请求仍使用新的ID；断线会唤醒等待。查询立即返回非零码时说明该请求未受理，使用CtpQueryRejected保留code；仅reqQry方法的-2/-3可在共享账户停机阶段重试，认证/登录、报单/撤单不套用此重试。
+
+CtpSharedAccountLifecycle.stop沿用最多两轮权威核验，对查询超时及明确的-2/-3退避重试；接口拒绝码在下一轮前等1秒，断线/其他错误不重试。等待与查询分别有原timeout_seconds预算，不是所有停机步骤合计只有一个timeout。成功后保持禁单、保存归属并停止，不恢复本次运行。失败保留未完成结果。正常运行遇到查询超时/流控仍先闭闸退出，不静默继续交易。共享账户server与同进程host复用本组件，worker不另建TD连接。
+
+snapshot.stop_reconciliation的errors列出各轮错误及code/retryable；queries包含Transport待结束请求与最近32条查询事件，无查询字段、凭据或资金数据。402项离线回归及Transport脚本通过，线上待验。见[交付说明](../../../doc/HANDOFF/live/HANDOFF_CTP_QUERY_DRAIN_RECOVERY_2026-10-21.md)。

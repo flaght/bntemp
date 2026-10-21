@@ -1,0 +1,31 @@
+2026-10-21 离线验证，Python=/Users/kerry/.local/bin/python3.12
+PYTHONPATH=.validation/packages:.
+未连接DolphinDB/CTP，未报单；真实公共策略/执行/归属/恢复组件，SDK/柜台为夹具。
+命令见本补充HANDOFF的验证章节；IPC需要允许本机Unix socket。
+
+Query lifecycle + shared account
+Ran 100 tests in 3.827s
+OK
+
+Live common
+Ran 126 tests in 0.555s
+OK
+
+Option SDK fixture + transport script + rollover/diagnostics
+Ran 91 tests in 0.258s
+OK
+P4-CTP3a通过：认证登录、结算确认及三种查询均等待本次最终回报
+P4-CTP3b通过：缺最后分片和柜台错误均失败闭闸，不推进资金版本
+P4-CTP3c通过：原生推送转交Driver且断线后所有查询闭闸
+P4-CTP3d通过：连接期间早到未归属订单使会话失败
+P4-CTP4a通过：异步报单拒绝补齐身份并上送Driver，双回调可去重
+P4-CTP4b通过：撤单拒绝不伪造已撤单，关闭查询/下单闸门
+Ran 36 tests in 1.187s
+OK
+
+Local IPC
+Ran 49 tests in 2.654s
+OK
+
+Total unittest=100+126+91+36+49=402 passed; P4 Transport script 6 groups passed.
+git diff --check passed. 线上待验。

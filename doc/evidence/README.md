@@ -202,3 +202,7 @@ sha256sum -c doc/evidence/checksums/DOCUMENTATION_20261010_SHA256.txt
 ### 2026-10-20：08按用户原strategy1.py逻辑修改
 
 恢复每日增量累加、原交易日年化与Greeks、原时间价值退出公式及固定对冲时点；保留真实归属、风险限制和恢复。173项离线测试通过，含直接从原文件快照提取方法的对照，线上待验。原参数/仓位不自动改变，单合约满额时拒绝新增而继续管理。[说明](../HANDOFF/live/HANDOFF_OPTION_VEGA_SOURCE_LOGIC_2026-10-20.md)、[补充包](archives/OPTION_VEGA_SOURCE_LOGIC_20261020.tar.gz)、[SHA](checksums/OPTION_VEGA_SOURCE_LOGIC_20261020_SHA256.txt)、[范围](live/OPTION_VEGA_SOURCE_LOGIC_20261020.json)。不包含主力替代、盘前就绪及14:57阶段处理。
+
+### 2026-10-21：公共CTP待结束查询与停机-2/-3有界处理
+
+超时保留原请求身份，下一查询先等匹配最终回报，迟到数据不作为新快照。查询拒绝使用类型化异常；停机最多两轮、对-2/-3退避1秒，最终核验通过才保存，持续未知则失败。报单/撤单不自动重试，不改仓位归属和运行授权。402项离线测试及Transport脚本6组检查通过，含真实本机IPC多进程；未连接真实柜台，线上待验。[说明](../HANDOFF/live/HANDOFF_CTP_QUERY_DRAIN_RECOVERY_2026-10-21.md)、[包](archives/CTP_QUERY_DRAIN_RECOVERY_20261021.tar.gz)、[SHA](checksums/CTP_QUERY_DRAIN_RECOVERY_20261021_SHA256.txt)、[范围](live/CTP_QUERY_DRAIN_RECOVERY_20261021.json)。

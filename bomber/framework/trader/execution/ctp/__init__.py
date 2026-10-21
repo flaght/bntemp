@@ -18,6 +18,7 @@ from bomber.framework.trader.execution.ctp.native_driver import (
     CtpTraderTransport,
 )
 from bomber.framework.trader.execution.ctp.td_transport import CtpTdApiTransport
+from bomber.framework.trader.execution.ctp.query_errors import CtpQueryRejected
 from bomber.framework.trader.execution.ctp.planner import CtpClosePlanner
 from bomber.framework.trader.execution.ctp.limit_planner import CtpLimitPlanner
 from bomber.framework.trader.execution.ctp.profile import (
@@ -44,4 +45,5 @@ __all__ = [
     "CtpTraderSession",
     "CtpTraderTransport",
     "CtpTdApiTransport",
+    "CtpQueryRejected",
 ]

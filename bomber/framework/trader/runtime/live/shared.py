@@ -295,6 +295,8 @@ class SharedAccountLiveHost:
     def snapshot(self):
         positions = self.service.position_manager.snapshot()
         client = self.service.client
+        account = getattr(self, "account", None)
+        query_diagnostics = getattr(getattr(account, "transport", None), "query_diagnostics", None)
         return {"account": self.service.snapshot_state(),
             "execution_diagnostics": {"is_reconciled": client.is_reconciled,
                 "is_armed": getattr(client, "is_armed", None),
@@ -307,8 +309,10 @@ class SharedAccountLiveHost:
             "strategy_positions": [{"strategy_id": sid, "target_key": key, "quantity": str(q)}
                 for (sid, key), q in positions.strategy_positions.items()],
             "execution_positions": {str(key.instrument_id): str(q) for key, q in positions.account_positions.items()},
-            "stop_reconciliation": {"query_failure": getattr(getattr(self, "account", None), "query_failure", None),
-                "attempts": getattr(getattr(self, "account", None), "stop_query_attempts", 0)},
+            "stop_reconciliation": {"query_failure": getattr(account, "query_failure", None),
+                "attempts": getattr(account, "stop_query_attempts", 0),
+                "errors": list(getattr(account, "stop_query_errors", ())),
+                "queries": query_diagnostics() if callable(query_diagnostics) else None},
             "strategies": {sid: {"active": item.active, "failure": item.failure,
                 **history_snapshot(item.session),
                 "failure_readiness": getattr(item.session.runner, "failure_readiness", None),

@@ -8,6 +8,7 @@ from decimal import Decimal
 
 from bomber.framework.trader.persistence import JsonStateStore, RuntimeStateManager
 from bomber.framework.trader.portfolio import TargetStore
+from bomber.framework.trader.execution.ctp.query_errors import CtpQueryRejected
 from ..recovery import SessionIdentityCheckpoint
 from ...ownership import AccountWriterIdentity, account_writer_lease
 from ...ctp_account import position_buckets
@@ -53,6 +54,7 @@ class CtpSharedAccountLifecycle:
         self.final_gross = self.final_active_orders = None
         self.query_failure = None
         self.stop_query_attempts = 0
+        self.stop_query_errors = []
 
     @staticmethod
     def acquire(resources, transport, *, environment):
@@ -373,7 +375,8 @@ class CtpSharedAccountLifecycle:
                                for order in self.driver.reconcile_active_orders().orders):
                             raise RuntimeError("共享账户出现范围外活动订单，账户闭闸")
             except Exception as error:
-                if isinstance(error, TimeoutError):
+                if self.query_failure is None and (isinstance(error, TimeoutError)
+                        or isinstance(error, CtpQueryRejected) and error.retryable):
                     self.query_failure = str(error)
                 self.client.disarm("external_position_check_failed")
                 self.execution.positions.mark_recovery_required(self.service.client_id)
@@ -412,11 +415,21 @@ class CtpSharedAccountLifecycle:
                 self.driver.reconcile_account_state()
                 gross, active = self._validate_account()
                 break
-            except TimeoutError:
-                if attempt == 1:
+            except Exception as error:
+                retryable = (isinstance(error, TimeoutError)
+                    or isinstance(error, CtpQueryRejected) and error.retryable)
+                self.stop_query_errors.append({"attempt": attempt+1, "error": str(error),
+                    "retryable": retryable, "code": getattr(error, "code", None)})
+                del self.stop_query_errors[:-16]
+                logging.getLogger("SharedAccountStop").warning(
+                    "停机查询未完成: attempt=%s/2 retryable=%s error=%s", attempt+1, retryable, error)
+                if not retryable or attempt == 1:
                     raise
+                if isinstance(error, CtpQueryRejected):
+                    # 未受理的查询退避后才能重试；超时请求由Transport先等待旧最终回报。
+                    time.sleep(1.0)
         if self.query_failure is not None:
-            # 仅解除此次查询超时留下的恢复标志，且已确认全账户无活动单和本地终态。
+            # 仅解除此次查询超时/流控留下的恢复标志，且已确认全账户无活动单和本地终态。
             if (self.client.report_errors or self.service._failed or self.service._pending
                     or self.service._active_instruments()
                     or any(self.execution.positions.snapshot().working_quantities.values())):

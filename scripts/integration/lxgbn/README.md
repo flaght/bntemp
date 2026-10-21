@@ -2,6 +2,8 @@
 
 LXGBN（DXBM-LXG）是 Windows 交易宿主，本项目是供其内嵌 Python 调用的 SDK。入口为 `bomber.framework.lxgbn`。本目录没有独立交易进程、HTTP 服务或厂商 SDK 加载器。
 
+交给 LXGBN 开发者的完整接入步骤、接口字段和实机测试清单见 [SDK 接入与测试指南](../../../doc/integration/LXGBN_SDK_INTEGRATION_GUIDE_2026-10-21.md)。[sdk_acceptance_example.py](sdk_acceptance_example.py) 提供八个可直接运行的无柜台示例；在已安装 wheel 的 Windows Python 中以 `python -I 实际脚本路径` 运行，不注入项目源码目录。
+
 CTP 已有实际链路继续复用；BN 本期延后。首期仅测试环境，一个策略、一份绑定、一个合约，普通限价 Normal 与投机。实际 Windows/柜台联调尚未完成。
 
 ## Python 3.12 已确认后的第一步
@@ -59,6 +61,8 @@ cd /d D:\bomber\bomber
 "%BOMBER_PYTHON%" -I "D:\bomber\bomber\bomber\framework\market\basic\setup.py" build_ext --inplace
 ```
 
+若旧脚本报 `Multiple top-level packages discovered in a flat-layout`，更新该 setup.py 后重试相同编译命令。脚本显式设置 `packages=[]` 和 `py_modules=[]`，仅构建声明的两个扩展，禁止 setuptools 自动扫描内核工程的 assets/crates 等目录；无需移动这些目录。Cython 的 IF 弃用及许可证元数据弃用警告不是这次失败的原因。
+
 NumPy 已安装时无需重装。内核构建隔离环境中的 Cython/setuptools 不代表已安装进运行用的 Conda 环境，因此这里显式补齐。使用该目录刚构建的标准精度内核 `.pxd` 及 `.h`，不复制 macOS 接口或二进制覆盖它们。编译成功后重新运行：
 
 ```cmd
@@ -66,6 +70,32 @@ NumPy 已安装时无需重装。内核构建隔离环境中的 Cython/setuptool
 ```
 
 四项全部通过后，再做原生行情数值检查及 LXGBN 内嵌环境探针。这里的独立进程导入成功不表示交易联调完成。
+
+## 导入通过后：行情数值及内嵌检查
+
+2026-10-21 01:59 UTC，用户提供的 Windows CPython 3.12.15 / AMD64 报告中，四项导入检查全部通过，`windows_imports_ready=true`；两个 market 扩展均来自 `D:\bomber\bomber\bomber\framework\market\basic`。这仅确认该独立进程的构建及导入。
+
+将 [native_value_probe.py](native_value_probe.py) 放到 Windows 的 `D:\bomber\scripts\integration\lxgbn`，与 environment_probe.py 同目录，再运行：
+
+```cmd
+"%BOMBER_PYTHON%" -I "D:\bomber\scripts\integration\lxgbn\native_value_probe.py" --project-root "D:\bomber\bomber"
+```
+
+脚本检查三个不同量价精度的真实 TradeTick、QuoteTick、批量 TradeTick 和 CustomBar 的字段、因子及纳秒时间戳；不创建会话、不连接交易端口。四项数值检查通过且 `native_values_ready=true` 后，在 LXGBN 的实际内嵌脚本入口再执行：
+
+```python
+import runpy
+
+probe = runpy.run_path(r'D:\bomber\scripts\integration\lxgbn\environment_probe.py')
+report = probe['collect_report'](project_root=r'D:\bomber\bomber')
+probe['write_report'](report, r'D:\lxgbn-test\embedded-environment.json')
+
+values = runpy.run_path(r'D:\bomber\scripts\integration\lxgbn\native_value_probe.py')
+report = values['collect_report'](project_root=r'D:\bomber\bomber')
+probe['write_report'](report, r'D:\lxgbn-test\embedded-native-values.json')
+```
+
+保留两份报告。若宿主没有使用这套部署目录，按报告路径核对并统一部署，不热卸载原生模块。数值检查也不覆盖完整 ABI、GIL/回调线程、HostPort 快照水位或真实委托；通过后继续宿主只读绑定联调。
 
 ## 已观测的 Windows 阻塞及内核构建入口
 

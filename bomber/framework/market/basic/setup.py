@@ -38,6 +38,9 @@ extensions = [
 os.chdir(PACKAGE_ROOT)
 setup(
     name="bomber-framework-market-core",
+    # Only build these extensions; the engine root also contains Rust/assets.
+    packages=[],
+    py_modules=[],
     ext_modules=cythonize(extensions, include_path=include_dirs,
                           compiler_directives=compiler_directives, force=True),
 )
