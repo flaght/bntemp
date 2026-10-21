@@ -2,7 +2,7 @@
 
 `base.py` 加载 `custom_bar` 和 `fast_factory` 两个 Cython 扩展。首次部署，以及修改 `.pyx`、`.pxd` 或更换 Bomber 内核、Python、操作系统、架构后，需要重新编译。编译与运行使用同一个 Python 环境。
 
-环境需要已编译并可导入的 `bomber` 内核及其 `.pxd`，以及 Cython、setuptools、wheel、NumPy 和 C 编译器。两个扩展直接 `cimport bomber.*`。
+环境需要已编译并可导入的 `bomber` 内核及其配套 `.pxd`、`core/includes/*.h`，以及 Cython、setuptools、wheel、NumPy 和 C 编译器。两个扩展直接 `cimport bomber.*`。接口和头文件须来自同一次内核构建，不能混入其他平台或精度模式的文件。
 
 从 pro 根目录编译：
 
@@ -11,7 +11,7 @@ export PYTHONPATH=.
 python bomber/framework/market/basic/setup.py build_ext --inplace
 ```
 
-也可以在本目录执行 `python setup.py build_ext --inplace`。脚本自动定位包含 `bomber` 的包根目录，从实际加载的 Bomber 包获取 Cython 接口搜索路径，不依赖固定的 `code/bomber` 目录。
+也可以在本目录执行 `python setup.py build_ext --inplace`。脚本自动定位包含 `bomber` 的包根目录，从实际加载的 Bomber 包获取 Cython 接口和原生头文件搜索路径，不依赖固定的 `code/bomber` 目录。每次运行都会重新生成两个扩展的 C 文件，避免沿用其他模块路径或内核接口生成的旧文件。
 
 扩展名称固定为 `bomber.framework.market.basic.custom_bar` 和 `bomber.framework.market.basic.fast_factory`，`--inplace` 将产物写入本目录。修改后可加 `--force` 重编译。
 

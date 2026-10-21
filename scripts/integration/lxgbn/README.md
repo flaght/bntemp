@@ -47,6 +47,122 @@ python bomber\framework\market\basic\setup.py build_ext --inplace
 
 本期不要求因此重编译整个 LXGBN；只有需要修改其原生接口/回调转发或绑定时才涉及宿主构建。当前仍需由宿主接入 `send_order/cancel_order/query_binding` 和原生字段复制函数，并核对三个回调参数、线程/GIL、通用 CLOSE 及快照水位。Python 3.12 版本一致本身不能代替这些联调。
 
+## 内核通过后：单独构建 market/basic
+
+2026-10-21 Windows 报告已确认 `D:\bomber\bomber` 下 SDK 契约及三个内核模块可导入；`fast_factory` 缺失阻止 market_basic 和 session_factory。此时只需编译两个 framework 扩展，不重编内核。
+
+先将本期 `bomber/framework/market/basic/setup.py` 同步至 Windows 对应路径。更新后的脚本补齐内核头文件搜索目录，并重新生成 C 文件，避免沿用此前错误嵌套目录下生成的模块。保留当前已初始化的 x64 Developer CMD，执行：
+
+```cmd
+"%BOMBER_PYTHON%" -I -m pip install "Cython==3.2.6" "setuptools>=82" wheel
+cd /d D:\bomber\bomber
+"%BOMBER_PYTHON%" -I "D:\bomber\bomber\bomber\framework\market\basic\setup.py" build_ext --inplace
+```
+
+NumPy 已安装时无需重装。内核构建隔离环境中的 Cython/setuptools 不代表已安装进运行用的 Conda 环境，因此这里显式补齐。使用该目录刚构建的标准精度内核 `.pxd` 及 `.h`，不复制 macOS 接口或二进制覆盖它们。编译成功后重新运行：
+
+```cmd
+"%BOMBER_PYTHON%" -I "D:\bomber\scripts\integration\lxgbn\environment_probe.py" --project-root "D:\bomber\bomber"
+```
+
+四项全部通过后，再做原生行情数值检查及 LXGBN 内嵌环境探针。这里的独立进程导入成功不表示交易联调完成。
+
+## 已观测的 Windows 阻塞及内核构建入口
+
+2026-10-20 的独立 Windows 探针结果：CPython 3.12.15 / AMD64 / 64 位，契约加载成功，但 `bomber.model` 和 NumPy 缺失。market_basic 与 session_factory 在 NumPy 导入处停止，不能据此认定其余依赖或 `.pyd` 已经检查完成。
+
+先在该 Python 3.12 环境补 NumPy：
+
+```powershell
+python -m pip install "numpy>=1.26.4"
+```
+
+随后需要本项目的 Windows Bomber 原生内核。`pro/bomber` 是开发覆盖层，不包含完整 `bomber.model` 内核；已有匹配 Windows/CPython 3.12/x64 的项目 wheel 时直接安装该文件。不要根据包名到其他索引猜测安装源，也不将普通 NautilusTrader wheel 当成本项目 `bomber.*` 内核。
+
+**先完成源码传输。** `D:\bomber-core` 是目标目录示例，并不是安装 NumPy/build 后会自动创建的目录。只有 `bomber-pro` 的 Git checkout 仍然缺少真正的内核工程。`cd` 若失败，不要继续执行 build；普通 PowerShell 的目录错误可能不终止后续命令，从而仍在 pro 里构建。
+
+已在本机准备 `pro/dist/windows-core-20261020/bomber-core-source-20261020.zip` 和 SHA256 校验文件。ZIP 根目录为 `bomber-core/`，包含内核 Rust/Cython 源码、`.cargo`、patches 与构建配置，排除了既有原生二进制及缓存；内部 LICENSE/README 符号链接已保存为普通文件，便于 Windows 解压。ZIP 是源码包，未在 Windows 编译验收，也不包含本期 pro 的替代版本。
+
+把 ZIP 传到 Windows，例如 `D:\bomber-core-source-20261020.zip`，先解压：
+
+```powershell
+$ErrorActionPreference = "Stop"
+Expand-Archive -LiteralPath D:\bomber-core-source-20261020.zip -DestinationPath D:\
+Test-Path D:\bomber-core\pyproject.toml
+Test-Path D:\bomber-core\bomber\model\data.pyx
+```
+
+两个检查都应为 True。保留现有 `D:\bomber-pro`。包内 `BUILD_WINDOWS.ps1` 会以脚本自身目录为构建根，检查源码及工具，并在失败时停止；工具准备好后可运行 `& D:\bomber-core\BUILD_WINDOWS.ps1`。手动构建也必须先确认目标目录已经存在。
+
+本地内核源码在同级工程 `bomber1/code/bomber`，其根目录包含 `pyproject.toml`、`build.py`、`Cargo.toml`、`Cargo.lock`、`.cargo/`、`crates/`、`bomber/model/`。没有兼容 wheel 时，将该工程源码完整准备到 Windows（以下示例目录为 `D:\bomber-core`）；保留隐藏构建配置，使用干净构建目录，不沿用 Linux/macOS 的 `.so`、Rust target 或编译缓存。内核仓库自带的 framework 可能早于本期版本，运行探针时继续显式指向 `D:\bomber-pro`。
+
+构建前准备 MSVC x64、Windows SDK 及仓库 README 要求的 Clang，使用已初始化这些工具的 Developer PowerShell。Rust 工具链按内核配置准备；当前 `Cargo.toml` 的最低 Rust 为 1.96.0，构建脚本使用 stable。使用同一个 Python 3.12 / x64 环境完成构建和安装。
+
+```powershell
+$ErrorActionPreference = "Stop"
+Set-Location -LiteralPath D:\bomber-core
+if (-not (Test-Path .\pyproject.toml)) { throw "Bomber 内核源码不完整，停止构建" }
+python -m pip install build
+$env:HIGH_PRECISION = "false"
+$env:BUILD_MODE = "release"
+$env:PYO3_PYTHON = (python -c "import sys; print(sys.executable)")
+python -I -m build --wheel .
+```
+
+**必须保留 `-I`。** 内核根目录自身有 `build.py`，普通 `python -m build` 会优先命中这个源码文件，而不是已安装的 PyPA build 前端；此时可能首先报缺 Cython。隔离模式会忽略当前目录/PYTHONPATH 的隐式搜索入口，使用所选解释器已安装的前端。正常前端随后按 pyproject.toml 在构建隔离环境中安装 `cython==3.2.6` 等依赖。
+
+在本轮 Windows CMD 已设置 BOMBER_PYTHON 的情况下，直接重试：
+
+```cmd
+"%BOMBER_PYTHON%" -I -m pip install build
+"%BOMBER_PYTHON%" -I -m build --wheel "D:\bomber\bomber"
+```
+
+这两行使用用户当前实际内核路径，不依赖之前的 `D:\bomber-core` 目录示例；同一 CMD 内保留已加载的 x64 工具、PYO3_PYTHON、精度及镜像设置。
+
+构建后从 `dist` 选择本次生成的 `bomber-…-cp312-…-win_amd64.whl`，在该 Python 环境执行 `python -m pip install <实际wheel路径>`。该命令中的路径是占位说明，不是可直接粘贴的文件名。构建前后均可用 `python -c "import sys; print(sys.executable)"` 核对解释器。这里不启用 PYO3_ONLY；框架需要 Cython 的 `bomber.model`，只编 PyO3 不足以满足当前依赖。
+
+退出内核源码目录，在部署目录复查，避免把源码目录能导入误当成安装成功：
+
+```powershell
+cd D:\bomber-pro
+python -c "import bomber.model.data as m; print(m.__file__)"
+python scripts\integration\lxgbn\environment_probe.py --project-root D:\bomber-pro
+```
+
+只有内核检查通过后，再按前节处理 market/basic 的实际错误。需要单独构建该扩展时，在相同环境准备内核 `.pxd`、`Cython==3.2.6`、`setuptools>=82`、wheel、NumPy 和 C 编译器，再执行其 setup.py。如果报告只是缺 NumPy 等依赖，先补依赖后重测，不立即归因为二进制缺失。
+
+以上构建命令根据本地内核构建文件整理，尚未在远程 Windows 执行。独立 Conda 环境通过后仍需在 LXGBN 内嵌 Python 中运行同一探针；宿主的包和 DLL 搜索路径不能由 Conda 结果代替。
+
+## Cargo 下载超时：工程内配置依赖镜像
+
+Rustup 的 RUSTUP_DIST_SERVER / RUSTUP_UPDATE_ROOT 只覆盖工具链下载，不替换 Cargo 的 crates.io 依赖源。若停在 Updating crates.io index，出现 HTTP/2 stream reset，可在当前 CMD 设置 `set "CARGO_HTTP_MULTIPLEXING=false"` 后重试。
+
+如果随后仍反复出现 30 秒传输 0 字节，先 Ctrl+C 停止，在 CMD 打开工程配置：
+
+```cmd
+notepad "D:\bomber\bomber\.cargo\config.toml"
+```
+
+保留原有 [build]、[target...] 配置，在文件末尾追加以下段落；若同名段已存在，只修改其值，不重复定义：
+
+```toml
+[source.crates-io]
+replace-with = "rsproxy-sparse"
+
+[source.rsproxy-sparse]
+registry = "sparse+https://rsproxy.cn/index/"
+```
+
+保存后在同一 CMD 重试：
+
+```cmd
+set "CARGO_HTTP_MULTIPLEXING=false"
+"%BOMBER_PYTHON%" -I -m build --wheel "D:\bomber\bomber"
+```
+
+只改变该工程依赖下载源，无须删除 Cargo.lock、清空 target 或重装编译器。如果再次失败，保留最终 error 段及具体 URL，重复的低速 warning 本身不能定位最终失败地址。配置依据：[RsProxy](https://rsproxy.cn/)、[Cargo source replacement](https://doc.rust-lang.org/cargo/reference/source-replacement.html)、[Cargo HTTP multiplexing](https://doc.rust-lang.org/cargo/reference/config.html#httpmultiplexing)。此配置已与本地工程 TOML 合并解析验证，远程 Windows 的镜像可达性仍需实际重试。
+
 ## 宿主调用顺序
 
 [embedded_example.py](embedded_example.py) 展示装配函数。宿主传入现有 `StrategyTemplate` 策略、绑定、`HostPort`、回调字段复制函数、行情绑定、跳价、风控和状态文件。策略算法无需识别厂商。

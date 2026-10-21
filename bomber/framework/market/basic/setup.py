@@ -20,6 +20,8 @@ import bomber
 include_dirs = list(dict.fromkeys([
     str(CURRENT_DIR), str(PACKAGE_ROOT), np.get_include(),
     *(str(Path(location).resolve().parent) for location in bomber.__path__),
+    *(str(Path(location).resolve() / "core" / "includes")
+      for location in bomber.__path__),
 ]))
 compiler_directives = {
     "language_level": "3", "boundscheck": False, "wraparound": False,
@@ -37,5 +39,5 @@ os.chdir(PACKAGE_ROOT)
 setup(
     name="bomber-framework-market-core",
     ext_modules=cythonize(extensions, include_path=include_dirs,
-                          compiler_directives=compiler_directives),
+                          compiler_directives=compiler_directives, force=True),
 )
