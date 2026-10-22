@@ -1,0 +1,16 @@
+{
+  "scope": "shared_ctp_td_timeout_configuration",
+  "default_timeout_seconds": 30,
+  "environment_variable": "CTP_TD_TIMEOUT_SECONDS",
+  "accepted_range": "(0,120]",
+  "explicit_argument_precedence": true,
+  "checkpoint_identity_changed": false,
+  "ownership_changed": false,
+  "login_retry_added": false,
+  "auto_resume_added": false,
+  "offline_status": "passed",
+  "offline_tests": 427,
+  "transport_script_groups": 6,
+  "delayed_response_test": "simulated 16.396848 seconds; 15 timeout / 30 success",
+  "online_status": "pending"
+}

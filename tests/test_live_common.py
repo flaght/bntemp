@@ -2,6 +2,7 @@
 
 import argparse
 from importlib.util import spec_from_file_location, module_from_spec
+from importlib import import_module
 import os
 from pathlib import Path
 import sys
@@ -28,6 +29,7 @@ namespace.__path__ = [str(ROOT / "bomber/framework/trader/runtime")]
 sys.modules[namespace.__name__] = namespace
 policy = load("_test_live_runtime.live_policy", "bomber/framework/trader/runtime/live_policy.py")
 setup = load("_test_live_runtime.ctp_setup", "bomber/framework/trader/runtime/ctp_setup.py")
+ctp_channel = import_module("_test_live_runtime.live.channels.ctp")
 account = load("_test_ctp_account", "bomber/framework/trader/runtime/ctp_account.py")
 cache_module = load("_test_live_cache", "bomber/framework/dataprep/live_cache.py")
 NOW = 1_000_000_000_000_000
@@ -265,6 +267,29 @@ class AccountTests(unittest.TestCase):
 
 
 class SetupTests(unittest.TestCase):
+    def test_td_timeout_defaults_and_explicit_override_precedence(self):
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(ctp_channel.ctp_td_timeout_seconds(), 30)
+        with patch.dict(os.environ, {"CTP_TD_TIMEOUT_SECONDS": "45"}, clear=True):
+            self.assertEqual(ctp_channel.ctp_td_timeout_seconds(), 45)
+            self.assertEqual(ctp_channel.ctp_td_timeout_seconds(15), 15)
+
+    def test_invalid_td_timeout_fails_before_transport_is_created(self):
+        for value in ("", "bad", "nan", "inf", "0", "-1", "121"):
+            with self.subTest(value=value), patch.dict(os.environ, {"CTP_TD_TIMEOUT_SECONDS": value}, clear=True):
+                with self.assertRaisesRegex(ValueError, "CTP_TD_TIMEOUT_SECONDS"):
+                    setup.build_simnow_transport(lambda **fields: self.fail("创建了无效超时的Transport"),
+                        client_id="test", flow_path="/tmp/test")
+        with self.assertRaises(ValueError):
+            setup.build_simnow_transport(lambda **fields: None, client_id="test", flow_path="/tmp/test", timeout_seconds=True)
+
+    def test_shared_transport_uses_runtime_timeout_without_connecting(self):
+        env = {"CTP_BROKER_ID": "9999", "CTP_ACCOUNT_ID": "demo", "CTP_TD_ADDRESS": "tcp://fake:1",
+               "CTP_PASSWORD": "fake", "CTP_TD_TIMEOUT_SECONDS": "60"}
+        with patch.dict(os.environ, env, clear=True):
+            result = setup.build_simnow_transport(NS, client_id="shared", flow_path="/tmp/shared")
+        self.assertEqual(result.timeout_seconds, 60)
+
     def test_minute_factory_uses_public_feed_and_keeps_callback(self):
         def real(*args, **kwargs):
             return NS(basis="event", args=args, kwargs=kwargs)

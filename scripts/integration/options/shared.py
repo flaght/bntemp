@@ -61,7 +61,7 @@ def observe_day():
     from bomber.framework.trader.runtime.live.channels.ctp import build_simnow_transport, assert_account_ready
     from bomber.framework.trader.runtime.live.channels.ctp_shared import CtpSharedAccountLifecycle
     transport = build_simnow_transport(CtpTdApiTransport, client_id="option-vega-observe",
-        flow_path="/tmp/bomber-vega-observe-td", timeout_seconds=30)
+        flow_path="/tmp/bomber-vega-observe-td")
     with ExitStack() as resources:
         CtpSharedAccountLifecycle.acquire(resources, transport, environment="simnow")
         driver = CtpNativeTraderDriver(transport.client_id, transport.account_id, transport)

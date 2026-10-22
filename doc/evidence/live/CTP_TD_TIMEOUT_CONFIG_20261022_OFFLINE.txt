@@ -1,0 +1,29 @@
+2026-10-22 offline only; Python=/Users/kerry/.local/bin/python3.12
+PYTHONPATH=.validation/packages:.
+No external connections/orders; SDK/counterparty fixtures, actual public strategy/execution/ownership/recovery.
+Commands and scope: doc/HANDOFF/live/HANDOFF_CTP_TD_TIMEOUT_CONFIG_2026-10-22.md
+
+Public lifecycle/shared/live unit tests
+Ran 231 tests in 4.838s
+OK
+
+Option assembly + native transport script + shared recovery/continuous
+Ran 91 tests in 0.216s
+OK
+P4-CTP3a通过：认证登录、结算确认及三种查询均等待本次最终回报
+P4-CTP3b通过：缺最后分片和柜台错误均失败闭闸，不推进资金版本
+P4-CTP3c通过：原生推送转交Driver且断线后所有查询闭闸
+P4-CTP3d通过：连接期间早到未归属订单使会话失败
+P4-CTP4a通过：异步报单拒绝补齐身份并上送Driver，双回调可去重
+P4-CTP4b通过：撤单拒绝不伪造已撤单，关闭查询/下单闸门
+Ran 56 tests in 1.173s
+OK
+
+Local IPC multi-process
+Ran 49 tests in 2.663s
+OK
+
+Total=231+91+56+49=427 unittest passed; Transport script 6 groups passed.
+Simulated 16.396848-second query using injected clock/condition wait, no real 16-second sleep.
+Local Unix socket tests executed with host permission; no external network/CTP/DolphinDB.
+git diff --check passed; online pending.

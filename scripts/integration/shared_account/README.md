@@ -594,3 +594,11 @@ V5服务的具体首个故障仍须原summary/events确认；不清除失败/未
 CtpSharedAccountLifecycle.stop沿用最多两轮权威核验，对查询超时及明确的-2/-3退避重试；接口拒绝码在下一轮前等1秒，断线/其他错误不重试。等待与查询分别有原timeout_seconds预算，不是所有停机步骤合计只有一个timeout。成功后保持禁单、保存归属并停止，不恢复本次运行。失败保留未完成结果。正常运行遇到查询超时/流控仍先闭闸退出，不静默继续交易。共享账户server与同进程host复用本组件，worker不另建TD连接。
 
 snapshot.stop_reconciliation的errors列出各轮错误及code/retryable；queries包含Transport待结束请求与最近32条查询事件，无查询字段、凭据或资金数据。402项离线回归及Transport脚本通过，线上待验。见[交付说明](../../../doc/HANDOFF/live/HANDOFF_CTP_QUERY_DRAIN_RECOVERY_2026-10-21.md)。
+
+## 共享TD超时配置（2026-10-22）
+
+公共工厂build_simnow_transport新增默认配置CTP_TD_TIMEOUT_SECONDS，默认30秒、范围(0,120]，明确函数实参优先。build_host移除写死15秒，08及多策略持续入口共用的observe_day移除固定30秒；两者均从进程环境读取同一配置。不同进程布局由账户server创建TD Transport并读取继承环境，worker不另建TD连接。此配置不进入持久化身份，沿用旧检查点即可；JSON配置和策略argv不新增该字段。
+
+启动前可执行`export CTP_TD_TIMEOUT_SECONDS=30`。CtpConnection输出当前client_id及预算，握手各阶段的CtpQuery为INFO，查询诊断保存Transport预算及每个请求发送时的预算。单次请求使用捕获的预算，后续修改对象不改变已经发出的请求期限。认证、登录和报单均不增加自动重试；查询失败及停机沿用已有闭闸/有限核验。不改变reconcile_seconds或交易行情时效。
+
+覆盖当前共享run/server/continuous及08快捷入口；仍明确传入timeout_seconds的迁移/诊断入口保持实参优先，独立只读探针--timeout不由该变量覆盖。427项离线回归及Transport脚本通过，线上待验。[交付说明](../../../doc/HANDOFF/live/HANDOFF_CTP_TD_TIMEOUT_CONFIG_2026-10-22.md)。

@@ -1366,3 +1366,11 @@ DolphinDB期权期货分钟流、指数自定义特征、共享账户、跨日�
 服务器资金查询超时后，停机重新查询返回-2，原停止只重试TimeoutError因而第1轮退出。公共Transport现在保留超时请求ID及类型，后续查询先等待其最终回报，超时期间不再发送新查询；迟到数据不进入新快照。新增CtpQueryRejected保留方法、请求ID和返回码，停机将查询-2/-3纳入原最多两轮核验，拒绝后退避1秒，不自动重发报单/撤单或重新授权交易。旧请求始终不结束、断线、仓位/订单冲突仍失败，不写虚假的0活动单。
 
 报告stop_reconciliation新增errors及queries（最近32条无凭据事件），保留原query_failure和运行failure。资金、持仓与活动单全部核验通过才保存并完成停止；本次运行仍是failed，不会自动续跑。本补充不修改期权策略、仓位归属、MO时段或检查点身份，继续使用--hours-code MO及原state-file。402项离线测试与原生Transport脚本6组检查通过；服务器运行待验。[说明](../../doc/HANDOFF/live/HANDOFF_CTP_QUERY_DRAIN_RECOVERY_2026-10-21.md)、[更新包](../../doc/evidence/archives/CTP_QUERY_DRAIN_RECOVERY_20261021.tar.gz)。
+
+### 2026-10-22：共享TD超时统一配置
+
+08持续入口的观察交易日连接与共享正式TD连接改用公共工厂默认值：`CTP_TD_TIMEOUT_SECONDS`，默认30秒，允许(0,120]内有限秒数。可在启动前`export CTP_TD_TIMEOUT_SECONDS=30`，或在进程启动前配置到已有环境；进程内不热更新连接。原正式连接15秒已移除，单个请求的认证、登录、结算确认、资金/持仓/订单查询及旧超时请求结束等待均使用Transport选定的超时。此值不是整个启动或整个停机的总预算。
+
+该配置不写入策略argv、账户配置或检查点身份，不需要修改原JSON，不改变手数、名义预算、行情时效或指数查询间隔；原超时闭闸、等待旧最终回报、最多两轮停机核验继续执行，不自动重登录或恢复交易。公共工厂显式传入timeout_seconds的旧调用保持实参优先；直接run_live的query-timeout、只读探针的--timeout仍使用各自显式参数。
+
+启动INFO日志`CtpConnection`显示client_id和timeout_seconds；认证/登录/结算确认的CtpQuery发送及最终回报显示INFO耗时和超时预算，普通周期查询细节仍DEBUG、超时WARNING。报告`stop_reconciliation.queries.timeout_seconds`及各事件携带选定值。427项离线测试及Transport脚本通过，含16.397秒响应模拟、同一配置驱动观察/正式连接、原仓恢复；线上待验。[部署与完整命令](../../doc/HANDOFF/live/HANDOFF_CTP_TD_TIMEOUT_CONFIG_2026-10-22.md)。

@@ -576,6 +576,43 @@ class OptionSharedRolloverTests(unittest.TestCase):
         self.assertFalse(transport.sent)
         host.stop()
 
+    def test_observer_and_restored_host_share_runtime_td_timeout_without_identity_changes(self):
+        import os
+        import sys
+        from scripts.integration.options import shared as fast
+        from scripts.integration.shared_account import run
+        channel = import_module("bomber.framework.trader.runtime.live.channels.ctp")
+        builder, created = channel.build_simnow_transport, []
+        def transport_factory(**fields):
+            result = DetailsTransport("20260814")
+            result.timeout_seconds = fields["timeout_seconds"]
+            created.append((fields["client_id"], result))
+            return result
+        def build(factory, **kwargs):
+            return builder(transport_factory, **kwargs)
+        config = fast.session_config(self.identity, day="20260814", account_state=self.source,
+            signal_state=self.root/"signal.json", report_dir=self.root/"reports")
+        original = deepcopy(config)
+        package = sys.modules["bomber.framework.trader.execution.ctp"]
+        env = {"CTP_BROKER_ID": "9999", "CTP_ACCOUNT_ID": "fixture", "CTP_PASSWORD": "fake",
+               "CTP_TD_ADDRESS": "tcp://fake:1234", "CTP_TD_TIMEOUT_SECONDS": "45"}
+        with patch.dict(os.environ, env), \
+                patch.object(package, "CtpNativeTraderDriver", CtpNativeTraderDriver, create=True), \
+                patch.object(package, "CtpTdApiTransport", object, create=True), \
+                patch.object(channel, "build_simnow_transport", side_effect=build), \
+                patch.object(entry, "prepare_inputs", return_value=self.current):
+            self.assertEqual(fast.observe_day(), "20260814")
+            host = run.build_host(config, resume=True)
+        self.addCleanup(host.resources.close)
+        host.start()
+        self.assertEqual([sid for sid, _ in created], ["option-vega-observe", CLIENT])
+        self.assertTrue(all(t.timeout_seconds == 45 for _, t in created))
+        self.assertEqual(config, original)
+        self.assertEqual(host.service.position_manager.position(CLIENT, OPTION), -1)
+        self.assertEqual(host.account.manager.state_components["session_identity"].identity["account"], original["account"])
+        self.assertFalse(any(t.sent for _, t in created))
+        host.stop()
+
     def test_fast_entry_same_day_reuses_persisted_argv_without_numeric_drift(self):
         from scripts.integration.options.shared import session_config, load_identity
         from scripts.integration.shared_account import run

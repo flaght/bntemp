@@ -4,6 +4,8 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 import hashlib
+import logging
+import math
 import os
 import time
 from urllib.parse import urlsplit
@@ -132,10 +134,25 @@ def required(name):
     return value
 
 
-def build_simnow_transport(transport_factory, *, client_id, flow_path, timeout_seconds):
+def ctp_td_timeout_seconds(value=None):
+    """运行时TD超时，不进入策略/账户恢复身份；显式实参优先于环境变量。"""
+    value = os.getenv("CTP_TD_TIMEOUT_SECONDS", "30") if value is None else value
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError):
+        raise ValueError("CTP_TD_TIMEOUT_SECONDS须为(0,120]内有限秒数") from None
+    if isinstance(value, bool) or not math.isfinite(seconds) or not 0 < seconds <= 120:
+        raise ValueError("CTP_TD_TIMEOUT_SECONDS须为(0,120]内有限秒数")
+    return seconds
+
+
+def build_simnow_transport(transport_factory, *, client_id, flow_path, timeout_seconds=None):
+    timeout_seconds = ctp_td_timeout_seconds(timeout_seconds)
     if required("CTP_BROKER_ID") != "9999":
         raise ValueError("本入口仅允许SimNow BrokerID=9999")
     investor = required("CTP_ACCOUNT_ID")
+    logging.getLogger("CtpConnection").info(
+        "CTP交易接口超时配置: client_id=%s timeout_seconds=%s", client_id, timeout_seconds)
     return transport_factory(client_id=client_id, account_id=investor,
         front=required("CTP_TD_ADDRESS"), broker_id="9999", investor_id=investor,
         password=required("CTP_PASSWORD"), app_id=os.getenv("CTP_APP_ID", ""),

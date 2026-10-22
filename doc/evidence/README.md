@@ -206,3 +206,7 @@ sha256sum -c doc/evidence/checksums/DOCUMENTATION_20261010_SHA256.txt
 ### 2026-10-21：公共CTP待结束查询与停机-2/-3有界处理
 
 超时保留原请求身份，下一查询先等匹配最终回报，迟到数据不作为新快照。查询拒绝使用类型化异常；停机最多两轮、对-2/-3退避1秒，最终核验通过才保存，持续未知则失败。报单/撤单不自动重试，不改仓位归属和运行授权。402项离线测试及Transport脚本6组检查通过，含真实本机IPC多进程；未连接真实柜台，线上待验。[说明](../HANDOFF/live/HANDOFF_CTP_QUERY_DRAIN_RECOVERY_2026-10-21.md)、[包](archives/CTP_QUERY_DRAIN_RECOVERY_20261021.tar.gz)、[SHA](checksums/CTP_QUERY_DRAIN_RECOVERY_20261021_SHA256.txt)、[范围](live/CTP_QUERY_DRAIN_RECOVERY_20261021.json)。
+
+### 2026-10-22：共享TD默认30秒及运行配置
+
+共享正式连接移除写死15秒，与观察交易日连接共用CTP_TD_TIMEOUT_SECONDS（默认30，(0,120]）；不改变检查点身份，明确实参仍优先。增加握手阶段INFO耗时与请求预算诊断。427项离线测试及Transport脚本通过；16.397秒迟到样本使用模拟时钟复现，不是真实柜台测速，线上待验。[说明](../HANDOFF/live/HANDOFF_CTP_TD_TIMEOUT_CONFIG_2026-10-22.md)、[包](archives/CTP_TD_TIMEOUT_CONFIG_20261022.tar.gz)、[SHA](checksums/CTP_TD_TIMEOUT_CONFIG_20261022_SHA256.txt)、[范围](live/CTP_TD_TIMEOUT_CONFIG_20261022.json)。

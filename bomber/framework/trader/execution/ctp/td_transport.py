@@ -32,6 +32,7 @@ class _Pending:
     done: bool = False
     timed_out: bool = False
     started: float = field(default_factory=time.monotonic)
+    timeout_seconds: float = 0.0
 
 
 class CtpTdApiTransport:
@@ -283,7 +284,7 @@ class CtpTdApiTransport:
                     self._audit_query("drained", self._pending)
                     self._pending = None  # 丢弃旧请求数据，不作为本次权威快照。
                 self._reqid += 1
-                pending = _Pending(kind, self._reqid)
+                pending = _Pending(kind, self._reqid, timeout_seconds=self.timeout_seconds)
                 self._pending = pending
                 self._audit_query("send", pending, method=method)
             try:
@@ -300,7 +301,7 @@ class CtpTdApiTransport:
                     self._pending = None
                     self._audit_query("rejected", pending, method=method, code=code)
                 raise CtpQueryRejected(kind, method, pending.reqid, code)
-            deadline = time.monotonic() + self.timeout_seconds
+            deadline = time.monotonic() + pending.timeout_seconds
             with self._cv:
                 while not pending.done and not self._disconnected:
                     remaining = deadline - time.monotonic()
@@ -318,18 +319,21 @@ class CtpTdApiTransport:
     def _audit_query(self, event, pending, **detail):
         """调用方持有_cv；不记录查询字段、凭据或资金数据。"""
         row = {"event": event, "kind": pending.kind, "request_id": pending.reqid,
-               "elapsed_seconds": round(time.monotonic()-pending.started, 6), **detail}
+               "elapsed_seconds": round(time.monotonic()-pending.started, 6),
+               "timeout_seconds": pending.timeout_seconds, **detail}
         self._query_audit.append(row)
         level = (logging.WARNING if event in {"timeout", "drain_timeout", "rejected", "send_exception"}
-                 else logging.INFO if event in {"wait_previous", "late_final", "drained"} else logging.DEBUG)
+                 else logging.INFO if event in {"wait_previous", "late_final", "drained"}
+                      or pending.kind in {"auth", "login", "settlement"} else logging.DEBUG)
         logging.getLogger("CtpQuery").log(level, "CTP查询: %s", row)
 
     def query_diagnostics(self):
         with self._cv:
             pending = self._pending
-            return {"pending": None if pending is None else {
+            return {"timeout_seconds": self.timeout_seconds, "pending": None if pending is None else {
                 "kind": pending.kind, "request_id": pending.reqid, "timed_out": pending.timed_out,
-                "final_received": pending.done}, "recent": [dict(row) for row in self._query_audit]}
+                "final_received": pending.done, "timeout_seconds": pending.timeout_seconds},
+                "recent": [dict(row) for row in self._query_audit]}
 
     def _front_up(self) -> None:
         with self._cv:

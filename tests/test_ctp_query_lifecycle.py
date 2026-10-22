@@ -1,7 +1,9 @@
 """公共CTP查询超时/迟到/拒绝的无网络测试；真实Transport，SDK仅为FakeTdApi。"""
 from importlib import import_module
 import threading
+import time
 import unittest
+from unittest.mock import patch
 from tests import test_execution_composition as fixtures
 
 
@@ -38,6 +40,42 @@ class CtpQueryLifecycleTests(unittest.TestCase):
         self.assertEqual(t._api.calls, [rid])
         self.assertEqual(t._account_revision, 0)
         self.assertTrue(t.query_diagnostics()["pending"]["timed_out"])
+
+    def test_16_second_response_times_out_at_15_but_completes_at_30(self):
+        t = self.transport(lambda api, rid: 0)
+        for budget in (15, 30):
+            with self.subTest(timeout=budget):
+                now = [time.monotonic()]
+                t.timeout_seconds = budget
+                def wait(remaining):
+                    now[0] += min(16.396848, remaining)
+                    if remaining >= 16.396848:
+                        t._api.onRspQryTradingAccount(dict(BrokerID="9999", AccountID="demo", CurrencyID="CNY",
+                            Balance=100, Available=80, CurrMargin=20), {}, t._pending.reqid, True)
+                with patch.object(t._cv, "wait", side_effect=wait), \
+                        patch.object(self.mod.time, "monotonic", side_effect=lambda: now[0]):
+                    if budget == 15:
+                        with self.assertRaises(TimeoutError): t.query_account()
+                    else:
+                        self.assertEqual(t.query_account().balances["CNY"].equity, 100)
+                if budget == 15:
+                    t._api.onRspQryTradingAccount({}, {}, t._pending.reqid, True)
+        self.assertEqual(t._account_revision, 1)
+        self.assertEqual(t.query_diagnostics()["timeout_seconds"], 30)
+        self.assertEqual(t.query_diagnostics()["recent"][-1]["timeout_seconds"], 30)
+        self.assertEqual(t.query_diagnostics()["recent"][-1]["event"], "final")
+
+    def test_handshake_phases_log_budget_and_elapsed_at_info_without_credentials(self):
+        with self.assertLogs("CtpQuery", level="INFO") as logs:
+            t = self.transport()
+        text = "\n".join(logs.output)
+        for kind in ("auth", "login", "settlement"):
+            self.assertIn(f"'kind': '{kind}'", text)
+        self.assertIn("elapsed_seconds", text)
+        self.assertIn("timeout_seconds", text)
+        for secret in ("password", "auth_code", "BrokerID", "Available"):
+            self.assertNotIn(secret, text)
+        self.assertEqual(t.query_diagnostics()["timeout_seconds"], .02)
 
     def test_late_final_unblocks_waiter_without_reusing_old_rows_or_request_id(self):
         def behavior(api, rid):

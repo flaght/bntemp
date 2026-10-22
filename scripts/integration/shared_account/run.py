@@ -82,7 +82,7 @@ def build_host(config, *, resume, diagnostics=None, read_only=False, strategy_pr
         if isinstance(order_budget, bool) or not isinstance(order_budget, int) or not 0 < order_budget <= account_config["max_session_orders"]:
             raise ValueError("运行窗口订单额度须为不超过原账户配置的正整数")
         transport = build_simnow_transport(CtpTdApiTransport, client_id=account_config["client_id"],
-            flow_path=f"/tmp/{account_config['client_id']}-td", timeout_seconds=15)
+            flow_path=f"/tmp/{account_config['client_id']}-td")
         market_uses_ctp = any(source_config(args).source == "ctp" for row, entry, args in arguments)
         md_front = required("CTP_MD_ADDRESS") if market_uses_ctp else None
         if config["environment"] == "replay":
