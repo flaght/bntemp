@@ -2,6 +2,8 @@
 
 日期：2026-10-21。读者：LXGBN（DXBM-LXG）交易程序、Python 绑定和联调开发者。
 
+2026-10-22 补充：报单通知、成交通知、策略通知字段及回调先后顺序，见第 5 节。第 9 节新增对应的可运行用例 09。
+
 本文按已经实现的 SDK 编写。Bomber 是被调用方，LXGBN 是 Windows 宿主：**LXGBN 在自己的内嵌 Python 中加载 Bomber、推送行情和回报，并接收 SDK 发出的报撤单请求。** SDK 不创建独立交易进程，不登录或关闭 LXGBN，不加载另一份厂商 SDK。
 
 历史原生结构、接口讨论见 [DXBM_LXG_INTEGRATION_SPEC.md](DXBM_LXG_INTEGRATION_SPEC.md)。该文件中的 Market/FAK/FOK、算法单等讨论不能作为本期已实现能力。本文接口与源码不一致时，以本期交付源码为准，不自行猜测原生接口或字段。
@@ -25,7 +27,7 @@ CTP 继续复用已有链路，BN 不纳入本轮。单绑定测试通过不代�
 | --- | --- |
 | [environment_probe.py](../../scripts/integration/lxgbn/environment_probe.py) | 导入和解释器信息；只用标准库 |
 | [native_value_probe.py](../../scripts/integration/lxgbn/native_value_probe.py) | 真实原生行情模型量价、精度和纳秒时间戳检查；与 environment_probe.py 放同目录 |
-| [sdk_acceptance_example.py](../../scripts/integration/lxgbn/sdk_acceptance_example.py) | 八个无柜台示例；内存宿主 + 真实 SDK；直接使用已安装 wheel |
+| [sdk_acceptance_example.py](../../scripts/integration/lxgbn/sdk_acceptance_example.py) | 九个无柜台示例；内存宿主 + 真实 SDK；直接使用已安装 wheel |
 | [embedded_example.py](../../scripts/integration/lxgbn/embedded_example.py) | 宿主装配入口参考 |
 
 wheel 已包含两个 market Cython 扩展，LXGBN 安装端不再执行 setup.py，也不需要为安装 Bomber wheel 准备 Rust/Cython 编译工具。运行时依赖仍须安装完整。
@@ -168,7 +170,15 @@ SDK 当前规划价格：参考价加一跳买入，参考价减一跳卖出，�
 
 全新检查点只适合策略归属为 0、没有活动单且尚无交付事件的全新测试绑定，初始 boundary=0。非零归属不能通过新建会话直接灌入账本；有历史绑定按第 8 节恢复限制处理。
 
-## 5. 三个回调、字段复制及交付序号
+## 5. 报单通知、成交通知与回调转发
+
+两种业务通知在宿主和策略侧分别对应以下入口。**LXGBN 必须向 session 交付原生回报，SDK 处理后再调用策略的 on_order/on_fill。** 不应由 LXGBN 直接调用策略回调或重复修改策略仓位。
+
+| 业务通知 | LXGBN → SDK：宿主需要转发 | SDK → 策略：策略需要重写 |
+| --- | --- | --- |
+| 报单受理/订单状态通知 | `session.onOrderAck(clientOrderId, orderMsg)`；终态还须转发 `onOrderFinished` | `on_order(self, event: OrderUpdateEvent) -> None` |
+| 成交通知 | `session.onOrderFill(clientOrderId, orderMsg, execMsg)` | `on_fill(self, event: FillEvent) -> None`；同一成交先触发对应的 on_order 状态变化 |
+| 订单结束通知 | `session.onOrderFinished(clientOrderId, orderMsg)` | 在事实完整且状态发生变化时触发 on_order；无真实成交增量则不触发 on_fill |
 
 ### 5.1 原生回调转发签名
 
@@ -186,6 +196,37 @@ def onOrderFinished(self, clientOrderId, orderMsg):
 参数数量为 **2 / 3 / 2**。`clientOrderId` 是发送时的同一个 Python int，不使用 bool、字符串或原生订单号替代。Fill 必须带真实 execMsg；Finished 不合成成交。
 
 会话通过 `CallbackCopies(order=copy_order, fill=copy_fill)` 调用 LXGBN 提供的复制函数。复制期间原生对象必须仍然有效且内容一致；复制结果只含独立的值，不保留裸指针、借用字符串或随后会被原生线程修改的对象。
+
+#### 5.1.1 报单通知：onOrderAck
+
+```python
+# 由 LXGBN 原生回调触发；orderMsg 是本次原生订单事实。
+accepted_into_queue = session.onOrderAck(clientOrderId, orderMsg)
+# 返回 False 按 5.4 处理；返回 True 后由原调度线程 poll，不在这里重入 poll。
+```
+
+`copy_order(orderMsg)` 必须返回含实际委托量、累计成交量、方向、状态、原生订单 ID 和交付序号的 OrderSnapshot。`status='Acked'` 表示宿主已核实的受理事实；后续 poll 产生策略 `on_order(... status=ACCEPTED ...)`。Blank/Submited 不产生受理通知。
+
+`send_order` 返回 queued 只表示宿主接收，不能冒充 onOrderAck。当前 LXGBN 路径在发送前登记 PENDING，但不因此产生策略 SUBMITTED 通知；虽公共枚举含 SUBMITTED，不能依赖本路径一定回调该状态。
+
+#### 5.1.2 成交通知：onOrderFill
+
+```python
+# 同一个 clientOrderId；orderMsg 是对应委托，execMsg 是这笔真实成交。
+accepted_into_queue = session.onOrderFill(clientOrderId, orderMsg, execMsg)
+```
+
+该通知同时需要 `copy_order(orderMsg) -> OrderSnapshot` 和 `copy_fill(execMsg) -> FillSnapshot`。两者必须属于相同绑定、相同原生订单和相同方向，使用同一个交付序号；成交快照还须包含稳定 trade_id、单笔成交 quantity/price、实际开平及纳秒时间。
+
+SDK poll 完成去重、OMS 和归属更新后，对每个新成交增量先通知 `on_order(PARTIALLY_FILLED/FILLED)`，再通知 `on_fill`。在这两个策略回调里读取 `position('main')` 均已包含该笔成交。重复 trade_id 且内容一致时不再次通知，也不重复增加仓位；同 ID 内容冲突则报错闭闸。
+
+#### 5.1.3 订单结束通知：onOrderFinished
+
+```python
+accepted_into_queue = session.onOrderFinished(clientOrderId, orderMsg)
+```
+
+结束通知交付实际 FullFilled/Cancelled/Rejected 状态，不携带 execMsg。必须同时确认累计成交量及拒绝对象；它不能替代逐笔成交通知。终态先到但应到成交尚未补齐时，SDK 等待实际成交；已经因真实成交达到 FILLED 的订单，再收到一致 FullFilled 通知不会重复触发策略回调。
 
 ### 5.2 订单与成交复制结果
 
@@ -234,6 +275,74 @@ Python 原生枚举、字符串编码、价格/手数单位、稳定 ID 的唯�
 
 返回 False 表示转换、身份、未知 ID 或队列容量等故障，SDK 已锁闭执行闸门。宿主须记录错误及原生事实，停止新增交易并进入只读核对。不要忽略返回值，也不要通过重试报单、清空队列、删除检查点或直接清除 failure 绕过故障。
 
+### 5.5 策略端两个主要通知函数及字段
+
+策略继承 StrategyTemplate，重写以下函数；第 6 节给出完整装配。两者由 SDK 在 owner 调度线程中调用，返回 None。
+
+```python
+from bomber.framework.trader.execution.events import OrderUpdateEvent, FillEvent
+
+def on_order(self, event: OrderUpdateEvent) -> None:
+    print('报单通知', {
+        'request_id': event.identity.client_order_id,
+        'native_order_id': event.metadata.get('lxgbn_order_id'),
+        'instrument_id': event.identity.instrument_id,
+        'status': event.status.value,
+        'side': event.side.value,
+        'order_quantity': str(event.order_quantity),
+        'cumulative_filled': str(event.cumulative_filled),
+        'reason': event.reason,
+        'ts_event': event.ts_event,
+    })
+
+def on_fill(self, event: FillEvent) -> None:
+    print('成交通知', {
+        'request_id': event.identity.client_order_id,
+        'native_order_id': event.metadata.get('lxgbn_order_id'),
+        'trade_id': event.trade_id,
+        'quantity': str(event.quantity),
+        'price': str(event.price),
+        'cumulative_filled': str(event.cumulative_filled),
+        'position_effect': event.position_effect.value if event.position_effect else None,
+        'ts_event': event.ts_event,
+        'owned_position': str(self.position('main')),
+    })
+```
+
+| 字段/语义 | 报单通知 OrderUpdateEvent | 成交通知 FillEvent |
+| --- | --- | --- |
+| `identity` | client_id/account_id/strategy_id/client_order_id/instrument_id/venue_order_id | 同左 |
+| `event_id` | 标准事件 ID | 逐笔标准事件 ID |
+| `side` | BUY/SELL 枚举 | BUY/SELL 枚举 |
+| `status` | 本路径产生 ACCEPTED/PARTIALLY_FILLED/FILLED/CANCELED/REJECTED | 没有 status 字段，事件本身代表实际成交增量 |
+| 委托/成交数量 | `order_quantity` 是固定委托量，`cumulative_filled` 是累计成交量 | `quantity` 是本次成交增量，`cumulative_filled` 是累计已成交量 |
+| 价格 | 当前标准订单事件没有委托价字段；从 request_id 关联已保存的 OrderCommand.price | `price` 是本次成交价 |
+| `trade_id` | 没有此字段 | SDK 已加账户/绑定/交易日/原生命名空间/原生订单范围的成交去重键，不保证等于裸 ExecutionMsg.ID |
+| `position_effect` | 没有此字段 | OPEN/CLOSE/CLOSE_TODAY/CLOSE_YESTERDAY 枚举，未知时为 None；LXGBN 本期成交须提供实际开平 |
+| `reason` | 拒绝原因或 None | 没有此字段 |
+| `commission` / `commission_currency` | 没有此字段 | LXGBN 当前成交快照不提供费用，因此为 None/None，不能当成费用 0 |
+| `ts_event`、`sequence` | 纳秒事件时间；标准订单事件序号 | 纳秒事件时间；对应标准事件序号，不是宿主 delivery_sequence |
+| `metadata` | 含 lxgbn_order_id 等附加信息 | 含 lxgbn_order_id 等附加信息 |
+
+三个不同的订单标识不能混淆：原生回调参数 `clientOrderId` 是整数；策略事件的 `identity.client_order_id` 是完整字符串 `OrderCommand.request_id`；原生订单号在 `metadata['lxgbn_order_id']`。本期不要求提供柜台/交易所委托号，`identity.venue_order_id` 可为 None。宿主须保存命令关联，不能把字符串请求 ID 强制转为整数。
+
+原生撤单拒绝只记录错误并保留工作单，**当前不会为其单独生成策略 on_order(REJECTED)**；接入方仍需记录原生拒绝事实。策略回调抛异常会使执行分发失败并闭闸，不要在回调内执行阻塞操作或重入 poll/on_market。旧入口 on_order_update 仅在未重写 on_order 时由基类默认转发，新策略直接使用 on_order。
+
+### 5.6 通知顺序测试例：委托 2 手，分两笔成交
+
+以下序列与可运行示例用例 09 一致：
+
+| 操作 | poll 后策略通知 | 通知时策略归属 |
+| --- | --- | --- |
+| send_order 返回 queued | 尚无 on_order/on_fill | 0 |
+| onOrderAck，status=Acked | on_order(ACCEPTED)，委托量 2，累计 0 | 0 |
+| onOrderFill，E1 成交 1 手 | on_order(PARTIALLY_FILLED)，然后 on_fill(quantity=1, cumulative=1) | 两者均为 +1 |
+| 重复交付内容一致的 E1 | 无新增通知 | +1 |
+| onOrderFill，E2 成交 1 手 | on_order(FILLED)，然后 on_fill(quantity=1, cumulative=2) | 两者均为 +2 |
+| onOrderFinished，FullFilled，累计 2 | 无重复通知 | +2 |
+
+上述 onOrder* 调用返回时只保证入队，策略回调须等 owner 线程 poll 执行。即使没有单独 Ack，真实成交也可生成部分成交或全成通知，不应为了凑齐顺序伪造 Ack 或成交。
+
 ## 6. 完整装配及线程调用顺序
 
 下面使用宿主已提供的 `binding`、`host_port`、`copy_order`、`copy_fill`，不是 LXGBN 原生函数的实现。
@@ -243,6 +352,7 @@ from bomber.framework.lxgbn import CallbackCopies, create_session
 from bomber.framework.market.basic.base import DataType, InstrumentId
 from bomber.framework.trader.contracts import DataBinding
 from bomber.framework.trader.execution.risk import RiskLimits
+from bomber.framework.trader.execution.events import OrderUpdateEvent, FillEvent
 from bomber.framework.trader.template import StrategyTemplate
 
 class ProbeStrategy(StrategyTemplate):
@@ -254,8 +364,15 @@ class ProbeStrategy(StrategyTemplate):
         if self.desired is not None:
             self.set_target('main', self.desired, tick.ts_event)
 
-    def on_fill(self, event):
-        print('fill:', event, 'owned:', self.position('main'))
+    def on_order(self, event: OrderUpdateEvent) -> None:
+        print('报单通知:', event.identity.client_order_id, event.status.value,
+              'order_quantity:', event.order_quantity,
+              'cumulative_filled:', event.cumulative_filled, 'reason:', event.reason)
+
+    def on_fill(self, event: FillEvent) -> None:
+        print('成交通知:', event.identity.client_order_id, event.trade_id,
+              'quantity:', event.quantity, 'price:', event.price,
+              'owned:', self.position('main'))
 
 instrument = InstrumentId.from_str(binding.instrument_id)
 strategy = ProbeStrategy(binding.strategy_id)
@@ -350,8 +467,9 @@ session.finish_stop()
 | 06 游标缺口 | 第一次回调序号给 2；入队后 poll 检出缺口并关闭闸门 |
 | 07 错误调度线程 | 非 owner 线程调用 poll，被拒绝；owner 线程仍可正常停止 |
 | 08 不完整绑定 | 默认 False 能力/完整性快照阻止 start，报单次数为 0 |
+| 09 报单/成交通知 | 委托 2 手，Ack 后分两笔成交；检查标准事件字段、整数 ID 与字符串请求 ID 的区别、先 on_order 后 on_fill、去重以及最终不重复通知 |
 
-预期 `Ran 8 tests ... OK`。开发机已用受控行情类型运行八项流程测试通过；**新脚本尚需在 Windows 已安装 wheel 的真实原生行情模型上运行**，不能把开发机结果写成原生宿主验收。
+预期 `Ran 9 tests ... OK`。开发机已用受控行情类型运行九项流程测试通过；**新脚本尚需在 Windows 已安装 wheel 的真实原生行情模型上运行**，不能把开发机结果写成原生宿主验收。
 
 MemoryHost 的序号、仓位、能力均是此合成测试自己的事实源，不能用于证明 LXGBN 原生查询完整。每个用例使用独立临时目录；故障用例结束会清理合成检查点，这种清理方式不用于真实交易状态文件。
 
