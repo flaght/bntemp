@@ -1,0 +1,21 @@
+2026-10-23 offline; Python=/Users/kerry/.local/bin/python3.12
+PYTHONPATH=.validation/packages:.
+Actual project Runner/strategy/attribution/persistence; SDK/counterparty/data fixtures. No external connections/orders.
+Commands/scope: doc/HANDOFF/live/HANDOFF_OPTION_VEGA_LATE_BAR_HEALTH_2026-10-23.md
+
+08 assembly + late health / rollover / diagnostics / continuous
+Ran 91 tests in 0.238s
+OK
+Ran 63 tests in 1.305s
+OK
+
+Original source / strategy / recovery
+Ran 46 tests in 0.229s
+OK
+
+Public query lifecycle + shared account
+Ran 102 tests in 4.319s
+OK
+
+Total=91+63+46+102=302 unittest passed. 7 targeted late-health tests.
+git diff --check passed; online pending.

@@ -1374,3 +1374,11 @@ DolphinDB期权期货分钟流、指数自定义特征、共享账户、跨日�
 该配置不写入策略argv、账户配置或检查点身份，不需要修改原JSON，不改变手数、名义预算、行情时效或指数查询间隔；原超时闭闸、等待旧最终回报、最多两轮停机核验继续执行，不自动重登录或恢复交易。公共工厂显式传入timeout_seconds的旧调用保持实参优先；直接run_live的query-timeout、只读探针的--timeout仍使用各自显式参数。
 
 启动INFO日志`CtpConnection`显示client_id和timeout_seconds；认证/登录/结算确认的CtpQuery发送及最终回报显示INFO耗时和超时预算，普通周期查询细节仍DEBUG、超时WARNING。报告`stop_reconciliation.queries.timeout_seconds`及各事件携带选定值。427项离线测试及Transport脚本通过，含16.397秒响应模拟、同一配置驱动观察/正式连接、原仓恢复；线上待验。[部署与完整命令](../../doc/HANDOFF/live/HANDOFF_CTP_TD_TIMEOUT_CONFIG_2026-10-22.md)。
+
+### 2026-10-23：迟到Bar的健康记录与决策接纳分离
+
+08 Runner原先在MinuteFrameBuffer拒绝迟到Bar后直接返回，连最新有效行情时间也未更新。现在通过来源、业务日期、源事件年龄、时间单调性及有限正价格校验后，若Bar只是错过帧期限/帧已封闭，且业务分钟严格晚于该合约健康记录，则只更新observations中的健康时间。它不回填pending/已封闭帧，不更新strategy.latest或执行价格缓存，不重算决策、不补发目标。重复同一分钟不延长健康接收时间；真正过期、未来时间、错误来源/日期、倒退、无效价格仍拒绝。
+
+必须输入的健康更新输出INFO“迟到Bar仅更新行情健康”，action=HEALTH_ONLY_LATE、frame_accepted=false、health_updated=true；bar_time_audit沿用最近32条上限，报告新增late_bar_health_updates（本次进程所有来源的健康更新次数，不是补齐帧数）。历史行情汇总仍保留INCOMPLETE，新健康不等于该帧已齐全，后续决策继续遵守原价格新鲜度与同步规则。
+
+没有修改20秒帧等待、120秒市场源时效、CTP30秒超时、策略算法或成交归属。302项离线回归通过，含约0.1秒迟到保持持仓健康、下一分钟正常衔接、真正断流仍停止及不回写价格/目标；线上待验。[交付与部署](../../doc/HANDOFF/live/HANDOFF_OPTION_VEGA_LATE_BAR_HEALTH_2026-10-23.md)。

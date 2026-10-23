@@ -87,6 +87,7 @@ class OptionSessionRunner(UnifiedStrategyRunner):
         self.frame_audit = []
         self.bar_time_audit = []
         self.ignored_stale_candidate_bars = 0
+        self.late_bar_health_updates = 0
         self._heartbeat_minute = None
         self.fixed_ids = frozenset(references.instrument_ids.values())
 
@@ -198,9 +199,27 @@ class OptionSessionRunner(UnifiedStrategyRunner):
                 previous = self.observations.get(key)
                 if previous and valuation < previous[0]:
                     raise ValueError(f"单合约行情时间倒退: {key}")
+                # MinuteFrameBuffer对迟到Bar会提前返回，健康记录须独立验证价格。
+                price = Decimal(str(event.close.as_decimal()))
+                if not price.is_finite() or price <= 0:
+                    raise ValueError("行情价格须为有限正数")
                 if self.accept_bars:
-                    if not self.frames.add(key, event.close.as_decimal(), valuation, now,
+                    late_before = self.frames.late_count
+                    if not self.frames.add(key, price, valuation, now,
                             source_id=feed_id, source_ns=event.ts_event):
+                        if self.frames.late_count > late_before and (previous is None or valuation > previous[0]):
+                            # 错过决策期限不等于没有收到有效新行情；只更新健康，不回填帧或策略价格。
+                            self.observations[key] = (valuation, now)
+                            self.late_bar_health_updates += 1
+                            required = self.strategy is None or key in self.strategy.required_market_keys()
+                            audit = {"key": key, "source_id": feed_id, "source_ns": event.ts_event,
+                                "valuation_ns": valuation, "received_ns": now, "required": required,
+                                "action": "HEALTH_ONLY_LATE", "frame_accepted": False,
+                                "health_updated": True}
+                            self.bar_time_audit.append(audit)
+                            del self.bar_time_audit[:-32]
+                            if required:
+                                logger.info("迟到Bar仅更新行情健康: %s", audit)
                         return
                 self.observations[key] = (valuation, now)
             except Exception as error:
