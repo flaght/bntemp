@@ -69,7 +69,7 @@
 
 | 文档 | 用途和状态 |
 | --- | --- |
-| [LXGBN_SDK_INTEGRATION_GUIDE](integration/LXGBN_SDK_INTEGRATION_GUIDE_2026-10-21.md) | 已实现 SDK 的 Windows 内嵌接入指南，含宿主三端口、回调/线程/水位、八个可运行无柜台例子及实机验收清单 |
+| [LXGBN_SDK_INTEGRATION_GUIDE](integration/LXGBN_SDK_INTEGRATION_GUIDE_2026-10-21.md) | 已实现 SDK 的 Windows 内嵌接入指南，含报单/成交通知、宿主三端口、线程/水位、九个可运行无柜台例子及实机验收清单 |
 | [DXBM_LXG_INTEGRATION_SPEC](integration/DXBM_LXG_INTEGRATION_SPEC.md) | v0.8 双方评审草案：订单命令、回调、策略归属、恢复和能力声明；不代表适配器已实现 |
 
 ## 架构审查与缺口

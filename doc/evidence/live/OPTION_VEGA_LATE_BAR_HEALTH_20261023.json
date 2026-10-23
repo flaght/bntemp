@@ -1,0 +1,15 @@
+{
+  "scope": "option_vega_valid_late_bar_health_only",
+  "offline_status": "passed",
+  "offline_tests": 302,
+  "new_targeted_tests": 7,
+  "online_status": "pending",
+  "frame_backfill": false,
+  "decision_replay": false,
+  "execution_price_refresh": false,
+  "checkpoint_schema_changed": false,
+  "source_age_limit_changed": false,
+  "ctp_timeout_changed": false,
+  "health_event": "HEALTH_ONLY_LATE",
+  "report_counter": "late_bar_health_updates"
+}

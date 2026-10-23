@@ -210,3 +210,7 @@ sha256sum -c doc/evidence/checksums/DOCUMENTATION_20261010_SHA256.txt
 ### 2026-10-22：共享TD默认30秒及运行配置
 
 共享正式连接移除写死15秒，与观察交易日连接共用CTP_TD_TIMEOUT_SECONDS（默认30，(0,120]）；不改变检查点身份，明确实参仍优先。增加握手阶段INFO耗时与请求预算诊断。427项离线测试及Transport脚本通过；16.397秒迟到样本使用模拟时钟复现，不是真实柜台测速，线上待验。[说明](../HANDOFF/live/HANDOFF_CTP_TD_TIMEOUT_CONFIG_2026-10-22.md)、[包](archives/CTP_TD_TIMEOUT_CONFIG_20261022.tar.gz)、[SHA](checksums/CTP_TD_TIMEOUT_CONFIG_20261022_SHA256.txt)、[范围](live/CTP_TD_TIMEOUT_CONFIG_20261022.json)。
+
+### 2026-10-23：08迟到Bar健康更新修复
+
+有效新分钟Bar被帧期限拒绝时仍更新行情健康，决策帧与策略/执行价格缓存保持原样，不追溯目标。同分钟重复不续健康，过期/倒退/无效价格仍拒绝；保留20秒封帧和120秒源时效。302项离线测试通过，服务器待验。[说明](../HANDOFF/live/HANDOFF_OPTION_VEGA_LATE_BAR_HEALTH_2026-10-23.md)、[更新包](archives/OPTION_VEGA_LATE_BAR_HEALTH_20261023.tar.gz)、[SHA](checksums/OPTION_VEGA_LATE_BAR_HEALTH_20261023_SHA256.txt)、[范围](live/OPTION_VEGA_LATE_BAR_HEALTH_20261023.json)。

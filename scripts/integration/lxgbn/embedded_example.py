@@ -21,4 +21,7 @@ def create_in_terminal(*, strategy, binding, host, copy_order, copy_fill,
 #     return self.session.onOrderFinished(clientOrderId, orderMsg)
 #
 # 回调返回 False 时，宿主记录故障及原生事实，停止新增交易并进入只读恢复。
+# SDK 消费回报后自动调用 StrategyTemplate.on_order(OrderUpdateEvent)
+# 和 on_fill(FillEvent)；同一成交先 on_order 后 on_fill，归属已更新。
+# 宿主不要直接调用这两个策略入口；完整字段和通知顺序见接入指南第 5 节。
 # 生命周期与事件调度/退出顺序见同目录 README.md。

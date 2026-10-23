@@ -2,7 +2,7 @@
 
 LXGBN（DXBM-LXG）是 Windows 交易宿主，本项目是供其内嵌 Python 调用的 SDK。入口为 `bomber.framework.lxgbn`。本目录没有独立交易进程、HTTP 服务或厂商 SDK 加载器。
 
-交给 LXGBN 开发者的完整接入步骤、接口字段和实机测试清单见 [SDK 接入与测试指南](../../../doc/integration/LXGBN_SDK_INTEGRATION_GUIDE_2026-10-21.md)。[sdk_acceptance_example.py](sdk_acceptance_example.py) 提供八个可直接运行的无柜台示例；在已安装 wheel 的 Windows Python 中以 `python -I 实际脚本路径` 运行，不注入项目源码目录。
+交给 LXGBN 开发者的完整接入步骤、报单/成交通知、接口字段和实机测试清单见 [SDK 接入与测试指南](../../../doc/integration/LXGBN_SDK_INTEGRATION_GUIDE_2026-10-21.md)。[sdk_acceptance_example.py](sdk_acceptance_example.py) 提供九个可直接运行的无柜台示例；用例 09 检查 on_order/on_fill 字段及先后顺序。在已安装 wheel 的 Windows Python 中以 `python -I 实际脚本路径` 运行，不注入项目源码目录。
 
 CTP 已有实际链路继续复用；BN 本期延后。首期仅测试环境，一个策略、一份绑定、一个合约，普通限价 Normal 与投机。实际 Windows/柜台联调尚未完成。
 

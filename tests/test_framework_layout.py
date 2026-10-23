@@ -24,7 +24,7 @@ class FrameworkReleaseTests(unittest.TestCase):
 
     def test_stage_includes_dataprep_and_complete_native_build_inputs(self):
         files = SYNC["staged_files"](SOURCE)
-        for name in ("dataprep/basic.py", "__init__.py", "fixes.py", "market/basic/setup.py",
+        for name in ("dataprep/basic.py", "__init__.py", "fixes.py", "market/futures.py", "market/basic/setup.py",
                      "market/basic/custom_bar.pyx", "market/basic/custom_bar.pxd",
                      "market/native/ctp/binding/meson.build",
                      "market/native/ctp/binding/pyproject.toml",

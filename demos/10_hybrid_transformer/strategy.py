@@ -1,19 +1,22 @@
 """HybridTransformer 逐 bar 信号到 Bomber 目标仓位的策略层。"""
-from typing import Mapping, Protocol
+
+from __future__ import annotations
+
 from dataclasses import dataclass
-from decimal import Decimal,ROUND_HALF_UP
+from decimal import Decimal, ROUND_HALF_UP
 from math import isfinite
+from typing import Mapping, Protocol
 
 from bomber.framework.datahub.sector_roles import SectorDataUnavailable
 from bomber.framework.market.basic.base import CustomBar
 from bomber.framework.market.futures import futures_bar_values
 from bomber.framework.trader.template import StrategyTemplate
 
+
 class ModelSignalPort(Protocol):
     """输入完整研究口径 bar，返回 predicted_z 和已转换的 signal。"""
 
     def on_bar(self, bar: Mapping[str, object]) -> Mapping[str, object] | None: ...
-
 
 
 class RoleSnapshotPort(Protocol):
@@ -29,6 +32,7 @@ class HybridTransformerConfig:
     contract_multiplier: Decimal # 合约乘数，即每手对应的标的数量
     target_key: str = "" # 提交目标仓位时使用的路由标识 留空时自动生成，例如 P → p_main、RB → rb_main
     record_signals: bool = False # 默认 False；开启后保存在内存中的 signal_records，方便分析，
+
 
     def __post_init__(self) -> None:
         product = self.product.strip().upper()
@@ -52,7 +56,6 @@ class HybridTransformerConfig:
         object.__setattr__(self, "contract_multiplier", multiplier)
         object.__setattr__(self, "target_key", self.target_key.strip() or f"{product.lower()}_main")
 
-
 ## 信号结合资金换算成手数
 def signal_to_contracts(signal: float, max_contracts: int) -> Decimal:
     """连续目标按最邻近整数手量化；一手时 |signal|>=0.5 才开仓。"""
@@ -65,6 +68,8 @@ def signal_to_contracts(signal: float, max_contracts: int) -> Decimal:
 
 
 class HybridTransformerStrategy(StrategyTemplate):
+    """仅消费完整研究口径 CustomBar；执行合约与下单由 Bomber 路由。"""
+
     signal_source = "hybrid_transformer"
 
     def __init__(self, strategy_id: str, data_hub: RoleSnapshotPort,
@@ -117,18 +122,15 @@ class HybridTransformerStrategy(StrategyTemplate):
         trade_time = event.factors.get("trade_time")
         if trade_time is None:
             raise ValueError("模型 CustomBar 必须保留原始 trade_time 标签")
-        
         model_bar = {"trade_time": trade_time, "code": self.config.product, **values}
         prediction = self.predictor.on_bar(model_bar)
         self.last_processed_ns = timestamp
         self.last_main = main
         self.bars_used += 1
-
         if prediction is None:  # 原始 bar 和序列仍在预热，不提交任何目标。
             return
         if str(prediction.get("code", self.config.product)).upper() != self.config.product:
             raise ValueError("模型预测品种与策略品种不一致")
-
         predicted_z = float(prediction["predicted_z"])
         signal = float(prediction["signal"])
         if not isfinite(predicted_z):

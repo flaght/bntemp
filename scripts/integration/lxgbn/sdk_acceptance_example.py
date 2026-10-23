@@ -3,6 +3,7 @@
 在已安装本期 wheel 的 Windows Python 3.12 中直接运行此文件。
 """
 from decimal import Decimal
+import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import threading
@@ -16,6 +17,7 @@ from bomber.framework.lxgbn import (
 from bomber.framework.market.basic.base import DataType, InstrumentId, make_trade_tick
 from bomber.framework.trader.contracts import DataBinding
 from bomber.framework.trader.execution.contracts import AmbiguousOrderSubmission
+from bomber.framework.trader.execution.events import FillEvent, OrderUpdateEvent
 from bomber.framework.trader.execution.risk import RiskLimits
 from bomber.framework.trader.template import StrategyTemplate
 
@@ -26,13 +28,22 @@ class TargetStrategy(StrategyTemplate):
         super().__init__(strategy_id)
         self.desired = None
         self.fill_positions = []
+        self.order_notifications = []
+        self.fill_notifications = []
+        self.notification_order = []
 
     def on_trade_tick(self, data_key, tick):
         if self.desired is not None:
             self.set_target('main', self.desired, tick.ts_event)
 
-    def on_fill(self, event):
+    def on_order(self, event: OrderUpdateEvent):
+        self.order_notifications.append(event)
+        self.notification_order.append(('order', event.status.value, self.position('main')))
+
+    def on_fill(self, event: FillEvent):
+        self.fill_notifications.append(event)
         self.fill_positions.append(self.position('main'))
+        self.notification_order.append(('fill', str(event.quantity), self.position('main')))
 
 
 class MemoryHost:
@@ -247,6 +258,47 @@ class SdkAcceptanceExamples(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, '不完整'):
             sdk.start()
         self.assertFalse(self.host.commands)
+
+    def test_09_order_and_fill_notifications(self):
+        self.sdk.authorize()
+        self.send_target('2')
+        command = self.host.commands[0]
+        self.assertFalse(self.strategy.order_notifications)  # queued/PENDING 不是原生受理通知
+        self.assertTrue(self.host.emit('Acked'))
+        self.assertFalse(self.strategy.order_notifications)  # 入队后尚未 poll
+        self.sdk.poll()
+        order = self.strategy.order_notifications[0]
+        self.assertEqual((order.identity.client_order_id, order.status.value,
+                          order.order_quantity, order.cumulative_filled),
+                         (command.request_id, 'ACCEPTED', Decimal(2), Decimal(0)))
+        self.assertEqual(order.metadata['lxgbn_order_id'], 'memory-order-1')
+
+        self.assertTrue(self.host.emit('Fill', quantity='1', trade_id='T1'))
+        self.assertFalse(self.strategy.fill_notifications)
+        self.sdk.poll()
+        fill = self.strategy.fill_notifications[0]
+        self.assertEqual((fill.quantity, fill.price, fill.cumulative_filled,
+                          fill.side.value, fill.position_effect.value),
+                         (Decimal(1), Decimal(3501), Decimal(1), 'BUY', 'OPEN'))
+        self.assertEqual(json.loads(fill.trade_id)[-1], 'T1')
+        self.assertIsNone(fill.commission)
+        self.assertIsNone(fill.commission_currency)
+
+        self.assertTrue(self.host.emit('Fill', quantity='1', trade_id='T1'))
+        self.sdk.poll()
+        self.assertEqual(len(self.strategy.order_notifications), 2)
+        self.assertEqual(len(self.strategy.fill_notifications), 1)
+        self.assertTrue(self.host.emit('Fill', quantity='1', trade_id='T2'))
+        self.sdk.poll()
+        self.assertTrue(self.host.emit('FullFilled'))
+        self.sdk.poll()
+        self.assertEqual(self.strategy.notification_order, [
+            ('order', 'ACCEPTED', Decimal(0)),
+            ('order', 'PARTIALLY_FILLED', Decimal(1)), ('fill', '1', Decimal(1)),
+            ('order', 'FILLED', Decimal(2)), ('fill', '1', Decimal(2)),
+        ])
+        self.sdk.begin_stop()
+        self.sdk.finish_stop()
 
 
 if __name__ == '__main__':
