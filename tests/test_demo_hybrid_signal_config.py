@@ -10,6 +10,7 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
+from tests.test_demo_hybrid_holdings import TickLedger
 
 ROOT = Path(__file__).resolve().parents[1]
 configuration = import_module('demos.10_hybrid_transformer.signal_config')
@@ -93,7 +94,7 @@ class AdapterConfigurationTests(unittest.TestCase):
 class PeriodParameterTests(unittest.TestCase):
     def test_arbitrary_period_changes_both_expiry_and_number_of_slots(self):
         for period in (1, 3, 5, 7):
-            ledger = holding.PeriodHoldings(holding_bars=period, max_contracts=10)
+            ledger = TickLedger(holding_bars=period, max_contracts=10)
             self.assertEqual(len(ledger.capacities), period)
             self.assertEqual(sum(ledger.capacities), 10)
             opened = ledger.advance('if2601', 1, 'A').opened
@@ -105,7 +106,7 @@ class PeriodParameterTests(unittest.TestCase):
     def test_invalid_period_is_rejected_before_division(self):
         for value in (0, -1, True, 1.5):
             with self.subTest(value=value), self.assertRaises(ValueError):
-                holding.PeriodHoldings(holding_bars=value, max_contracts=10)
+                TickLedger(holding_bars=value, max_contracts=10)
 
 
 class EntryConfigurationTests(unittest.TestCase):

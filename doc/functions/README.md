@@ -7,14 +7,17 @@
 | 函数 | 所属模块 | 用途 | 查询关键词 |
 | --- | --- | --- | --- |
 | [prepare_role_research](dataprep/prepare_role_research.md) | `bomber.framework.dataprep.scenarios.role_futures` | 准备期货合约角色、行情时间范围和累计复权因子快照 | 主力、次主力、角色表、分钟时间标签、复权、factor_availability |
+| [next_minutes](calendars/next_minutes.md) | `bomber.framework.calendars.sessions.SessionCalendar` | 按品种时段和交易日历查找后续交易分钟 | 持仓到期、跨休市、夜盘、节假日、结束时间 |
 
 ## 目录约定
 
 ```text
 doc/functions/
 ├── README.md
-└── dataprep/
-    └── prepare_role_research.md
+├── dataprep/
+│   └── prepare_role_research.md
+└── calendars/
+    └── next_minutes.md
 ```
 
 新增说明时按实际模块建立分类，例如 `dataprep`、`datahub`、`market`、`trader`；同名函数来自不同模块时，在所属模块的分类目录内区分，不把多份解释堆在同一个文件中。

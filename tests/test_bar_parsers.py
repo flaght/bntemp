@@ -284,7 +284,7 @@ class BarParserTests(unittest.TestCase):
             DataBinding=lambda *args: args, ExecutionRoute=lambda *args: args,
             StrategyBindings=lambda **kwargs: NS(**kwargs), assemble_strategy=Mock(),
             UnifiedHistoricalRuntime=Runtime, DataType=self.fw.basic.DataType,
-            write_input_reports=Mock())
+            write_input_reports=Mock(), HybridCheckpoint=lambda strategy: NS(snapshot_state=lambda: {}))
         def assemble(*args, **kwargs):
             for identity in ('p2601.DCE', 'p2605.DCE'):
                 for kind in (self.fw.basic.DataType.BAR, self.fw.basic.DataType.CUSTOM_BAR):
@@ -304,6 +304,7 @@ class BarParserTests(unittest.TestCase):
                 bars_dir=directory, contract_struct=directory / 'roles', fut_basic=directory / 'basic',
                 release_path=directory, directions_file=directory / 'directions',
                 signal_config=directory / 'signals', report_dir=directory, max_contracts=10,
+                calendar=NS(product='P', provenance={'sha256': 'fixture'}),
                 value_column='amount', open_interest_column='oi')
             self.assertTrue((output / 'summary.json').is_file())
             namespace['write_input_reports'].assert_called_once_with(output)

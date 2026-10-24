@@ -7,7 +7,7 @@
 - `model_adapter.py` 在初始化时加载当前目录的 `flow.LiveFlow`。该 Flow 完成特征计算、15 期时序标准化、模型输入、多个 seed 等权预测和 Lumina 信号函数；`model.py` 原样复用 Mizar `lib/nn005/model.py` 的 `HybridTransformerRegressor` 定义，保持发布 checkpoint 的网络结构。推理仍需安装 PyTorch、KiChaos、Lumina、Ultron 依赖。
 - 行情解析直接使用框架的 `FixedInstrumentBarParser`，由底层 `MappedBarParser` 统一校验并先发原生 `BAR`、再发伴生 `CUSTOM_BAR`，Demo 不再维护单独的解析器。显式配置 `value=value_column`、`open_interest=open_interest_column`、`trade_time="source_timestamp"`、`preserve_raw_ohlcv=True`，伴生字段保留原始 OHLCV 精度、`value`、规范名 `open_interest` 和原始 `trade_time`；`available_nanoseconds="available_ns"` 指定可用时刻。默认不配置这些选项时仍只发标准 `BAR`，兼容 EMA。
 - `signal_config.py` 从外部 JSON 按品种读取 `signal_id`、`signal_method`、`signal_params` 和 `hold_bars`；策略和适配器不再固定品种或信号编号。方法名必须由 Mizar 的 `SIGNAL_FUNCTIONS` 注册，函数参数原样传给 Workflow。信号输入仍为原始 `predicted_z`。
-- `strategy.py` 每根有效主力分钟 bar 都预测，并推进 `holding.py` 中 `PeriodHoldings(holding_bars, max_contracts)` 批次账本。每批在建立后的第 `hold_bars` 根有效主力分钟 bar 到期；中间信号不会覆盖旧批次。预热返回 `None` 时不新开仓，但仍处理已有批次到期。
+- `strategy.py` 每根有效主力分钟 bar 都预测，`holding.py` 中 `PeriodHoldings(..., calendar=calendar)` 按品种交易日历计算绝对到期时间。每批保存 `opened_at_ns`、`expires_at_ns`；序号只用于核对和槽位轮换，中间信号不会覆盖旧批次。预热返回 `None` 时不新开仓；模型错误或坏行情仍尝试处理已到期批次。
 - `max_contracts` 是全部未到期批次的**绝对手数总上限**，不是每批上限。固定分给 `hold_bars` 个轮换槽位。以 5 周期为例，10 手为 `(2,2,2,2,2)`，11 手为 `(3,2,2,2,2)`，1 手为 `(1,0,0,0,0)`。零预算槽位不交易；总手数少于持仓周期时，部分槽位预算为零，无法每分钟都建立非零整数手批次。预算不因多空净额抵消而重复使用。
 - 信号在当前槽位预算内按 `round_half_up(abs(signal) × slot_capacity)` 量化。每槽 2 手时，连续信号 0.3 对应多头 1 手，离散信号 -1 对应空头 2 手。连续仓位的取整误差需要独立评估。
 - 账户目标等于全部未到期批次按真实合约分组的净和。多空批次可以净额抵消，但各自的到期义务仍保留；到期时重新计算剩余敞口。相同合约目标不变无需重复提交，但账本必须记录旧批次到期、新批次建立。
@@ -69,6 +69,7 @@ config = demo.HybridTransformerConfig(
 strategy = demo.HybridTransformerStrategy(
     "p-transformer", roles, predictor, config,
     target_keys=target_keys_from_execution_routes,  # 实际合约 -> 静态目标键
+    calendar=product_session_calendar,  # 框架 SessionCalendar，品种须与配置一致
 )
 ```
 
@@ -84,31 +85,49 @@ Runner 用 `DataBinding(..., DataType.CUSTOM_BAR, "1-MINUTE")` 接收模型事�
 
 若第一根信号为 1、第二根为 -1、此后没有新批次，净目标依次为 `2、0、0、0、0、-2、0`。两个批次分别在第六、第七根 bar 到期。账户暂时为零不表示两个批次已被删除。
 
-周期按实际收到并通过校验的主力分钟 bar 计数；重复事件、非主力行情不推进。休市和缺失分钟不补造 bar。该时钟按 `hold_bars` 条未来有效分钟记录推进，跨休市可能超过相应数量的墙钟分钟。批次以信号 bar 计时，不以 `FillEvent` 重新计时；原生回测的下一行情成交顺序、部分成交、滑点、VWAP 标签偏移和费用仍需通过实际成交回测验证。
+期限按交易日历中的分钟推进：小节休市、午休、周末和节假日跳过，夜盘取消及替换时段由现有会话例外决定。断线漏收行情时，经过的交易分钟仍计入期限和槽位轮换，不补造历史开仓。主力换月前的批次始终绑定原合约。
+
+`opened_at_ns` 取框架提供的已完成分钟结束事件时间；历史整分钟结束边界和实时“结束边界减 1ns”先统一。原始 `trade_time` 只作为模型标签，不再次加一分钟。例：14:57 若是开始标签，该 bar 在 14:58 才完成，正常螺纹钢日盘剩两分钟，夜盘再走三分钟，到期是 21:03；股指是下一交易日 09:33。若 14:57 已是完成时点，则分别为 21:02、下一交易日 09:32。实际夜盘、交易日须来自所传日历；不能写死这些时间。
+
+`batch_id` 使用建立时的结束时间戳，重启不重新编号。`opened_bar/expires_bar` 保留作诊断；缺失行情时序号会跳过对应交易分钟。绝对期限用于比较，程序中断不会延长旧批次。到期表示应调整目标，实际成交仍取决于下一行情、可交易时段、流动性和执行状态。
 
 账本上限约束的是所有未到期批次的绝对手数及输出目标。真实在途订单、拒单和跨合约换仓的过渡持仓仍由执行层管理，不能把目标上限当作已完成真实账户验收。历史区间结束时不伪造未来 bar 或强制提前到期；未到期批次会保留在 `summary.json` 中。
 
 ## 历史模拟运行
 
-在含 Bomber 编译扩展和 PyTorch、KiChaos、Lumina、Ultron 依赖的环境运行；本地 Flow 和模型定义无需再通过 Mizar 根目录导入。以下用占位路径示意；`--bars-dir` 的每个文件须包含本分钟 `value` 与 `openint`，基础资料的 `contMultNum` 用于 VWAP 计算：
+当前入口是 `run_backtest.run_case(...)` 函数。除原有行情、模型和信号参数外，必须显式传入 `calendar=product_session_calendar`，没有序号模式或默认品种日历回退。日历须覆盖回测行情及最后一批的完整到期范围；不足时明确报错。
 
-```bash
-python demos/10_hybrid_transformer/run_backtest.py \
-  --product P \
-  --signal-config /ABS/PATH/TO/signals.json \
-  --start-day 2025-05-06 --end-day 2025-05-09 \
-  --bars-dir /ABS/PATH/TO/MINUTE_BARS \
-  --contract-struct /ABS/PATH/TO/CONTRACT_STRUCT.feather \
-  --fut-basic /ABS/PATH/TO/FUT_BASIC.feather \
-  --release-path /ABS/PATH/TO/P_RELEASE \
-  --directions-file /ABS/PATH/TO/P_FEATURE_DIRECTIONS.csv \
-  --bar-timestamp start \
-  --max-contracts 10 --rebalance-minutes 1 \
-  --history-bars 1500 --min-raw-bars 300 \
-  --report-dir /ABS/PATH/TO/REPORTS
+日历复用框架现有装配，示意如下（文件须为已核验的品种时段、例外及日期日历导出）：
+
+```python
+from bomber.framework.calendars import ExportedCalendarProvider
+from bomber.framework.dataprep.session_inputs import SessionInputs, load_session_inputs
+
+product_session_calendar = load_session_inputs(
+    SessionInputs(
+        product="RB", calendar_id="china.sse", exchange="SHFE",
+        backend="file", hours_file=hours_path, overrides_file=overrides_path,
+    ),
+    calendar_provider=ExportedCalendarProvider(calendar_csv_path),
+)
+# import_module("demos.10_hybrid_transformer.run_backtest").run_case(
+#     calendar=product_session_calendar, ...原有参数...)
 ```
 
-切换品种时修改 `--product`，并提供对应 release、方向文件和合约资料；信号规则从 `--signal-config` 的对应条目读取。`--hold-bars N` 可覆盖所选条目的周期，未传时直接使用条目中的 `hold_bars`。`--bar-timestamp` 必须明确符合源数据“分钟起点/终点”的实际定义，不能照搬示例。若源字段为 `open_interest`，加 `--open-interest-column open_interest`。输出目录包含 `signals.csv`（每根有效 bar 的预测、槽位预算、到期/新开手数、未到期绝对手数及逐合约目标，预热预测为空）、`batches.csv`（每批建立/到期事件、合约与起止 bar 编号）、订单、成交、持仓、账户及输入审计文件。短区间回测仍须提供足够的前置 bar 完成模型预热，不能把测试期的第一根直接当充分历史。
+输出包括 `orders.csv`、`fills.csv`、`positions.csv`、`signals.csv`、`batches.csv`、`summary.json` 以及 `strategy_state.json`。批次报告新增开仓/到期纳秒时间；总结记录日历来源。`strategy_state.json` 是策略组件快照，不能替代账户、目标和订单的完整运行时检查点。
+
+## 中断恢复与独立时钟
+
+`checkpoint.HybridCheckpoint(strategy)` 实现框架 `snapshot_state/restore_state/validate_targets` 接口。恢复会验证预算、周期、信号配置、执行路由及日历指纹，保留原批次 ID、期限、槽位、最后处理位置和目标版本。变更日历覆盖或规则须显式迁移，不能直接用旧快照恢复。
+
+未来实盘装配须完成以下接线；当前 Demo 仍没有实盘入口：
+
+1. 在同一个 `RuntimeStateManager` 的 `state_components` 中注册 `{"hybrid": HybridCheckpoint(strategy)}`，与 TargetStore、账户和订单一起保存、恢复。
+2. 装配后调用 `strategy.bind_checkpoint(manager.save)`；每次行情处理、批次续期或时钟推进都保存，不能只在产生委托时保存。运行时须串行处理行情、时钟、保存与恢复。
+3. 通过 `StrategyBindings(time_feed_ids=(clock_feed_id,), ...)` 绑定框架独立时钟，让它持续调用 `on_time`。同一分钟边界先交付已完成 bar，再交付该边界时钟，以保留到期与新信号的净额合并；缺少 bar 时仍由时钟处理到期。恢复先完成账户/未完成订单核对，再以当前时间处理过期批次，随后才开放新信号。
+4. 模型历史窗口由历史服务单独预热，不能通过交易回调重放历史开仓。账本和时钟已越过的旧 bar 即使迟到，也不会新开批次。模型尚未就绪时到期处理仍可运行。
+
+此组件没有自行建立一个独立 JSON 自动恢复路径，以免只恢复策略账本却遗漏真实账户或在途订单。模拟报告中的组件快照只供核对；不要把它当作完整实盘恢复文件。程序停机期间已经错过的成交无法补造，重连后按现有执行层能力调整当前目标。
 
 ## 启用订单前的验收
 
