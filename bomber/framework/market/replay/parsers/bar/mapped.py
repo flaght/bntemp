@@ -33,10 +33,16 @@ class BarColumns:
     bar_spec: str | None = None
     available_timestamp: str | None = None
     available_nanoseconds: str | None = None
+    trade_time: str | None = None
 
 
 class MappedBarParser:
-    """将显式配置的供应商字段映射为标准 Bar。"""
+    """将供应商字段映射为 Bar，配置伴生字段时再发 CustomBar。
+
+    preserve_raw_ohlcv 保留转为合约精度之前的已校验 OHLCV 数值；
+    columns.trade_time 原样透传来源时间标签，不改变事件或可用时间。
+    同一行始终先发 Bar，再发共享该 Bar 的 CustomBar。
+    """
 
     def __init__(
         self,
@@ -44,8 +50,11 @@ class MappedBarParser:
         bar_spec: str = "1-MINUTE",
         timezone: str = "Asia/Shanghai",
         exchange_aliases: Mapping[str, str] | None = None,
+        *,
+        preserve_raw_ohlcv: bool = False,
     ) -> None:
         self.columns = columns
+        self.preserve_raw_ohlcv = preserve_raw_ohlcv
         self.bar_spec = bar_spec.upper()
         self.timezone = ZoneInfo(timezone)
         self.exchange_aliases = {
@@ -112,13 +121,19 @@ class MappedBarParser:
             bar_type=bar_spec,
         )
         events = [ParsedEvent(DataType.BAR, instrument_id, bar, bar_spec)]
-        factors: dict[str, float] = {}
+        factors: dict[str, Any] = {}
+        if self.preserve_raw_ohlcv:
+            factors.update(open=open_price, high=high_price, low=low_price,
+                           close=close_price, volume=volume)
         if c.value is not None:
             factors["value"] = nonnegative(row, c.value, context)
         if c.open_interest is not None:
             factors["open_interest"] = nonnegative(row, c.open_interest, context)
         if c.vwap is not None:
             factors["vwap"] = positive(row, c.vwap, context)
+        if c.trade_time is not None:
+            required(row, c.trade_time, context)
+            factors["trade_time"] = row[c.trade_time]
         if factors:
             custom_bar: CustomBar = make_custom_bar(bar, factors)
             events.append(

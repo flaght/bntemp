@@ -1,0 +1,14 @@
+{
+  "P": {
+    "signal_id": "1101",
+    "signal_method": "linear_signal",
+    "signal_params": {"roll_num": 0, "threshold": 0.05},
+    "hold_bars": 5
+  },
+  "RB": {
+    "signal_id": "1301",
+    "signal_method": "threshold_signal",
+    "signal_params": {"roll_num": 0, "threshold": 0.02},
+    "hold_bars": 5
+  }
+}
