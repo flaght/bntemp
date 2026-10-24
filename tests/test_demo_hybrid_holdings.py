@@ -1,5 +1,7 @@
 """五周期批次的到期义务、整数总预算和策略调用回归；原生实体用替身。"""
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
+from tests.session_fixtures import declared_day_sessions
 from decimal import Decimal
 from importlib import import_module
 from importlib.util import module_from_spec, spec_from_file_location
@@ -15,14 +17,32 @@ sys.path.insert(0, str(ROOT))
 holding = import_module("demos.10_hybrid_transformer.holding")
 
 
+BASE = int(datetime(2025, 1, 2, 9, 1, tzinfo=ZoneInfo('Asia/Shanghai')).timestamp()) * 10**9
+MINUTE = 60_000_000_000
+
+
+def calendar_for(product='P'):
+    return declared_day_sessions(product, date(2025, 1, 2), start='09:00', end='15:00')
+
+
+class TickLedger(holding.PeriodHoldings):
+    """旧连续行情用例显式提供分钟结束时间；生产账本没有序号回退模式。"""
+    def __init__(self, holding_bars, max_contracts):
+        super().__init__(holding_bars, max_contracts, calendar=calendar_for())
+
+    def advance(self, instrument, signal, signal_time):
+        stamp = BASE if self.last_bar_ns < 0 else self.last_bar_ns + MINUTE
+        return super().advance(instrument, signal, signal_time, timestamp_ns=stamp)
+
+
 class HoldingLedgerTests(unittest.TestCase):
     def test_fixed_integer_budgets_sum_to_total_including_small_limits(self):
         for maximum, expected in ((10, (2, 2, 2, 2, 2)), (11, (3, 2, 2, 2, 2)),
                                   (1, (1, 0, 0, 0, 0))):
-            self.assertEqual(holding.PeriodHoldings(holding_bars=5, max_contracts=maximum).capacities, expected)
+            self.assertEqual(TickLedger(holding_bars=5, max_contracts=maximum).capacities, expected)
 
     def test_latest_zero_does_not_erase_unexpired_batch(self):
-        ledger = holding.PeriodHoldings(holding_bars=5, max_contracts=10)
+        ledger = TickLedger(holding_bars=5, max_contracts=10)
         opened = ledger.advance('p2601', 1, 'A').opened
         for index in range(1, 5):
             update = ledger.advance('p2601', 0, f'A+{index}')
@@ -34,24 +54,24 @@ class HoldingLedgerTests(unittest.TestCase):
         self.assertFalse(update.active)
 
     def test_same_direction_renews_expiry_without_changing_net_target(self):
-        ledger = holding.PeriodHoldings(holding_bars=5, max_contracts=10)
+        ledger = TickLedger(holding_bars=5, max_contracts=10)
         for index in range(5):
             previous = ledger.advance('p2601', 1, index)
         self.assertEqual(previous.targets['p2601'], 10)
         update = ledger.advance('p2601', 1, 5)
         self.assertEqual(update.targets, previous.targets)
-        self.assertEqual(update.expired[0].batch_id, 0)
+        self.assertEqual(update.expired[0].batch_id, BASE)
         self.assertEqual(update.opened.expires_bar, 10)
-        self.assertNotIn(0, [batch.batch_id for batch in update.active])
+        self.assertNotIn(BASE, [batch.batch_id for batch in update.active])
 
     def test_opposite_batches_keep_their_separate_expiry_obligations(self):
-        ledger = holding.PeriodHoldings(holding_bars=5, max_contracts=10)
+        ledger = TickLedger(holding_bars=5, max_contracts=10)
         targets = [ledger.advance('p2601', signal, index).targets.get('p2601', 0)
                    for index, signal in enumerate((1, -1, None, None, None, None, None))]
         self.assertEqual(targets, [2, 0, 0, 0, 0, -2, 0])
 
     def test_none_prediction_still_expires_old_batch(self):
-        ledger = holding.PeriodHoldings(holding_bars=5, max_contracts=10)
+        ledger = TickLedger(holding_bars=5, max_contracts=10)
         ledger.advance('p2601', 1, 0)
         for index in range(1, 6):
             update = ledger.advance('p2601', None, index)
@@ -59,7 +79,7 @@ class HoldingLedgerTests(unittest.TestCase):
         self.assertFalse(update.active)
 
     def test_invalid_signal_does_not_mutate_ledger(self):
-        ledger = holding.PeriodHoldings(holding_bars=5, max_contracts=10)
+        ledger = TickLedger(holding_bars=5, max_contracts=10)
         ledger.advance('p2601', 1, 0)
         before = ledger.active
         for signal in (float('nan'), float('inf'), 1.1):
@@ -71,7 +91,7 @@ class HoldingLedgerTests(unittest.TestCase):
     def test_total_gross_and_net_stay_bounded_for_mixed_signals(self):
         rng = Random(731)
         for maximum in range(1, 24):
-            ledger = holding.PeriodHoldings(holding_bars=5, max_contracts=maximum)
+            ledger = TickLedger(holding_bars=5, max_contracts=maximum)
             for index in range(100):
                 update = ledger.advance('p2601' if index < 50 else 'p2605',
                                         rng.choice((1, -1, .3, -.7, 0, None)), index)
@@ -81,7 +101,7 @@ class HoldingLedgerTests(unittest.TestCase):
 
     def test_net_execution_matches_fixed_five_period_batch_pnl_before_costs(self):
         prices = [100, 101, 102, 103, 104, 105, 103]
-        ledger = holding.PeriodHoldings(holding_bars=5, max_contracts=10)
+        ledger = TickLedger(holding_bars=5, max_contracts=10)
         net_pnl = Decimal(0)
         batch_pnl = Decimal(0)
         for index, signal in enumerate((1, -1, None, None, None, None, None)):
@@ -94,7 +114,7 @@ class HoldingLedgerTests(unittest.TestCase):
         self.assertEqual(net_pnl, 6)
 
     def test_small_budget_has_no_fractional_or_inflated_batches(self):
-        ledger = holding.PeriodHoldings(holding_bars=5, max_contracts=1)
+        ledger = TickLedger(holding_bars=5, max_contracts=1)
         opened = [ledger.advance('p2601', 1, index).opened for index in range(11)]
         self.assertEqual([index for index, batch in enumerate(opened) if batch], [0, 5, 10])
         self.assertEqual(holding.signal_to_contracts(.3, 2), 1)
@@ -103,9 +123,16 @@ class HoldingLedgerTests(unittest.TestCase):
 
 class TemplateStub:
     def __init__(self, strategy_id):
+        self.strategy_id = strategy_id
+        self._revision = 0
+        self.is_started = False
         self.targets = []
 
+    def restore_target_revision(self, revision):
+        self._revision = revision
+
     def set_targets(self, targets, timestamp, **kwargs):
+        self._revision += 1
         self.targets.append((targets, timestamp, kwargs))
 
 
@@ -171,12 +198,12 @@ class StrategyHoldingTests(unittest.TestCase):
         roles = SimpleNamespace(snapshot=Mock(side_effect=lambda ns: SimpleNamespace(
             instrument=lambda product, role: self.main)))
         self.strategy = strategy_module.HybridTransformerStrategy(
-            'check', roles, self.predictor, config, target_keys=target_keys)
+            'check', roles, self.predictor, config, target_keys=target_keys, calendar=calendar_for(product))
         return self.strategy
 
     def event(self, index, symbol=None, venue=None):
         instrument = SimpleNamespace(symbol=symbol or self.main, venue=venue or self.venue)
-        return SimpleNamespace(ts_event=(index + 1) * 60_000_000_000,
+        return SimpleNamespace(ts_event=BASE + index * MINUTE,
             bar=SimpleNamespace(bar_type=SimpleNamespace(instrument_id=instrument)),
             factors=dict(open=100.123, high=102.456, low=99.789, close=101.234,
                          volume=2.5, value=2530.85, open_interest=20,

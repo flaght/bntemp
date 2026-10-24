@@ -24,6 +24,7 @@ from bomber.framework.trader import (NautilusSimExecutionBackend,CtpFuturesBasic
     UnifiedStrategyRunner,DataBinding,ExecutionRoute,UnifiedHistoricalRuntime)
 from bomber.framework.trader.assembly import StrategyBindings, assemble_strategy
 from bomber.framework.trader.execution.builders import build_simulation_execution
+from bomber.framework.calendars import SessionCalendar
 from bomber.framework.market.basic.base import DataType
 from bomber.framework.market.replay.parsers.bar import FixedInstrumentBarParser
 
@@ -31,12 +32,13 @@ from bomber.framework.market.replay.parsers.bar import FixedInstrumentBarParser
 from .signal_config import load_product_signal
 from .strategy import HybridTransformerConfig,HybridTransformerStrategy
 from .model_adapter import MizarWorkflowAdapter
+from .checkpoint import HybridCheckpoint
 
 @input_session
 def run_case(*, product: str, start_day: date, end_day: date,
              bars_dir: Path, contract_struct: Path, fut_basic: Path,
              release_path: Path, directions_file: Path, signal_config: Path,
-             report_dir: Path, factors_path: Path | None = None,
+             report_dir: Path, calendar: SessionCalendar, factors_path: Path | None = None,
              factor_availability: str = "aligned",
              bar_timestamp: str = "end", value_column: str = "value",
              open_interest_column: str = "openint", max_contracts: int = 1,
@@ -46,6 +48,8 @@ def run_case(*, product: str, start_day: date, end_day: date,
              commission_per_contract: Decimal = Decimal("1"),
              require_fills: bool = False) -> Path:
     product = product.strip().upper()
+    if calendar.product.upper() != product:
+        raise ValueError("持仓交易日历与回测品种不一致")
     selected = load_product_signal(signal_config, product)
 
     signal_id = selected.signal_id
@@ -188,7 +192,7 @@ def run_case(*, product: str, start_day: date, end_day: date,
 
     strategy = HybridTransformerStrategy(
         f"{product.lower()}-main-hybrid", loaded.store, predictor, config,
-        target_keys=target_keys,
+        target_keys=target_keys, calendar=calendar,
     )
 
     adapter = NautilusMarketFeedAdapter(
@@ -230,6 +234,9 @@ def run_case(*, product: str, start_day: date, end_day: date,
         destination = report_dir / str(result.backend_result.run_id)
         destination.mkdir(parents=True, exist_ok=True)
         write_input_reports(destination)
+        (destination / "strategy_state.json").write_text(
+            json.dumps(HybridCheckpoint(strategy).snapshot_state(), ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8")
         for name, frame in (
             ("orders.csv", orders), ("fills.csv", fills),
             ("positions.csv", positions),
@@ -244,6 +251,7 @@ def run_case(*, product: str, start_day: date, end_day: date,
         summary = {
             "product": product, "signal_id": signal_id,
             "start_day": str(days[0]), "end_day": str(days[-1]),
+            "calendar": calendar.provenance,
             "bar_timestamp": bar_timestamp, "bars_used": strategy.bars_used,
             "signals": sum(row["predicted_z"] is not None for row in strategy.signal_records),
             "holding_bars": config.hold_bars,

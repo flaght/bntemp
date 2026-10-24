@@ -12,7 +12,7 @@ from bomber.framework.market.basic.base import CustomBar
 from bomber.framework.market.futures import futures_bar_values
 from bomber.framework.trader.template import StrategyTemplate
 
-from .holding import PeriodHoldings
+from .holding import PeriodHoldings, completed_minute_ns
 
 
 class ModelSignalPort(Protocol):
@@ -66,12 +66,18 @@ class HybridTransformerStrategy(StrategyTemplate):
 
     def __init__(self, strategy_id: str, data_hub: RoleSnapshotPort,
                  predictor: ModelSignalPort, config: HybridTransformerConfig,
-                 target_keys: Mapping[str, str] | None = None) -> None:
+                 target_keys: Mapping[str, str] | None = None, *, calendar) -> None:
         super().__init__(strategy_id)
         self.data_hub = data_hub
         self.predictor = predictor
         self.config = config
-        self.holdings = PeriodHoldings(holding_bars=config.hold_bars, max_contracts=config.max_contracts)
+        if calendar.product.upper() != config.product:
+            raise ValueError("持仓交易日历与策略品种不一致")
+        self.calendar = calendar
+        self.holdings = PeriodHoldings(holding_bars=config.hold_bars,
+                                      max_contracts=config.max_contracts, calendar=calendar)
+        self._targets_pending = False
+        self._checkpoint = None
         self.target_keys = ({str(symbol).lower(): str(key).strip()
                              for symbol, key in target_keys.items()}
                             if target_keys is not None else None)
@@ -98,6 +104,16 @@ class HybridTransformerStrategy(StrategyTemplate):
         self.fills_received = 0
 
 
+    def bind_checkpoint(self, save) -> None:
+        """装配时接入 RuntimeStateManager.save；目标不变的批次续期也必须落盘。"""
+        if not callable(save) or self._checkpoint is not None:
+            raise ValueError("持久化回调须可调用且只能绑定一次")
+        self._checkpoint = save
+
+    def _save_checkpoint(self) -> None:
+        if self._checkpoint is not None:
+            self._checkpoint()
+
     def on_order(self, event) -> None:
         self.order_updates_received += 1
 
@@ -106,7 +122,8 @@ class HybridTransformerStrategy(StrategyTemplate):
 
     def on_custom_bar(self, data_key: str, event: CustomBar) -> None:
         timestamp = int(event.ts_event)
-        if timestamp <= self.last_processed_ns:
+        if (self.last_processed_ns >= 0 and completed_minute_ns(timestamp)
+                <= completed_minute_ns(self.last_processed_ns)):
             return
 
         instrument = event.bar.bar_type.instrument_id
@@ -118,6 +135,7 @@ class HybridTransformerStrategy(StrategyTemplate):
             main = assignment.instrument(self.config.product, "main").lower()
         except SectorDataUnavailable:
             self.unavailable_events += 1
+            self.on_time(completed_minute_ns(timestamp))
             return
         if (str(instrument.symbol).lower() != main
                 or str(instrument.venue).upper() != self.config.venue):
@@ -128,41 +146,69 @@ class HybridTransformerStrategy(StrategyTemplate):
         if self.target_keys is None and self.last_main not in (None, main):
             raise ValueError("跨合约持仓须提供逐合约 target_keys，不能提前迁移旧批次")
 
-        values = futures_bar_values(
-            event, contract_multiplier=self.config.contract_multiplier)
+        try:
+            values = futures_bar_values(
+                event, contract_multiplier=self.config.contract_multiplier)
 
-        trade_time = event.factors.get("trade_time")
-        if trade_time is None:
-            raise ValueError("模型 CustomBar 必须保留原始 trade_time 标签")
+            trade_time = event.factors.get("trade_time")
+            if trade_time is None:
+                raise ValueError("模型 CustomBar 必须保留原始 trade_time 标签")
 
-        model_bar = {"trade_time": trade_time, "code": self.config.product, **values}
-        prediction = self.predictor.on_bar(model_bar)
+            model_bar = {"trade_time": trade_time, "code": self.config.product, **values}
+            prediction = self.predictor.on_bar(model_bar)
 
-        predicted_z = signal = None
-        if prediction is not None:
-            if str(prediction.get("code", self.config.product)).upper() != self.config.product:
-                raise ValueError("模型预测品种与策略品种不一致")
-            predicted_z = float(prediction["predicted_z"])
-            signal = float(prediction["signal"])
-            if not isfinite(predicted_z) or not isfinite(signal) or abs(signal) > 1:
-                raise ValueError("模型预测/信号非有限值或信号越界")
-            if str(prediction.get("signal_id", self.config.signal_id)) != self.config.signal_id:
-                raise ValueError("模型输出的 signal_id 与固化配置不一致")
-            self.last_prediction = dict(prediction)
+            predicted_z = signal = None
+            if prediction is not None:
+                if str(prediction.get("code", self.config.product)).upper() != self.config.product:
+                    raise ValueError("模型预测品种与策略品种不一致")
+                predicted_z = float(prediction["predicted_z"])
+                signal = float(prediction["signal"])
+                if not isfinite(predicted_z) or not isfinite(signal) or abs(signal) > 1:
+                    raise ValueError("模型预测/信号非有限值或信号越界")
+                if str(prediction.get("signal_id", self.config.signal_id)) != self.config.signal_id:
+                    raise ValueError("模型输出的 signal_id 与固化配置不一致")
+                self.last_prediction = dict(prediction)
 
-        minute = getattr(trade_time, "minute", None)
-        if minute is None:
-            from datetime import datetime
-            minute = datetime.fromisoformat(str(trade_time)).minute
-        admission_due = minute % self.config.rebalance_minutes == 0
+            minute = getattr(trade_time, "minute", None)
+            if minute is None:
+                from datetime import datetime
+                minute = datetime.fromisoformat(str(trade_time)).minute
+            admission_due = minute % self.config.rebalance_minutes == 0
+
+        except Exception:
+            # 模型预热错误或坏行情不能阻止已有批次到期。
+            self.on_time(completed_minute_ns(timestamp))
+            raise
 
         # 每根有效主力 bar 都推进到期账本；预热或非开仓时点也不能延长旧批次。
-        update = self.holdings.advance(main, signal if admission_due else None, trade_time)
+        try:
+            update = self.holdings.advance(main, signal if admission_due else None, trade_time,
+                                           timestamp_ns=timestamp)
+        except Exception:
+            self.on_time(completed_minute_ns(timestamp))
+            raise
 
         self.last_processed_ns = timestamp
         self.last_main = main
         self.bars_used += 1
 
+        self._apply_holding_update(update, timestamp, trade_time, prediction,
+                                   predicted_z, signal, admission_due)
+
+    def on_time(self, ts_event: int) -> None:
+        """由运行时独立时钟驱动；恢复后先处理到期，再允许新信号。"""
+        previous_check = self.holdings.last_check_ns
+        update = self.holdings.expire(ts_event)
+        if update.expired or self._targets_pending:
+            from bomber.framework.calendars.sessions import ns_datetime
+            self._apply_holding_update(update, ts_event,
+                ns_datetime(ts_event, self.calendar.zone), None, None, None, False)
+        elif self.holdings.last_check_ns != previous_check:
+            self._save_checkpoint()
+
+    def _apply_holding_update(self, update, timestamp, trade_time,
+                              prediction, predicted_z, signal, admission_due) -> None:
+        main = self.last_main
         active_targets = update.targets
         symbols = set(self.last_targets) | set(active_targets)
         if prediction is not None:
@@ -196,14 +242,21 @@ class HybridTransformerStrategy(StrategyTemplate):
                         "opened_bar": batch.opened_bar, "expires_bar": batch.expires_bar,
                         "quantity": int(batch.quantity), "signal": batch.signal,
                         "signal_time": batch.signal_time,
+                        "opened_at_ns": batch.opened_at_ns, "expires_at_ns": batch.expires_at_ns,
                     })
 
         # 账本已记录旧批次到期/新批次建立；同合约净目标不变时无需重复交易。
-        if not targets or targets == self.last_targets:
+        if not targets or (targets == self.last_targets and not self._targets_pending):
+            self._save_checkpoint()
             return
 
         routed = {(self.target_keys[symbol] if self.target_keys is not None else self.config.target_key): quantity
                   for symbol, quantity in targets.items()}
+        # 写前检查点必须同时看到新账本、新目标和模板递增后的 revision。
+        self.last_targets = targets
+        self.last_target = target
+        self.last_target_main = main
+        self._targets_pending = True
         self.set_targets(routed, timestamp, metadata={
             "signal_source": self.signal_source, "signal_id": self.config.signal_id,
             "predicted_z": predicted_z, "signal": signal, "research_main": main,
@@ -211,6 +264,5 @@ class HybridTransformerStrategy(StrategyTemplate):
             "bar_index": update.bar_index, "gross_contracts": str(update.gross_contracts),
             "target_rounding": "per_slot_nearest_integer_half_up",
         })
-        self.last_targets = targets
-        self.last_target = target
-        self.last_target_main = main
+        self._targets_pending = False
+        self._save_checkpoint()

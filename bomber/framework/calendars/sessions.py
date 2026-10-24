@@ -264,6 +264,35 @@ class SessionCalendar:
                 if after_ns is None or stamp > after_ns:
                     yield stamp
 
+    def next_minutes(self, after_ns, count):
+        """返回 after_ns 之后的 count 个交易分钟结束戳（结束边界减 1ns）。
+
+        使用同一时段、交易日期和例外规则，跨休市/午夜/节假日；不依赖实际收到的
+        行情。调用方传入已完成 bar 的结束边界减 1ns，可与历史、实时两种标签对齐。
+        日历覆盖不足或下一夜盘归属未知时明确失败，不猜测后续交易日。
+        """
+        if type(count) is not int or not 0 <= count <= self.max_minutes:
+            raise ValueError(f"未来分钟窗口须为0至{self.max_minutes}整数")
+        current = ns_datetime(after_ns, self.zone)
+        self._require_day(current.date())
+        if not count:
+            return ()
+        result = []
+        first_day = max(self.start, current.date() - timedelta(days=1))
+        for day in self.calendar.days[bisect_left(self.calendar.days, first_day):]:
+            for window in self._anchor_windows(day):
+                left, right = datetime_ns(window.start), datetime_ns(window.end)
+                first = max(left, ((after_ns + 1) // MINUTE_NS) * MINUTE_NS)
+                for start in range(first, right, MINUTE_NS):
+                    if not window.trading_day:
+                        raise RuntimeError("日历未覆盖未来夜盘所属的下一交易日")
+                    stamp = start + MINUTE_NS - 1
+                    if stamp > after_ns:
+                        result.append(stamp)
+                        if len(result) == count:
+                            return tuple(result)
+        raise RuntimeError("日历覆盖范围内的未来完整交易分钟不足")
+
     def missing_minutes(self, after_ns, before_ns):
         # Validate the current edge as well, especially missing midnight anchors.
         self.window(ns_datetime(before_ns - 1, self.zone))
