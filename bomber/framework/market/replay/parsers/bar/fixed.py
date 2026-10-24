@@ -10,7 +10,11 @@ from bomber.framework.market.replay.parsers.base import ParsedEvent, ParserConte
 
 
 class FixedInstrumentBarParser:
-    """适配只有datetime/OHLCV列、没有symbol/exchange列的Feather文件。"""
+    """为无 symbol/exchange 列的行情指定固定合约。
+
+    默认只发 OHLCV Bar。可显式映射 value、open_interest、vwap、trade_time，
+    并用 preserve_raw_ohlcv 保留原始 OHLCV；转换与事件顺序统一由 MappedBarParser 处理。
+    """
 
     def __init__(
         self,
@@ -21,6 +25,11 @@ class FixedInstrumentBarParser:
         timezone: str = "Asia/Shanghai",
         available_timestamp: str | None = None,
         available_nanoseconds: str | None = None,
+        value: str | None = None,
+        open_interest: str | None = None,
+        vwap: str | None = None,
+        trade_time: str | None = None,
+        preserve_raw_ohlcv: bool = False,
     ) -> None:
         self.instrument_id = instrument_id
         self._mapped = MappedBarParser(
@@ -33,11 +42,16 @@ class FixedInstrumentBarParser:
                 low="low",
                 close="close",
                 volume="volume",
+                value=value,
+                open_interest=open_interest,
+                vwap=vwap,
+                trade_time=trade_time,
                 available_timestamp=available_timestamp,
                 available_nanoseconds=available_nanoseconds,
             ),
             bar_spec=bar_spec,
             timezone=timezone,
+            preserve_raw_ohlcv=preserve_raw_ohlcv,
         )
 
     def reset(self) -> None:

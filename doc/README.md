@@ -10,6 +10,7 @@
 
 | 需要了解什么 | 首选入口 | 阅读说明 |
 | --- | --- | --- |
+| 函数用途、参数和调用示例 | [函数说明索引](functions/README.md) | 按模块分类，逐个函数查询输入、返回值、时间约定和常见错误 |
 | 项目整体结构和实现进度 | [统一策略架构与状态台账](architecture/STRATEGY_ARCHITECTURE.md) | 框架模块、运行链路、实现及验证进度的主要入口 |
 | 系统目标和职责边界 | [系统目标架构](architecture/ARCHITECTURE_FIXED.md) | 区分目标设计与已经实现的能力 |
 | 当前架构缺口 | [GAP 评估快照](audits/ARCHITECTURE_GAP_REVIEW_2026-10-09.md) → [完整跟踪清单](audits/ARCHITECTURE_GAPS_2026-10-09.md) | 前者便于掌握评估时状态，后者保留逐项验收标准及过程 |
@@ -27,6 +28,7 @@
 
 | 目录 | 内容 | 文档或材料数量 |
 | --- | --- | --- |
+| [functions](functions/README.md) | 按模块组织的函数说明、参数约定及调用示例 | 新增，持续补充 |
 | [architecture](architecture/README.md) | 集成架构原稿与修订稿、框架状态、进度快照、行情分层评估 | 5 |
 | [data](#数据契约与会话规则) | DataHub、基础条款、期货期权数据及会话通用化两份关联稿 | 5 |
 | [strategies](#策略与公共输入设计) | 示例适配、输入层设计和实现交接 | 3 |
@@ -105,4 +107,5 @@
 - 新设计按主题存入 data、strategies 或 integration；审查结果存入 audits。
 - 同一主题的原稿、修订稿和历史总结放在一起，在索引中注明版本关系及阅读顺序；撤回状态和原文证据保留。
 - 同步校验清单放入 evidence/checksums，补丁及删除清单放入 evidence/patches；文件摘要更新必须注明范围。
+- 函数说明放入 functions，按模块分类；一个函数一篇文档，并同步更新函数索引。
 - 新增或移动文档时，同时更新本文或交接索引，并核对 Markdown 链接和项目根目录命令中的路径。

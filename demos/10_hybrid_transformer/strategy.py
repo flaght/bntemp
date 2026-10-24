@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal
 from math import isfinite
 from typing import Mapping, Protocol
 
@@ -11,6 +11,8 @@ from bomber.framework.datahub.sector_roles import SectorDataUnavailable
 from bomber.framework.market.basic.base import CustomBar
 from bomber.framework.market.futures import futures_bar_values
 from bomber.framework.trader.template import StrategyTemplate
+
+from .holding import PeriodHoldings
 
 
 class ModelSignalPort(Protocol):
@@ -26,9 +28,10 @@ class RoleSnapshotPort(Protocol):
 class HybridTransformerConfig:
     product: str # 交易品种
     venue: str # 交易所表示
-    signal_id: str # 信号规则编号  类似为 P → 1101、RB → 1301
-    max_contracts: int # 最大目标持仓手数
-    rebalance_minutes: int # 目标仓位更新间隔，单位为分钟
+    signal_id: str # 外部配置指定的信号规则编号
+    max_contracts: int # 所有未到期批次的绝对手数总上限
+    hold_bars: int # 持仓周期
+    rebalance_minutes: int # 新批次开仓间隔；到期始终处理
     contract_multiplier: Decimal # 合约乘数，即每手对应的标的数量
     target_key: str = "" # 提交目标仓位时使用的路由标识 留空时自动生成，例如 P → p_main、RB → rb_main
     record_signals: bool = False # 默认 False；开启后保存在内存中的 signal_records，方便分析，
@@ -40,9 +43,8 @@ class HybridTransformerConfig:
         signal_id = str(self.signal_id).strip()
         if not product.isalpha() or not venue or not signal_id:
             raise ValueError("品种、交易所和信号编号不能为空")
-        expected_signal = {"P": "1101", "RB": "1301"}.get(product)
-        if expected_signal is None or signal_id != expected_signal:
-            raise ValueError("当前只固化 P/1101 与 RB/1301 两组策略")
+        if type(self.hold_bars) is not int or self.hold_bars < 1:
+            raise ValueError("持仓周期须为正整数")
         if (type(self.max_contracts) is not int or self.max_contracts < 1
                 or type(self.rebalance_minutes) is not int
                 or self.rebalance_minutes < 1 or 60 % self.rebalance_minutes):
@@ -56,16 +58,6 @@ class HybridTransformerConfig:
         object.__setattr__(self, "contract_multiplier", multiplier)
         object.__setattr__(self, "target_key", self.target_key.strip() or f"{product.lower()}_main")
 
-## 信号结合资金换算成手数
-def signal_to_contracts(signal: float, max_contracts: int) -> Decimal:
-    """连续目标按最邻近整数手量化；一手时 |signal|>=0.5 才开仓。"""
-    value = float(signal)
-    if not isfinite(value) or abs(value) > 1.0:
-        raise ValueError("信号必须是 [-1, 1] 内的有限值")
-    magnitude = int((Decimal(str(abs(value))) * max_contracts).quantize(
-        Decimal("1"), rounding=ROUND_HALF_UP))
-    return Decimal(magnitude if value >= 0 else -magnitude)
-
 
 class HybridTransformerStrategy(StrategyTemplate):
     """仅消费完整研究口径 CustomBar；执行合约与下单由 Bomber 路由。"""
@@ -73,14 +65,27 @@ class HybridTransformerStrategy(StrategyTemplate):
     signal_source = "hybrid_transformer"
 
     def __init__(self, strategy_id: str, data_hub: RoleSnapshotPort,
-                 predictor: ModelSignalPort, config: HybridTransformerConfig) -> None:
+                 predictor: ModelSignalPort, config: HybridTransformerConfig,
+                 target_keys: Mapping[str, str] | None = None) -> None:
         super().__init__(strategy_id)
         self.data_hub = data_hub
         self.predictor = predictor
         self.config = config
+        self.holdings = PeriodHoldings(holding_bars=config.hold_bars, max_contracts=config.max_contracts)
+        self.target_keys = ({str(symbol).lower(): str(key).strip()
+                             for symbol, key in target_keys.items()}
+                            if target_keys is not None else None)
+        if self.target_keys is not None and (not self.target_keys
+                or any(not key for key in self.target_keys.values())
+                or len(set(self.target_keys.values())) != len(self.target_keys)):
+            raise ValueError("真实合约须映射到非空、互不相同的目标键")
+
+        self.last_targets: dict[str, Decimal] = {}
+        self.batch_records: list[dict] = []
         predictor_signal_id = getattr(predictor, "signal_id", None)
         if predictor_signal_id is not None and str(predictor_signal_id) != config.signal_id:
             raise ValueError("预测器信号编号与策略配置不一致")
+
         self.last_processed_ns = -1
         self.last_main: str | None = None
         self.last_target: Decimal | None = None
@@ -91,6 +96,7 @@ class HybridTransformerStrategy(StrategyTemplate):
         self.unavailable_events = 0
         self.order_updates_received = 0
         self.fills_received = 0
+
 
     def on_order(self, event) -> None:
         self.order_updates_received += 1
@@ -117,54 +123,94 @@ class HybridTransformerStrategy(StrategyTemplate):
                 or str(instrument.venue).upper() != self.config.venue):
             return
 
+        if self.target_keys is not None and main not in self.target_keys:
+            raise ValueError(f"主力合约 {main} 缺少静态目标路由")
+        if self.target_keys is None and self.last_main not in (None, main):
+            raise ValueError("跨合约持仓须提供逐合约 target_keys，不能提前迁移旧批次")
+
         values = futures_bar_values(
             event, contract_multiplier=self.config.contract_multiplier)
+
         trade_time = event.factors.get("trade_time")
         if trade_time is None:
             raise ValueError("模型 CustomBar 必须保留原始 trade_time 标签")
+
         model_bar = {"trade_time": trade_time, "code": self.config.product, **values}
         prediction = self.predictor.on_bar(model_bar)
-        self.last_processed_ns = timestamp
-        self.last_main = main
-        self.bars_used += 1
-        if prediction is None:  # 原始 bar 和序列仍在预热，不提交任何目标。
-            return
-        if str(prediction.get("code", self.config.product)).upper() != self.config.product:
-            raise ValueError("模型预测品种与策略品种不一致")
-        predicted_z = float(prediction["predicted_z"])
-        signal = float(prediction["signal"])
-        if not isfinite(predicted_z):
-            raise ValueError("模型 predicted_z 非有限值")
-        if str(prediction.get("signal_id", self.config.signal_id)) != self.config.signal_id:
-            raise ValueError("模型输出的 signal_id 与固化配置不一致")
-        self.last_prediction = dict(prediction)
 
-        # 逐 bar 都预测和转信号；是否提交目标由已固化的执行节奏决定。
+        predicted_z = signal = None
+        if prediction is not None:
+            if str(prediction.get("code", self.config.product)).upper() != self.config.product:
+                raise ValueError("模型预测品种与策略品种不一致")
+            predicted_z = float(prediction["predicted_z"])
+            signal = float(prediction["signal"])
+            if not isfinite(predicted_z) or not isfinite(signal) or abs(signal) > 1:
+                raise ValueError("模型预测/信号非有限值或信号越界")
+            if str(prediction.get("signal_id", self.config.signal_id)) != self.config.signal_id:
+                raise ValueError("模型输出的 signal_id 与固化配置不一致")
+            self.last_prediction = dict(prediction)
+
         minute = getattr(trade_time, "minute", None)
         if minute is None:
             from datetime import datetime
             minute = datetime.fromisoformat(str(trade_time)).minute
-        target = signal_to_contracts(signal, self.config.max_contracts)
+        admission_due = minute % self.config.rebalance_minutes == 0
+
+        # 每根有效主力 bar 都推进到期账本；预热或非开仓时点也不能延长旧批次。
+        update = self.holdings.advance(main, signal if admission_due else None, trade_time)
+
+        self.last_processed_ns = timestamp
+        self.last_main = main
+        self.bars_used += 1
+
+        active_targets = update.targets
+        symbols = set(self.last_targets) | set(active_targets)
+        if prediction is not None:
+            symbols.add(main)
+
+        targets = {symbol: active_targets.get(symbol, Decimal(0)) for symbol in sorted(symbols)}
+        target = sum(targets.values(), Decimal(0))
+
+
         if self.config.record_signals:
+            import json
             self.signal_records.append({
                 "trade_time": trade_time, "code": self.config.product,
-                "research_main": main, "predicted_z": predicted_z,
-                "signal": signal, "target_contracts": int(target),
-                "rebalance_due": minute % self.config.rebalance_minutes == 0,
+                "research_main": main, "predicted_z": predicted_z, "signal": signal,
+                "target_contracts": int(target), "gross_contracts": int(update.gross_contracts),
+                "active_batches": len(update.active), "bar_index": update.bar_index,
+                "slot": update.slot, "slot_capacity": update.capacity,
+                "opened_contracts": int(update.opened.quantity) if update.opened else 0,
+                "expired_contracts": int(sum((batch.quantity for batch in update.expired), Decimal(0))),
+                "rebalance_due": admission_due, "holding_bars": self.config.hold_bars,
+                "targets_by_contract": json.dumps({key: int(value) for key, value in targets.items()}),
             })
 
-        if minute % self.config.rebalance_minutes:
+            for event_name, batches in (("expire", update.expired),
+                                        ("open", (update.opened,) if update.opened else ())):
+                for batch in batches:
+                    self.batch_records.append({
+                        "event": event_name, "observed_bar": update.bar_index,
+                        "trade_time": trade_time, "batch_id": batch.batch_id,
+                        "slot": batch.slot, "research_main": batch.instrument,
+                        "opened_bar": batch.opened_bar, "expires_bar": batch.expires_bar,
+                        "quantity": int(batch.quantity), "signal": batch.signal,
+                        "signal_time": batch.signal_time,
+                    })
+
+        # 账本已记录旧批次到期/新批次建立；同合约净目标不变时无需重复交易。
+        if not targets or targets == self.last_targets:
             return
-        if target == self.last_target and main == self.last_target_main:
-            return
-        self.set_target(self.config.target_key, target, timestamp, metadata={
-            "signal_source": self.signal_source,
-            "signal_id": self.config.signal_id,
-            "predicted_z": predicted_z,
-            "signal": signal,
-            "research_main": main,
-            "signal_time": str(trade_time),
-            "target_rounding": "nearest_integer_half_up",
+
+        routed = {(self.target_keys[symbol] if self.target_keys is not None else self.config.target_key): quantity
+                  for symbol, quantity in targets.items()}
+        self.set_targets(routed, timestamp, metadata={
+            "signal_source": self.signal_source, "signal_id": self.config.signal_id,
+            "predicted_z": predicted_z, "signal": signal, "research_main": main,
+            "signal_time": str(trade_time), "holding_bars": self.config.hold_bars,
+            "bar_index": update.bar_index, "gross_contracts": str(update.gross_contracts),
+            "target_rounding": "per_slot_nearest_integer_half_up",
         })
+        self.last_targets = targets
         self.last_target = target
         self.last_target_main = main
