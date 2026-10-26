@@ -26,6 +26,8 @@ from bomber.framework.dataprep.bars import add_prepared_bar_source
 from bomber.framework.dataprep.contracts import BarFileKey, BarReadSpec
 from bomber.framework.dataprep.paths import resolve_futures_args
 from bomber.framework.dataprep.session import input_session, read_feather, write_input_reports
+from bomber.framework.fees import CommissionConfig
+from bomber.framework.dataprep.commissions import add_commission_arguments, commission_config_from_args
 
 from bomber.backtest.config import BacktestEngineConfig
 from bomber.config import LoggingConfig
@@ -69,6 +71,7 @@ def run_case(*, products: tuple[str, ...], start_day: date, end_day: date,
              group_fraction: Decimal = Decimal("0.30"),
              starting_balance: Decimal = Decimal("1000000"),
              commission_per_contract: Decimal = Decimal("1"),
+             commission_config: CommissionConfig | None = None,
              margin_init: Decimal = Decimal("0.10"),
              margin_maint: Decimal = Decimal("0.08"),
              max_notional: Decimal = Decimal("1000000"),
@@ -160,6 +163,7 @@ def run_case(*, products: tuple[str, ...], start_day: date, end_day: date,
                 profile_id=f"cross-section-{venue_name.lower()}",
                 starting_balance=starting_balance,
                 commission_per_contract=commission_per_contract,
+                **(commission_config or CommissionConfig()).profile_kwargs(),
                 venue=Venue(venue_name),
             )
             backend.add_profile(profile)
@@ -241,6 +245,7 @@ def run_case(*, products: tuple[str, ...], start_day: date, end_day: date,
         output = (report_dir or DEFAULT_REPORT_DIR) / str(result.backend_result.run_id)
         output.mkdir(parents=True, exist_ok=True)
         write_input_reports(output)
+        backend.write_commission_report(output)
         orders.to_csv(output / "orders.csv")
         fills.to_csv(output / "fills.csv")
         positions_report.to_csv(output / "positions.csv")
@@ -288,6 +293,7 @@ def run_case(*, products: tuple[str, ...], start_day: date, end_day: date,
 def main() -> None:
     """解析命令行参数与公共数据路径，启动一次横截面回测。"""
     parser = argparse.ArgumentParser(description="CTP 多品种动态主力截面动量回测")
+    add_commission_arguments(parser)
     add_market_source_arguments(parser, backtest=True)
     parser.add_argument("--products", required=True, help="逗号分隔的品种，例如 RB,HC,I")
     parser.add_argument("--start-day", required=True, type=date.fromisoformat)
@@ -335,6 +341,7 @@ def main() -> None:
              group_fraction=args.group_fraction,
              starting_balance=args.starting_balance,
              commission_per_contract=args.commission_per_contract,
+             commission_config=commission_config_from_args(args),
              margin_init=args.margin_init, margin_maint=args.margin_maint,
              max_notional=args.max_notional, log_level=args.log_level,
              report_dir=args.report_dir, tearsheet=not args.no_tearsheet,

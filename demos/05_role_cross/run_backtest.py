@@ -19,6 +19,8 @@ from bomber.framework.dataprep.bars import add_prepared_bar_source
 from bomber.framework.dataprep.contracts import BarFileKey, BarReadSpec
 from bomber.framework.dataprep.paths import resolve_futures_args
 from bomber.framework.dataprep.session import input_session, read_feather, write_input_reports
+from bomber.framework.fees import CommissionConfig
+from bomber.framework.dataprep.commissions import add_commission_arguments, commission_config_from_args
 
 import pandas as pd
 
@@ -73,6 +75,7 @@ def _report(*, root: Path, backend, result, strategy: RoleCrossTargetStrategy,
     output = root / str(result.run_id)
     output.mkdir(parents=True, exist_ok=True)
     write_input_reports(output)
+    backend.write_commission_report(output)
     trader = backend.engine.trader
     orders.to_csv(output / "orders.csv")
     fills.to_csv(output / "fills.csv")
@@ -113,6 +116,7 @@ def run_case(*, product: str, start_day: date, end_day: date,
              quantity: Decimal = Decimal(1),
              starting_balance: Decimal = Decimal("1000000"),
              commission_per_contract: Decimal = Decimal(1),
+             commission_config: CommissionConfig | None = None,
              margin_init: Decimal = Decimal("0.10"),
              margin_maint: Decimal = Decimal("0.08"),
              max_notional: Decimal = Decimal("1000000"),
@@ -190,6 +194,7 @@ def run_case(*, product: str, start_day: date, end_day: date,
         profile_id=f"role-cross-{venue.lower()}",
         starting_balance=starting_balance,
         commission_per_contract=commission_per_contract,
+        **(commission_config or CommissionConfig()).profile_kwargs(),
         venue=Venue(venue),
     )
     backend.add_profile(profile)
@@ -295,6 +300,7 @@ def run_case(*, product: str, start_day: date, end_day: date,
 def main() -> None:
     """解析策略参数和公共输入路径，启动单品种回测。"""
     parser = argparse.ArgumentParser(description="CTP 品种主力、次主力、远期复权价穿越回测")
+    add_commission_arguments(parser)
     parser.add_argument("--product", required=True, help="品种，例如 RB、I、HC")
     parser.add_argument("--start-day", required=True, type=date.fromisoformat)
     parser.add_argument("--end-day", required=True, type=date.fromisoformat)
@@ -327,6 +333,7 @@ def main() -> None:
              bars_dir=paths.fut, contract_struct=paths.contract_struct, fut_basic=paths.fut_basic,
              quantity=args.quantity, starting_balance=args.starting_balance,
              commission_per_contract=args.commission_per_contract,
+             commission_config=commission_config_from_args(args),
              margin_init=args.margin_init, margin_maint=args.margin_maint,
              max_notional=args.max_notional,
              max_market_age_seconds=args.max_market_age_seconds,

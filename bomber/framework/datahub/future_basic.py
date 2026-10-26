@@ -10,6 +10,7 @@ from typing import Callable, Mapping
 
 from .basic import BasicProvider, contract_date, field, missing, positive_decimal, text
 from .temporal import ReferenceRecord
+from bomber.framework.fees import FuturesFee
 
 FUTURE_BASIC_DATASET = "future_basic"
 
@@ -26,6 +27,8 @@ class FutureBasic:
     last_trade_date: date
     multiplier: Decimal | None = None
     price_increment: Decimal | None = None
+    trade_fee: FuturesFee | None = None
+    delivery_fee: FuturesFee | None = None
 
     def __post_init__(self) -> None:
         for name in ("symbol", "exchange", "currency", "product"):
@@ -37,6 +40,18 @@ class FutureBasic:
         for name in ("multiplier", "price_increment"):
             value = getattr(self, name)
             object.__setattr__(self, name, None if missing(value) else positive_decimal(value, name))
+        for name in ("trade_fee", "delivery_fee"):
+            value = getattr(self, name)
+            if value is not None and not isinstance(value, FuturesFee):
+                raise ValueError(f"{name}须为FuturesFee或None")
+
+    @property
+    def trade_fee_per_contract(self):
+        return None if self.trade_fee is None else self.trade_fee.per_contract
+
+    @property
+    def trade_fee_rate(self):
+        return None if self.trade_fee is None else self.trade_fee.rate
 
     @classmethod
     def from_mapping(cls, row: Mapping[str, object]) -> FutureBasic:
@@ -49,6 +64,8 @@ class FutureBasic:
             last_trade_date=field(row, "last_trade_date", "lastTradeDate"),
             multiplier=field(row, "multiplier", "contMultNum"),
             price_increment=field(row, "minChgPriceNum", "tickNum", "price_increment"),
+            trade_fee=FuturesFee.from_mapping(row),
+            delivery_fee=FuturesFee.from_mapping(row, "delivery"),
         )
 
 

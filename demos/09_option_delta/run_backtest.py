@@ -23,6 +23,7 @@ from bomber.framework.dataprep.metadata import load_options_basic, load_cffex_fu
 from bomber.framework.dataprep.paths import resolve_option_args
 from bomber.framework.dataprep.scenarios.option_chain import plan_option_chain, prepare_option_chain
 from bomber.framework.dataprep.session import input_session, write_input_reports
+from bomber.framework.dataprep.commissions import add_commission_arguments, commission_config_from_args
 
 load_dotenv()
 PAIRS = {"IO": ("IF", "000300"), "MO": ("IM", "000852"), "HO": ("IH", "000016")}
@@ -176,7 +177,8 @@ def run_case(args):
         trader_id=TraderId("OPTION-DELTA-001"), logging=LoggingConfig(log_level=args.log_level), run_analysis=True))
     try:
         backend.add_profile(CtpFuturesBasicProfile(profile_id="option-delta-basic", venue=Venue("CFFEX"),
-            starting_balance=args.starting_balance, commission_per_contract=args.commission))
+            starting_balance=args.starting_balance, commission_per_contract=args.commission,
+            **commission_config_from_args(args).profile_kwargs()))
         feed = FileReplayFeed("OPTION_DELTA_REPLAY")
         instruments, multipliers, all_ids = {}, {}, {}
         for key in traded_keys:
@@ -235,6 +237,7 @@ def run_case(args):
             output = Path(args.report_dir) / str(result.backend_result.run_id)
             output.mkdir(parents=True, exist_ok=True)
             write_input_reports(output)
+            backend.write_commission_report(output)
             orders.to_csv(output / "orders.csv")
             fills.to_csv(output / "fills.csv")
             reports.generate_positions_report().to_csv(output / "positions.csv")
@@ -297,6 +300,7 @@ def run_case(args):
 @input_session
 def main():
     p=argparse.ArgumentParser(description="中金所Delta选约、Call/Put双腿买入及完整交易回测")
+    add_commission_arguments(p)
     p.add_argument("--product",choices=tuple(PAIRS),default="MO")
     p.add_argument("--index-code")
     p.add_argument("--future-product")

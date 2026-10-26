@@ -239,7 +239,8 @@ class BarParserTests(unittest.TestCase):
             def to_csv(self, path, **kwargs): Path(path).write_text('')
         trader = NS(**{name: lambda *args: Report() for name in ('generate_orders_report',
             'generate_fills_report', 'generate_positions_report', 'generate_account_report')})
-        backend = NS(engine=NS(trader=trader), add_profile=Mock(), add_instrument=Mock())
+        backend = NS(engine=NS(trader=trader), add_profile=Mock(), add_instrument=Mock(),
+                     write_commission_report=Mock())
         feed = self.fw.feed.FileReplayFeed('entry-check')
         executed = []
         class Runtime:
@@ -264,7 +265,9 @@ class BarParserTests(unittest.TestCase):
                       last_main='p2605', last_target=Decimal(0), unavailable_events=0)
         basic = NS(columns={'code', 'symbol', 'exchangeCD', 'contMultNum', 'minChgPriceNum',
                             'listDate', 'lastTradeDate'})
+        from bomber.framework.fees import CommissionConfig
         namespace = dict(date=date, timedelta=timedelta, Decimal=Decimal, Path=Path,
+            CommissionConfig=CommissionConfig,
             asdict=asdict, is_dataclass=is_dataclass, json=json,
             load_product_signal=lambda *args: NS(signal_id='test', hold_bars=5,
                 signal_method='linear_signal', signal_params={}),

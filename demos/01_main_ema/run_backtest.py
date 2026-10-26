@@ -23,6 +23,8 @@ from bomber.framework.dataprep.bars import add_bar_source
 from bomber.framework.dataprep.contracts import BarReadSpec
 from bomber.framework.dataprep.paths import resolve_futures_args
 from bomber.framework.dataprep.session import input_session, read_feather, write_input_reports
+from bomber.framework.fees import CommissionConfig
+from bomber.framework.dataprep.commissions import add_commission_arguments, commission_config_from_args
 
 
 
@@ -81,6 +83,7 @@ def _write_reports(*, report_dir: Path, backend, backend_result,
     report_dir.mkdir(parents=True, exist_ok=True)
     # 输入依据和交易结果保存在同一个运行目录，必须在输入会话退出前写出。
     write_input_reports(report_dir)
+    backend.write_commission_report(report_dir)
     trader = backend.engine.trader
     reports = {
         "orders.csv": orders,
@@ -162,6 +165,7 @@ def run_case(*, product: str, start_day: date, end_day: date, bars_dir: Path,
              log_level: str = "WARNING",
              report_dir: Path = DEFAULT_REPORT_DIR,
              tearsheet: bool = True,
+             commission_config: CommissionConfig | None = None,
              max_notional: Decimal = Decimal("1000000"), bar_timestamp: str = "end", market_config: MarketSourceConfig | None = None) -> None:
     """准备一个品种的主力输入，装配历史运行器，执行模拟回测并输出报表。"""
     case_started_at = perf_counter()
@@ -241,9 +245,10 @@ def run_case(*, product: str, start_day: date, end_day: date, bars_dir: Path,
         ),
     )
     profile = CtpFuturesBasicProfile(
-        # 示例模拟账户：固定起始资金和每手手续费，不是完整 CTP 结算模型。
+        # 优先读取合约费用；旧资料缺失费用时沿用每手配置。
         starting_balance=Decimal("1000000"),
         commission_per_contract=Decimal(1), venue=venue,
+        **(commission_config or CommissionConfig()).profile_kwargs(),
     )
     backend.add_profile(profile)
     feed = create_market_feed(market_config or MarketSourceConfig(source="file"), f"{product}_MAIN_EMA_REPLAY")
@@ -325,6 +330,7 @@ def main() -> None:
     # 环境配置只在入口运行时读取，导入／构造积木不读取本机凭据。
     load_dotenv()
     parser = argparse.ArgumentParser(description="CTP 品种动态主力 EMA 离线回测")
+    add_commission_arguments(parser)
     add_market_source_arguments(parser, backtest=True)
     parser.add_argument("--product", required=True, help="品种代码，例如 RB、I、HC")
     parser.add_argument("--start-day", type=date.fromisoformat, required=True)
@@ -375,7 +381,7 @@ def main() -> None:
              fast=args.fast, slow=args.slow, quantity=args.quantity,
              require_fills=args.require_fills, log_level=args.log_level,
              report_dir=args.report_dir, tearsheet=not args.no_tearsheet,
-             max_notional=args.max_notional)
+             max_notional=args.max_notional, commission_config=commission_config_from_args(args))
     print(f"[耗时] 路径解析至回测报表完成总耗时={perf_counter() - main_started_at:.3f}s", flush=True)
 
 

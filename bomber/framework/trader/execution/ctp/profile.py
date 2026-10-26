@@ -21,39 +21,64 @@ def _decimal(value: Decimal | int | float | str) -> Decimal:
 
 @dataclass(frozen=True)
 class CtpCommissionRule:
-    """按手配置开仓、平昨和平今手续费。"""
+    """分别配置开仓、平昨和平今的每手费用、成交金额费率及手续费系数。"""
 
     open_per_contract: Decimal | int | float | str = Decimal(0)
     close_per_contract: Decimal | int | float | str = Decimal(0)
     close_today_per_contract: Decimal | int | float | str = Decimal(0)
+    open_rate: Decimal | int | float | str = Decimal(0)
+    close_rate: Decimal | int | float | str = Decimal(0)
+    close_today_rate: Decimal | int | float | str = Decimal(0)
+    commission_multiplier: Decimal | int | float | str = Decimal(1)
 
     def __post_init__(self) -> None:
         for name in (
             "open_per_contract",
             "close_per_contract",
             "close_today_per_contract",
+            "open_rate", "close_rate", "close_today_rate", "commission_multiplier",
         ):
             value = _decimal(getattr(self, name))
-            if value < 0:
-                raise ValueError("手续费不能为负数")
+            if not value.is_finite() or value < 0 or (name == "commission_multiplier" and value == 0):
+                raise ValueError("手续费须为有限非负数，手续费系数须为有限正数")
             object.__setattr__(self, name, value)
 
     def calculate(
         self,
         effect: PositionEffect | str,
         quantity: Decimal | int | float | str,
+        price=None,
+        contract_multiplier=None,
+        *,
+        commission_multiplier=None,
     ) -> Decimal:
+        return self.calculate_details(effect, quantity, price, contract_multiplier,
+            commission_multiplier=commission_multiplier).actual_commission
+
+    def calculate_details(self, effect, quantity, price=None, contract_multiplier=None,
+                          *, commission_multiplier=None):
+        from bomber.framework.fees import FuturesFee
         effect = PositionEffect(effect)
-        quantity = _decimal(quantity)
-        if quantity < 0:
-            raise ValueError("quantity不能为负数")
         if effect is PositionEffect.OPEN:
-            rate = self.open_per_contract
+            fixed, rate = self.open_per_contract, self.open_rate
         elif effect is PositionEffect.CLOSE_TODAY:
-            rate = self.close_today_per_contract
+            fixed, rate = self.close_today_per_contract, self.close_today_rate
+        elif effect in {PositionEffect.CLOSE, PositionEffect.CLOSE_YESTERDAY}:
+            fixed, rate = self.close_per_contract, self.close_rate
         else:
-            rate = self.close_per_contract
-        return rate * quantity
+            raise ValueError("手续费核算需要明确的开平标志")
+        return FuturesFee(fixed, rate).charge(quantity, price, contract_multiplier,
+            commission_multiplier=self.commission_multiplier if commission_multiplier is None else commission_multiplier)
+
+    @classmethod
+    def from_mapping(cls, row, *, commission_multiplier=1):
+        """源表只有通用费率时三种开平使用相同标准；不推断平今优惠。"""
+        from bomber.framework.fees import FuturesFee
+        fee = FuturesFee.from_mapping(row)
+        if fee is None:
+            raise ValueError("缺少交易手续费数值和单位")
+        return cls(fee.per_contract, fee.per_contract, fee.per_contract,
+            fee.rate, fee.rate, fee.rate, commission_multiplier)
 
 
 @dataclass(frozen=True)

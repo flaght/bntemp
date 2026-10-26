@@ -26,6 +26,8 @@ from bomber.framework.dataprep.catalog import product_inventory
 from bomber.framework.dataprep.contracts import BarFileKey, BarReadSpec
 from bomber.framework.dataprep.paths import resolve_futures_args
 from bomber.framework.dataprep.session import input_session, read_feather, write_input_reports
+from bomber.framework.fees import CommissionConfig
+from bomber.framework.dataprep.commissions import add_commission_arguments, commission_config_from_args
 
 from bomber.backtest.config import BacktestEngineConfig
 from bomber.config import LoggingConfig
@@ -70,6 +72,7 @@ def run_case(*, product: str, start_day: date, end_day: date, bars_dir: Path,
              rebalance_interval: int = 5,
              starting_balance: Decimal = Decimal("1000000"),
              commission_per_contract: Decimal = Decimal(1),
+             commission_config: CommissionConfig | None = None,
              margin_init: Decimal = Decimal("0.10"),
              margin_maint: Decimal = Decimal("0.08"),
              max_notional: Decimal = Decimal("1000000"),
@@ -175,6 +178,7 @@ def run_case(*, product: str, start_day: date, end_day: date, bars_dir: Path,
         profile_id=f"{product.lower()}-calendar-{venue_name.lower()}",
         starting_balance=starting_balance,
         commission_per_contract=commission_per_contract,
+        **(commission_config or CommissionConfig()).profile_kwargs(),
         venue=Venue(venue_name),
     )
     backend.add_profile(profile)
@@ -261,6 +265,7 @@ def run_case(*, product: str, start_day: date, end_day: date, bars_dir: Path,
         output = report_dir / str(result.backend_result.run_id)
         output.mkdir(parents=True, exist_ok=True)
         write_input_reports(output)
+        backend.write_commission_report(output)
         orders.to_csv(output / "orders.csv")
         fills.to_csv(output / "fills.csv")
         positions_report.to_csv(output / "positions.csv")
@@ -307,6 +312,7 @@ def run_case(*, product: str, start_day: date, end_day: date, bars_dir: Path,
 @input_session
 def main() -> None:
     parser = argparse.ArgumentParser(description="单品种两期限价差均值回归回测")
+    add_commission_arguments(parser)
     add_market_source_arguments(parser, backtest=True)
     parser.add_argument("--product", required=True, help="品种，例如 RB、HC、I、JM")
     parser.add_argument("--start-day", required=True, type=date.fromisoformat)
@@ -363,6 +369,7 @@ def main() -> None:
              rebalance_interval=args.rebalance_interval,
              starting_balance=args.starting_balance,
              commission_per_contract=args.commission_per_contract,
+             commission_config=commission_config_from_args(args),
              margin_init=args.margin_init, margin_maint=args.margin_maint,
              max_notional=args.max_notional,
              max_market_age_seconds=args.max_market_age_seconds,

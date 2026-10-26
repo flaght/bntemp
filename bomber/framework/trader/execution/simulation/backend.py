@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any, Callable, Sequence
+from pathlib import Path
 
 from bomber.backtest.config import BacktestEngineConfig
 from bomber.backtest.engine import BacktestEngine
@@ -62,6 +63,28 @@ class NautilusSimExecutionBackend:
     def reports(self) -> tuple[ExecutionReport, ...]:
         return tuple(self._reports)
 
+    def write_commission_report(self, destination):
+        """逐笔导出标准费用、系数和实际扣费，与原生成交报表核对。"""
+        import csv
+        import json
+        records = [row for profile in self._profiles.values()
+                   for row in getattr(getattr(profile, "fee_model", None), "records", ())]
+        columns = ("instrument_id", "client_order_id", "quantity", "fill_price",
+            "contract_multiplier", "source", "source_value", "source_unit", "per_contract",
+            "rate", "standard_commission", "commission_multiplier", "actual_commission")
+        destination = Path(destination)
+        destination.mkdir(parents=True, exist_ok=True)
+        with (destination / "commissions.csv").open("w", newline="", encoding="utf-8") as stream:
+            writer = csv.DictWriter(stream, fieldnames=columns)
+            writer.writeheader()
+            writer.writerows(records)
+        configs = {str(profile.venue): {**profile.fee_model.config.profile_kwargs(),
+            "commission_per_contract": str(profile.commission_per_contract)}
+            for profile in self._profiles.values()
+            if hasattr(getattr(profile, "fee_model", None), "config")}
+        (destination / "commission_config.json").write_text(
+            json.dumps(configs, ensure_ascii=False, indent=2, default=str) + "\n", encoding="utf-8")
+
     def add_profile(self, profile: VenueSimulationProfilePort) -> None:
         """注册交易场所Profile，并立即创建对应模拟Venue。"""
 
@@ -74,6 +97,10 @@ class NautilusSimExecutionBackend:
 
     def add_instrument(self, instrument: Any) -> None:
         self._ensure_configurable()
+        profile = self._profiles.get(str(instrument.id).rsplit(".", 1)[-1])
+        validator = getattr(getattr(profile, "fee_model", None), "validate_instrument", None)
+        if validator is not None:
+            validator(instrument)
         self.engine.add_instrument(instrument)
 
     def add_strategy(self, strategy: Any) -> None:

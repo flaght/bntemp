@@ -15,6 +15,7 @@ from .role_prices import (
 from .core import MinimalDataHub, RoleResearchProvider, RoleSnapshot
 from .option_basic import OPTION_BASIC_DATASET, OptionBasic, OptionBasicProvider
 from .future_basic import FUTURE_BASIC_DATASET, FutureBasic, FutureBasicProvider
+from bomber.framework.fees import CommissionConfig, FuturesFee
 from .sector_roles import SectorDataUnavailable, SectorRoleAssignment, SectorRoleStore
 from .target_schedule import TargetPlan, TargetPlanUnavailable, TargetScheduleStore
 from .temporal import (
@@ -37,6 +38,8 @@ __all__ = [
     "FUTURE_BASIC_DATASET",
     "FutureBasic",
     "FutureBasicProvider",
+    "FuturesFee",
+    "CommissionConfig",
     "OPTION_BASIC_DATASET",
     "OptionBasic",
     "OptionBasicProvider",

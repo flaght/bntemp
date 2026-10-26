@@ -23,6 +23,8 @@ from bomber.framework.dataprep.bars import add_prepared_bar_source
 from bomber.framework.dataprep.contracts import BarFileKey, BarReadSpec
 from bomber.framework.dataprep.paths import resolve_futures_args
 from bomber.framework.dataprep.session import input_session, read_feather, write_input_reports
+from bomber.framework.fees import CommissionConfig
+from bomber.framework.dataprep.commissions import add_commission_arguments, commission_config_from_args
 
 from bomber.backtest.config import BacktestEngineConfig
 from bomber.config import LoggingConfig
@@ -69,6 +71,7 @@ def run_case(*, anchor: str, hedges: tuple[str, str],
              rebalance_interval: int = 5, target_notional: Decimal = Decimal("300000"),
              starting_balance: Decimal = Decimal("1000000"),
              commission_per_contract: Decimal = Decimal("1"),
+             commission_config: CommissionConfig | None = None,
              margin_init: Decimal = Decimal("0.10"),
              margin_maint: Decimal = Decimal("0.08"),
              max_notional: Decimal = Decimal("1000000"),
@@ -161,6 +164,7 @@ def run_case(*, anchor: str, hedges: tuple[str, str],
                 profile_id=f"triangle-spread-{venue_name.lower()}",
                 starting_balance=starting_balance,
                 commission_per_contract=commission_per_contract,
+                **(commission_config or CommissionConfig()).profile_kwargs(),
                 venue=Venue(venue_name),
             )
             backend.add_profile(profile)
@@ -240,6 +244,7 @@ def run_case(*, anchor: str, hedges: tuple[str, str],
         output = (report_dir or DEFAULT_REPORT_DIR) / str(result.backend_result.run_id)
         output.mkdir(parents=True, exist_ok=True)
         write_input_reports(output)
+        backend.write_commission_report(output)
         orders.to_csv(output / "orders.csv")
         fills.to_csv(output / "fills.csv")
         positions_report.to_csv(output / "positions.csv")
@@ -283,6 +288,7 @@ def run_case(*, anchor: str, hedges: tuple[str, str],
 def main() -> None:
     """解析三腿参数和公共数据路径，启动一次回测。"""
     parser = argparse.ArgumentParser(description="CTP 三品种主力相对价值组合回测")
+    add_commission_arguments(parser)
     parser.add_argument("--anchor", required=True, help="主腿品种，例如 RB")
     parser.add_argument("--hedges", required=True, help="两个对冲品种，逗号分隔，例如 HC,I")
     parser.add_argument("--hedge-weights", default="0.5,0.5", help="两对冲腿权重，合计为1")
@@ -329,6 +335,7 @@ def main() -> None:
              rebalance_interval=args.rebalance_interval, target_notional=args.target_notional,
              starting_balance=args.starting_balance,
              commission_per_contract=args.commission_per_contract,
+             commission_config=commission_config_from_args(args),
              margin_init=args.margin_init, margin_maint=args.margin_maint,
              max_notional=args.max_notional,
              max_market_age_seconds=args.max_market_age_seconds,

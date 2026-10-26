@@ -60,6 +60,11 @@ def normalize_frame(frame, dataset, query, *, source):
         required = required - {"pcr_cumfactor"} | {"cumulative_factor", "role"}
     if required - set(frame):
         raise ValueError(f"{dataset.value} 缺少字段: {sorted(required - set(frame))}")
+    if dataset is ReferenceDataset.FUTURES_BASIC:
+        from bomber.framework.fees import FuturesFee
+        for row in frame.to_dict("records"):
+            FuturesFee.from_mapping(row)
+            FuturesFee.from_mapping(row, "delivery")
     for column in ("code", "symbol"):
         if column in frame:
             values = frame[column]

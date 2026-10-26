@@ -7,6 +7,7 @@ import re
 from bomber.framework.datahub.basic import positive_decimal
 from bomber.framework.datahub.future_basic import FutureBasic
 from bomber.framework.datahub.option_basic import OptionBasic
+from bomber.framework.fees import FuturesFee
 
 from .catalog import symbol
 from .contracts import InstrumentSpec
@@ -109,6 +110,8 @@ def parse_future_terms(row, *, require_execution=True):
         list_date=listed, last_trade_date=last,
         price_increment=positive(row["minChgPriceNum"], code + "/tick") if require_execution else None,
         multiplier=positive(row["contMultNum"], code + "/multiplier") if require_execution else None,
+        trade_fee=FuturesFee.from_mapping(row),
+        delivery_fee=FuturesFee.from_mapping(row, "delivery"),
     )
 
 
@@ -118,7 +121,8 @@ def future_spec_from_basic(basic):
         raise TypeError("期货规格转换需要 FutureBasic")
     return InstrumentSpec("future", basic.symbol, basic.product, basic.exchange,
         basic.currency, basic.list_date, basic.last_trade_date,
-        tick=basic.price_increment, multiplier=basic.multiplier)
+        tick=basic.price_increment, multiplier=basic.multiplier,
+        trade_fee=basic.trade_fee, delivery_fee=basic.delivery_fee)
 
 
 def _require_static_publication(row):

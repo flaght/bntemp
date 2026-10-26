@@ -19,6 +19,7 @@ from bomber.framework.market.replay.base import FileReplayFeed
 from bomber.framework.dataprep.metadata import venue as venue_for_product
 from bomber.framework.dataprep.scenarios.role_futures import prepare_role_research
 from bomber.framework.dataprep.session import input_session, read_feather, write_input_reports
+from bomber.framework.fees import CommissionConfig
 from bomber.framework.trader import (NautilusSimExecutionBackend,CtpFuturesBasicProfile,
     RiskLimits,RuntimeMode,NautilusMarketFeedAdapter,MarketStreamBinding,
     UnifiedStrategyRunner,DataBinding,ExecutionRoute,UnifiedHistoricalRuntime)
@@ -46,6 +47,7 @@ def run_case(*, product: str, start_day: date, end_day: date,
              min_raw_bars: int = 300, device: str = "auto",
              max_notional: Decimal = Decimal("1000000"),
              commission_per_contract: Decimal = Decimal("1"),
+             commission_config: CommissionConfig | None = None,
              require_fills: bool = False) -> Path:
     product = product.strip().upper()
     if calendar.product.upper() != product:
@@ -118,6 +120,7 @@ def run_case(*, product: str, start_day: date, end_day: date,
     profile = CtpFuturesBasicProfile(
         starting_balance=Decimal("1000000"),
         commission_per_contract=commission_per_contract, venue=venue,
+        **(commission_config or CommissionConfig()).profile_kwargs(),
     )
     backend.add_profile(profile)
 
@@ -234,6 +237,7 @@ def run_case(*, product: str, start_day: date, end_day: date,
         destination = report_dir / str(result.backend_result.run_id)
         destination.mkdir(parents=True, exist_ok=True)
         write_input_reports(destination)
+        backend.write_commission_report(destination)
         (destination / "strategy_state.json").write_text(
             json.dumps(HybridCheckpoint(strategy).snapshot_state(), ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8")

@@ -32,6 +32,7 @@ from bomber.framework.dataprep.metadata import load_cffex_futures, load_options_
 from bomber.framework.dataprep.paths import resolve_option_args
 from bomber.framework.dataprep.scenarios.option_chain import plan_option_chain, prepare_option_chain
 from bomber.framework.dataprep.session import input_session, write_input_reports
+from bomber.framework.dataprep.commissions import add_commission_arguments, commission_config_from_args
 
 DEFAULT_REPORT_DIR = Path(__file__).resolve().parent / "results"
 
@@ -208,7 +209,8 @@ def run_case(args):
     backend = NautilusSimExecutionBackend("option-vega-sim", BacktestEngineConfig(
         trader_id=TraderId("OPTION-VEGA-001"), logging=LoggingConfig(log_level=args.log_level), run_analysis=True))
     profile = CtpFuturesBasicProfile(profile_id="option-vega-basic", venue=Venue("CFFEX"),
-        starting_balance=args.starting_balance, commission_per_contract=args.commission)
+        starting_balance=args.starting_balance, commission_per_contract=args.commission,
+        **commission_config_from_args(args).profile_kwargs())
     backend.add_profile(profile)
     feed = create_market_feed(getattr(args, "market_source_config", None) or MarketSourceConfig(source="file"), "OPTION_VEGA_REPLAY")
     instruments = {}
@@ -272,6 +274,7 @@ def run_case(args):
             output = Path(args.report_dir) / str(result.backend_result.run_id)
             output.mkdir(parents=True, exist_ok=True)
             write_input_reports(output)
+            backend.write_commission_report(output)
             orders.to_csv(output / "orders.csv")
             fills.to_csv(output / "fills.csv")
             position_report.to_csv(output / "positions.csv")
@@ -328,6 +331,7 @@ def run_case(args):
 def main():
     """解析期权组合、数据路径及风险限制后启动回测。"""
     parser = argparse.ArgumentParser(description="认购期权卖方Vega预算与同月期货Delta对冲")
+    add_commission_arguments(parser)
     add_market_source_arguments(parser, backtest=True)
     parser.add_argument("--start-day", type=date.fromisoformat, required=True)
     parser.add_argument("--end-day", type=date.fromisoformat, required=True)
