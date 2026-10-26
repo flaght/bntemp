@@ -7,6 +7,7 @@
 | 函数 | 所属模块 | 用途 | 查询关键词 |
 | --- | --- | --- | --- |
 | [input_session](dataprep/input_session.md) | `bomber.framework.dataprep.session` | 管理单次运行的输入会话，复用缓存、文件版本和诊断，异常时尝试输出失败报告 | 装饰器、InputSession、嵌套调用、读取缓存、输入诊断、report_dir |
+| [BarReadSpec](dataprep/BarReadSpec.md) | `bomber.framework.dataprep.contracts` | 声明 Bar 字段、时间、交易日、可用时间和数值校验规则 | OHLCV、timestamp_label、field_mapping、available_column、value_policy、成交量 |
 | [prepare_role_research](dataprep/prepare_role_research.md) | `bomber.framework.dataprep.scenarios.role_futures` | 准备期货合约角色、行情时间范围和累计复权因子快照 | 主力、次主力、角色表、分钟时间标签、复权、factor_availability |
 | [venue_for_product（venue）](dataprep/venue_for_product.md) | `bomber.framework.dataprep.metadata` | 从基础资料查找品种唯一交易所并统一来源编码 | 交易所、exchangeCD、品种、Venue、VENUES、CONFLICTING_METADATA |
 | [SessionCalendar](calendars/SessionCalendar.md) | `bomber.framework.calendars` | 组合交易时段、交易日和日期例外，查询交易窗口与完整交易分钟 | SessionBinding、夜盘归属、交易日历、时区、时段例外、分钟查询 |
@@ -20,6 +21,7 @@
 doc/functions/
 ├── README.md
 ├── dataprep/
+│   ├── BarReadSpec.md
 │   ├── input_session.md
 │   ├── prepare_role_research.md
 │   └── venue_for_product.md

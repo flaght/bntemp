@@ -130,3 +130,39 @@ fees = CommissionConfig(
 舍入、错误数据、原始字段保留、版本可见性和逐笔CSV。
 适配层用SDK实体替身运行真实Python费用模型、Profile、合约工厂和CTP账本；
 它不代表原生引擎端到端撮合已经验收。
+
+## Linux服务器集中验收
+
+沿用04_cross_section的服务器流程：同步下面清单内全部文件及清单本身，
+在现有uv-nautilus环境执行。Mac仅补充源码和静态核对；本节新增原生用例尚待服务器结果。
+不需要SSH配置，不连接DolphinDB或CTP，不向SimNow报单。
+
+```bash
+cd /workspace/worker/pj/Chrono/nautilus_trader_demo/pro || exit 1
+export PYTHONPATH=.
+sha256sum -c doc/evidence/checksums/FUTURES_FEES_20261026_SHA256.txt || exit 1
+/workspace/worker/env/uv-nautilus/bin/python -u -m tests.run_futures_fees_acceptance
+```
+
+依次运行environment、rules、native、references、ctp、regression六组，每组独立进程。
+environment核验pyarrow、实际Bomber原生扩展及本次framework源码加载路径；缺依赖即失败。
+rules只运行原费用测试中的10项纯规则用例；native新增7项原生测试，覆盖真实Feather读写、
+同Venue混合费用/系数覆盖、开平仓、原生账户累计费用与现金扣减、报表一致性、零费率、
+固定费用覆盖、旧资料回退、缺资料拒绝，以及真实SDK身份下的CTP开平规则。
+references复测6项基础条款和36项参考来源用例；ctp复测原有高保真规则脚本；
+regression复用原91项受控SDK实体离线回归，不将它当作原生撮合证据。
+
+原生撮合使用声明量价的小样本Bar与独立临时Feather资料，不读取或改写现有role/行情文件。
+测试样本手续费只用于确定性断言，不代表交易所当前费率。固定费用合约每次开/平6元，
+比例费用合约每次开/平6.48元；混合测试累计24.96元，平仓后现金应为999975.04元。
+
+报告保存到`tests/results/futures-fees-acceptance-<id>/`，包含源码摘要、解释器/模块路径、
+每组日志、退出码、耗时和summary.json。native-artifacts下保留输入Feather、
+逐笔commissions.csv、账户扣费结果native_result.json和费用配置。
+首个失败即停止，修复后可只复测对应组，例如：
+
+```bash
+/workspace/worker/env/uv-nautilus/bin/python -u -m tests.run_futures_fees_acceptance --only native
+```
+
+只有服务器输出全部选定组通过，才登记服务器验收成功；本机既有126项不能替代该结果。
