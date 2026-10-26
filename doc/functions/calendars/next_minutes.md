@@ -27,4 +27,4 @@ expires_at_ns = future_ends[-1] + 1
 
 本函数只确定日历中的到期位置，不保证某时点可成交，也不恢复批次、目标、账户或订单。HybridTransformer 的 [holding.py](../../../demos/10_hybrid_transformer/holding.py) 保存绝对期限；[checkpoint.py](../../../demos/10_hybrid_transformer/checkpoint.py) 接入统一状态管理器。
 
-[返回函数索引](../README.md)
+[SessionCalendar 构造与主要方法](SessionCalendar.md) · [返回函数索引](../README.md)

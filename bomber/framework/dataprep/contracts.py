@@ -7,6 +7,7 @@ from decimal import Decimal
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Mapping
+from bomber.framework.fees import FuturesFee
 
 # 包重命名后，序列化诊断结构仍保持兼容。
 SCHEMA_VERSION = "inputs-v1"
@@ -125,6 +126,8 @@ class InstrumentSpec:
     month: str | None = None
     available_ns: int | None = None
     source_version: str | None = None
+    trade_fee: FuturesFee | None = None
+    delivery_fee: FuturesFee | None = None
 
 
 @dataclass(frozen=True)

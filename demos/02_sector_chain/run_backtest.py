@@ -22,6 +22,8 @@ from bomber.framework.dataprep.bars import add_bar_source
 from bomber.framework.dataprep.contracts import BarReadSpec
 from bomber.framework.dataprep.paths import resolve_futures_args
 from bomber.framework.dataprep.session import input_session, read_feather, write_input_reports
+from bomber.framework.fees import CommissionConfig
+from bomber.framework.dataprep.commissions import add_commission_arguments, commission_config_from_args
 from bomber.framework.dataprep.scenarios.role_futures import prepare_role_research
 
 from bomber.backtest.config import BacktestEngineConfig
@@ -66,6 +68,7 @@ def _report(*, root: Path, backend, result, strategy: SectorChainTargetStrategy,
     output = root / str(result.run_id)
     output.mkdir(parents=True, exist_ok=True)
     write_input_reports(output)
+    backend.write_commission_report(output)
     trader = backend.engine.trader
     orders.to_csv(output / "orders.csv")
     fills.to_csv(output / "fills.csv")
@@ -115,6 +118,7 @@ def run_case(*, start_day: date, end_day: date, bars_dir: Path,
              sector_period: int = 15, submission_delay_bars: int = 0,
              starting_balance: Decimal = Decimal("1000000"),
              commission_per_contract: Decimal = Decimal(1),
+             commission_config: CommissionConfig | None = None,
              margin_init: Decimal = Decimal("0.10"), margin_maint: Decimal = Decimal("0.08"),
              max_notional: Decimal = Decimal("1000000"),
              max_market_age_seconds: int = 120,
@@ -204,6 +208,7 @@ def run_case(*, start_day: date, end_day: date, bars_dir: Path,
             profile_id=f"sector-chain-{venue_name.lower()}",
             starting_balance=starting_balance,
             commission_per_contract=commission_per_contract,
+            **(commission_config or CommissionConfig()).profile_kwargs(),
             venue=Venue(venue_name),
         )
         backend.add_profile(profile)
@@ -307,6 +312,7 @@ def run_case(*, start_day: date, end_day: date, bars_dir: Path,
 @input_session
 def main() -> None:
     parser = argparse.ArgumentParser(description="CTP 产业链主力信号、次主力执行回测")
+    add_commission_arguments(parser)
     parser.add_argument("--start-day", required=True, type=date.fromisoformat)
     parser.add_argument("--end-day", required=True, type=date.fromisoformat)
     parser.add_argument("--leader-products", default="JM,I", help="两个领头品种，逗号分隔")
@@ -360,6 +366,7 @@ def main() -> None:
              submission_delay_bars=args.submission_delay_bars,
              starting_balance=args.starting_balance,
              commission_per_contract=args.commission_per_contract,
+             commission_config=commission_config_from_args(args),
              margin_init=args.margin_init, margin_maint=args.margin_maint,
              max_notional=args.max_notional,
              max_market_age_seconds=args.max_market_age_seconds,

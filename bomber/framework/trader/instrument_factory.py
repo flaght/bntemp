@@ -20,7 +20,7 @@ def day_ns(day, clock="00:00", timezone_name="Asia/Shanghai"):
 
 
 def make_profile_future(profile, *, symbol, product, tick, multiplier, listed,
-                        last_trade, margin_init, margin_maint):
+                        last_trade, margin_init, margin_maint, fee_info=None):
     from bomber.framework.market.basic.base import InstrumentMeta
     tick, multiplier = Decimal(str(tick)), Decimal(str(multiplier))
     if not multiplier.is_finite() or multiplier <= 0:
@@ -31,7 +31,8 @@ def make_profile_future(profile, *, symbol, product, tick, multiplier, listed,
         # 沿用商品期货模拟配置的合约生命周期时间口径。
         activation_ns=day_ns(listed, timezone_name="UTC"),
         expiration_ns=day_ns(last_trade, timezone_name="UTC") + 86_400_000_000_000,
-        margin_init=margin_init, margin_maint=margin_maint)
+        margin_init=margin_init, margin_maint=margin_maint,
+        **({"fee_info": fee_info} if fee_info is not None else {}))
     meta = InstrumentMeta(contract.id, price_precision=places, size_precision=0,
         price_increment=tick, multiplier=multiplier, currency="CNY", exchange=str(profile.venue))
     return contract, meta, multiplier
@@ -72,7 +73,23 @@ def make_future(symbol, row, margin_init, margin_maint):
         multiplier=Quantity.from_str(format(row["contMultNum"].normalize(), "f")),
         lot_size=Quantity.from_int(1), underlying=str(row["code"]).upper(),
         activation_ns=day_ns(row["listDate"]), expiration_ns=day_ns(row["lastTradeDate"], "15:00"),
-        margin_init=margin_init, margin_maint=margin_maint, ts_event=0, ts_init=0, exchange="CFFEX")
+        margin_init=margin_init, margin_maint=margin_maint, ts_event=0, ts_init=0, exchange="CFFEX",
+        info=futures_fee_info(row))
+
+
+def futures_fee_info(row):
+    """仅传递标准及原始费用资料；账户系数不写回合约条款。"""
+    from bomber.framework.fees import FuturesFee
+    result = {}
+    for kind, prefix in (("trade", "trade"), ("delivery", "deli")):
+        fee = FuturesFee.from_mapping(row, kind)
+        if fee is None:
+            continue
+        result.update({key: str(value) for key, value in fee.columns(kind).items()})
+        if fee.source_value is not None:
+            result[prefix + "CommiNum"] = str(fee.source_value)
+            result[prefix + "CommiUnit"] = fee.source_unit
+    return result
 
 
 def instrument_meta(contract):

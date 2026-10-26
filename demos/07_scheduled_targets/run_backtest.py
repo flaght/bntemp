@@ -25,6 +25,8 @@ from bomber.framework.dataprep.catalog import bar_files
 from bomber.framework.dataprep.contracts import BarReadSpec
 from bomber.framework.dataprep.paths import resolve_futures_args
 from bomber.framework.dataprep.session import input_session, read_feather, write_input_reports
+from bomber.framework.fees import CommissionConfig
+from bomber.framework.dataprep.commissions import add_commission_arguments, commission_config_from_args
 from bomber.framework.dataprep.schedules import load_target_csv, resolve_targets_path
 from bomber.framework.dataprep.scenarios.fixed_contracts import plan_fixed_contracts, prepare_fixed_contracts
 from bomber.framework.dataprep.futures import make_instrument
@@ -65,6 +67,7 @@ def run_case(*, targets: Path, start_day: date, end_day: date, bars_dir: Path,
              fut_basic: Path, timezone_name: str = "Asia/Shanghai",
              starting_balance: Decimal = Decimal("1000000"),
              commission_per_contract: Decimal = Decimal(1),
+             commission_config: CommissionConfig | None = None,
              margin_init: Decimal = Decimal("0.10"),
              margin_maint: Decimal = Decimal("0.08"),
              max_quantity: Decimal = Decimal(100),
@@ -131,6 +134,7 @@ def run_case(*, targets: Path, start_day: date, end_day: date, bars_dir: Path,
             profile_id=f"scheduled-{venue_name.lower()}",
             starting_balance=starting_balance,
             commission_per_contract=commission_per_contract,
+            **(commission_config or CommissionConfig()).profile_kwargs(),
             venue=Venue(venue_name),
         )
         backend.add_profile(profile)
@@ -212,6 +216,7 @@ def run_case(*, targets: Path, start_day: date, end_day: date, bars_dir: Path,
         output = report_dir / str(result.backend_result.run_id)
         output.mkdir(parents=True, exist_ok=True)
         write_input_reports(output)
+        backend.write_commission_report(output)
         orders.to_csv(output / "orders.csv")
         fills.to_csv(output / "fills.csv")
         pd.DataFrame([asdict(item) for item in strategy.audit]).to_csv(
@@ -266,6 +271,7 @@ def run_case(*, targets: Path, start_day: date, end_day: date, bars_dir: Path,
 def main() -> None:
     """解析公共路径和目标文件，不要求加载任何主力角色资料。"""
     parser = argparse.ArgumentParser(description="外部目标计划驱动的 CTP 期货回测")
+    add_commission_arguments(parser)
     parser.add_argument("--targets", required=True, type=Path, help="目标 CSV 文件")
     parser.add_argument("--start-day", required=True, type=date.fromisoformat)
     parser.add_argument("--end-day", required=True, type=date.fromisoformat)
@@ -303,6 +309,7 @@ def main() -> None:
              bars_dir=paths.fut, fut_basic=paths.fut_basic, timezone_name=args.timezone,
              starting_balance=args.starting_balance,
              commission_per_contract=args.commission_per_contract,
+             commission_config=commission_config_from_args(args),
              margin_init=args.margin_init, margin_maint=args.margin_maint,
              max_quantity=args.max_quantity, max_notional=args.max_notional,
              max_market_age_seconds=args.max_market_age_seconds,

@@ -23,6 +23,7 @@ class CtpExecutionAccounting:
         commission_rules: Mapping[InstrumentId, CtpCommissionRule] | None = None,
         *,
         generic_close_today_first_venues=(),
+        commission_config=None,
     ) -> None:
         self.ledger = ledger
         self.multipliers = {
@@ -30,9 +31,11 @@ class CtpExecutionAccounting:
             for instrument_id, value in multipliers.items()
         }
         self.commission_rules = dict(commission_rules or {})
+        self.commission_config = commission_config
         self.generic_close_today_first_venues = frozenset(generic_close_today_first_venues)
         self.results: list[CtpFillResult] = []
         self.commissions: list[Decimal] = []
+        self.commission_records: list[dict] = []
         self.settlements: list[CtpSettlementResult] = []
 
     @property
@@ -86,6 +89,12 @@ class CtpExecutionAccounting:
         multiplier = self.multipliers.get(report.instrument_id)
         if multiplier is None:
             raise ValueError(f"缺少CTP合约乘数: {report.instrument_id}")
+        rule = self.commission_rules.get(report.instrument_id)
+        # 在变更账本之前完成费用校验，避免无效费率导致账本只更新一半。
+        charge = None if rule is None else rule.calculate_details(
+            report.position_effect, report.filled_quantity, report.fill_price, multiplier,
+            commission_multiplier=None if self.commission_config is None
+                else self.commission_config.resolve(report.instrument_id))
         self.results.append(
             self.ledger.apply_fill(
                 report.instrument_id,
@@ -98,9 +107,16 @@ class CtpExecutionAccounting:
                     in self.generic_close_today_first_venues,
             ),
         )
-        rule = self.commission_rules.get(report.instrument_id)
         self.commissions.append(
             Decimal(0)
-            if rule is None
-            else rule.calculate(report.position_effect, report.filled_quantity),
+            if charge is None
+            else charge.actual_commission,
         )
+        self.commission_records.append({"instrument_id": str(report.instrument_id),
+            "client_order_id": report.client_order_id, "position_effect": report.position_effect.value,
+            "quantity": report.filled_quantity, "fill_price": report.fill_price,
+            "contract_multiplier": multiplier,
+            "source": "unconfigured" if charge is None else "commission_rule",
+            "standard_commission": Decimal(0) if charge is None else charge.standard_commission,
+            "commission_multiplier": None if charge is None else charge.commission_multiplier,
+            "actual_commission": self.commissions[-1]})

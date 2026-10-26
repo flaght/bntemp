@@ -15,7 +15,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from bomber.backtest.config import BacktestEngineConfig
-from bomber.backtest.models import PerContractFeeModel, StandardMarginModel
+from bomber.backtest.models import FeeModel, StandardMarginModel
 from bomber.model import Money, Venue
 from bomber.model.currencies import CNY
 from bomber.model.data import Bar
@@ -84,7 +84,7 @@ def test1_ctp_basic_profile_and_instrument() -> None:
     assert config["base_currency"] == CNY
     assert config["default_leverage"] == Decimal(1)
     assert isinstance(config["margin_model"], StandardMarginModel)
-    assert isinstance(config["fee_model"], PerContractFeeModel)
+    assert isinstance(config["fee_model"], FeeModel)
     assert config["use_position_ids"] is False
     assert config["use_reduce_only"] is True
 

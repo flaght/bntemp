@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any, Mapping
 
-from bomber.backtest.models import PerContractFeeModel, StandardMarginModel
+from bomber.backtest.models import StandardMarginModel
 from bomber.model import Money, Price, Quantity, Symbol, Venue
 from bomber.model.currencies import CNY
 from bomber.model.enums import AccountType, AssetClass, OmsType
@@ -18,6 +18,8 @@ from bomber.model.identifiers import InstrumentId
 from bomber.model.instruments import FuturesContract
 
 from bomber.framework.trader.execution.simulation.profile import GenericVenueProfile
+from bomber.framework.fees import CommissionConfig
+from bomber.framework.trader.execution.simulation.fees import CtpFuturesFeeModel
 
 
 def _decimal(value: Decimal | int | float | str) -> Decimal:
@@ -28,8 +30,8 @@ def _decimal(value: Decimal | int | float | str) -> Decimal:
 class CtpFuturesBasicProfile:
     """CTP期货的基础净持仓回测Profile。
 
-    ``NETTING`` 是E7的有意限制，只用于验证基础撮合、合约乘数、保证金和固定
-    每手手续费。需要同时持有多空仓，或区分平今/平昨时，必须使用后续E10的
+    ``NETTING`` 是E7的有意限制，只用于验证基础撮合、合约乘数、保证金和
+    每手/成交金额手续费。需要同时持有多空仓，或区分平今/平昨时，必须使用E10的
     高保真Profile，不能继续使用本类。
     """
 
@@ -37,18 +39,30 @@ class CtpFuturesBasicProfile:
     starting_balance: Decimal | int | float | str = Decimal("1000000")
     commission_per_contract: Decimal | int | float | str = Decimal("1")
     venue: Venue = field(default_factory=lambda: Venue("SHFE"))
+    commission_multiplier: Decimal | int | float | str = Decimal(1)
+    commission_product_multipliers: Mapping[str, Decimal] = field(default_factory=dict)
+    commission_contract_multipliers: Mapping[str, Decimal] = field(default_factory=dict)
+    delivery_fee_multiplier: Decimal | int | float | str = Decimal(1)
+    commission_source: str = "auto"
+    fee_model: CtpFuturesFeeModel = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         if not self.profile_id.strip():
             raise ValueError("profile_id不能为空")
         balance = _decimal(self.starting_balance)
         commission = _decimal(self.commission_per_contract)
-        if balance <= 0:
+        if not balance.is_finite() or balance <= 0:
             raise ValueError("starting_balance必须大于零")
-        if commission < 0:
-            raise ValueError("commission_per_contract不能为负数")
+        if not commission.is_finite() or commission < 0:
+            raise ValueError("commission_per_contract须为有限非负数")
         object.__setattr__(self, "starting_balance", balance)
         object.__setattr__(self, "commission_per_contract", commission)
+        config = CommissionConfig(**{name: getattr(self, name) for name in (
+            "commission_multiplier", "commission_product_multipliers",
+            "commission_contract_multipliers", "delivery_fee_multiplier", "commission_source")})
+        for name in config.profile_kwargs():
+            object.__setattr__(self, name, getattr(config, name))
+        object.__setattr__(self, "fee_model", CtpFuturesFeeModel(commission, config=config))
 
     def build_backend_config(self) -> Mapping[str, Any]:
         """构造基础CTP模拟Venue配置。"""
@@ -62,7 +76,7 @@ class CtpFuturesBasicProfile:
             base_currency=CNY,
             default_leverage=Decimal(1),
             margin_model=StandardMarginModel(),
-            fee_model=PerContractFeeModel(Money(self.commission_per_contract, CNY)),
+            fee_model=self.fee_model,
             use_position_ids=False,
             use_reduce_only=True,
             use_market_order_acks=True,
@@ -82,6 +96,7 @@ class CtpFuturesBasicProfile:
         expiration_ns: int,
         margin_init: Decimal | int | float | str,
         margin_maint: Decimal | int | float | str,
+        fee_info: Mapping[str, Any] | None = None,
     ) -> FuturesContract:
         """按指定交易规则创建一个CTP期货合约。"""
 
@@ -126,5 +141,5 @@ class CtpFuturesBasicProfile:
             exchange=str(self.venue),
             ts_event=0,
             ts_init=0,
-            info={"market_type": "CTP_FUTURES_BASIC", "profile_id": self.profile_id},
+            info={**dict(fee_info or {}), "market_type": "CTP_FUTURES_BASIC", "profile_id": self.profile_id},
         )
