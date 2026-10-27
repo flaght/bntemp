@@ -1,0 +1,56 @@
+{
+  "status": "passed",
+  "evidence_basis": "User-provided server console output, not an agent-initiated remote run",
+  "report_id": "futures-fees-acceptance-1793026876102616993",
+  "remote_report_directory": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/tests/results/futures-fees-acceptance-1793026876102616993",
+  "entry": "tests.run_futures_fees_acceptance",
+  "project": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro",
+  "python": "/workspace/worker/env/uv-nautilus/bin/python",
+  "python_version": "3.12.14",
+  "platform": "Linux-4.15.0-213-generic-x86_64-with-glibc2.35",
+  "pandas_version": "3.0.3",
+  "pyarrow_version": "24.0.0",
+  "deployment": {
+    "manifest": "doc/evidence/checksums/FUTURES_FEES_20261026_SHA256.txt",
+    "manifest_sha256": "8e43fea28b82eccc7dcfb97e67b4e8116cbe7c1886500cf07b44563adf14b497",
+    "manifest_role": "Path and SHA256 used during the accepted server run",
+    "archived_tested_manifest": "doc/evidence/checksums/FUTURES_FEES_20261026_TESTED_SHA256.txt",
+    "active_manifest_updated_for_documentation_only": true,
+    "all_manifest_entries_verified_by_user": true,
+    "native_engine_and_model_extensions_loaded_from": "/workspace/worker/env/uv-nautilus/lib/python3.12/site-packages/bomber",
+    "framework_modules_loaded_from_project": true
+  },
+  "groups": [
+    {"group": "environment", "exit_code": 0},
+    {"group": "rules", "exit_code": 0, "unittest_count": 10, "test_seconds": 0.019},
+    {"group": "native", "exit_code": 0, "unittest_count": 7, "test_seconds": 0.090},
+    {"group": "references", "exit_code": 0, "unittest_count": 42, "test_seconds": 2.587},
+    {"group": "ctp", "exit_code": 0, "scenario_count": 3, "scenarios": ["E10a", "E10b", "E10c"]},
+    {"group": "regression", "exit_code": 0, "unittest_count": 91, "test_seconds": 0.365}
+  ],
+  "total_unittest_count": 150,
+  "additional_ctp_scenario_count": 3,
+  "native_checks_passed": [
+    "Feather round-trip with original units and native FuturesContract construction",
+    "Fixed and percentage fees on the same native simulated venue",
+    "Global, product and contract coefficient selection",
+    "Native opening and closing fills, account cumulative fees and cash deduction",
+    "Audit CSV consistency, explicit zero fees, fixed override and legacy fallback",
+    "Missing metadata rejected before fills",
+    "CTP position-effect fee rules with native InstrumentId"
+  ],
+  "mixed_fee_test_expected_assertions": {
+    "fixed_fee_per_fill_cny": "6.00",
+    "percentage_fee_per_fill_cny": "6.48",
+    "total_commission_cny": "24.96",
+    "final_cash_cny": "999975.04",
+    "basis": "Assertions in the checksum-verified native test passed; native_result.json itself was not supplied"
+  },
+  "warnings": ["Pandas4Warning: Timestamp.utcnow is deprecated; all groups still exited with code 0"],
+  "scope": "Server offline acceptance with declared sample data. Native group uses real Bomber extensions; regression group uses controlled SDK entities. No live exchange or broker fee agreement is certified.",
+  "raw_console_log": "doc/evidence/live/FUTURES_FEES_REMOTE_20261026.txt",
+  "raw_console_log_sha256": "d4092a63b844a9d8d638082637764074d1343a367be35b96aab4a486c477cb73",
+  "remote_summary_and_native_artifacts_copied_locally": false,
+  "acceptance_record_changes_runtime_code": false,
+  "original_tested_manifest_preserved": true
+}

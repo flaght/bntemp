@@ -116,6 +116,31 @@ product_session_calendar = load_session_inputs(
 
 输出包括 `orders.csv`、`fills.csv`、`positions.csv`、`signals.csv`、`batches.csv`、`summary.json` 以及 `strategy_state.json`。批次报告新增开仓/到期纳秒时间；总结记录日历来源。`strategy_state.json` 是策略组件快照，不能替代账户、目标和订单的完整运行时检查点。
 
+## 手续费来源与系数
+
+Hybrid 回测统一使用 `fut_basic` 的费用规则，已移除 `commission_per_contract` 参数。公共合约工厂保留原始 `tradeCommiNum/tradeCommiUnit` 并传递标准化费用，框架按实际成交量价和合约乘数计算；支持元/手及成交金额百分比。
+
+不传 `commission_config` 时使用 `CommissionConfig(commission_source="metadata")`，系数为 1。缺少合约交易费用时，框架在注册合约、模型加载前报错。显式零费率仍是有效资料；不允许 `auto` 或 `fixed` 回退模式。
+
+需要调整手续费系数时：
+
+```python
+from decimal import Decimal
+from bomber.framework.fees import CommissionConfig
+
+fees = CommissionConfig(
+    commission_source="metadata",
+    commission_multiplier=Decimal("1.2"),
+    commission_product_multipliers={"RB": Decimal("1.5")},
+    commission_contract_multipliers={"rb2704.SHFE": Decimal("1.8")},
+)
+# run_case(..., commission_config=fees)
+```
+
+合约系数优先于品种，品种优先于全局，覆盖关系由框架统一处理，入口不会再乘一次。结果目录保留 `commissions.csv` 和 `commission_config.json`，记录标准费用、最终系数、实际费用和来源。共享 Profile 的旧固定费用字段仅供其他入口兼容，Hybrid 的严格资料模式不会使用该回退金额。
+
+当前基础净持仓模型使用源表通用交易费用；源表只有一组交易费时，开仓、平今、平昨沿用同一标准，不凭空推断差异。完整费用边界见[框架手续费说明](../../doc/data/FUTURES_FEES.md)。
+
 ## 中断恢复与独立时钟
 
 `checkpoint.HybridCheckpoint(strategy)` 实现框架 `snapshot_state/restore_state/validate_targets` 接口。恢复会验证预算、周期、信号配置、执行路由及日历指纹，保留原批次 ID、期限、槽位、最后处理位置和目标版本。变更日历覆盖或规则须显式迁移，不能直接用旧快照恢复。

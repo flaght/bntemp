@@ -220,7 +220,7 @@ class BarParserTests(unittest.TestCase):
             finally:
                 feed.disconnect()
 
-    def test_demo_entry_uses_framework_parser_and_builds_execution_once_for_two_days(self):
+    def _run_demo_entry(self, commission_config=None, **extra):
         # 执行当前 run_case 的真实函数体，外部引擎/模型替换为离线组件。
         from dataclasses import asdict, is_dataclass
         from datetime import date, timedelta
@@ -266,6 +266,7 @@ class BarParserTests(unittest.TestCase):
         basic = NS(columns={'code', 'symbol', 'exchangeCD', 'contMultNum', 'minChgPriceNum',
                             'listDate', 'lastTradeDate'})
         from bomber.framework.fees import CommissionConfig
+        profile_builder = Mock(side_effect=lambda **kwargs: NS(**kwargs))
         namespace = dict(date=date, timedelta=timedelta, Decimal=Decimal, Path=Path,
             CommissionConfig=CommissionConfig,
             asdict=asdict, is_dataclass=is_dataclass, json=json,
@@ -274,7 +275,7 @@ class BarParserTests(unittest.TestCase):
             prepare_role_research=lambda **kwargs: loaded, read_feather=lambda path: basic,
             Venue=str, venue_for_product=lambda *args: 'DCE', NautilusSimExecutionBackend=lambda *args: backend,
             BacktestEngineConfig=lambda **kwargs: NS(**kwargs), TraderId=str,
-            LoggingConfig=lambda **kwargs: NS(**kwargs), CtpFuturesBasicProfile=lambda **kwargs: NS(**kwargs),
+            LoggingConfig=lambda **kwargs: NS(**kwargs), CtpFuturesBasicProfile=profile_builder,
             FileReplayFeed=lambda *args: feed, build_instrument=instrument,
             HybridTransformerConfig=lambda **kwargs: NS(target_key='p_main', **kwargs),
             BarReadSpec=lambda **kwargs: NS(**kwargs),
@@ -308,15 +309,46 @@ class BarParserTests(unittest.TestCase):
                 release_path=directory, directions_file=directory / 'directions',
                 signal_config=directory / 'signals', report_dir=directory, max_contracts=10,
                 calendar=NS(product='P', provenance={'sha256': 'fixture'}),
-                value_column='amount', open_interest_column='oi')
+                value_column='amount', open_interest_column='oi',
+                commission_config=commission_config, **extra)
             self.assertTrue((output / 'summary.json').is_file())
             namespace['write_input_reports'].assert_called_once_with(output)
+            backend.write_commission_report.assert_called_once_with(output)
         build.assert_called_once()
         self.assertEqual(len(executed), 6)  # 首日新主力一对；换月日新旧两合约各一对。
         for bar, custom in zip(executed[::2], executed[1::2]):
             self.assertIs(custom.bar, bar)
             self.assertIn('open_interest', custom.factors)
             self.assertEqual(custom.factors['close'], 100.567)
+        profile_builder.assert_called_once()
+        return profile_builder.call_args.kwargs
+
+    def test_demo_entry_uses_framework_parser_and_builds_execution_once_for_two_days(self):
+        profile = self._run_demo_entry()
+        self.assertEqual(profile['commission_source'], 'metadata')
+        self.assertEqual(profile['commission_multiplier'], Decimal(1))
+        self.assertNotIn('commission_per_contract', profile)
+
+    def test_demo_passes_explicit_fee_multipliers_to_framework_without_multiplying_them(self):
+        from bomber.framework.fees import CommissionConfig
+        config = CommissionConfig(commission_source='metadata', commission_multiplier='1.2',
+            commission_product_multipliers={'P': '1.5'},
+            commission_contract_multipliers={'p2601.DCE': '1.8'}, delivery_fee_multiplier='2')
+        profile = self._run_demo_entry(config)
+        self.assertEqual({key: profile[key] for key in config.profile_kwargs()}, config.profile_kwargs())
+        self.assertNotIn('commission_per_contract', profile)
+
+    def test_demo_rejects_automatic_and_fixed_fee_fallbacks(self):
+        from bomber.framework.fees import CommissionConfig
+        for source in ('auto', 'fixed'):
+            with self.subTest(source=source), self.assertRaisesRegex(ValueError, "commission_source='metadata'"):
+                self._run_demo_entry(CommissionConfig(commission_source=source))
+        with self.assertRaisesRegex(ValueError, "commission_source='metadata'"):
+            self._run_demo_entry(commission_config={})
+
+    def test_demo_rejects_removed_fixed_fee_argument(self):
+        with self.assertRaisesRegex(TypeError, 'commission_per_contract'):
+            self._run_demo_entry(commission_per_contract=Decimal(0))
 
 
 if __name__ == '__main__':

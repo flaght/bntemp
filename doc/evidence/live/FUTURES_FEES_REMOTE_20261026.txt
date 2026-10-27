@@ -1,0 +1,281 @@
+(uv-nautilus) root@a5812f0711aa:/workspace/worker/pj/Chrono/nautilus_trader_demo/pro# /workspace/worker/env/uv-nautilus/bin/python -u \
+  -m tests.run_futures_fees_acceptance
+手续费远端验收 Python=/workspace/worker/env/uv-nautilus/bin/python project=/workspace/worker/pj/Chrono/nautilus_trader_demo/pro report=/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/tests/results/futures-fees-acceptance-1793026876102616993
+开始: environment
+{
+  "python": "/workspace/worker/env/uv-nautilus/bin/python",
+  "version": "3.12.14 (main, Aug 14 2026, 15:34:45) [Clang 22.1.3 ]",
+  "project": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro",
+  "platform": "Linux-4.15.0-213-generic-x86_64-with-glibc2.35",
+  "modules": {
+    "pandas": {
+      "path": "/workspace/worker/env/uv-nautilus/lib/python3.12/site-packages/pandas/__init__.py",
+      "version": "3.0.3"
+    },
+    "pyarrow": {
+      "path": "/workspace/worker/env/uv-nautilus/lib/python3.12/site-packages/pyarrow/__init__.py",
+      "version": "24.0.0"
+    },
+    "dotenv": {
+      "path": "/workspace/worker/env/uv-nautilus/lib/python3.12/site-packages/dotenv/__init__.py",
+      "version": null
+    },
+    "bomber.backtest.engine": {
+      "path": "/workspace/worker/env/uv-nautilus/lib/python3.12/site-packages/bomber/backtest/engine.cpython-312-x86_64-linux-gnu.so",
+      "version": null
+    },
+    "bomber.model.objects": {
+      "path": "/workspace/worker/env/uv-nautilus/lib/python3.12/site-packages/bomber/model/objects.cpython-312-x86_64-linux-gnu.so",
+      "version": null
+    },
+    "bomber.model.data": {
+      "path": "/workspace/worker/env/uv-nautilus/lib/python3.12/site-packages/bomber/model/data.cpython-312-x86_64-linux-gnu.so",
+      "version": null
+    },
+    "bomber.framework.fees": {
+      "path": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/bomber/framework/fees.py",
+      "version": null
+    },
+    "bomber.framework.dataprep.metadata": {
+      "path": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/bomber/framework/dataprep/metadata.py",
+      "version": null
+    },
+    "bomber.framework.trader.execution.simulation.fees": {
+      "path": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/bomber/framework/trader/execution/simulation/fees.py",
+      "version": null
+    }
+  }
+}
+结束: environment exit=0
+开始: rules
+test_basic_shared_parsing_delivery_separation_and_round_trip (tests.test_futures_fees.FeeContractTests.test_basic_shared_parsing_delivery_separation_and_round_trip) ... ok
+test_cli_configuration_and_duplicate_rejection (tests.test_futures_fees.FeeContractTests.test_cli_configuration_and_duplicate_rejection) ... ok
+test_coefficient_precedes_rounding_and_can_be_below_one (tests.test_futures_fees.FeeContractTests.test_coefficient_precedes_rounding_and_can_be_below_one) ... ok
+test_combined_fees_and_zero_fee (tests.test_futures_fees.FeeContractTests.test_combined_fees_and_zero_fee) ... ok
+test_fee_versions_keep_existing_asof_gate (tests.test_futures_fees.FeeContractTests.test_fee_versions_keep_existing_asof_gate) ... ok
+test_fixed_and_percentage_with_multiplier (tests.test_futures_fees.FeeContractTests.test_fixed_and_percentage_with_multiplier) ... ok
+test_override_priority_and_immutable_config (tests.test_futures_fees.FeeContractTests.test_override_priority_and_immutable_config) ... ok
+test_reference_export_preserves_raw_fee_fields (tests.test_futures_fees.FeeContractTests.test_reference_export_preserves_raw_fee_fields) ... ok
+test_reject_incomplete_unknown_and_conflicting_units (tests.test_futures_fees.FeeContractTests.test_reject_incomplete_unknown_and_conflicting_units) ... ok
+test_reject_invalid_numbers_and_missing_notional_inputs (tests.test_futures_fees.FeeContractTests.test_reject_invalid_numbers_and_missing_notional_inputs) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 0.019s
+
+OK
+结束: rules exit=0
+开始: native
+test_ctp_effect_rules_with_native_identity (tests.test_futures_fees_native.NativeFuturesFeeTests.test_ctp_effect_rules_with_native_identity) ... ok
+test_feather_roundtrip_and_native_instruments (tests.test_futures_fees_native.NativeFuturesFeeTests.test_feather_roundtrip_and_native_instruments)... ok
+test_native_fixed_override (tests.test_futures_fees_native.NativeFuturesFeeTests.test_native_fixed_override) ... /workspace/worker/pj/Chrono/nautilus_trader_demo/pro/bomber/framework/trader/execution/simulation/backend.py:150: Pandas4Warning: Timestamp.utcnow is deprecated and will be removedin a future version. Use Timestamp.now('UTC') instead.
+  self.engine.run(streaming=True)
+/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/bomber/framework/trader/execution/simulation/backend.py:190: Pandas4Warning: Timestamp.utcnowis deprecated and will be removed in a future version. Use Timestamp.now('UTC') instead.
+  self.engine.end()
+ok
+test_native_legacy_fallback (tests.test_futures_fees_native.NativeFuturesFeeTests.test_native_legacy_fallback) ... /workspace/worker/pj/Chrono/nautilus_trader_demo/pro/bomber/framework/trader/execution/simulation/backend.py:150: Pandas4Warning: Timestamp.utcnow is deprecated and will be removed in a future version. Use Timestamp.now('UTC') instead.
+  self.engine.run(streaming=True)
+/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/bomber/framework/trader/execution/simulation/backend.py:190: Pandas4Warning: Timestamp.utcnowis deprecated and will be removed in a future version. Use Timestamp.now('UTC') instead.
+  self.engine.end()
+ok
+test_native_metadata_missing_rejected_before_fills (tests.test_futures_fees_native.NativeFuturesFeeTests.test_native_metadata_missing_rejected_before_fills) ... ok
+test_native_mixed_fees_overrides_and_cash_deduction (tests.test_futures_fees_native.NativeFuturesFeeTests.test_native_mixed_fees_overrides_and_cash_deduction) ... /workspace/worker/pj/Chrono/nautilus_trader_demo/pro/bomber/framework/trader/execution/simulation/backend.py:150: Pandas4Warning: Timestamp.utcnow is deprecated and will be removed in a future version. Use Timestamp.now('UTC') instead.
+  self.engine.run(streaming=True)
+/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/bomber/framework/trader/execution/simulation/backend.py:190: Pandas4Warning: Timestamp.utcnowis deprecated and will be removed in a future version. Use Timestamp.now('UTC') instead.
+  self.engine.end()
+ok
+test_native_zero_fee_is_explicit (tests.test_futures_fees_native.NativeFuturesFeeTests.test_native_zero_fee_is_explicit) ... /workspace/worker/pj/Chrono/nautilus_trader_demo/pro/bomber/framework/trader/execution/simulation/backend.py:150: Pandas4Warning: Timestamp.utcnow is deprecated and will be removed in a future version. Use Timestamp.now('UTC') instead.
+  self.engine.run(streaming=True)
+/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/bomber/framework/trader/execution/simulation/backend.py:190: Pandas4Warning: Timestamp.utcnowis deprecated and will be removed in a future version. Use Timestamp.now('UTC') instead.
+  self.engine.end()
+ok
+
+----------------------------------------------------------------------
+Ran 7 tests in 0.090s
+
+OK
+结束: native exit=0
+开始: references
+test_day_end_gate_and_immutable_values_for_both_assets (tests.test_basic_alignment.BasicAlignmentTests.test_day_end_gate_and_immutable_values_for_both_assets) ... ok
+test_file_adapters_share_reader_and_preserve_source_fields (tests.test_basic_alignment.BasicAlignmentTests.test_file_adapters_share_reader_and_preserve_source_fields) ... ok
+test_mapping_tick_priority_and_invalid_tick (tests.test_basic_alignment.BasicAlignmentTests.test_mapping_tick_priority_and_invalid_tick) ... ok
+test_publication_source_age_and_duplicate_gate_for_both_assets (tests.test_basic_alignment.BasicAlignmentTests.test_publication_source_age_and_duplicate_gate_for_both_assets) ... ok
+test_reference_identity_and_execution_requirements (tests.test_basic_alignment.BasicAlignmentTests.test_reference_identity_and_execution_requirements) ... ok
+test_static_entry_still_rejects_version_fields_and_terms_share_validation (tests.test_basic_alignment.BasicAlignmentTests.test_static_entry_still_rejects_version_fields_and_terms_share_validation) ... ok
+test_alias_conflicts_and_duplicate_columns_are_rejected (tests.test_reference_sources.ReferenceSourceTests.test_alias_conflicts_and_duplicate_columns_are_rejected) ... ok
+test_basic_symbol_product_and_listing_date (tests.test_reference_sources.ReferenceSourceTests.test_basic_symbol_product_and_listing_date) ... ok
+test_connect_and_query_errors_do_not_leak_credentials (tests.test_reference_sources.ReferenceSourceTests.test_connect_and_query_errors_do_not_leak_credentials) ... ok
+test_database_adapter_defaults_to_role_source_day (tests.test_reference_sources.ReferenceSourceTests.test_database_adapter_defaults_to_role_source_day) ... ok
+test_database_and_existing_file_entry_have_same_snapshot_and_metadata (tests.test_reference_sources.ReferenceSourceTests.test_database_and_existing_file_entry_have_same_snapshot_and_metadata) ... ok
+test_date_and_symbol_filters_are_enforced_on_result (tests.test_reference_sources.ReferenceSourceTests.test_date_and_symbol_filters_are_enforced_on_result) ... ok
+test_discover_four_cffex_products_uses_each_own_factor_and_multiplier (tests.test_reference_sources.ReferenceSourceTests.test_discover_four_cffex_products_uses_each_own_factor_and_multiplier) ... ok
+test_discover_matches_factor_contracts_for_ema_cross_and_raw_calendar_roles (tests.test_reference_sources.ReferenceSourceTests.test_discover_matches_factor_contracts_for_ema_cross_and_raw_calendar_roles) ... ok
+test_discover_missing_factor_is_not_reported_as_observed_role_only_success (tests.test_reference_sources.ReferenceSourceTests.test_discover_missing_factor_is_not_reported_as_observed_role_only_success) ... ok
+test_discover_rejects_factor_contract_changed_between_ema_and_cross_reads (tests.test_reference_sources.ReferenceSourceTests.test_discover_rejects_factor_contract_changed_between_ema_and_cross_reads) ... ok
+test_explicit_policy_does_not_guess_publication (tests.test_reference_sources.ReferenceSourceTests.test_explicit_policy_does_not_guess_publication) ... ok
+test_factor_and_contract_code_have_different_meanings (tests.test_reference_sources.ReferenceSourceTests.test_factor_and_contract_code_have_different_meanings) ... ok
+test_factory_is_lazy_and_placeholders_fail_explicitly (tests.test_reference_sources.ReferenceSourceTests.test_factory_is_lazy_and_placeholders_fail_explicitly) ... ok
+test_file_source_and_database_share_normalized_fields (tests.test_reference_sources.ReferenceSourceTests.test_file_source_and_database_share_normalized_fields) ... ok
+test_future_basic_publication_also_blocks_snapshot (tests.test_reference_sources.ReferenceSourceTests.test_future_basic_publication_also_blocks_snapshot) ... ok
+test_future_publication_blocks_until_visible (tests.test_reference_sources.ReferenceSourceTests.test_future_publication_blocks_until_visible) ... ok
+test_invalid_execution_metadata_is_rejected (tests.test_reference_sources.ReferenceSourceTests.test_invalid_execution_metadata_is_rejected) ... ok
+test_invalid_or_conflicting_factor_is_rejected (tests.test_reference_sources.ReferenceSourceTests.test_invalid_or_conflicting_factor_is_rejected) ... ok
+test_main_factor_override_does_not_change_execution_secondary (tests.test_reference_sources.ReferenceSourceTests.test_main_factor_override_does_not_change_execution_secondary) ... ok
+test_mid_read_update_is_rejected (tests.test_reference_sources.ReferenceSourceTests.test_mid_read_update_is_rejected) ... ok
+test_missing_current_factor_cannot_use_previous_day (tests.test_reference_sources.ReferenceSourceTests.test_missing_current_factor_cannot_use_previous_day) ... ok
+test_multiple_products_use_one_complete_source_day (tests.test_reference_sources.ReferenceSourceTests.test_multiple_products_use_one_complete_source_day) ... ok
+test_observed_source_day_is_available_during_night_session_without_backdating (tests.test_reference_sources.ReferenceSourceTests.test_observed_source_day_is_available_during_night_session_without_backdating) ... ok
+test_observed_source_day_still_respects_future_explicit_publication (tests.test_reference_sources.ReferenceSourceTests.test_observed_source_day_still_respects_future_explicit_publication) ... ok
+test_option_without_contract_object_keeps_identity (tests.test_reference_sources.ReferenceSourceTests.test_option_without_contract_object_keeps_identity) ... ok
+test_public_role_adapters_support_secondary_file_and_source (tests.test_reference_sources.ReferenceSourceTests.test_public_role_adapters_support_secondary_file_and_source) ... ok
+test_query_is_bounded_readonly_and_truncation_fails (tests.test_reference_sources.ReferenceSourceTests.test_query_is_bounded_readonly_and_truncation_fails) ... ok
+test_read_failure_blocks_cached_snapshot_until_successful_refresh (tests.test_reference_sources.ReferenceSourceTests.test_read_failure_blocks_cached_snapshot_until_successful_refresh) ... ok
+test_same_day_role_is_not_used_as_previous_source (tests.test_reference_sources.ReferenceSourceTests.test_same_day_role_is_not_used_as_previous_source) ... ok
+test_source_day_cannot_use_current_day_factor (tests.test_reference_sources.ReferenceSourceTests.test_source_day_cannot_use_current_day_factor) ... ok
+test_source_day_cross_date_gap_uses_role_day_not_calendar_yesterday (tests.test_reference_sources.ReferenceSourceTests.test_source_day_cross_date_gap_uses_role_day_not_calendar_yesterday) ... ok
+test_source_day_explicit_publication_overrides_day_end_assumption (tests.test_reference_sources.ReferenceSourceTests.test_source_day_explicit_publication_overrides_day_end_assumption) ... ok
+test_source_day_file_and_database_share_explicit_source_policy (tests.test_reference_sources.ReferenceSourceTests.test_source_day_file_and_database_share_explicit_source_policy) ... ok
+test_source_day_missing_cannot_fall_back_to_older_factor (tests.test_reference_sources.ReferenceSourceTests.test_source_day_missing_cannot_fall_back_to_older_factor) ... ok
+test_unsafe_names_and_queries_are_rejected (tests.test_reference_sources.ReferenceSourceTests.test_unsafe_names_and_queries_are_rejected) ... ok
+test_update_cannot_be_visible_to_older_event (tests.test_reference_sources.ReferenceSourceTests.test_update_cannot_be_visible_to_older_event) ... ok
+
+----------------------------------------------------------------------
+Ran 42 tests in 2.587s
+
+OK
+结束: references exit=0
+开始: ctp
+E10a通过：CTP双向今昨仓、逐日盯市和指定平仓账本正常
+E10b通过：CTP目标已生成平今、平昨、反向开仓及差异化手续费
+E10c通过：ExecutionReport已同步CTP账本，HEDGING Profile与每日结算正常
+结束: ctp exit=0
+开始: regression
+test_deadline_inclusive_and_received_time_controls_visibility (tests.test_option_feature_backtest.FeatureBacktestTests.test_deadline_inclusive_and_received_time_controls_visibility) ... ok
+test_file_and_live_share_schema_and_computation_version (tests.test_option_feature_backtest.FeatureBacktestTests.test_file_and_live_share_schema_and_computation_version) ... ok
+test_first_visible_revision_is_frozen_like_live_projection (tests.test_option_feature_backtest.FeatureBacktestTests.test_first_visible_revision_is_frozen_like_live_projection) ... ok
+test_future_revision_does_not_change_already_selected_minute (tests.test_option_feature_backtest.FeatureBacktestTests.test_future_revision_does_not_change_already_selected_minute) ... ok
+test_incompatible_computation_version_fails_manifest_validation (tests.test_option_feature_backtest.FeatureBacktestTests.test_incompatible_computation_version_fails_manifest_validation) ... ok
+test_late_market_leg_does_not_enter_closed_frame (tests.test_option_feature_backtest.FeatureBacktestTests.test_late_market_leg_does_not_enter_closed_frame) ... ok
+test_market_leg_at_deadline_is_included (tests.test_option_feature_backtest.FeatureBacktestTests.test_market_leg_at_deadline_is_included) ... ok
+test_missing_same_minute_is_skipped_without_asof_fill (tests.test_option_feature_backtest.FeatureBacktestTests.test_missing_same_minute_is_skipped_without_asof_fill) ... ok
+test_original_strategy_receives_frame_at_native_clock_deadline (tests.test_option_feature_backtest.FeatureBacktestTests.test_original_strategy_receives_frame_at_native_clock_deadline) ... ok
+test_quality_failure_is_not_treated_as_missing_index (tests.test_option_feature_backtest.FeatureBacktestTests.test_quality_failure_is_not_treated_as_missing_index) ... ok
+test_cli_separates_market_time_and_execution_authorization (tests.test_option_vega_assembly.AssemblyTests.test_cli_separates_market_time_and_execution_authorization) ... ok
+test_delayed_partial_fill_hedges_filled_lots_without_resending_option (tests.test_option_vega_assembly.AssemblyTests.test_delayed_partial_fill_hedges_filled_lots_without_resending_option) ... 期权会话就绪: execution=model valuation_day=20260813; 停机保留策略仓位
+ok
+test_dfs_index_after_frame_deadline_does_not_create_recording_goal (tests.test_option_vega_assembly.AssemblyTests.test_dfs_index_after_frame_deadline_does_not_create_recording_goal) ... 期权会话就绪: execution=recording valuation_day=20260813; 停机保留策略仓位
+分钟等待超时，跳过决策: minute=2026-08-13T13:58:00+08:00 missing_index=['000852'] wait_seconds=2；迟到数据不追溯决策
+ok
+test_dfs_index_enters_actual_recording_frame_without_execution_route (tests.test_option_vega_assembly.AssemblyTests.test_dfs_index_enters_actual_recording_frame_without_execution_route) ... 期权会话就绪: execution=recording valuation_day=20260813; 停机保留策略仓位
+ok
+test_expired_reference_report_keeps_day_and_zero_order_count (tests.test_option_vega_assembly.AssemblyTests.test_expired_reference_report_keeps_day_and_zero_order_count) ... ok
+test_failed_resume_preserves_file (tests.test_option_vega_assembly.AssemblyTests.test_failed_resume_preserves_file) ... 期权会话就绪: execution=model valuation_day=20260813; 停机保留策略仓位
+ok
+test_generic_close_is_explicitly_selected_for_cffex (tests.test_option_vega_assembly.AssemblyTests.test_generic_close_is_explicitly_selected_for_cffex) ... ok
+test_index_missing_logs_once_then_reports_recovered_projection (tests.test_option_vega_assembly.AssemblyTests.test_index_missing_logs_once_then_reports_recovered_projection) ... ok
+test_index_query_error_logged_and_propagated (tests.test_option_vega_assembly.AssemblyTests.test_index_query_error_logged_and_propagated) ... ok
+test_late_old_market_minute_after_index_projection_skips_old_frame_and_records_target (tests.test_option_vega_assembly.AssemblyTests.test_late_old_market_minute_after_index_projection_skips_old_frame_and_records_target) ... 期权会话就绪: execution=recording valuation_day=20260813; 停机保留策略仓位
+指数分钟不可用: key=000852 minute=2026-08-13T13:57:00+08:00 status=OLDER_THAN_PROJECTED detail=请求分钟早于已投影分钟；不回放旧指数，旧帧按原期限处理
+分钟等待超时，跳过决策: minute=2026-08-13T13:57:00+08:00 missing_index=['000852'] wait_seconds=2；迟到数据不追溯决策
+ok
+test_mapped_replay_reaches_recording_target_and_model_owned_fill (tests.test_option_vega_assembly.AssemblyTests.test_mapped_replay_reaches_recording_target_and_model_owned_fill) ... 期权会话就绪: execution=recording valuation_day=20260813; 停机保留策略仓位
+期权会话就绪: execution=model valuation_day=20260813; 停机保留策略仓位
+ok
+test_missing_held_leg_waits_then_fails_without_erasing_position (tests.test_option_vega_assembly.AssemblyTests.test_missing_held_leg_waits_then_fails_without_erasing_position) ... 期权会话就绪: execution=model valuation_day=20260813; 停机保留策略仓位
+分钟帧必需输入缺失: minute=2026-08-13T14:04:00+08:00 keys=['MO2609-C-6600']；市场腿缺失Bar不在此自动补查，交由策略完整性检查
+分钟帧必需输入缺失: minute=2026-08-13T14:05:00+08:00 keys=['MO2609-C-6600']；市场腿缺失Bar不在此自动补查，交由策略完整性检查
+分钟帧必需输入缺失: minute=2026-08-13T14:06:00+08:00 keys=['MO2609-C-6600']；市场腿缺失Bar不在此自动补查，交由策略完整性检查
+分钟帧必需输入缺失: minute=2026-08-13T14:07:00+08:00 keys=['MO2609-C-6600']；市场腿缺失Bar不在此自动补查，交由策略完整性检查
+分钟帧必需输入缺失: minute=2026-08-13T14:08:00+08:00 keys=['MO2609-C-6600']；市场腿缺失Bar不在此自动补查，交由策略完整性检查
+分钟帧必需输入缺失: minute=2026-08-13T14:09:00+08:00 keys=['MO2609-C-6600']；市场腿缺失Bar不在此自动补查，交由策略完整性检查
+分钟帧必需输入缺失: minute=2026-08-13T14:10:00+08:00 keys=['MO2609-C-6600']；市场腿缺失Bar不在此自动补查，交由策略完整性检查
+分钟决策汇总: {"entry": "ALREADY_SELECTED", "entry_slot": "13:58", "exit_checks": [], "failure": "持仓计算缺少新鲜行情: MO2609-C-6600; 决策时间=2026-08-13T14:10:00+08:00 最新报价时间=2026-08-13T13:58:00+08:00 报价年龄秒=720.0 限制秒=300 实际仓位=-6 目标仓位=-6 在途数量=0", "fills_received_total": 1, "future_goals": {}, "hedge": "NOT_EVALUATED", "logic_version": "strategy1-noddb-v1", "minute": "2026-08-13T14:10:00+08:00", "option_goals":{"MO2609-C-6600": "-6"}, "order_updates_received_total": 2, "positions": {"MO2609-C-6600": "-6"}, "price_cache": {"000852": {"age_seconds": 0.0, "minute": "2026-08-13T14:10:00+08:00", "price": 6400.0}, "IM2609": {"age_seconds": 0.0, "minute": "2026-08-13T14:10:00+08:00", "price": 6500.0}, "MO2609-C-6600": {"age_seconds": 720.0, "minute": "2026-08-13T13:58:00+08:00", "price": 158.8}}, "request_at": "2026-10-11T18:00:16+08:00", "status": "ERROR", "strategy_id": "option-vega-live", "target_submissions_total": 1, "working": {}}
+ok
+test_model_owns_option_fills_then_hedges_actual_position (tests.test_option_vega_assembly.AssemblyTests.test_model_owns_option_fills_then_hedges_actual_position) ... 期权会话就绪: execution=model valuation_day=20260813; 停机保留策略仓位
+ok
+test_model_restore_preserves_position_and_does_not_reopen_same_day (tests.test_option_vega_assembly.AssemblyTests.test_model_restore_preserves_position_and_does_not_reopen_same_day) ... 期权会话就绪: execution=model valuation_day=20260813; 停机保留策略仓位
+期权会话就绪: execution=model valuation_day=20260813; 停机保留策略仓位
+ok
+test_native_audit_assembly_replaces_frozen_components_and_preserves_client (tests.test_option_vega_assembly.AssemblyTests.test_native_audit_assembly_replaces_frozen_components_and_preserves_client) ... ok
+test_quote_bar_is_mid_with_zero_volume_and_never_a_trade_tick (tests.test_option_vega_assembly.AssemblyTests.test_quote_bar_is_mid_with_zero_volume_and_never_a_trade_tick) ... ok
+test_realtime_future_optional_candidate_is_not_ignored (tests.test_option_vega_assembly.AssemblyTests.test_realtime_future_optional_candidate_is_not_ignored) ... 期权会话就绪: execution=recording valuation_day=20260813; 停机保留策略仓位
+ok
+test_realtime_stale_actual_position_remains_required_with_zero_goal (tests.test_option_vega_assembly.AssemblyTests.test_realtime_stale_actual_position_remains_required_with_zero_goal) ... 期权会话就绪: execution=model valuation_day=20260813; 停机保留策略仓位
+ok
+test_realtime_stale_index_remains_fatal (tests.test_option_vega_assembly.AssemblyTests.test_realtime_stale_index_remains_fatal) ... 期权会话就绪: execution=recording valuation_day=20260813; 停机保留策略仓位
+ok
+test_realtime_stale_optional_candidate_is_skipped_without_polluting_frame (tests.test_option_vega_assembly.AssemblyTests.test_realtime_stale_optional_candidate_is_skipped_without_polluting_frame) ... 期权会话就绪: execution=recording valuation_day=20260813; 停机保留策略仓位
+ok
+test_realtime_stale_target_option_and_its_future_remain_fatal (tests.test_option_vega_assembly.AssemblyTests.test_realtime_stale_target_option_and_its_future_remain_fatal) ... 期权会话就绪: execution=recording valuation_day=20260813; 停机保留策略仓位
+期权会话就绪: execution=recording valuation_day=20260813; 停机保留策略仓位
+ok
+test_recording_target_has_no_fake_fill_or_index_execution_route (tests.test_option_vega_assembly.AssemblyTests.test_recording_target_has_no_fake_fill_or_index_execution_route) ... 期权会话就绪: execution=recording valuation_day=20260813; 停机保留策略仓位
+ok
+test_recording_wait_over_reference_ttl_refreshes_before_gate (tests.test_option_vega_assembly.AssemblyTests.test_recording_wait_over_reference_ttl_refreshes_before_gate) ... 期权会话就绪: execution=recording valuation_day=20260813; 停机保留策略仓位
+ok
+test_wrong_index_date_and_missing_candidate (tests.test_option_vega_assembly.AssemblyTests.test_wrong_index_date_and_missing_candidate) ... 期权会话就绪: execution=model valuation_day=20260813; 停机保留策略仓位
+ok
+test_attribution_updates_even_without_execution_event_subscribers (tests.test_position_attribution.AttributionTests.test_attribution_updates_even_without_execution_event_subscribers) ... ok
+test_cancel_and_reject_release_only_unfilled_reservation (tests.test_position_attribution.AttributionTests.test_cancel_and_reject_release_only_unfilled_reservation) ... ok
+test_changed_target_does_not_reassign_pending_fill (tests.test_position_attribution.AttributionTests.test_changed_target_does_not_reassign_pending_fill) ... ok
+test_conflicting_association_updates_account_but_closes_gate (tests.test_position_attribution.AttributionTests.test_conflicting_association_updates_account_but_closes_gate) ... ok
+test_different_clients_do_not_net_or_share_attribution (tests.test_position_attribution.AttributionTests.test_different_clients_do_not_net_or_share_attribution) ... ok
+test_different_instruments_never_net (tests.test_position_attribution.AttributionTests.test_different_instruments_never_net) ... ok
+test_dynamic_roll_aggregates_actual_old_and_new_contract_ownership (tests.test_position_attribution.AttributionTests.test_dynamic_roll_aggregates_actual_old_and_new_contract_ownership) ... ok
+test_legacy_logical_positions_are_not_guessed_into_real_contracts (tests.test_position_attribution.AttributionTests.test_legacy_logical_positions_are_not_guessed_into_real_contracts) ... ok
+test_mismatched_checkpoint_is_rejected_before_restore (tests.test_position_attribution.AttributionTests.test_mismatched_checkpoint_is_rejected_before_restore) ... ok
+test_opposite_targets_internal_transfer_and_external_remainder (tests.test_position_attribution.AttributionTests.test_opposite_targets_internal_transfer_and_external_remainder) ... ok
+test_partial_full_close_and_duplicate_before_callbacks_in_both_clients (tests.test_position_attribution.AttributionTests.test_partial_full_close_and_duplicate_before_callbacks_in_both_clients) ... ok
+test_restart_preserves_association_and_duplicate_fill_keys (tests.test_position_attribution.AttributionTests.test_restart_preserves_association_and_duplicate_fill_keys) ... ok
+test_same_direction_merged_order_splits_fill_and_fee (tests.test_position_attribution.AttributionTests.test_same_direction_merged_order_splits_fill_and_fee) ... ok
+test_same_strategy_multiple_logical_keys_keep_separate_ownership (tests.test_position_attribution.AttributionTests.test_same_strategy_multiple_logical_keys_keep_separate_ownership) ... ok
+test_strategy_working_quantity_tracks_its_frozen_share_only (tests.test_position_attribution.AttributionTests.test_strategy_working_quantity_tracks_its_frozen_share_only) ... ok
+test_unassigned_snapshot_blocks_execution_until_explicit_adoption (tests.test_position_attribution.AttributionTests.test_unassigned_snapshot_blocks_execution_until_explicit_adoption) ... ok
+test_unknown_fill_is_not_guessed_from_strategy_id (tests.test_position_attribution.AttributionTests.test_unknown_fill_is_not_guessed_from_strategy_id) ... ok
+test_unsent_order_releases_reservation (tests.test_position_attribution.AttributionTests.test_unsent_order_releases_reservation) ... ok
+test_zero_net_transfer_does_not_send_order (tests.test_position_attribution.AttributionTests.test_zero_net_transfer_does_not_send_order) ... ok
+test_another_bar_dataset_renamed_fields_five_minutes_same_feed_and_channel (tests.test_index_query_feed.QueryFeedTests.test_another_bar_dataset_renamed_fields_five_minutes_same_feed_and_channel) ... ok
+test_bootstrap_does_not_replay_day_only_pending_minute_delivered_once (tests.test_index_query_feed.QueryFeedTests.test_bootstrap_does_not_replay_day_only_pending_minute_delivered_once) ... ok
+test_cli_dfs_selection_explicit_availability_default (tests.test_index_query_feed.QueryFeedTests.test_cli_dfs_selection_explicit_availability_default) ... ok
+test_expired_pending_minute_rejected_by_public_buffer (tests.test_index_query_feed.QueryFeedTests.test_expired_pending_minute_rejected_by_public_buffer) ... ok
+test_late_missing_row_can_arrive_within_deadline (tests.test_index_query_feed.QueryFeedTests.test_late_missing_row_can_arrive_within_deadline) ...ok
+test_missing_old_index_arriving_after_new_projection_cannot_backfill (tests.test_index_query_feed.QueryFeedTests.test_missing_old_index_arriving_after_new_projection_cannot_backfill) ... ok
+test_old_pending_added_after_new_projection_does_not_regress_stream (tests.test_index_query_feed.QueryFeedTests.test_old_pending_added_after_new_projection_does_not_regress_stream) ... ok
+test_pending_minutes_are_projected_in_event_order (tests.test_index_query_feed.QueryFeedTests.test_pending_minutes_are_projected_in_event_order) ... ok
+test_precision_loss_fails_explicitly (tests.test_index_query_feed.QueryFeedTests.test_precision_loss_fails_explicitly) ... ok
+test_revisions_update_cache_without_reopening_already_delivered_minute (tests.test_index_query_feed.QueryFeedTests.test_revisions_update_cache_without_reopening_already_delivered_minute) ... ok
+test_stale_source_not_refreshed_into_fresh_bar (tests.test_index_query_feed.QueryFeedTests.test_stale_source_not_refreshed_into_fresh_bar) ... ok
+test_subscription_validation_at_connection (tests.test_index_query_feed.QueryFeedTests.test_subscription_validation_at_connection) ... ok
+test_automatic_anchor_is_shared_by_all_contracts_and_keeps_minute_gaps (tests.test_option_replay_test.ReplayTestMappingTests.test_automatic_anchor_is_shared_by_all_contracts_and_keeps_minute_gaps) ... ok
+test_clock_inputs_are_explicit_minutes (tests.test_option_replay_test.ReplayTestMappingTests.test_clock_inputs_are_explicit_minutes) ... ok
+test_cross_day_and_uncompleted_bar_rejected_without_resetting_anchor (tests.test_option_replay_test.ReplayTestMappingTests.test_cross_day_and_uncompleted_bar_rejected_without_resetting_anchor) ... ok
+test_explicit_16_to_09_changes_date_and_time_without_changing_source (tests.test_option_replay_test.ReplayTestMappingTests.test_explicit_16_to_09_changes_date_and_time_without_changing_source) ... ok
+test_feed_reuses_health_and_emits_mapped_bar_for_last_and_mid (tests.test_option_replay_test.ReplayTestMappingTests.test_feed_reuses_health_and_emits_mapped_bar_for_last_and_mid) ... ok
+test_mapping_outside_valuation_day_rejected (tests.test_option_replay_test.ReplayTestMappingTests.test_mapping_outside_valuation_day_rejected) ...ok
+test_delegates_same_order_once_and_records_actual_limit_and_quote (tests.test_option_execution_audit.ExecutionAuditTests.test_delegates_same_order_once_and_records_actual_limit_and_quote) ... ok
+test_missing_or_stale_quote_never_claims_marketable_price (tests.test_option_execution_audit.ExecutionAuditTests.test_missing_or_stale_quote_never_claims_marketable_price) ... ok
+test_passive_buy_and_sell_prices_remain_unchanged (tests.test_option_execution_audit.ExecutionAuditTests.test_passive_buy_and_sell_prices_remain_unchanged) ... ok
+test_send_exception_propagates_without_retry (tests.test_option_execution_audit.ExecutionAuditTests.test_send_exception_propagates_without_retry) ... ok
+test_action_name_rejects_hyphens_before_sdk_calls (tests.test_option_dolphin_stream.DolphinMinuteTests.test_action_name_rejects_hyphens_before_sdk_calls) ... ok
+test_auto_schema_maps_reordered_optional_columns_without_guessing_positions (tests.test_option_dolphin_stream.DolphinMinuteTests.test_auto_schema_maps_reordered_optional_columns_without_guessing_positions) ... ok
+test_bad_ohlc_closes_health_and_does_not_refresh_receipt (tests.test_option_dolphin_stream.DolphinMinuteTests.test_bad_ohlc_closes_health_and_does_not_refresh_receipt) ... ok
+test_cli_requires_stream_and_explicit_minute_semantics (tests.test_option_dolphin_stream.DolphinMinuteTests.test_cli_requires_stream_and_explicit_minute_semantics) ... ok
+test_cumulative_volume_baseline_flat_minute_increment_and_day_reset (tests.test_option_dolphin_stream.DolphinMinuteTests.test_cumulative_volume_baseline_flat_minute_increment_and_day_reset) ... ok
+test_live_receipts_override_frozen_ready_snapshot_and_stale_still_fails (tests.test_option_dolphin_stream.DolphinMinuteTests.test_live_receipts_override_frozen_ready_snapshot_and_stale_still_fails) ... ok
+test_market_only_probe_does_not_query_or_subscribe_unknown_index (tests.test_option_dolphin_stream.DolphinMinuteTests.test_market_only_probe_does_not_query_or_subscribe_unknown_index) ... ok
+test_option_market_and_index_generate_valid_unique_action_names (tests.test_option_dolphin_stream.DolphinMinuteTests.test_option_market_and_index_generate_valid_unique_action_names) ... ok
+test_per_bar_volume_and_zero_volume_ohlc_are_preserved (tests.test_option_dolphin_stream.DolphinMinuteTests.test_per_bar_volume_and_zero_volume_ohlc_are_preserved) ... ok
+test_raw_probe_reads_index_schema_without_guessing_time_fields (tests.test_option_dolphin_stream.DolphinMinuteTests.test_raw_probe_reads_index_schema_without_guessing_time_fields) ... ok
+test_reported_numpy_time_rows_use_business_date_and_cumulative_increment (tests.test_option_dolphin_stream.DolphinMinuteTests.test_reported_numpy_time_rows_use_business_date_and_cumulative_increment) ... ok
+test_required_bar_gate_expires_source_even_if_late_receipt_is_recent (tests.test_option_dolphin_stream.DolphinMinuteTests.test_required_bar_gate_expires_source_even_if_late_receipt_is_recent) ... ok
+test_schema_missing_close_or_dfs_path_fails_before_subscription (tests.test_option_dolphin_stream.DolphinMinuteTests.test_schema_missing_close_or_dfs_path_fails_before_subscription) ... ok
+test_start_label_uses_completed_minute_for_event_age (tests.test_option_dolphin_stream.DolphinMinuteTests.test_start_label_uses_completed_minute_for_event_age) ... ok
+test_stream_callback_reaches_recording_target_without_ctp_market_or_td (tests.test_option_dolphin_stream.DolphinMinuteTests.test_stream_callback_reaches_recording_target_without_ctp_market_or_td) ... ok
+test_wrong_row_width_is_rejected (tests.test_option_dolphin_stream.DolphinMinuteTests.test_wrong_row_width_is_rejected) ... ok
+
+----------------------------------------------------------------------
+Ran 91 tests in 0.365s
+
+OK
+结束: regression exit=0
+全部选定手续费验收组通过: /workspace/worker/pj/Chrono/nautilus_trader_demo/pro/tests/results/futures-fees-acceptance-1793026876102616993
+(uv-nautilus) root@a5812f0711aa:/workspace/worker/pj/Chrono/nautilus_trader_demo/pro# 
