@@ -157,6 +157,59 @@ def read_bar_frame(path, spec=None, key=None):
     return replace(result, frame=frame.copy(deep=True))
 
 
+def filter_session_bars(result: BarLoadResult, calendar) -> BarLoadResult:
+    """在回放前按品种日历保留完整交易区间内的 Bar，返回独立副本。
+
+    read_bar_frame 已将起点/终点标签统一为 event_ns 结束边界；只有整个
+    [event_ns - interval, event_ns) 位于文件所属交易日的一个会话内才保留。
+    因此结束标签的收盘 Bar 会保留，开盘边界之前的 Bar、午休、盘后及被
+    例外取消的夜盘会剔除。原始时间标签及行情数值不变，不用成交量判定时段。
+    剔除数量记入输入诊断；全被剔除或日历覆盖不足时明确失败。
+    """
+    import pandas as pd
+    from bomber.framework.calendars.sessions import datetime_ns, ns_datetime
+
+    frame = result.frame
+    if frame.empty:
+        fail("NO_SESSION_BARS", "No bars available for session filtering", source=result.path)
+    ends = frame.event_ns
+    interval_ns = result.spec.interval_seconds * 1_000_000_000
+    # 覆盖不足不能被当成已确认休市；跨午夜的夜盘自然日期也须有覆盖。
+    calendar.calendar.require_range(
+        ns_datetime(int(ends.min()) - interval_ns, calendar.zone).date(),
+        ns_datetime(int(ends.max()) - 1, calendar.zone).date(),
+    )
+    keep = pd.Series(False, index=frame.index)
+    for window in calendar.windows(result.key.trading_day):
+        keep |= (ends.ge(datetime_ns(window.start) + interval_ns)
+                 & ends.le(datetime_ns(window.end)))
+    kept = frame.loc[keep].copy(deep=True).reset_index(drop=True)
+    dropped = len(frame) - len(kept)
+    issues = result.issues
+    if dropped:
+        samples = ", ".join(map(str, frame.loc[~keep, "source_timestamp"].head(3)))
+        issue = InputIssue("OUTSIDE_TRADING_SESSION",
+            f"Dropped {dropped}/{len(frame)} bars outside complete trading intervals; "
+            f"source timestamp samples: {samples}", "WARNING", str(result.path),
+            result.key.symbol, result.key.trading_day, "source_timestamp")
+        record_issue(issue)
+        issues += (issue,)
+    session = current_session()
+    if session is not None:
+        details = session.coverage.files.setdefault(str(result.path), {})
+        report = {"product": calendar.product, "trading_day": str(result.key.trading_day),
+            "calendar_sha256": calendar.provenance["sha256"],
+            "interval_seconds": result.spec.interval_seconds,
+            "input_rows": len(frame), "kept_rows": len(kept), "dropped_rows": dropped}
+        filters = details.setdefault("session_filters", [])
+        if report not in filters:
+            filters.append(report)
+    if kept.empty:
+        fail("NO_SESSION_BARS", "No complete bars remain in the declared trading sessions",
+             source=result.path, symbol=result.key.symbol, trading_day=result.key.trading_day)
+    return replace(result, frame=kept, issues=issues)
+
+
 class PreparedFrameReader:
     suffixes = frozenset({".feather"})
 

@@ -21,7 +21,13 @@
 | [NautilusMarketFeedAdapter](trader/NautilusMarketFeedAdapter.md) | `bomber.framework.trader.runtime.market_adapter` | 过滤并串行转发Feed行情，推进模拟Backend | manage_lifecycle、模拟时钟、回调顺序、事件统计 |
 | [UnifiedStrategyRunner](trader/UnifiedStrategyRunner.md) | `bomber.framework.trader.runner` | 装配策略、行情及执行客户端，汇总和路由目标并分发执行事件 | DataBinding、ExecutionRoute、组合目标、PositionManager、run_replay |
 | [RuntimeMode](trader/RuntimeMode.md) | `bomber.framework.trader.contracts` | 声明历史回放或实时事件环境，执行对应模式约束 | HISTORICAL、LIVE、historical、live、运行模式 |
+| [StrategyBindings](trader/StrategyBindings.md) | `bomber.framework.trader.assembly` | 集中声明策略数据、执行路由、角色守卫和时钟来源 | data、execution、RoleGuard、装配声明 |
+| [DataBinding](trader/DataBinding.md) | `bomber.framework.trader.contracts` | 将Feed真实合约行情映射到策略逻辑输入 | data_key、feed_id、CUSTOM_BAR、行情分发 |
+| [ExecutionRoute](trader/ExecutionRoute.md) | `bomber.framework.trader.contracts` | 将策略逻辑目标静态映射到执行客户端和真实合约 | target_key、client_id、静态路由、账户目标 |
+| [assemble_strategy](trader/assemble_strategy.md) | `bomber.framework.trader.assembly` | 校验共享状态并注册策略、Feed、观察者及执行客户端 | 组件注册、共享仓位、固定角色、装配顺序 |
+| [UnifiedHistoricalRuntime](trader/UnifiedHistoricalRuntime.md) | `bomber.framework.trader.runtime.historical` | 协调正式历史回测的启动、回放、完成、报告窗口和停止 | 下一事件成交、UnifiedHistoricalResult、finish、生命周期 |
 | [FixedInstrumentBarParser](market/FixedInstrumentBarParser.md) | `bomber.framework.market.replay.parsers.bar` | 将固定合约的逐行 OHLCV 转为标准 Bar，按需生成伴生 CustomBar | 字段映射、固定合约、available_ns、原始精度、CustomBar、成交额、持仓量 |
+| [futures_bar_values](market/futures_bar_values.md) | `bomber.framework.market.futures` | 提取期货CustomBar数值并按成交额、成交量、乘数计算及校验VWAP | 原始精度、openint、value、未复权、VWAP、合约乘数 |
 
 ## 目录约定
 
@@ -45,9 +51,15 @@ doc/functions/
 │   ├── MarketStreamBinding.md
 │   ├── NautilusMarketFeedAdapter.md
 │   ├── UnifiedStrategyRunner.md
-│   └── RuntimeMode.md
+│   ├── RuntimeMode.md
+│   ├── StrategyBindings.md
+│   ├── DataBinding.md
+│   ├── ExecutionRoute.md
+│   ├── assemble_strategy.md
+│   └── UnifiedHistoricalRuntime.md
 └── market/
-    └── FixedInstrumentBarParser.md
+    ├── FixedInstrumentBarParser.md
+    └── futures_bar_values.md
 ```
 
 新增说明时按实际模块建立分类，例如 `dataprep`、`datahub`、`market`、`trader`；同名函数来自不同模块时，在所属模块的分类目录内区分，不把多份解释堆在同一个文件中。
