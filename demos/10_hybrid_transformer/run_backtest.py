@@ -11,7 +11,7 @@ from bomber.model import Venue
 from bomber.config import LoggingConfig
 from bomber.model.identifiers import TraderId
 from bomber.backtest.config import BacktestEngineConfig
-from bomber.framework.dataprep.bars import PreparedFrameReader, read_bar_frame
+from bomber.framework.dataprep.bars import PreparedFrameReader, filter_session_bars, read_bar_frame
 from bomber.framework.dataprep.catalog import bar_path
 from bomber.framework.dataprep.contracts import BarReadSpec
 from bomber.framework.dataprep.futures import instrument as build_instrument
@@ -159,7 +159,7 @@ def run_case(*, product: str, start_day: date, end_day: date,
 
         for symbol in sorted(needed):
             path = bar_path(bars_dir, symbol, day)
-            prepared = read_bar_frame(path, spec=spec)
+            prepared = filter_session_bars(read_bar_frame(path, spec=spec), calendar)
             missing = {value_column, open_interest_column} - set(prepared.frame.columns)
             if missing:
                 raise ValueError(f"{path}: 缺少模型行情字段 {sorted(missing)}")
