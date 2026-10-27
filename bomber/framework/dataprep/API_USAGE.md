@@ -1,6 +1,6 @@
 # dataprep 函数使用说明
 
-本文按当前源码说明公共输入层的调用方式，重点是单品种动态主力策略。更新日期为 2026-10-05。函数签名是开发接口说明，示例未在本地执行。运行证据来自用户 Linux 环境，详见 [主力 EMA 说明](../../../demos/01_main_ema/README.md) 和 [实施记录](../../../doc/strategies/DEMOS_INPUT_STAGE1_IMPLEMENTATION_2026-10-04.md)。
+本文按当前源码说明公共输入层的调用方式，重点是单品种动态主力策略。更新日期为 2026-10-26，本轮补充手续费读取、系数配置和服务器验收记录。函数签名是开发接口说明，示例未在本地执行。运行证据来自用户 Linux 环境，详见 [主力 EMA 说明](../../../demos/01_main_ema/README.md)、[实施记录](../../../doc/strategies/DEMOS_INPUT_STAGE1_IMPLEMENTATION_2026-10-04.md)及[手续费验收说明](../../../doc/data/FUTURES_FEES.md)。
 
 dataprep 负责路径、文件身份、读取校验、时间标准化、角色研究资料和诊断。DataHub 提供角色与因子的历史查询；market 提供回放和解析；trader 提供原生合约工厂、路由和执行。dataprep 不计算 EMA、不生成交易目标、不启动撮合，也不负责在线订阅。
 
@@ -206,6 +206,27 @@ minute_roles 非空时要求恰好一个品种且 end_day 非空，调用分钟�
 两者复用 read_feather 的输入缓存与来源记录。record_factory 接收不可变条款对象和未丢弃来源字段的原始行，必须返回匹配数据集、合约键和值类型的 ReferenceRecord，并明确提供生效时间、可用时间和来源时间；不会自动解释 date 或上市日为发布时间。Provider 使用 `basic_at(symbol, AsOfQuery(...))` 查询。
 
 这两个接口是版本化资料的显式准备入口，不替代现有静态场景函数。现有静态函数的签名、返回结构及对非空 available_ns / source_version 的拒绝规则保持不变。Provider.from_feather 兼容入口内部委托本模块。
+
+### 手续费读取和回测系数
+
+`FutureBasic`及期货`InstrumentSpec`保留`trade_fee`、`delivery_fee`。
+`futures.instrument`和`futures.make_instrument`将标准费用及原始数值/单位传入原生合约的info，
+供回测费用模型逐合约读取。元/手保留固定金额，百分比除以100变为小数费率，
+例如0.0045%变为0.000045；不会改写源文件或将未知费用补成零。
+
+| 接口 | 参数与返回值 |
+| --- | --- |
+| dataprep.commissions.add_commission_arguments(parser) | 为argparse入口注册费用来源、全局/品种/合约系数和独立交割系数参数 |
+| dataprep.commissions.commission_config_from_args(args) | 返回校验后的framework.fees.CommissionConfig；覆盖代码须为不重复的代码=数值 |
+| CommissionConfig.profile_kwargs() | 返回用于构造CtpFuturesBasicProfile的配置字典 |
+
+交易系数默认1，按完整合约、裸合约、品种、全局逐级覆盖，不连乘。
+费用来源默认为auto，优先合约资料、缺失时沿用既有每手配置；metadata要求期货费用完整，
+fixed显式使用每手配置。交割费用和交割系数独立预留，普通成交不扣交割费。
+
+服务器报告`futures-fees-acceptance-1793026876102616993`已通过150项unittest和3项CTP场景，
+包含7项使用真实Feather和Bomber扩展的原生验收。计算公式、完整参数、逐笔费用报表及
+证据链接见[期货手续费与账户系数](../../../doc/data/FUTURES_FEES.md)。
 
 ## 完整 Bundle 场景函数
 

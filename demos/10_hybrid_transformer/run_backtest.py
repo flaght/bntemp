@@ -46,9 +46,12 @@ def run_case(*, product: str, start_day: date, end_day: date,
              rebalance_minutes: int = 1, hold_bars: int | None = None, history_bars: int = 1500,
              min_raw_bars: int = 300, device: str = "auto",
              max_notional: Decimal = Decimal("1000000"),
-             commission_per_contract: Decimal = Decimal("1"),
              commission_config: CommissionConfig | None = None,
              require_fills: bool = False) -> Path:
+    """按 fut_basic 费用回测；commission_config 仅接受 metadata 来源及系数配置。"""
+    fees = commission_config if commission_config is not None else CommissionConfig(commission_source="metadata")
+    if not isinstance(fees, CommissionConfig) or fees.commission_source != "metadata":
+        raise ValueError("Hybrid 回测手续费须来自 fut_basic，请使用 commission_source='metadata'")
     product = product.strip().upper()
     if calendar.product.upper() != product:
         raise ValueError("持仓交易日历与回测品种不一致")
@@ -63,10 +66,8 @@ def run_case(*, product: str, start_day: date, end_day: date,
         raise ValueError("日期范围无效")
     if history_bars < min_raw_bars or min_raw_bars < 1:
         raise ValueError("须满足 history_bars >= min_raw_bars >= 1")
-    if (not max_notional.is_finite() or max_notional <= 0
-            or not commission_per_contract.is_finite()
-            or commission_per_contract < 0):
-        raise ValueError("名义金额上限须为正；手续费不得为负")
+    if not max_notional.is_finite() or max_notional <= 0:
+        raise ValueError("名义金额上限须为有限正数")
 
 
     ### 数据加载器
@@ -119,8 +120,7 @@ def run_case(*, product: str, start_day: date, end_day: date,
 
     profile = CtpFuturesBasicProfile(
         starting_balance=Decimal("1000000"),
-        commission_per_contract=commission_per_contract, venue=venue,
-        **(commission_config or CommissionConfig()).profile_kwargs(),
+        venue=venue, **fees.profile_kwargs(),
     )
     backend.add_profile(profile)
 

@@ -4,6 +4,15 @@
 保留fut_basic费用数值及单位，支持元/手与百分比；回测系数按合约、品种、全局覆盖，
 逐笔导出标准费用、系数和实际扣费。旧文件可使用固定费用兼容模式。
 
+服务器手续费验收已通过：报告`futures-fees-acceptance-1793026876102616993`，
+environment、rules、native、references、ctp、regression六组exit=0，共150项unittest和3项E10场景。
+真实Feather及Bomber原生撮合已覆盖，账户手续费/现金扣减和逐笔报表断言通过。
+见[结构化证据](../../../doc/evidence/live/FUTURES_FEES_REMOTE_20261026.json)及
+[用户远端原始输出](../../../doc/evidence/live/FUTURES_FEES_REMOTE_20261026.txt)。
+主说明FUTURES_FEES.md已同步服务器通过状态、分组结果和验收边界。
+运行源码与测试保持不变；已验清单原字节归档为FUTURES_FEES_20261026_TESTED_SHA256.txt，
+当前清单只更新主说明的文档摘要。无需为本次文档更新重复测试。
+
 2026-10-12 PF2026101201增加[通用特征准备](features/README.md)：CSV/Parquet标准导入导出、DolphinDB/MongoDB特征Provider、显式来源工厂和控制线程刷新，交给DataHub统一版本/对齐；本机未运行，远程待验。既有基本信息/历史行情MongoDB占位保持独立，不能混同。
 
 2026-10-08 新增 [参考资料数据源工厂](sources/README.md)：统一文件和 DolphinDB 字段适配，MySQL／MongoDB 保留子类扩展契约；原文件加载入口保留，在线组合器独立于历史场景。新增代码及数据库联调待远程验证。
@@ -30,6 +39,7 @@ PF2026100804区分日期口径：原回测已对齐文件的trading/aligned默�
 | bars | read_bar_frame、PreparedFrameReader、add_bar_source、add_prepared_bar_source | 标准化后的行交给现有 Feed.add_source；不启动回放 |
 | metadata | load_futures_basic、load_options_basic、load_cffex_futures、contract_rows | 使用 DataHub 基础条款模型校验，保持静态 InstrumentSpec / 原始行返回接口；不配仓 |
 | basic | load_future_basic_provider、load_option_basic_provider | 读取版本化基础条款，共用输入缓存，按调用方声明的时间规则组装两类 Provider |
+| commissions | add_commission_arguments、commission_config_from_args | 回测费用来源及全局、品种、合约系数配置；计算和单位契约位于framework.fees |
 | calendar | load_calendar、TradingCalendar、infer_market_calendar | 显式日历或带前提的文件日期日历 |
 | references | load_role_assignments、load_sector_research、load_role_research | 转换为现有 DataHub Store；不生成可成交复权 Bar |
 | schedules | load_target_csv | 转换为现有 TargetScheduleStore；不处理时钟或订单 |
