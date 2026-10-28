@@ -254,6 +254,32 @@ SimNow 模式将示例中的 `--mode recording` 改为 `--mode simnow`，另外�
 `history_minutes` 是交易分钟根数，应满足 `MODEL_MIN_RAW_BARS <= history_minutes <= MODEL_HISTORY_BARS`；默认为 0 时仅靠实时行情预热。
 恢复持仓必须提供历史预热。历史不足、字段缺失或来源冲突直接失败，不填造成交额、不发布历史信号。
 
+已按 `01_main_ema` 的 `HistoryService + DolphinDbHistoryProvider` 路径补充
+`history_rb.json`，对应用户提供的 `dfs://min_bar/shfe_1min`。启动时在原命令上增加：
+
+```bash
+--history-minutes 1500 --history-config demos/10_hybrid_transformer/history_rb.json
+```
+
+远程目录为 `prod/01_hybrid_transformer` 时，将上面的配置路径同步替换为该目录。
+已有状态文件按原恢复要求使用 `--resume`，不覆盖旧状态。
+
+该配置使用用户确认的**交易日日期、分钟开始标签**；`turnover → value`，
+`open_interest`直接读取。累计量额口径根据AG截图推断，尚未完成实际RB主力的在线验证；
+如果RB表的生成代码确认是分钟增量，须将 `volume_mode` 改为 `per-bar`。
+交易日日期由本次策略使用的同一个 `SessionCalendar` 还原自然时间，不固定减一天。
+累计模式读取涉及交易日的完整行，在请求窗口之前取得基准，量额同时差分，持仓量不差分。
+首个交易分钟采用日内累计值；盘中首行缺少前值时只作基准，不能把此前成交归入这一分钟。
+周末夜盘、跨午夜、午休及交易日重置均按会话规则处理；同日分钟缺口不会合并量额。
+数据库按完整交易日读取，超过声明行数上限时明确失败。
+
+该配置不改变模型输入要求：零成交分钟、量额倒退、同一分钟冲突或VWAP/OHLC不一致仍拒绝。
+截图中的AG差分异常不能通过配置修复；实际RB数据也不一致时，日志会显示合约、时间和量额，
+应检查分钟表生成逻辑。当前不把零成交分钟的VWAP填为收盘价，也不跳过模型分钟。
+
+启动日志包含“未启用”或“开始／完成／失败”，完成日志包含实际数据来源和覆盖；
+历史只进入预测器专用预热接口，不重放开仓。历史口径及样例通过离线替身验证，不等于真实数据库验收。
+
 `hybrid_history.json` 示例（库、表及实际列名须替换；下例明确来源是北京时间、开始标签）：
 
 ```json

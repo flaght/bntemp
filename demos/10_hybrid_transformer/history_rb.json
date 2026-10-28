@@ -1,0 +1,23 @@
+{
+  "database": "dfs://min_bar",
+  "table": "shfe_1min",
+  "columns": {
+    "instrument_id": "Code",
+    "open": "open",
+    "high": "high",
+    "low": "low",
+    "close": "close",
+    "volume": "volume",
+    "value": "turnover",
+    "open_interest": "open_interest"
+  },
+  "date_column": "date",
+  "time_column": "minTime",
+  "date_basis": "trading",
+  "source_timezone": "Asia/Shanghai",
+  "time_unit": "ns",
+  "time_label": "start",
+  "instrument_format": "symbol",
+  "venue": "SHFE",
+  "volume_mode": "cumulative"
+}
