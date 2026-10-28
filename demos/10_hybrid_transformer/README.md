@@ -169,21 +169,21 @@ fees = CommissionConfig(
 
 入口为 `python -m demos.10_hybrid_transformer.run_live`，每个进程只运行一个品种、一条 Hybrid 策略。
 
-入口按职责分为三个文件，现有命令行选项、默认值和启动命令保持兼容：
+运行代码集中在 `run_live.py`，命令行只保留业务输入和运行开关。`build_strategy()` 独立声明模型和策略，参数解析阶段不构造它们。
 
-| 文件 | 职责 |
-| --- | --- |
-| `live_args.py` | 按运行、模型、历史预热、参考资料、风控和恢复分组解析参数，只校验输入 |
-| `live_session.py` | 准备参考与行情、构建模型/策略/Runner、绑定执行和检查点 |
-| `run_live.py` | 创建生命周期与运行报告，在 `main()` 中显式接线并启动运行器 |
+- 模型默认设置：CPU、历史窗口1500根、最低300根、开始时间标签；由本文件的 `MODEL_*` 常量明确声明。
+- 策略开仓间隔默认1分钟，持仓周期和信号函数仍按外部信号文件的品种配置读取。
+- `build_runtime(args, ...)` 默认查询超时15秒、最多100笔报单、名义金额上限1000000、限价偏移1跳、执行政策fills/off；需调整时在代码调用中显式传入关键字参数。
+- `prepare_inputs()` 默认参考超时15秒、刷新5秒。参考库沿用 `DDB_REFERENCE_DATABASE`；需要独立时段库时在该函数调用中传入 `trading_hours_database`。
+- 日历默认 `china.sse`，可用 `BOMBER_CALENDAR_ID` 指定；时段表和例外表沿用 `DDB_TRADING_HOURS_TABLE`、`DDB_SESSION_OVERRIDES_TABLE`。没有例外时仍需显式 `--no-session-overrides`。
 
-行情源沿用公共 `--market-source` / `--market-config`；执行模式为 `recording` 或 `simnow`，默认 Recording。
+行情源通过 `--market-source` / `--market-config` 选择；执行模式为 `recording` 或 `simnow`，默认 Recording。
 首版使用 realtime、固定会话主力和 SHFE/INE 执行范围；跨交易日自动重登录、动态换月和共享账户宿主未接入。
 
 - CTP：原始深度中的累计 `Volume/Turnover` 按交易日差分，持仓量取分钟最后值；首个部分分钟丢弃。
 - DolphinDB：使用已完成分钟流；须声明 `start/end` 时间标签和 `per-bar/cumulative` 量额口径。表应沿用公共适配器的 `Code/date/minTime/open/high/low/close/volume` 字段，成交额提供 `value` 或 `turnover`，持仓量提供 `open_interest` 或 `openint`。
-- `--market-volume-mode` 在完整期货路径中同时声明成交量和成交额的口径，二者须一致。混合口径须先在来源表规范化，不能以末价乘成交量代替实际成交额。
-- `--market-bar-timestamp` 描述 DDB 来源标签；`--model-bar-timestamp` 描述研究模型使用的标签，两者独立。模型默认 `start`，必须与训练数据一致。
+- 行情 JSON 的 `volume_mode` 同时声明成交量和成交额的口径，二者须一致。混合口径须先在来源表规范化，不能以末价乘成交量代替实际成交额。
+- 行情 JSON 的 `timestamp_label` 描述 DDB 来源标签；代码中的 `MODEL_BAR_TIMESTAMP` 描述研究模型使用的标签，两者独立。模型默认 `start`，必须与训练数据一致。
 - CTP 时段末精确结束边界快照并入最后一分钟；没有后续成交时最多等待 1 秒封闭完整桶。OHLC 来自深度快照末价，须在部署时与研究分钟逐字段核对。
 - 交易时段、夜盘归属和分钟期限使用同一 `SessionCalendar`；交易所由合约资料决定。会话中资料/交易日变更按框架闭闸并保存状态，不自动迁移持仓。
 
@@ -201,7 +201,7 @@ cd /workspace/worker/pj/Chrono/nautilus_trader_demo/pro
 export PYTHONPATH="$(pwd):/workspace/worker/pj/KiChaos${PYTHONPATH:+:$PYTHONPATH}"
 export IMPLUSE_VERSION=all
 
-# 用同一组业务参数，仅切换行情源。日历例外表须实际存在且覆盖本次范围。
+# 用同一组业务输入切换行情源。仅在确认没有时段例外时使用 --no-session-overrides。
 hybrid_args=(
   --connect --mode recording --product RB
   --release-path /ABS/PATH/TO/RB_MODEL_RELEASE
@@ -209,14 +209,8 @@ hybrid_args=(
   --signal-config /ABS/PATH/TO/signals.json
   --expected-trading-day YYYYMMDD
   --expected-source-day YYYYMMDD
-  --reference-database dfs://bomber_daily
-  --calendar-id china.sse
-  --trading-hours-database dfs://bomber_static
-  --trading-hours-table fut_trading_session
-  --session-overrides-table YOUR_SESSION_OVERRIDES_TABLE
-  --history-bars 1500 --min-raw-bars 300
+  --no-session-overrides
   --history-minutes 1500 --history-config /ABS/PATH/TO/hybrid_history.json
-  --model-bar-timestamp start --device cpu
   --max-contracts 10 --seconds 600
 )
 
@@ -226,12 +220,10 @@ python -u -m demos.10_hybrid_transformer.run_live \
 
 # 方案二：DolphinDB 完整分钟流。下面声明结束标签、量额均为本周期值。
 python -u -m demos.10_hybrid_transformer.run_live \
-  "${hybrid_args[@]}" --market-source dolphindb \
-  --market-bar-table YOUR_FUTURES_MINUTE_STREAM \
-  --market-bar-timestamp end --market-volume-mode per-bar
+  "${hybrid_args[@]}" --market-config /ABS/PATH/TO/hybrid_market.json
 ```
 
-也可通过 `--market-config` 读取相同字段，命令行显式参数覆盖 JSON：
+`hybrid_market.json` 声明 DolphinDB 表名、时间标签与量额口径：
 
 ```json
 {
@@ -246,10 +238,8 @@ python -u -m demos.10_hybrid_transformer.run_live \
 SimNow 模式将示例中的 `--mode recording` 改为 `--mode simnow`，另外传入：
 
 ```text
---strategy-position-source fills --account-reconciliation off
 --enable-orders --confirm-simnow
 --state-file /ABS/PATH/TO/hybrid_RB_TD.json
---max-notional 1000000 --max-session-orders 100
 ```
 
 这会向 SimNow 报单。`fills/off` 是策略归属成交账本模式，资金和订单仍使用交易账户。
@@ -259,7 +249,7 @@ SimNow 模式将示例中的 `--mode recording` 改为 `--mode simnow`，另外�
 ### 历史模型预热
 
 历史预热复用框架 Provider，但必须提供完整原始行情，不能使用 EMA 的 `adjusted_close` 历史配置。
-`history_minutes` 是交易分钟根数，应满足 `min_raw_bars <= history_minutes <= history_bars`；默认为 0 时仅靠实时行情预热。
+`history_minutes` 是交易分钟根数，应满足 `MODEL_MIN_RAW_BARS <= history_minutes <= MODEL_HISTORY_BARS`；默认为 0 时仅靠实时行情预热。
 恢复持仓必须提供历史预热。历史不足、字段缺失或来源冲突直接失败，不填造成交额、不发布历史信号。
 
 `hybrid_history.json` 示例（库、表及实际列名须替换；下例明确来源是北京时间、开始标签）：

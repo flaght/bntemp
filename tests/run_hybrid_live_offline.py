@@ -29,7 +29,6 @@ InstrumentId = namespace['InstrumentId']
 InstrumentId.venue = property(lambda self: self.value.rsplit('.', 1)[1])
 base = sys.modules['bomber.framework.market.basic.base']
 live = import_module('demos.10_hybrid_transformer.run_live')
-assembly = import_module('demos.10_hybrid_transformer.live_session')
 adapter = import_module('demos.10_hybrid_transformer.model_adapter')
 from tests.test_demo_hybrid_live import calendar, ns
 
@@ -74,12 +73,15 @@ class HybridAssemblyTests(unittest.TestCase):
                     args = ['--connect', '--product', 'RB', '--release-path', str(root/'release'),
                         '--directions-file', str(root/'directions.csv'), '--signal-config', str(signal),
                         '--expected-trading-day', '20261028', '--expected-source-day', '20261027', '--market-source', source,
-                        '--calendar-id', 'china.sse', '--no-session-overrides']
+                        '--no-session-overrides']
                     if source == 'dolphindb':
-                        args += ['--market-bar-table', 'fixture', '--market-bar-timestamp', 'end', '--market-volume-mode', 'per-bar']
+                        market = root/'market.json'
+                        market.write_text(json.dumps(dict(source='dolphindb', table='fixture',
+                            timestamp_label='end', volume_mode='per-bar')))
+                        args += ['--market-config', str(market)]
                     parsed = live.parse_args(args)
                     with patch.object(adapter, 'MizarWorkflowAdapter', Predictor):
-                        session = assembly.assemble(parsed, NS(references=refs, calendar=calendar(), upstream=Upstream('fixture')), NS(driver=None))
+                        session = live.assemble(parsed, NS(references=refs, calendar=calendar(), upstream=Upstream('fixture')), NS(driver=None))
                     session.runner._validate_configuration()
                     now = [ns('2026-10-28 09:02:02')]
                     session.runner._clock_ns = lambda: now[0]
@@ -124,7 +126,7 @@ class HybridAssemblyTests(unittest.TestCase):
                 '--state-file',str(root/'state.json'),'--product','RB','--release-path',str(root/'release'),
                 '--directions-file',str(root/'directions.csv'),'--signal-config',str(signal),
                 '--expected-trading-day','20261028','--expected-source-day','20261027',
-                '--calendar-id','china.sse','--no-session-overrides'])
+                '--no-session-overrides'])
             instrument=InstrumentId.from_str('rb2701.SHFE')
             refs=NS(instrument_id=instrument,trading_day=date(2026,10,28),
                 started_ns=ns('2026-10-28 09:00:00'),refresh_on_event=False,
@@ -132,7 +134,7 @@ class HybridAssemblyTests(unittest.TestCase):
             refs.instrument_meta=lambda:base.InstrumentMeta(instrument,price_precision=0,multiplier=Decimal(10))
             driver=Mock(driver_id=live.CLIENT_ID,account_id='fixture')
             with patch.object(adapter,'MizarWorkflowAdapter',Predictor):
-                session=assembly.assemble(args,NS(references=refs,calendar=calendar(),upstream=Upstream('fixture')),NS(driver=driver))
+                session=live.assemble(args,NS(references=refs,calendar=calendar(),upstream=Upstream('fixture')),NS(driver=driver))
             self.assertIs(session.strategy._checkpoint.__self__,session.manager)
             self.assertIs(session.manager.state_components['hybrid'].strategy,session.strategy)
             self.assertIs(session.manager.target_store,session.runner.target_store)
@@ -140,9 +142,9 @@ class HybridAssemblyTests(unittest.TestCase):
             driver.start.assert_not_called()
             driver.submit_order.assert_not_called()
             self.assertFalse((root/'state.json').exists())
-            before=assembly.model_identity(args)
+            before=live.model_identity(args)
             (root/'directions.csv').write_text('formula,direction\nf,-1\n')
-            self.assertNotEqual(before,assembly.model_identity(args))
+            self.assertNotEqual(before,live.model_identity(args))
 
 
 if __name__ == '__main__':

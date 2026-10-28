@@ -261,11 +261,11 @@ class LiveRunnerTests(unittest.TestCase):
         class Parent:
             def publish(self,feed,event): self.delivered.append(event)
             def continue_execution_target(self,*args,**kwargs): self.calls.append('continue')
-        tree=ast.parse((ROOT/'demos/10_hybrid_transformer/live_session.py').read_text())
+        tree=ast.parse((ROOT/'demos/10_hybrid_transformer/run_live.py').read_text())
         node=next(n for n in tree.body if isinstance(n,ast.ClassDef) and n.name=='HybridLiveRunner')
         namespace=dict(SessionRoleLiveRunner=Parent,CustomBar=CustomBar,MINUTE=MINUTE,
-            warm_history=lambda *args:None,replace=replace)
-        exec(compile(ast.Module(body=[node],type_ignores=[]),'live_session.py','exec'),namespace)
+            warm_history=lambda *args:None,replace=replace,SimpleNamespace=NS,MODEL_BAR_TIMESTAMP='start')
+        exec(compile(ast.Module(body=[node],type_ignores=[]),'run_live.py','exec'),namespace)
         return namespace['HybridLiveRunner']
 
     def test_clock_expiry_is_independent_of_new_prediction(self):

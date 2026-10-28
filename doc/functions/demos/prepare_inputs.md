@@ -2,18 +2,19 @@
 
 用途：为Hybrid Live读取国内期货参考资料、加载交易日历并创建上游行情对象，供后续assemble使用。
 
-- 实际定义：`demos.10_hybrid_transformer.live_session.prepare_inputs`，不是框架通用同名函数。
-- [函数定义](../../../demos/10_hybrid_transformer/live_session.py) · [接线入口](../../../demos/10_hybrid_transformer/run_live.py) · [参考缓存](../../../bomber/framework/dataprep/live_cached_role.py)
+- 实际定义：`demos.10_hybrid_transformer.run_live.prepare_inputs`，不是框架通用同名函数。
+- [函数与接线入口](../../../demos/10_hybrid_transformer/run_live.py) · [参考缓存](../../../bomber/framework/dataprep/live_cached_role.py)
 - 核对日期：2026-10-28，Asia/Shanghai。
 
 ## 1. 签名与调用时机
 
 ```python
-def prepare_inputs(args, context, lifecycle):
+def prepare_inputs(args, context, lifecycle, *, reference_database=None,
+                   reference_timeout=15, refresh_seconds=5, trading_hours_database=None):
     ...
 ```
 
-三个参数均必填，无默认值。Runtime先调用controller.prepare，再通过lambda调用本函数；返回后先finish_preparation，再assemble。本函数会实际打开参考数据库、读取资料和日历输入。
+前三个参数必填，参考库、超时、刷新间隔和时段库为函数默认参数。Runtime先调用controller.prepare，再通过lambda调用本函数；返回后先finish_preparation，再assemble。本函数会实际打开参考数据库、读取资料和日历输入。
 
 | 参数 | 预期对象 | 作用 |
 | --- | --- | --- |
@@ -28,10 +29,10 @@ context.trading_day由控制器提供，不是函数自行猜测当天自然日�
 | 参数组 | 字段与入口默认 |
 | --- | --- |
 | 品种与日期 | product、expected_source_day必填；交易日用context.trading_day |
-| 参考连接 | reference_database=None、reference_timeout=15秒；其余从DolphinDbReferenceConfig.from_env读取 |
-| 因子语义 | factor_date_basis=source、factor_availability=observed-on-read，入口经live_factor_policy规范化 |
-| 缓存刷新 | reference_refresh_seconds=5秒，入口允许0至30 |
-| 日历输入 | session_inputs_from_args识别的规则及交易日历参数，交易所取references.spec.venue |
+| 参考连接 | 函数默认reference_database=None、reference_timeout=15秒；其余从DolphinDbReferenceConfig.from_env读取 |
+| 因子语义 | 固定source/observed-on-read，经live_factor_policy规范化 |
+| 缓存刷新 | 函数默认refresh_seconds=5秒，由代码调整 |
+| 日历输入 | calendar_id默认china.sse，可由BOMBER_CALENDAR_ID指定；例外表取DDB_SESSION_OVERRIDES_TABLE，或显式--no-session-overrides；交易所取references.spec.venue |
 | 行情来源 | source_config(args)，Hybrid完整解析允许CTP/DolphinDB；固定environment=realtime |
 
 expected_source_day须YYYYMMDD，表示资料来源日，不要求简单等于交易日。参考源固定DolphinDB；即使行情也是DolphinDB，两者仍是不同用途的配置与连接。
@@ -72,7 +73,7 @@ prepare_inputs提供当前合约、日历和上游行情。assemble创建分钟�
 ```python
 from importlib import import_module
 
-entry = import_module("demos.10_hybrid_transformer.live_session")
+entry = import_module("demos.10_hybrid_transformer.run_live")
 
 def input_factory(args, lifecycle):
     return lambda context: entry.prepare_inputs(args, context, lifecycle)
