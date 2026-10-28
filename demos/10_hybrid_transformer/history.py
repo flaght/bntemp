@@ -7,7 +7,7 @@ import json
 import time
 from pathlib import Path
 
-from bomber.framework.dataprep.history import HistoryService, DolphinDbHistoryConfig, HistoryError
+from bomber.framework.dataprep.history import HistoryService, DolphinDbHistoryConfig, HistoryError, HistoryResult
 from bomber.framework.dataprep.sources import DolphinDbReferenceConfig
 from bomber.framework.calendars.sessions import ns_datetime
 
@@ -99,6 +99,38 @@ def warm_history(runner, *, product: str, history_minutes=0, resume=False, model
     runner.history_last_ns = max((bar.ts_event for bar in result.bars), default=-1)
     print(f"Hybrid预热完成: loaded={count} phase={phase} {result.audit()} "
           f"elapsed_seconds={time.monotonic() - started:.3f}", flush=True)
+
+
+
+def warm_recording(runner, *, product: str, max_bars: int, model_bar_timestamp='start'):
+    """只恢复本机CTP录制的近期原始分钟；部分窗口也可继续积累，不重放交易。"""
+    archive = runner.bar_archive
+    end = runner._clock_ns() // MINUTE * MINUTE
+    bars = archive.recent(before_ns=end, limit=max_bars)
+    missing = ()
+    if bars:
+        # 按交易分钟限制最大回看范围，不能把很久之前的缓存当作近期窗口。
+        expected = runner.calendar.last_minutes(end, max_bars)
+        allowed = set(expected)
+        bars = tuple(bar for bar in bars if bar.ts_event in allowed)
+        if bars:
+            observed = {bar.ts_event for bar in bars}
+            missing = tuple(stamp for stamp in expected if stamp >= bars[0].ts_event and stamp not in observed)
+    result = HistoryResult(bars, missing, ('ctp-recording',), True)
+    audit = {'phase': 'local-recording', 'file': str(archive.path), **result.audit()}
+    runner.history_service.last_audit = audit
+    try:
+        rows = _model_rows(bars, runner, product, model_bar_timestamp)
+        count = runner.strategy.predictor.warm_history(rows)
+    except Exception as error:
+        print(f"Hybrid本地分钟恢复失败: file={archive.path} error={type(error).__name__}: {error}", flush=True)
+        raise
+    runner.history_last_ns = max((bar.ts_event for bar in bars), default=-1)
+    print(f"Hybrid本地分钟恢复: file={archive.path} loaded={count} "
+          f"missing={len(missing)} recorded={archive.recorded_bars}，后续完整分钟持续追加", flush=True)
+    if missing:
+        print(f"Hybrid本地分钟存在真实缺口: first_ns={missing[0]} last_ns={missing[-1]}；"
+              "不补造分钟、不平移时间，模型沿用现有时间分段规则", flush=True)
 
 
 def _model_rows(bars, runner, product, model_bar_timestamp):

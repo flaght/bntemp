@@ -23,6 +23,7 @@ from types import SimpleNamespace
 import pandas as pd
 from dotenv import load_dotenv
 from bomber.framework.calendars import SessionRulesCheckpoint
+from bomber.framework.dataprep.history import FuturesMinuteArchive
 from bomber.framework.dataprep.live_cached_role import CachedRoleReferences
 from bomber.framework.dataprep.live_references import live_factor_policy
 from bomber.framework.dataprep.live_role import SourceRoleReferences
@@ -50,7 +51,7 @@ from bomber.framework.trader.runtime.live.runtime import ManagedLiveRuntime
 from bomber.framework.trader.runtime.reports import LiveRunReport
 
 from .checkpoint import HybridCheckpoint
-from .history import build_history, warm_history
+from .history import build_history, warm_history, warm_recording
 from .signal_config import load_product_signal
 from .strategy import HybridTransformerConfig, HybridTransformerStrategy
 
@@ -142,7 +143,7 @@ def parse_args(argv=None):
             raise ValueError('历史预热须同时声明history-minutes及history-config/history-file')
         if args.history_config and not args.history_config.is_file() or args.history_file and not args.history_file.is_file():
             raise ValueError('历史配置或文件不存在')
-        # 不读历史时，恢复持仓义务后从实时完整分钟重新积累模型窗口。
+        # 不读外部历史时，恢复持仓义务及本机CTP窗口，再追加实时完整分钟。
         # 显式启用恢复历史时仍只使用数据库，不以旧文件补造断线期间的分钟。
         if args.resume and args.history_minutes and not args.history_config:
             raise ValueError('启用恢复历史时须提供数据库history-config；实时预热使用history-minutes=0')
@@ -243,9 +244,13 @@ class HybridLiveRunner(SessionRoleLiveRunner):
     def begin_bars(self):
         """在生命周期确认通道就绪后，预热模型并开放实时分钟处理。"""
         with self._submit_lock:
-            warm_history(self, product=self.strategy.config.product,
-                history_minutes=self.history_minutes, resume=self.resuming,
-                model_bar_timestamp=MODEL_BAR_TIMESTAMP)
+            if self.history_minutes or self.bar_archive is None:
+                warm_history(self, product=self.strategy.config.product,
+                    history_minutes=self.history_minutes, resume=self.resuming,
+                    model_bar_timestamp=MODEL_BAR_TIMESTAMP)
+            else:
+                warm_recording(self, product=self.strategy.config.product, max_bars=MODEL_HISTORY_BARS,
+                    model_bar_timestamp=MODEL_BAR_TIMESTAMP)
             super().begin_bars()
             # 历史窗口已预热至启动边界；排除历史重复并保留完整实时分钟。
             self.first_complete_bar_ns = max(self.first_complete_bar_ns, self.history_last_ns + MINUTE)
@@ -330,7 +335,7 @@ def assemble(inputs, lifecycle, *, product: str, release_path: Path, directions_
              max_contracts=10, state_file: Path | None = None,
              history_minutes=0, history_config: Path | None = None, history_file: Path | None = None,
              resume=False, execution_policy=None,
-             max_notional=Decimal('1000000'), limit_offset_ticks=1):
+             max_notional=Decimal('1000000'), limit_offset_ticks=1, bar_directory: Path | None = None):
     """把资料、行情、执行、策略和持久化连接成session，交给生命周期启动。
 
     inputs是prepare_inputs的返回结果；session则还包含Runner、执行客户端、
@@ -346,6 +351,12 @@ def assemble(inputs, lifecycle, *, product: str, release_path: Path, directions_
         (instrument,), references.trading_day.strftime('%Y%m%d'), futures_calendar=calendar,
         model_timestamp=MODEL_BAR_TIMESTAMP)
     feed.register_instrument(references.instrument_meta())
+    archive = None
+    if market_config.source == 'ctp':
+        directory = Path(bar_directory) if bar_directory is not None else Path(__file__).parent/'results'/'market'/'ctp'
+        archive = FuturesMinuteArchive(directory/f'{instrument}.jsonl', instrument_id=str(instrument),
+            contract_multiplier=references.spec.multiplier, max_bars=MODEL_HISTORY_BARS)
+        feed.archive = archive  # Feed连接/断开负责打开与关闭存档。
     orders = mode == 'simnow'
     # 3. 装配执行端。Recording记录目标；SimNow使用TD通道并处理真实柜台回报。
     if orders:
@@ -373,6 +384,7 @@ def assemble(inputs, lifecycle, *, product: str, release_path: Path, directions_
     runner.calendar, runner.strategy, runner.client = calendar, strategy, execution.client
     runner.history_minutes, runner.resuming = history_minutes, resume
     runner.history_last_ns = -1
+    runner.bar_archive = archive
     runner.history_service = build_history(
         history_config=history_config, history_file=history_file, calendar=calendar)
     if not getattr(references, 'refresh_on_event', True):
@@ -470,7 +482,7 @@ def build_runtime(
     history_minutes=0, history_config: Path | None = None, history_file: Path | None = None,
     state_file: Path | None = None, resume=False, report_dir: Path | None = None,
     query_timeout=15, max_session_orders=100, max_notional=Decimal('1000000'),
-    limit_offset_ticks=1, execution_policy=None,
+    limit_offset_ticks=1, execution_policy=None, bar_directory: Path | None = None,
 ):
     """创建并返回ManagedLiveRuntime，此时尚未执行prepare_inputs和assemble。
 
@@ -526,6 +538,8 @@ def build_runtime(
             'order_updates_received': strategy.order_updates_received,
             'fills_received': strategy.fills_received,
             'history': session.runner.history_service.last_audit,
+            'bar_file': str(session.runner.bar_archive.path) if session.runner.bar_archive is not None else None,
+            'recorded_bars': session.runner.bar_archive.recorded_bars if session.runner.bar_archive is not None else 0,
         }
 
     report = HybridLiveReport(report_dir, prefix='hybrid-'+mode,
@@ -538,7 +552,7 @@ def build_runtime(
         count = strategy.bars_used
         if count != getattr(session, '_reported_bars', -1):
             session._reported_bars = count
-            # bars_used可从检查点恢复；模型窗口本次重新积累，二者不能混为一谈。
+            # bars_used来自交易检查点；model_bars包含本机缓存及新分钟，二者不同。
             model_bars = len(strategy.predictor.workflow.history)
             print(f"Hybrid分钟: bars={count} model_window={model_bars} "
                   f"min_raw_bars={MODEL_MIN_RAW_BARS} prediction={strategy.last_prediction} "
@@ -556,7 +570,7 @@ def build_runtime(
             max_contracts=max_contracts, state_file=state_file, history_minutes=history_minutes,
             history_config=history_config, history_file=history_file, resume=resume,
             execution_policy=execution_policy, max_notional=max_notional,
-            limit_offset_ticks=limit_offset_ticks),
+            limit_offset_ticks=limit_offset_ticks, bar_directory=bar_directory),
         report=report, seconds=seconds, progress=progress)
 
 
