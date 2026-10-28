@@ -82,7 +82,7 @@ def load_feed_module():
 def calendar():
     from bomber.framework.calendars import (
         CalendarSnapshot, SessionBinding, SessionCalendar, SessionSegment, TradingHoursSnapshot)
-    days = (date(2026,10,26), date(2026,10,27), date(2026,10,28), date(2026,10,29))
+    days = (date(2026,10,22), date(2026,10,23), date(2026,10,26), date(2026,10,27), date(2026,10,28), date(2026,10,29))
     dates = CalendarSnapshot('fixture', 'v1', days[0], days[-1], days, 'test')
     rows = [('RB', SessionSegment('am', 'TRADING_DAY', 0, '09:00', 0, '11:30')),
             ('RB', SessionSegment('pm', 'TRADING_DAY', 0, '13:30', 0, '15:00')),

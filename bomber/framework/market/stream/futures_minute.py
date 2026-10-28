@@ -35,12 +35,13 @@ DDB volume_mode 同时声明 volume 与成交额的累计/本周期口径。
 model_timestamp 仅决定模型的原始分钟标签，事件统一为分钟结束减1ns。
 """
     def __init__(self, source_id, upstream, *, config, calendar,
-                 model_timestamp='start', clock_ns=None, close_delay_ns=1_000_000_000):
+                 model_timestamp='start', clock_ns=None, close_delay_ns=1_000_000_000, archive=None):
         super().__init__(source_id)
         if config.source not in {'ctp', 'dolphindb'} or model_timestamp not in {'start', 'end'}:
             raise ValueError('完整期货分钟仅支持 CTP/DolphinDB 和 start/end 模型标签')
         self.upstream, self.config, self.calendar = upstream, config, calendar
         self.model_timestamp = model_timestamp
+        self.archive = archive
         self._clock_ns = clock_ns or time.time_ns
         self.close_delay_ns = close_delay_ns
         self._queue = Queue(maxsize=100000)
@@ -84,7 +85,16 @@ model_timestamp 仅决定模型的原始分钟标签，事件统一为分钟结�
         for instrument in self._subscriptions:
             dtype = DataType.TRADE_TICK if self.config.source == 'ctp' else DataType.CUSTOM_BAR
             self.upstream.subscribe(instrument, dtype, None if dtype is DataType.TRADE_TICK else '1-MINUTE')
-        self.upstream.connect()
+        if self.archive is not None:
+            if self.config.source != 'ctp':
+                raise ValueError('CTP分钟存档不能录制其他来源')
+            self.archive.open()
+        try:
+            self.upstream.connect()
+        except Exception:
+            if self.archive is not None:
+                self.archive.close()
+            raise
         self._is_connected = True
 
     def disconnect(self):
@@ -92,6 +102,8 @@ model_timestamp 仅决定模型的原始分钟标签，事件统一为分钟结�
             self.upstream.disconnect()
         finally:
             self._is_connected = False
+            if self.archive is not None:
+                self.archive.close()
             self._states.clear()
             self._previous.clear()
             while True:
@@ -259,6 +271,12 @@ model_timestamp 仅决定模型的原始分钟标签，事件统一为分钟结�
                        **{k: fields[k] for k in ('open', 'high', 'low', 'close', 'volume')})
         event = make_custom_bar(bar, fields)
         futures_bar_values(event, contract_multiplier=meta.multiplier)
+        if self.archive is not None:
+            from bomber.framework.dataprep.history import HistoryBar
+            # 先落盘，再发布；即使模型/策略回调失败，完整行情也已经保存。
+            self.archive.append(HistoryBar(str(instrument), end,
+                **{key: values[key] for key in
+                   ('open', 'high', 'low', 'close', 'volume', 'value', 'open_interest')}))
         self._last_emitted[instrument] = end
         self.observations[instrument] = (end, self._clock_ns())
         self._emit_bar(bar)

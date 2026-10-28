@@ -85,7 +85,7 @@ class HybridAssemblyTests(unittest.TestCase):
                             NS(references=refs, calendar=calendar(), upstream=Upstream('fixture')), NS(driver=None),
                             product=parsed.product, release_path=parsed.release_path,
                             directions_file=parsed.directions_file, signal_config=parsed.signal_config,
-                            market_config=parsed.market_source_config, max_contracts=parsed.max_contracts)
+                            market_config=parsed.market_source_config, max_contracts=parsed.max_contracts, bar_directory=root/'market')
                     self.assertEqual(session.bar_feed.config.source, source)
                     session.runner._validate_configuration()
                     now = [ns('2026-10-28 09:02:02')]
@@ -143,7 +143,7 @@ class HybridAssemblyTests(unittest.TestCase):
                     NS(references=refs,calendar=calendar(),upstream=Upstream('fixture')),NS(driver=driver),
                     product=args.product,release_path=args.release_path,directions_file=args.directions_file,
                     signal_config=args.signal_config,market_config=args.market_source_config,
-                    mode=args.mode,max_contracts=args.max_contracts,state_file=args.state_file)
+                    mode=args.mode,max_contracts=args.max_contracts,state_file=args.state_file,bar_directory=root/'market')
             self.assertIs(session.strategy._checkpoint.__self__,session.manager)
             self.assertIs(session.manager.state_components['hybrid'].strategy,session.strategy)
             self.assertIs(session.manager.target_store,session.runner.target_store)
@@ -207,7 +207,7 @@ class HybridAssemblyTests(unittest.TestCase):
                 with patch.object(adapter,'MizarWorkflowAdapter',predictor):
                     result=live.assemble(NS(references=refs,calendar=calendar(),upstream=Upstream('ctp-fixture')),
                         NS(driver=None),product='RB',release_path=root/'release',directions_file=root/'directions.csv',
-                        signal_config=signal,market_config=live.load_market_config(source='ctp'),resume=resume)
+                        signal_config=signal,market_config=live.load_market_config(source='ctp'),resume=resume,bar_directory=root/'market')
                 result.runner._session_check=lambda:True
                 result.runner.instrument_health=None
                 return result
@@ -224,7 +224,10 @@ class HybridAssemblyTests(unittest.TestCase):
             try:
                 original.runner.accept_bars=True
                 original.runner.first_complete_bar_ns=0
-                original.runner.publish('model-bars',event('2026-10-28 09:01:00'))
+                seed=event('2026-10-28 09:01:00')
+                original.bar_feed._emit_values(instrument,seed.ts_event,
+                    {key:Decimal(str(seed.factors[key])) for key in
+                     ('open','high','low','close','volume','value','open_interest')})
                 saved=live.HybridCheckpoint(original.strategy).snapshot_state()
                 targets=dict(original.runner.target_store.all())
                 expiry=original.strategy.holdings.active[0].expires_at_ns
@@ -241,11 +244,16 @@ class HybridAssemblyTests(unittest.TestCase):
             try:
                 restored.runner.begin_bars()
                 self.assertTrue(restored.runner.accept_bars)
+                self.assertEqual(len(restored.strategy.predictor.workflow.history),1)
                 self.assertEqual(restored.strategy.holdings.active[0].expires_at_ns,expiry)
                 self.assertFalse(restored.client.requests)
                 now[0]=ns('2026-10-28 09:05:02')
-                restored.runner.publish('model-bars',event('2026-10-28 09:04:00'))
-                self.assertEqual(len(restored.strategy.predictor.workflow.history),1)
+                current=event('2026-10-28 09:04:00')
+                restored.bar_feed._emit_values(instrument,current.ts_event,
+                    {key:Decimal(str(current.factors[key])) for key in
+                     ('open','high','low','close','volume','value','open_interest')})
+                self.assertEqual(restored.runner.bar_archive.recorded_bars,2)
+                self.assertEqual(len(restored.strategy.predictor.workflow.history),2)
                 self.assertIsNone(restored.strategy.last_prediction)
                 self.assertEqual(len(restored.strategy.holdings.active),1)
                 self.assertFalse(restored.client.requests)
