@@ -82,6 +82,8 @@ def market_config_from_args(args, *, domestic_contracts=False):
 
 
 def source_config(args):
+    if isinstance(args, MarketSourceConfig):
+        return args
     return getattr(args, "market_source_config", None) or MarketSourceConfig(
         source=getattr(args, "market_source", "ctp"), table=getattr(args, "market_bar_table", None),
         timestamp_label=getattr(args, "market_bar_timestamp", None),

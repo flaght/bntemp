@@ -81,7 +81,12 @@ class HybridAssemblyTests(unittest.TestCase):
                         args += ['--market-config', str(market)]
                     parsed = live.parse_args(args)
                     with patch.object(adapter, 'MizarWorkflowAdapter', Predictor):
-                        session = live.assemble(parsed, NS(references=refs, calendar=calendar(), upstream=Upstream('fixture')), NS(driver=None))
+                        session = live.assemble(
+                            NS(references=refs, calendar=calendar(), upstream=Upstream('fixture')), NS(driver=None),
+                            product=parsed.product, release_path=parsed.release_path,
+                            directions_file=parsed.directions_file, signal_config=parsed.signal_config,
+                            market_config=parsed.market_source_config, max_contracts=parsed.max_contracts)
+                    self.assertEqual(session.bar_feed.config.source, source)
                     session.runner._validate_configuration()
                     now = [ns('2026-10-28 09:02:02')]
                     session.runner._clock_ns = lambda: now[0]
@@ -134,7 +139,11 @@ class HybridAssemblyTests(unittest.TestCase):
             refs.instrument_meta=lambda:base.InstrumentMeta(instrument,price_precision=0,multiplier=Decimal(10))
             driver=Mock(driver_id=live.CLIENT_ID,account_id='fixture')
             with patch.object(adapter,'MizarWorkflowAdapter',Predictor):
-                session=live.assemble(args,NS(references=refs,calendar=calendar(),upstream=Upstream('fixture')),NS(driver=driver))
+                session=live.assemble(
+                    NS(references=refs,calendar=calendar(),upstream=Upstream('fixture')),NS(driver=driver),
+                    product=args.product,release_path=args.release_path,directions_file=args.directions_file,
+                    signal_config=args.signal_config,market_config=args.market_source_config,
+                    mode=args.mode,max_contracts=args.max_contracts,state_file=args.state_file)
             self.assertIs(session.strategy._checkpoint.__self__,session.manager)
             self.assertIs(session.manager.state_components['hybrid'].strategy,session.strategy)
             self.assertIs(session.manager.target_store,session.runner.target_store)
@@ -142,9 +151,14 @@ class HybridAssemblyTests(unittest.TestCase):
             driver.start.assert_not_called()
             driver.submit_order.assert_not_called()
             self.assertFalse((root/'state.json').exists())
-            before=live.model_identity(args)
+            before=live.model_identity(release_path=args.release_path,directions_file=args.directions_file,
+                signal_config=args.signal_config,market_config=args.market_source_config,
+                trading_day=args.expected_trading_day)
             (root/'directions.csv').write_text('formula,direction\nf,-1\n')
-            self.assertNotEqual(before,live.model_identity(args))
+            self.assertNotEqual(before,live.model_identity(
+                release_path=args.release_path,directions_file=args.directions_file,
+                signal_config=args.signal_config,market_config=args.market_source_config,
+                trading_day=args.expected_trading_day))
 
 
 if __name__ == '__main__':

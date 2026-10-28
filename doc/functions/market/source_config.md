@@ -13,12 +13,13 @@ def source_config(args):
     ...
 ```
 
-唯一参数args通常为argparse.Namespace或有相应属性的对象，无默认值。返回行情配置，不创建Feed、不连接网络、不读取凭据，不选择执行客户端。
+唯一参数可直接传入MarketSourceConfig，也兼容已有argparse.Namespace或有相应属性的对象，无默认值。返回行情配置，不创建Feed、不连接网络、不读取凭据，不选择执行客户端。
 
 实际逻辑：
 
-1. `args.market_source_config`存在且为真值时，直接返回同一对象。
-2. 否则读取几个已知属性，构造MarketSourceConfig。
+1. 已是MarketSourceConfig时直接返回同一对象，供行情工厂显式传入配置。
+2. 兼容路径中，`args.market_source_config`存在且为真值时返回同一对象。
+3. 否则读取几个已知属性，构造MarketSourceConfig。
 
 已有对象不会复制或重新验证其类型，也不会因其他args字段被修改而自动更新。回退分支新建的对象不会写回args.market_source_config，多次调用可得到内容相同但不同身份的对象。
 
@@ -58,7 +59,7 @@ source_config只触发配置对象自身校验，不执行完整入口约束；�
 | create_market_feed | 根据配置创建具体Feed，连接仍由外围生命周期负责 |
 | assemble_minute_market | 组合来源、分钟行情及健康检查等 |
 
-Hybrid的parse_args先执行market_config_from_args(args, domestic_contracts=True)，之后build_runtime多次source_config(args)，取得的是同一份已解析配置。当前入口因此拒绝不匹配国内合约的bn-ws，并区分CTP/DolphinDB行情。
+Hybrid入口通过load_market_config显式读取JSON路径和来源，返回MarketSourceConfig；后续运行器、会话准备和行情工厂直接传递该配置，不再传递命令行对象。其他demo的旧Namespace调用仍兼容。
 
 ## 5. 调用示例
 

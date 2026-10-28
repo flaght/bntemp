@@ -20,10 +20,10 @@ from bomber.framework.dataprep.live_cached_role import CachedRoleReferences
 from bomber.framework.dataprep.live_references import live_factor_policy
 from bomber.framework.dataprep.live_role import SourceRoleReferences
 from bomber.framework.dataprep.reference_freshness import ReferenceFreshnessPolicy
-from bomber.framework.dataprep.session_inputs import load_session_inputs, session_inputs_from_args, validate_session_arguments
+from bomber.framework.dataprep.session_inputs import SessionInputs, load_session_inputs, validate_session_inputs
 from bomber.framework.dataprep.sources import DataSourcePurpose, DolphinDbReferenceConfig, ReferenceSourceFactory
 from bomber.framework.market.basic.base import CustomBar, DataType
-from bomber.framework.market.sources import MarketSourceConfig, assemble_minute_market, create_market_feed, market_config_from_args, source_config
+from bomber.framework.market.sources import MarketSourceConfig, assemble_minute_market, create_market_feed
 from bomber.framework.trader import DataBinding, ExecutionRoute, RiskLimits
 from bomber.framework.trader.assembly import RoleGuard, StrategyBindings, assemble_strategy
 from bomber.framework.trader.execution.builders import ExecutionComponents, attach_ctp_persistence, build_ctp_execution
@@ -58,6 +58,20 @@ MODEL_BAR_TIMESTAMP = 'start'
 REBALANCE_MINUTES = 1
 
 
+def load_market_config(path: Path | None = None, *, source: str | None = None):
+    values = json.loads(Path(path).read_text(encoding='utf-8')) if path is not None else {}
+    if not isinstance(values, dict):
+        raise ValueError('行情配置须为JSON对象')
+    if source is not None:
+        values['source'] = source
+    if values.get('source') == 'dolphindb' and not values.get('table'):
+        values['table'] = os.getenv('DDB_MARKET_BAR_TABLE')
+    config = MarketSourceConfig(**values)
+    if config.source not in {'ctp', 'dolphindb'}:
+        raise ValueError('Hybrid实时行情仅支持 ctp 或 dolphindb')
+    return config
+
+
 def parse_args(argv=None):
     """命令行只保留业务输入、运行选择及交易/恢复开关。"""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -87,7 +101,7 @@ def parse_args(argv=None):
     try:
         if not args.connect:
             raise ValueError('须显式 --connect')
-        market_config_from_args(args, domestic_contracts=True)
+        args.market_source_config = load_market_config(args.market_config, source=args.market_source)
         for name in ('expected_trading_day', 'expected_source_day'):
             value = getattr(args, name)
             if datetime.strptime(value, '%Y%m%d').strftime('%Y%m%d') != value:
@@ -115,16 +129,20 @@ def parse_args(argv=None):
                 raise ValueError('新会话须新状态文件；恢复须原文件并加--resume')
         elif args.enable_orders or args.confirm_simnow or args.state_file or args.resume:
             raise ValueError('Recording不接受交易授权、交易状态文件或恢复参数')
-        validate_session_arguments(args, purpose=DataSourcePurpose.LIVE_REFERENCE)
+        validate_session_inputs(SessionInputs(
+            product=args.product, calendar_id=args.calendar_id,
+            overrides_table=os.getenv('DDB_SESSION_OVERRIDES_TABLE') or None,
+            no_overrides=args.no_session_overrides), purpose=DataSourcePurpose.LIVE_REFERENCE)
     except (ValueError, TypeError, OSError) as error:
         parser.error(str(error))
     return args
 
 
-def model_identity(args):
-    root = args.release_path.resolve()
+def model_identity(*, release_path: Path, directions_file: Path, signal_config: Path,
+                   market_config: MarketSourceConfig, trading_day: str):
+    root = Path(release_path).resolve()
     files = sorted(root.glob('*/*/config.json')) + sorted(root.glob('*/*/models/best_model.pt'))
-    files += [args.directions_file, args.signal_config]
+    files += [Path(directions_file), Path(signal_config)]
     if not files:
         raise ValueError('模型发布目录没有配置/权重')
     digest = hashlib.sha256()
@@ -135,32 +153,35 @@ def model_identity(args):
                 digest.update(block)
     return {'sha256': digest.hexdigest(), 'history_bars': MODEL_HISTORY_BARS,
         'min_raw_bars': MODEL_MIN_RAW_BARS, 'model_bar_timestamp': MODEL_BAR_TIMESTAMP,
-        'market': source_config(args).identity, 'trading_day': args.expected_trading_day}
+        'market': market_config.identity, 'trading_day': trading_day}
 
 
-def prepare_inputs(args, context, lifecycle, *, reference_database=None,
+def prepare_inputs(context, lifecycle, *, product: str, expected_source_day: str,
+                   market_config: MarketSourceConfig, calendar_id='china.sse',
+                   no_session_overrides=False, reference_database=None,
                    reference_timeout=15, refresh_seconds=5, trading_hours_database=None):
     config = DolphinDbReferenceConfig.from_env(database=reference_database,
         read_timeout_seconds=reference_timeout)
     source = ReferenceSourceFactory.create_for(DataSourcePurpose.LIVE_REFERENCE, 'dolphindb', config)
     context.resources.callback(source.close)
     source.open()
-    references = CachedRoleReferences(SourceRoleReferences(source, product=args.product,
+    references = CachedRoleReferences(SourceRoleReferences(source, product=product,
         trading_day=context.trading_day, started_ns=time.time_ns(),
         factor_date_basis='source', factor_availability=live_factor_policy('source', 'observed-on-read'),
         refresh_seconds=refresh_seconds, allowed_venues=('SHFE', 'INE'),
         required_currency='CNY', freshness=ReferenceFreshnessPolicy(
-            expected_source_day=datetime.strptime(args.expected_source_day, '%Y%m%d').date())))
+            expected_source_day=datetime.strptime(expected_source_day, '%Y%m%d').date())))
     context.references = references
     assignment = references.snapshot(time.time_ns())
-    if assignment.source_day.strftime('%Y%m%d') != args.expected_source_day:
+    if assignment.source_day.strftime('%Y%m%d') != expected_source_day:
         raise ValueError('主力参考来源日与声明不一致')
-    session_inputs = session_inputs_from_args(args, exchange=references.spec.venue)
-    session_inputs = replace(session_inputs,
-        database=trading_hours_database or reference_database or session_inputs.database)
-    calendar = load_session_inputs(session_inputs,
+    calendar = load_session_inputs(SessionInputs(
+        product=product, calendar_id=calendar_id, exchange=references.spec.venue,
+        database=trading_hours_database or reference_database,
+        overrides_table=os.getenv('DDB_SESSION_OVERRIDES_TABLE') or None,
+        no_overrides=no_session_overrides),
         purpose=DataSourcePurpose.LIVE_REFERENCE)
-    upstream = create_market_feed(source_config(args), 'hybrid-market', lifecycle=lifecycle,
+    upstream = create_market_feed(market_config, 'hybrid-market', lifecycle=lifecycle,
         flow_path='/tmp/bomber-hybrid-md', environment='realtime')
     return SimpleNamespace(references=references, calendar=calendar, upstream=upstream)
 
@@ -169,8 +190,9 @@ class HybridLiveRunner(SessionRoleLiveRunner):
     """固定主力的完整分钟输入；时钟与模型处理在同一控制线程顺序执行。"""
     def begin_bars(self):
         with self._submit_lock:
-            warm_history(self, SimpleNamespace(**{
-                **vars(self.args), 'model_bar_timestamp': MODEL_BAR_TIMESTAMP}))
+            warm_history(self, product=self.strategy.config.product,
+                history_minutes=self.history_minutes, resume=self.resuming,
+                model_bar_timestamp=MODEL_BAR_TIMESTAMP)
             super().begin_bars()
             # 历史窗口已预热至启动边界；排除历史重复并保留完整实时分钟。
             self.first_complete_bar_ns = max(self.first_complete_bar_ns, self.history_last_ns + MINUTE)
@@ -184,7 +206,7 @@ class HybridLiveRunner(SessionRoleLiveRunner):
                 from bomber.framework.market.futures import futures_bar_values
                 values = futures_bar_values(event, contract_multiplier=self.strategy.config.contract_multiplier)
                 rows = list(self.strategy.predictor.workflow.history)
-                rows.append({"trade_time": event.factors["trade_time"], "code": self.args.product, **values})
+                rows.append({"trade_time": event.factors["trade_time"], "code": self.strategy.config.product, **values})
                 self.strategy.predictor.warm_history(rows)
                 self.history_last_ns = event.ts_event
                 return
@@ -213,39 +235,44 @@ class HybridLiveRunner(SessionRoleLiveRunner):
                     now, trigger_instrument_id=self.bound_instrument)
 
 
-def build_strategy(args, references, calendar):
+def build_strategy(references, calendar, *, product: str, release_path: Path,
+                   directions_file: Path, signal_config: Path, max_contracts=10):
     """模型和策略在这里明确声明，不经命令行或运行器回调参数传入。"""
     from .model_adapter import MizarWorkflowAdapter
-    selected = load_product_signal(args.signal_config, args.product)
+    selected = load_product_signal(signal_config, product)
     predictor = MizarWorkflowAdapter(
-        release_path=args.release_path, directions_file=args.directions_file,
-        code=args.product, signal_id=selected.signal_id,
+        release_path=release_path, directions_file=directions_file,
+        code=product, signal_id=selected.signal_id,
         signal_method=selected.signal_method, signal_params=selected.signal_params,
         device=MODEL_DEVICE, history_bars=MODEL_HISTORY_BARS,
         min_raw_bars=MODEL_MIN_RAW_BARS)
     config = HybridTransformerConfig(
-        product=args.product, venue=references.spec.venue, signal_id=selected.signal_id,
-        max_contracts=args.max_contracts, hold_bars=selected.hold_bars,
+        product=product, venue=references.spec.venue, signal_id=selected.signal_id,
+        max_contracts=max_contracts, hold_bars=selected.hold_bars,
         rebalance_minutes=REBALANCE_MINUTES,
         contract_multiplier=references.spec.multiplier, record_signals=True)
     return HybridTransformerStrategy(CLIENT_ID, references, predictor, config, calendar=calendar)
 
 
-def assemble(args, inputs, lifecycle, *, execution_policy=None,
+def assemble(inputs, lifecycle, *, product: str, release_path: Path, directions_file: Path,
+             signal_config: Path, market_config: MarketSourceConfig, mode='recording',
+             max_contracts=10, state_file: Path | None = None,
+             history_minutes=0, history_config: Path | None = None, history_file: Path | None = None,
+             resume=False, execution_policy=None,
              max_notional=Decimal('1000000'), limit_offset_ticks=1):
     execution_policy = execution_policy or ExecutionPolicy('off', 'fills')
     references, calendar, upstream = inputs.references, inputs.calendar, inputs.upstream
     instrument = references.instrument_id
     profile = CtpLiveProfile('realtime')
-    feed, market_channel, health = assemble_minute_market(args, upstream, 'HYBRID_1M', profile,
+    feed, market_channel, health = assemble_minute_market(market_config, upstream, 'HYBRID_1M', profile,
         (instrument,), references.trading_day.strftime('%Y%m%d'), futures_calendar=calendar,
         model_timestamp=MODEL_BAR_TIMESTAMP)
     feed.register_instrument(references.instrument_meta())
-    orders = args.mode == 'simnow'
+    orders = mode == 'simnow'
     if orders:
         check = SessionReadiness(market_channel, CtpExecutionChannel(lifecycle.driver,
             references.trading_day.strftime('%Y%m%d'), require_orders=True))
-        limits = RiskLimits(max_order_quantity=2*args.max_contracts, max_abs_position=args.max_contracts,
+        limits = RiskLimits(max_order_quantity=2*max_contracts, max_abs_position=max_contracts,
             max_order_notional=max_notional, max_abs_position_notional=max_notional,
             max_market_age_ns=120_000_000_000, contract_multiplier=references.spec.multiplier)
         execution = build_ctp_execution(lifecycle.driver, instrument_id=instrument,
@@ -257,22 +284,26 @@ def assemble(args, inputs, lifecycle, *, execution_policy=None,
         execution = ExecutionComponents(RecordingExecutionClient(CLIENT_ID), PositionManager(), MarketReferencePriceStore())
         check = SessionReadiness(market_channel, LocalExecutionChannel(CLIENT_ID,
             lambda: execution.client.is_started, channel='recording'))
-    strategy = build_strategy(args, references, calendar)
+    strategy = build_strategy(references, calendar, product=product, release_path=release_path,
+        directions_file=directions_file, signal_config=signal_config, max_contracts=max_contracts)
     runner = HybridLiveRunner(references=references, session_check=check, orders=orders,
         position_manager=execution.positions, instrument_health=health)
-    runner.args, runner.calendar, runner.strategy, runner.client = args, calendar, strategy, execution.client
+    runner.calendar, runner.strategy, runner.client = calendar, strategy, execution.client
+    runner.history_minutes, runner.resuming = history_minutes, resume
     runner.history_last_ns = -1
-    runner.history_service = build_history(args)
+    runner.history_service = build_history(history_config=history_config, history_file=history_file)
     if not getattr(references, 'refresh_on_event', True):
         references.publication_lock = runner._submit_lock
     bindings = StrategyBindings(
         data=(DataBinding(str(instrument), 'model-bars', instrument, DataType.CUSTOM_BAR, '1-MINUTE'),),
         execution=(ExecutionRoute(strategy.config.target_key, execution.client.client_id, instrument),),
-        role_guard=RoleGuard(references, args.product, 'main', lambda: strategy.last_processed_ns))
+        role_guard=RoleGuard(references, product, 'main', lambda: strategy.last_processed_ns))
     assemble_strategy(runner, strategy, feeds={'model-bars': feed}, execution=execution, bindings=bindings)
     components = {'hybrid': HybridCheckpoint(strategy), 'session_rules': SessionRulesCheckpoint(calendar),
-        'live_session': SessionIdentityCheckpoint(model_identity(args))}
-    manager = attach_ctp_persistence(execution, runner, state_file=args.state_file,
+        'live_session': SessionIdentityCheckpoint(model_identity(
+            release_path=release_path, directions_file=directions_file, signal_config=signal_config,
+            market_config=market_config, trading_day=references.trading_day.strftime('%Y%m%d')))}
+    manager = attach_ctp_persistence(execution, runner, state_file=state_file,
         state_components=components) if orders else None
     runner.manager = manager
     if manager is not None:
@@ -359,18 +390,7 @@ def build_runtime(
 
     product = product.strip().upper()
     report_dir = Path(report_dir) if report_dir is not None else Path(__file__).parent/'results'/'live'
-    # 仅为现有会话辅助函数适配属性访问；Runtime接口不接收命令行Namespace。
-    session_options = SimpleNamespace(
-        product=product, release_path=Path(release_path), directions_file=Path(directions_file),
-        signal_config=Path(signal_config), expected_trading_day=expected_trading_day,
-        expected_source_day=expected_source_day, mode=mode, max_contracts=max_contracts,
-        seconds=seconds, market_source_config=market_config, calendar_id=calendar_id,
-        no_session_overrides=no_session_overrides, history_minutes=history_minutes,
-        history_config=Path(history_config) if history_config is not None else None,
-        history_file=Path(history_file) if history_file is not None else None,
-        state_file=Path(state_file) if state_file is not None else None,
-        resume=resume, report_dir=report_dir,
-    )
+    release_path, directions_file, signal_config = Path(release_path), Path(directions_file), Path(signal_config)
 
     if mode == 'recording':
         lifecycle = HybridRecordingLifecycle(expected_trading_day=expected_trading_day,
@@ -409,8 +429,14 @@ def build_runtime(
                   f"targets={strategy.last_targets} active_batches={len(strategy.holdings.active)}", flush=True)
 
     return ManagedLiveRuntime(CLIENT_ID, controller=lifecycle,
-        prepare_inputs=lambda context: prepare_inputs(session_options, context, lifecycle),
-        assemble_session=lambda inputs, context: assemble(session_options, inputs, lifecycle,
+        prepare_inputs=lambda context: prepare_inputs(context, lifecycle,
+            product=product, expected_source_day=expected_source_day, market_config=market_config,
+            calendar_id=calendar_id, no_session_overrides=no_session_overrides),
+        assemble_session=lambda inputs, context: assemble(inputs, lifecycle,
+            product=product, release_path=release_path, directions_file=directions_file,
+            signal_config=signal_config, market_config=market_config, mode=mode,
+            max_contracts=max_contracts, state_file=state_file, history_minutes=history_minutes,
+            history_config=history_config, history_file=history_file, resume=resume,
             execution_policy=execution_policy, max_notional=max_notional,
             limit_offset_ticks=limit_offset_ticks),
         report=report, seconds=seconds, progress=progress)
@@ -429,7 +455,7 @@ def main(argv=None):
         mode=args.mode,
         max_contracts=args.max_contracts,
         seconds=args.seconds,
-        market_config=source_config(args),
+        market_config=args.market_source_config,
         calendar_id=args.calendar_id,
         no_session_overrides=args.no_session_overrides,
         history_minutes=args.history_minutes,

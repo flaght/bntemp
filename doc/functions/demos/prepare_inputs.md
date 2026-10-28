@@ -9,20 +9,23 @@
 ## 1. 签名与调用时机
 
 ```python
-def prepare_inputs(args, context, lifecycle, *, reference_database=None,
-                   reference_timeout=15, refresh_seconds=5, trading_hours_database=None):
+def prepare_inputs(context, lifecycle, *, product, expected_source_day,
+                   market_config, calendar_id='china.sse', no_session_overrides=False,
+                   reference_database=None, reference_timeout=15,
+                   refresh_seconds=5, trading_hours_database=None):
     ...
 ```
 
-前三个参数必填，参考库、超时、刷新间隔和时段库为函数默认参数。Runtime先调用controller.prepare，再通过lambda调用本函数；返回后先finish_preparation，再assemble。本函数会实际打开参考数据库、读取资料和日历输入。
+context和lifecycle为运行上下文；品种、来源日和行情配置为必填关键字参数。参考库、超时、刷新间隔和时段库为函数默认参数。Runtime先调用controller.prepare，再通过lambda调用本函数；返回后先finish_preparation，再assemble。本函数会实际打开参考数据库、读取资料和日历输入。
 
 | 参数 | 预期对象 | 作用 |
 | --- | --- | --- |
-| args | 已通过Hybrid parse_args的Namespace | 品种、参考源、日期、日历和行情配置 |
+| product / expected_source_day | 字符串 | 品种和声明的参考来源日 |
+| market_config | MarketSourceConfig | 已解析的CTP或DolphinDB行情配置 |
 | context | LiveRunContext | 提供会话trading_day、清理栈，接收references |
 | lifecycle | Recording或SimNow控制器 | 传给行情工厂，提供配置或调整就绪等待预算 |
 
-context.trading_day由控制器提供，不是函数自行猜测当天自然日。手工构造args会绕过入口校验，本函数不会重新检查全部CLI组合。
+context.trading_day由控制器提供，不是函数自行猜测当天自然日。直接调用前应自行核对业务输入，本函数不会重新检查全部CLI组合。
 
 ## 2. 读取哪些参数
 
@@ -33,7 +36,7 @@ context.trading_day由控制器提供，不是函数自行猜测当天自然日�
 | 因子语义 | 固定source/observed-on-read，经live_factor_policy规范化 |
 | 缓存刷新 | 函数默认refresh_seconds=5秒，由代码调整 |
 | 日历输入 | calendar_id默认china.sse，可由BOMBER_CALENDAR_ID指定；例外表取DDB_SESSION_OVERRIDES_TABLE，或显式--no-session-overrides；交易所取references.spec.venue |
-| 行情来源 | source_config(args)，Hybrid完整解析允许CTP/DolphinDB；固定environment=realtime |
+| 行情来源 | 显式传入的market_config，Hybrid完整解析允许CTP/DolphinDB；固定environment=realtime |
 
 expected_source_day须YYYYMMDD，表示资料来源日，不要求简单等于交易日。参考源固定DolphinDB；即使行情也是DolphinDB，两者仍是不同用途的配置与连接。
 
@@ -75,11 +78,13 @@ from importlib import import_module
 
 entry = import_module("demos.10_hybrid_transformer.run_live")
 
-def input_factory(args, lifecycle):
-    return lambda context: entry.prepare_inputs(args, context, lifecycle)
+inputs = entry.prepare_inputs(
+    context, lifecycle, product="RB", expected_source_day="20261027",
+    market_config=market_config, no_session_overrides=True,
+)
 ```
 
-上例只建立回调；调用时会打开参考源，须用已校验args及控制器context。完整入口由build_runtime接线、Runtime管理清理，无需手动重复open。
+上例会打开参考源，须提供正确的显式输入及控制器context。完整入口由build_runtime接线、Runtime管理清理，无需手动重复open。
 
 ## 7. 失败与排查
 
