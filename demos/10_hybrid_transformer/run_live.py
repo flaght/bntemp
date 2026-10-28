@@ -215,10 +215,15 @@ def prepare_inputs(context, lifecycle, *, product: str, expected_source_day: str
     assignment = references.snapshot(time.time_ns())
     if assignment.source_day.strftime('%Y%m%d') != expected_source_day:
         raise ValueError('主力参考来源日与声明不一致')
+    # 时段在静态资料库，不能沿用主力/条款所在的bomber_daily。
+    # 显式参数优先，其次独立的时段环境配置；不改变参考资料库配置。
+    hours_database = (trading_hours_database or os.getenv('DDB_TRADING_HOURS_DATABASE')
+                      or 'dfs://bomber_static')
+    hours_table = os.getenv('DDB_TRADING_HOURS_TABLE') or 'fut_trading_session'
     # 同一日历同时服务分钟聚合、历史预热和批次到期，跨休市时不另算一套时间。
     calendar = load_session_inputs(SessionInputs(
         product=product, calendar_id=calendar_id, exchange=references.spec.venue,
-        database=trading_hours_database or reference_database,
+        database=hours_database, hours_table=hours_table,
         overrides_table=os.getenv('DDB_SESSION_OVERRIDES_TABLE') or None,
         no_overrides=no_session_overrides),
         purpose=DataSourcePurpose.LIVE_REFERENCE)

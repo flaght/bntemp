@@ -258,5 +258,41 @@ class HybridAssemblyTests(unittest.TestCase):
                 restored.runner.stop()
 
 
+    def test_ctp_session_hours_use_static_database_independently_from_daily_references(self):
+        from contextlib import ExitStack
+        cases=[({},None,'dfs://bomber_static','fut_trading_session'),
+               ({'DDB_TRADING_HOURS_DATABASE':'dfs://custom_static','DDB_TRADING_HOURS_TABLE':'custom_hours'},
+                None,'dfs://custom_static','custom_hours'),
+               ({'DDB_TRADING_HOURS_DATABASE':'dfs://custom_static'},
+                'dfs://explicit_static','dfs://explicit_static','fut_trading_session')]
+        for environment,explicit,expected_database,expected_table in cases:
+            with self.subTest(environment=environment,explicit=explicit),ExitStack() as resources:
+                source=Mock()
+                references=NS(spec=NS(venue='SHFE'),
+                    snapshot=lambda stamp:NS(source_day=date(2026,10,27)))
+                reference_config=NS(database='dfs://bomber_daily')
+                upstream=Upstream('test-md')
+                context=NS(trading_day='20261028',resources=resources)
+                with patch.dict(live.os.environ,environment,clear=True), \
+                     patch.object(live.DolphinDbReferenceConfig,'from_env',return_value=reference_config) as config, \
+                     patch.object(live.ReferenceSourceFactory,'create_for',return_value=source), \
+                     patch.object(live,'SourceRoleReferences',return_value=references), \
+                     patch.object(live,'CachedRoleReferences',side_effect=lambda value:value), \
+                     patch.object(live,'load_session_inputs',return_value=calendar()) as load_hours, \
+                     patch.object(live,'create_market_feed',return_value=upstream):
+                    result=live.prepare_inputs(context,NS(),product='RB',expected_source_day='20261027',
+                        market_config=live.load_market_config(source='ctp'),no_session_overrides=True,
+                        reference_database='dfs://bomber_daily',trading_hours_database=explicit)
+                actual=load_hours.call_args.args[0]
+                self.assertEqual(actual.database,expected_database)
+                self.assertEqual(actual.hours_table,expected_table)
+                self.assertEqual(actual.exchange,'SHFE')
+                self.assertTrue(actual.no_overrides)
+                config.assert_called_once_with(database='dfs://bomber_daily',read_timeout_seconds=15)
+                self.assertIs(result.upstream,upstream)
+                source.open.assert_called_once()
+            source.close.assert_called_once()
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
