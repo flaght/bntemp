@@ -319,6 +319,8 @@ def build_strategy(references, calendar, *, product: str, release_path: Path,
         product=product, venue=references.spec.venue, signal_id=selected.signal_id,
         max_contracts=max_contracts, hold_bars=selected.hold_bars,
         rebalance_minutes=REBALANCE_MINUTES,
+        # 策略目标和ExecutionRoute使用同一个显式键，不依赖配置类自动补全。
+        target_key=f"{product.strip().lower()}_main",
         contract_multiplier=references.spec.multiplier, record_signals=True)
     return HybridTransformerStrategy(CLIENT_ID, references, predictor, config, calendar=calendar)
 
