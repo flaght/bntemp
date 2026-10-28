@@ -248,11 +248,26 @@ SimNow 模式将示例中的 `--mode recording` 改为 `--mode simnow`，另外�
 新会话使用不存在的状态文件；同交易日、同合约、同模型及配置恢复使用原文件加 `--resume`。
 停机撤销活动订单并保存状态，不自动平掉剩余仓位。
 
+### 仅用CTP实时行情积累模型窗口
+
+DolphinDB分钟表停止更新时，使用 `--market-source ctp --history-minutes 0`，
+不传 `--history-config` 或 `--history-file`。此模式不读取DolphinDB历史行情；
+主力角色、合约条款、手续费、因子和交易时段仍按现有参考源读取。
+
+首次启动和同交易日 `--resume` 均可使用此模式。恢复仍使用原检查点，校验持仓、订单、
+路由及会话身份，保留批次绝对到期时间。模型窗口本次从零积累，未就绪时不建立新批次；
+通道正常且满足执行条件时，已有批次仍按原期限推进到期目标。旧恢复目标不会作为新信号重复执行。
+
+日志 `bars` 是策略累计处理根数，恢复后可能非零；`model_window` 是本次模型实际窗口根数，
+`min_raw_bars=300`只是最低输入门槛，因子和序列条件可能要求继续积累。仅运行一段不足300个
+有效分钟的夜盘不能保证产生预测；不能为尽快交易而降低研究所需窗口。
+停止、重启不会从当前检查点恢复模型DataFrame，也不包含自动跨交易日重登录。
+
 ### 历史模型预热
 
 历史预热复用框架 Provider，但必须提供完整原始行情，不能使用 EMA 的 `adjusted_close` 历史配置。
 `history_minutes` 是交易分钟根数，应满足 `MODEL_MIN_RAW_BARS <= history_minutes <= MODEL_HISTORY_BARS`；默认为 0 时仅靠实时行情预热。
-恢复持仓必须提供历史预热。历史不足、字段缺失或来源冲突直接失败，不填造成交额、不发布历史信号。
+可使用历史服务或实时完整分钟重新预热；启用历史服务时，历史不足、字段缺失或来源冲突直接失败，不填造成交额、不发布历史信号。
 
 已按 `01_main_ema` 的 `HistoryService + DolphinDbHistoryProvider` 路径补充
 `history_rb.json`，对应用户提供的 `dfs://min_bar/shfe_1min`。启动时在原命令上增加：
@@ -307,12 +322,12 @@ SimNow 模式将示例中的 `--mode recording` 改为 `--mode simnow`，另外�
 
 若来源已经保存 UTC 纳秒，应设置 `source_timezone=UTC`，不能重复减八小时。
 可用 `--history-file` 提供框架 JSONL/CSV 完整分钟；时间 `ts_event` 为 UTC 分钟结束减1ns、合约带交易所后缀。
-盘前阶段优先文件并由数据库补足；`--resume` 的恢复阶段使用数据库。
+启用历史服务时，盘前阶段优先文件并由数据库补足，`--resume`恢复阶段使用数据库；`history-minutes=0`则完全不读历史。
 
 ### 检查点与报告
 
 SimNow 装配时将 `HybridCheckpoint`、模型/信号配置摘要、日历指纹注册进统一 `RuntimeStateManager`，并调用 `strategy.bind_checkpoint(manager.save)`。
-目标相同的批次续期也保存；恢复后保持原批次绝对期限，模型窗口通过历史重新预热。
+目标相同的批次续期也保存；恢复后保持原批次绝对期限，模型窗口通过历史服务或实时完整分钟重新积累。
 不兼容 EMA 的旧状态文件，也不自动接受跨交易日或模型变更的状态。
 
 每次运行输出 `summary.json`、`events.txt`、`signals.csv`、`batches.csv` 和最终只读 `strategy_state.json`。

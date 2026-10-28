@@ -1,6 +1,6 @@
 """Hybrid 批次与目标状态；接入框架 RuntimeStateManager 的同一检查点。
 
-模型窗口须由历史行情单独预热；这里只恢复持仓义务，不重放历史委托。
+模型窗口由历史服务或完整实时分钟重新积累；这里只恢复持仓义务，不重放历史委托。
 """
 from decimal import Decimal
 

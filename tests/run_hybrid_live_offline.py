@@ -161,5 +161,102 @@ class HybridAssemblyTests(unittest.TestCase):
                 trading_day=args.expected_trading_day))
 
 
+    def test_resume_accepts_ctp_realtime_warmup_but_requires_database_if_history_enabled(self):
+        from contextlib import redirect_stderr
+        from io import StringIO
+        with TemporaryDirectory() as directory:
+            root=Path(directory)
+            (root/'release').mkdir()
+            (root/'directions.csv').write_text('formula,direction\nf,1\n')
+            (root/'signals.json').write_text('{}')
+            (root/'state.json').write_text('{}')
+            command=['--connect','--mode','simnow','--enable-orders','--confirm-simnow',
+                '--resume','--state-file',str(root/'state.json'),'--market-source','ctp',
+                '--product','RB','--release-path',str(root/'release'),
+                '--directions-file',str(root/'directions.csv'),'--signal-config',str(root/'signals.json'),
+                '--expected-trading-day','20261028','--expected-source-day','20261027',
+                '--no-session-overrides','--history-minutes','0']
+            args=live.parse_args(command)
+            self.assertTrue(args.resume)
+            self.assertEqual(args.history_minutes,0)
+            self.assertIsNone(args.history_config)
+            self.assertIsNone(args.history_file)
+            (root/'bars.csv').write_text('instrument_id,ts_event,close\n')
+            with redirect_stderr(StringIO()),self.assertRaises(SystemExit):
+                live.parse_args(command+['--history-minutes','300','--history-file',str(root/'bars.csv')])
+
+    def test_restored_batch_expires_while_ctp_model_window_is_still_warming(self):
+        class WarmingPredictor(Predictor):
+            def on_bar(self, row):
+                self.workflow.history.append(dict(row))
+                return None
+        with TemporaryDirectory() as directory:
+            root=Path(directory)
+            (root/'release').mkdir()
+            (root/'directions.csv').write_text('formula,direction\nf,1\n')
+            signal=root/'signals.json'
+            signal.write_text(json.dumps({'RB':dict(signal_id='1301',signal_method='threshold_signal',
+                signal_params={'threshold':.02},hold_bars=5)}))
+            instrument=InstrumentId.from_str('rb2701.SHFE')
+            refs=NS(instrument_id=instrument,trading_day=date(2026,10,28),
+                started_ns=ns('2026-10-28 09:00:00'),refresh_on_event=False,
+                spec=NS(venue='SHFE',currency='CNY',tick=Decimal(1),multiplier=Decimal(10)),
+                snapshot=lambda stamp:NS(instrument=lambda p,r:'rb2701',factor=lambda p,r:Decimal(1)))
+            refs.instrument_meta=lambda:base.InstrumentMeta(instrument,price_precision=0,multiplier=Decimal(10))
+            def session(predictor, resume=False):
+                with patch.object(adapter,'MizarWorkflowAdapter',predictor):
+                    result=live.assemble(NS(references=refs,calendar=calendar(),upstream=Upstream('ctp-fixture')),
+                        NS(driver=None),product='RB',release_path=root/'release',directions_file=root/'directions.csv',
+                        signal_config=signal,market_config=live.load_market_config(source='ctp'),resume=resume)
+                result.runner._session_check=lambda:True
+                result.runner.instrument_health=None
+                return result
+            def event(label):
+                stamp=ns(label)+live.MINUTE-1
+                bar=base.make_bar(instrument_id=instrument,meta=refs.instrument_meta(),ts_event=stamp,
+                    ts_init=stamp,open=100,high=100,low=100,close=100,volume=2)
+                return base.make_custom_bar(bar,dict(open=100,high=100,low=100,close=100,
+                    volume=2,value=2000,open_interest=500,
+                    trade_time=datetime.fromisoformat(label).replace(tzinfo=calendar().zone)))
+            original=session(Predictor)
+            original.runner._clock_ns=lambda:ns('2026-10-28 09:02:02')
+            original.runner.start()
+            try:
+                original.runner.accept_bars=True
+                original.runner.first_complete_bar_ns=0
+                original.runner.publish('model-bars',event('2026-10-28 09:01:00'))
+                saved=live.HybridCheckpoint(original.strategy).snapshot_state()
+                targets=dict(original.runner.target_store.all())
+                expiry=original.strategy.holdings.active[0].expires_at_ns
+            finally:
+                original.runner.stop()
+            restored=session(WarmingPredictor,resume=True)
+            live.HybridCheckpoint(restored.strategy).restore_state(saved)
+            restored.runner.target_store.restore(targets)
+            restored.runner.hold_restored_target(restored.strategy.strategy_id,restored.strategy._revision)
+            now=[ns('2026-10-28 09:03:02')]
+            restored.runner._clock_ns=lambda:now[0]
+            restored.runner.history_service.load=Mock(side_effect=AssertionError('must not read historical bars'))
+            restored.runner.start()
+            try:
+                restored.runner.begin_bars()
+                self.assertTrue(restored.runner.accept_bars)
+                self.assertEqual(restored.strategy.holdings.active[0].expires_at_ns,expiry)
+                self.assertFalse(restored.client.requests)
+                now[0]=ns('2026-10-28 09:05:02')
+                restored.runner.publish('model-bars',event('2026-10-28 09:04:00'))
+                self.assertEqual(len(restored.strategy.predictor.workflow.history),1)
+                self.assertIsNone(restored.strategy.last_prediction)
+                self.assertEqual(len(restored.strategy.holdings.active),1)
+                self.assertFalse(restored.client.requests)
+                now[0]=expiry+2_000_000_000
+                restored.runner.expire_due()
+                self.assertFalse(restored.strategy.holdings.active)
+                self.assertEqual(dict(restored.client.requests[-1].logical_targets),{'rb_main':Decimal(0)})
+                restored.runner.history_service.load.assert_not_called()
+            finally:
+                restored.runner.stop()
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
