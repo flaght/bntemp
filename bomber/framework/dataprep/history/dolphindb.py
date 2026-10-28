@@ -1,11 +1,12 @@
 """DolphinDB历史分钟Provider；可配置字段映射，构造时不加载SDK或连接。"""
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from decimal import Decimal
 from datetime import datetime, timedelta, timezone
 import re
 from threading import RLock
 from .base import HistoryBar, HistoryProvider, HistoryError, HistoryUnavailable, select_bars, MINUTE_NS
 from ..sources.dolphindb import DolphinDbReferenceConfig, _session_factory
+from ...calendars.sessions import SessionCalendar, datetime_ns, ns_datetime
 
 
 @dataclass(frozen=True)
@@ -21,6 +22,10 @@ class DolphinDbHistoryConfig:
     date_column: str | None = None
     time_column: str | None = None
     source_timezone: str = "UTC"
+    date_basis: str = "calendar"
+    volume_mode: str = "per-bar"
+    # 运行时复用策略的会话日历，不在JSON中另存一份日期规则。
+    session_calendar: SessionCalendar | None = field(default=None, repr=False, compare=False)
 
     def __post_init__(self):
         if re.fullmatch(r"dfs://[A-Za-z0-9_/-]+", self.database) is None:
@@ -48,6 +53,15 @@ class DolphinDbHistoryConfig:
         if self.instrument_format not in {"full", "symbol"} or (self.instrument_format == "symbol"
                 and (self.venue is None or re.fullmatch(r"[A-Z0-9]+", self.venue) is None)):
             raise HistoryError("symbol格式须明确固定Venue，不能猜测交易所")
+        if self.date_basis not in {"calendar", "trading"} or self.volume_mode not in {"per-bar", "cumulative"}:
+            raise HistoryError("历史日期口径须为calendar/trading，量额口径须为per-bar/cumulative")
+        if self.date_basis == "trading" and (not composite
+                or not isinstance(self.session_calendar, SessionCalendar)
+                or str(self.session_calendar.zone) != self.source_timezone):
+            raise HistoryError("交易日分钟须提供date/time字段及同一时区的会话日历")
+        if self.volume_mode == "cumulative" and (self.date_basis != "trading"
+                or not {"volume", "value"} <= columns.keys()):
+            raise HistoryError("累计量额须同时映射volume/value，并使用交易日会话日历定位重置边界")
         object.__setattr__(self, "columns", columns)
 
 
@@ -84,6 +98,8 @@ class DolphinDbHistoryProvider(HistoryProvider):
             if not symbol.endswith("." + c.venue):
                 raise HistoryError("请求交易所与历史库固定Venue不一致")
             symbol = symbol.rsplit(".", 1)[0]
+        if c.date_basis == "trading":
+            return self._trading_script(request, symbol)
         if c.date_column is not None:
             end = f"long(nanotimestamp(concatDateTime({c.date_column},{c.time_column})))"
             ordering = f"{c.date_column},{c.time_column}"
@@ -112,6 +128,101 @@ class DolphinDbHistoryProvider(HistoryProvider):
             f'where {partition_filter}{c.columns["instrument_id"]}="{symbol}",'
             f'{end}>={request.start_ns}l,{end}<{request.end_ns}l order by {ordering}')
 
+    def _trading_labels(self, request):
+        """交易日+时钟 -> 实际完成戳；周五夜盘、凌晨、例外均沿用SessionCalendar。"""
+        calendar = self.config.session_calendar
+        owners = set()
+        first = (request.start_ns // MINUTE_NS + 1) * MINUTE_NS - 1
+        for stamp in range(first, request.end_ns, MINUTE_NS):
+            window = calendar.window(ns_datetime(stamp, calendar.zone))
+            if window is not None:
+                owners.add(window.trading_day)
+        labels = {}
+        for owner in sorted(owners):
+            index = 0
+            for window in calendar.windows(owner):
+                for start in range(datetime_ns(window.start), datetime_ns(window.end), MINUTE_NS):
+                    stamp = start + MINUTE_NS - 1
+                    label = start if self.config.time_label == "start" else start + MINUTE_NS
+                    key = (owner, ns_datetime(label, calendar.zone).strftime("%H:%M:%S"))
+                    if key in labels:
+                        raise HistoryError("同一交易日时钟对应多个分钟，历史时间无法唯一定位")
+                    labels[key] = (stamp, index)
+                    index += 1
+        return labels
+
+    def _trading_script(self, request, symbol):
+        c = self.config
+        prefix = re.match(r"[A-Za-z]+", symbol)
+        if prefix is None or prefix.group().upper() != c.session_calendar.product:
+            raise HistoryError("历史合约品种与会话日历不一致")
+        labels = self._trading_labels(request)
+        days = sorted({owner for owner, _ in labels})
+        if not days:
+            raise HistoryError("历史请求区间没有交易分钟")
+        dates = ",".join(f"{day[:4]}.{day[4:6]}.{day[6:]}" for day in days)
+        fields = ",".join(f"{physical} as {logical}" for logical, physical in c.columns.items())
+        # 读取涉及的完整交易日：累计量额差分需要请求窗口之前的基准，不能先截窗口再diff。
+        return (f'select top {request.max_rows + 1} {fields},'
+            f'string({c.date_column}) as history_day,string({c.time_column}) as history_time '
+            f'from loadTable("{c.database}","{c.table}") '
+            f'where {c.columns["instrument_id"]}="{symbol}",{c.date_column} in [{dates}] '
+            f'order by {c.date_column},{c.time_column}')
+
+    def _read_trading(self, rows, request):
+        c = self.config
+        labels = self._trading_labels(request)
+        ordered = {}
+        for source in rows:
+            row = dict(source)
+            owner = str(row.pop("history_day")).replace(".", "").replace("-", "")
+            clock = str(row.pop("history_time"))
+            try:
+                parsed = datetime.strptime(clock.split(".")[0], "%H:%M:%S")
+                if "." in clock and int(clock.split(".", 1)[1]) != 0:
+                    raise ValueError("minute label has fractional seconds")
+            except ValueError as error:
+                raise HistoryError("历史分钟时钟无效") from error
+            key = (owner, parsed.strftime("%H:%M:%S"))
+            if key not in labels:
+                raise HistoryError(f"历史交易日/分钟不在会话内: day={owner} time={clock}")
+            stamp, index = labels[key]
+            if stamp >= request.end_ns:
+                continue  # 不使用请求截止后的行，包括尚未完成的当前分钟。
+            if c.instrument_format == "symbol":
+                row["instrument_id"] = str(row["instrument_id"]) + "." + c.venue
+            point = HistoryBar(ts_event=stamp, **row)
+            entry = (owner, index, point)
+            if stamp in ordered and ordered[stamp] != entry:
+                raise HistoryError(f"历史同一分钟内容冲突: ts_event={stamp}")
+            ordered[stamp] = entry
+        bars, previous = [], None
+        for stamp in sorted(ordered):
+            owner, index, point = ordered[stamp]
+            if c.volume_mode == "cumulative":
+                current = point
+                if previous is not None and previous[0] == owner:
+                    if previous[1] + 1 != index:
+                        if stamp >= request.start_ns:
+                            raise HistoryError(f"累计历史缺少前一分钟，不能把跨分钟量额归入本分钟: ts_event={stamp}")
+                        previous = (owner, index, current)
+                        continue
+                    volume = current.volume - previous[2].volume
+                    value = current.value - previous[2].value
+                elif index == 0:
+                    volume, value = current.volume, current.value
+                else:
+                    # 窗口首行是盘中快照，只作差分基准；覆盖检查会拒绝缺少的目标分钟。
+                    previous = (owner, index, current)
+                    continue
+                previous = (owner, index, current)
+                if volume < 0 or value < 0 or (volume == 0 and value != 0):
+                    raise HistoryError(f"累计历史量额倒退或不同步: ts_event={stamp} volume={volume} value={value}")
+                point = replace(current, volume=volume, value=value)
+            if stamp >= request.start_ns:
+                bars.append(point)
+        return select_bars(bars, request)
+
     def read(self, request):
         with self._lock:
             if self._session is None:
@@ -127,6 +238,8 @@ class DolphinDbHistoryProvider(HistoryProvider):
             rows = frame.to_dict("records")
             if len(rows) > request.max_rows:
                 raise HistoryError("历史查询被行数上限截断")
+            if self.config.date_basis == "trading":
+                return self._read_trading(rows, request)
             bars = []
             for row in rows:
                 stamp = row.pop("ts_event")

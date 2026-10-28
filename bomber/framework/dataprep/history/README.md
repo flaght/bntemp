@@ -47,3 +47,16 @@ IM指定交易日使用ImDayWindow枚举两个交易时段共240分钟；不是�
 指向 CU JSON，仅作为显式兼容参数。时段规则选择 `--calendar-id` 和时段来源，
 日期例外选择例外源表或明确的无例外声明。测试里的日期通过内存快照固定。
 
+
+## 交易日日期与累计量额
+
+`DolphinDbHistoryConfig`新增可选 `date_basis=trading` 和 `volume_mode=cumulative`，
+默认仍为 `calendar/per-bar`，现有EMA配置和查询不变。交易日模式须以运行时
+`session_calendar`传入同一品种、同一时区的SessionCalendar，并配置date_column/time_column。
+JSON不携带日历副本；调用方在构建配置时注入日历。开始标签使用start，完成标签使用end。
+Provider按请求区间的实际会话确定交易日，再读取这些交易日的有界完整行，转换自然时间并排序。
+累计模式要求volume/value同时映射；同一交易日连续交易分钟同时差分，两者不使用不同基准，
+OpenInterest不差分。交易日首分钟的前值为0；盘中首行只作基准。零量且非零额、量额倒退、
+请求范围内的前值缺失和同键冲突明确失败。盘中首行不能提供完整目标分钟时，由HistoryService覆盖检查拒绝。
+午休不重置累计值，跨午夜不重置，切换交易日才重置。声明行数上限包含读取的基准数据。
+Hybrid示例为demos/10_hybrid_transformer/history_rb.json；累计模式依据用户截图推断，真实RB源待确认。

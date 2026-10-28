@@ -364,7 +364,8 @@ def assemble(inputs, lifecycle, *, product: str, release_path: Path, directions_
     runner.calendar, runner.strategy, runner.client = calendar, strategy, execution.client
     runner.history_minutes, runner.resuming = history_minutes, resume
     runner.history_last_ns = -1
-    runner.history_service = build_history(history_config=history_config, history_file=history_file)
+    runner.history_service = build_history(
+        history_config=history_config, history_file=history_file, calendar=calendar)
     if not getattr(references, 'refresh_on_event', True):
         # 参考发布与目标提交共用锁，避免读取主力/条款时正好发生一次发布切换。
         references.publication_lock = runner._submit_lock
