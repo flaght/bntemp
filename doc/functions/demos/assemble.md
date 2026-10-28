@@ -9,12 +9,15 @@
 ## 1. 签名与前置条件
 
 ```python
-def assemble(args, inputs, lifecycle, *, execution_policy=None,
+def assemble(inputs, lifecycle, *, product, release_path, directions_file,
+             signal_config, market_config, mode='recording', max_contracts=10,
+             state_file=None, history_minutes=0, history_config=None, history_file=None,
+             resume=False, execution_policy=None,
              max_notional=Decimal('1000000'), limit_offset_ticks=1):
     ...
 ```
 
-前三个参数必填；执行政策、名义金额上限与价格偏移使用默认值。args应通过Hybrid parse_args；inputs为prepare_inputs返回对象；lifecycle为同一会话控制器，SimNow需要其driver。
+inputs为prepare_inputs返回对象；lifecycle为同一会话控制器，SimNow需要其driver。品种、文件路径和行情配置显式传入，其余选项使用函数默认值。
 
 Runtime在finish_preparation后调用，保证预检结束，再安装正式执行持久化钩子。返回后检查Runner为LIVE，再controller.start。
 
@@ -26,20 +29,20 @@ Runtime在finish_preparation后调用，保证预检结束，再安装正式执�
 | --- | --- |
 | inputs.references | instrument_id、instrument_meta、trading_day、spec.venue/tick/multiplier |
 | inputs.calendar / upstream | 交易日历与已构造上游Feed |
-| args.mode | 等于simnow才启用orders，其他走Recording，须依赖入口白名单 |
-| args.signal_config/product | 选定signal_id、signal_method、signal_params、hold_bars |
-| args.release_path/directions_file | 模型目录和方向文件；设备由MODEL_DEVICE声明 |
+| mode | 等于simnow才启用orders，其他走Recording，须依赖入口白名单 |
+| signal_config/product | 选定signal_id、signal_method、signal_params、hold_bars |
+| release_path/directions_file | 模型目录和方向文件；设备由MODEL_DEVICE声明 |
 | MODEL_HISTORY_BARS / MODEL_MIN_RAW_BARS | 模型窗口1500、最低300根，由代码声明 |
-| args.max_contracts / REBALANCE_MINUTES | 仓位上限可从命令行调整，开仓间隔默认1分钟 |
+| max_contracts / REBALANCE_MINUTES | 仓位上限可从命令行调整，开仓间隔默认1分钟 |
 | max_notional / limit_offset_ticks | 函数默认1000000、1跳，SimNow使用 |
-| args.state_file | SimNow持久化文件；Recording入口拒绝 |
+| state_file | SimNow持久化文件；Recording入口拒绝 |
 | MODEL_BAR_TIMESTAMP | 代码默认start，模型分钟时间标签 |
 
 其他行情、历史和政策参数由辅助函数消费。日期、文件存在性、授权与恢复组合主要由parse_args验证。
 
 ## 3. 分钟行情与就绪检查
 
-固定instrument=references.instrument_id，创建CtpLiveProfile('realtime')；assemble_minute_market包装upstream为HYBRID_1M，传单合约、参考交易日、calendar及MODEL_BAR_TIMESTAMP，并注册合约元数据。
+固定instrument=references.instrument_id，创建CtpLiveProfile('realtime')；assemble_minute_market包装upstream为HYBRID_1M，直接传MarketSourceConfig、单合约、参考交易日、calendar及MODEL_BAR_TIMESTAMP，并注册合约元数据。
 
 因为传入futures_calendar，CTP Tick与数据库分钟路径均使用完整期货分钟包装和对应健康检查，而非不加筛选地输入模型。
 
@@ -63,7 +66,7 @@ build_ctp_execution还接收tick、multiplier、limit_offset_ticks、session_che
 
 build_strategy函数中明确构造MizarWorkflowAdapter并加载模型资料，再创建HybridTransformerConfig和HybridTransformerStrategy。HybridTransformerConfig取信号文件hold_bars，开启record_signals，交易所及乘数来自参考。
 
-HybridLiveRunner共享execution.positions，配置references、session_check、orders和instrument_health；附加args、calendar、strategy、client，将history_last_ns设为-1并创建history_service。build_history可读取历史JSON配置，此时尚未load历史分钟。
+HybridLiveRunner共享execution.positions，配置references、session_check、orders和instrument_health；附加calendar、strategy、client、history_minutes和resuming，将history_last_ns设为-1并创建history_service。build_history可读取历史JSON配置，此时尚未load历史分钟。
 
 缓存参考refresh_on_event为False时，将publication_lock设为Runner提交锁，协调参考发布与目标处理。
 
@@ -77,7 +80,7 @@ HybridLiveRunner共享execution.positions，配置references、session_check、o
 
 ## 6. 持久化与恢复身份
 
-构造三个额外组件：hybrid保存策略批次和版本；session_rules保存日历规则；live_session保存SessionIdentityCheckpoint(model_identity(args))。
+构造三个额外组件：hybrid保存策略批次和版本；session_rules保存日历规则；live_session保存SessionIdentityCheckpoint(model_identity(release_path=..., directions_file=..., signal_config=..., market_config=..., trading_day=...))。
 
 model_identity对指定模型配置/权重、方向文件、信号文件算SHA-256，另纳入窗口参数、模型标签、行情identity及期望交易日，不是整个发布目录所有文件的通用哈希。
 
@@ -109,11 +112,14 @@ from importlib import import_module
 
 entry = import_module("demos.10_hybrid_transformer.run_live")
 
-def session_factory(args, lifecycle):
-    return lambda inputs, context: entry.assemble(args, inputs, lifecycle)
+session = entry.assemble(
+    inputs, lifecycle, product="RB", release_path=release_path,
+    directions_file=directions_file, signal_config=signal_config,
+    market_config=market_config,
+)
 ```
 
-建立回调不会装配；实际调用需要有效参考、模型/框架依赖、文件和控制器。函数没有自己的回滚事务；失败由Runtime进入shutdown及资源清理，部分局部对象不能视为已返回可用会话。
+实际调用需要已准备的inputs、有效模型/框架依赖、文件和控制器。正式入口由build_runtime自动接线。函数没有自己的回滚事务；失败由Runtime进入shutdown及资源清理，部分局部对象不能视为已返回可用会话。
 
 | 现象 | 检查 |
 | --- | --- |

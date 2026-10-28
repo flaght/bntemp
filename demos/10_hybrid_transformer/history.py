@@ -9,26 +9,26 @@ from bomber.framework.calendars.sessions import ns_datetime
 MINUTE = 60_000_000_000
 
 
-def build_history(args):
+def build_history(*, history_config: Path | None = None, history_file: Path | None = None):
     config = None
-    if args.history_config:
-        values = json.loads(Path(args.history_config).read_text())
+    if history_config is not None:
+        values = json.loads(Path(history_config).read_text())
         config = DolphinDbHistoryConfig(
             connection=DolphinDbReferenceConfig.from_env(), **values)
         required = {'open', 'high', 'low', 'close', 'volume', 'value', 'open_interest'}
         if required - config.columns.keys():
             raise HistoryError(f"Hybrid 历史配置缺少原始字段: {sorted(required - config.columns.keys())}")
-    return HistoryService(database_config=config, file_path=args.history_file, missing_policy='fail')
+    return HistoryService(database_config=config, file_path=history_file, missing_policy='fail')
 
 
-def warm_history(runner, args):
-    if not args.history_minutes:
+def warm_history(runner, *, product: str, history_minutes=0, resume=False, model_bar_timestamp='start'):
+    if not history_minutes:
         return
     end = runner._clock_ns() // MINUTE * MINUTE
-    stamps = runner.calendar.last_minutes(end, args.history_minutes)
+    stamps = runner.calendar.last_minutes(end, history_minutes)
     print(f"Hybrid预热开始: required={len(stamps)} instrument={runner.bound_instrument}", flush=True)
     result = runner.history_service.load(str(runner.bound_instrument), stamps,
-        phase='recovery' if args.resume else 'preopen')
+        phase='recovery' if resume else 'preopen')
     rows = []
     for bar in result.bars:
         fields = ('open', 'high', 'low', 'close', 'volume', 'value', 'open_interest')
@@ -41,9 +41,9 @@ def warm_history(runner, args):
         point = ns_datetime(bar.ts_event, runner.calendar.zone)
         if runner.calendar.window(point) is None:
             raise HistoryError('Hybrid历史包含盘外分钟')
-        label = bar.ts_event + 1 - (MINUTE if args.model_bar_timestamp == 'start' else 0)
+        label = bar.ts_event + 1 - (MINUTE if model_bar_timestamp == 'start' else 0)
         row = {name: float(getattr(bar, name)) for name in fields if name != 'open_interest'}
-        row.update(trade_time=ns_datetime(label, runner.calendar.zone), code=args.product,
+        row.update(trade_time=ns_datetime(label, runner.calendar.zone), code=product,
                    openint=float(bar.open_interest),
                    vwap=float(bar.value / bar.volume / runner.strategy.config.contract_multiplier))
         tolerance = max(1e-8, row['high'] * 1e-6)

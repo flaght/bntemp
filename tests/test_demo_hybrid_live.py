@@ -234,14 +234,12 @@ class WarmHistoryTests(unittest.TestCase):
                        low=100,close=100,volume=2,value=2000,open_interest=500)
                   for time in ('2026-10-28 09:01:00','2026-10-28 09:02:00')]
             path.write_text('\n'.join(map(json.dumps,rows)))
-            args=NS(history_config=None,history_file=path,history_minutes=2,resume=False,
-                model_bar_timestamp='start',product='RB')
             predictor=NS(warm_history=Mock(return_value=2),on_bar=Mock())
             runner=NS(calendar=calendar(),bound_instrument='rb2701.SHFE',
                 _clock_ns=lambda:ns('2026-10-28 09:02:03'),
                 strategy=NS(predictor=predictor,config=NS(contract_multiplier=Decimal(10))),
-                history_service=history.build_history(args))
-            history.warm_history(runner,args)
+                history_service=history.build_history(history_file=path))
+            history.warm_history(runner,product='RB',history_minutes=2)
             prepared=predictor.warm_history.call_args.args[0]
             self.assertEqual(prepared[0]['trade_time'].strftime('%H:%M'),'09:00')
             self.assertEqual(prepared[0]['vwap'],100)
@@ -252,7 +250,7 @@ class WarmHistoryTests(unittest.TestCase):
             path.write_text('\n'.join(map(json.dumps,rows)))
             predictor.warm_history.reset_mock()
             with self.assertRaisesRegex(ValueError,'原始'):
-                history.warm_history(runner,args)
+                history.warm_history(runner,product='RB',history_minutes=2)
             predictor.warm_history.assert_not_called()
 
 
@@ -264,7 +262,7 @@ class LiveRunnerTests(unittest.TestCase):
         tree=ast.parse((ROOT/'demos/10_hybrid_transformer/run_live.py').read_text())
         node=next(n for n in tree.body if isinstance(n,ast.ClassDef) and n.name=='HybridLiveRunner')
         namespace=dict(SessionRoleLiveRunner=Parent,CustomBar=CustomBar,MINUTE=MINUTE,
-            warm_history=lambda *args:None,replace=replace,SimpleNamespace=NS,MODEL_BAR_TIMESTAMP='start')
+            warm_history=lambda *args,**kwargs:None,replace=replace,MODEL_BAR_TIMESTAMP='start')
         exec(compile(ast.Module(body=[node],type_ignores=[]),'run_live.py','exec'),namespace)
         return namespace['HybridLiveRunner']
 
