@@ -14,24 +14,53 @@ from bomber.framework.calendars.sessions import ns_datetime
 MINUTE = 60_000_000_000
 
 
-def build_history(*, history_config: Path | None = None, history_file: Path | None = None, calendar=None):
-    """返回HistoryService，保留数据库/本地文件两种来源的框架能力。
+def build_history(
+    *,
+    history_config: Path | None = None,
+    history_file: Path | None = None,
+    calendar=None,
+):
+    """创建历史服务，复用策略已经加载的会话日历。
 
     history_config是历史行情数据库配置JSON，与实时market_config用途不同。
-    本函数读取配置；按哪些分钟真正取数，由warm_history决定。
+    date_basis=trading时，calendar必须由run_live的assemble显式传入；
+    此处不另建日历，避免历史时间与策略的持仓到期时间使用不同会话规则。
+    本函数只构建服务；实际读取由warm_history完成。
     """
     config = None
     if history_config is not None:
         values = json.loads(Path(history_config).read_text())
-        if values.get('date_basis') == 'trading':
-            values['session_calendar'] = calendar
+
+        if values.get("date_basis") == "trading":
+            if calendar is None:
+                raise HistoryError(
+                    "交易日历史预热缺少会话日历；请在run_live.py中调用 "
+                    "build_history(..., calendar=calendar)"
+                )
+            # 用交易日对应的会话窗口还原夜盘、跨午夜分钟的自然日期。
+            values["session_calendar"] = calendar
+
         config = DolphinDbHistoryConfig(
-            connection=DolphinDbReferenceConfig.from_env(), **values)
-        # Hybrid需要成交额和持仓量；仅有OHLCV的历史不能按同一研究口径预热。
-        required = {'open', 'high', 'low', 'close', 'volume', 'value', 'open_interest'}
-        if required - config.columns.keys():
-            raise HistoryError(f"Hybrid 历史配置缺少原始字段: {sorted(required - config.columns.keys())}")
-    return HistoryService(database_config=config, file_path=history_file, missing_policy='fail')
+            connection=DolphinDbReferenceConfig.from_env(),
+            **values,
+        )
+
+        # Hybrid需要原始量额和持仓量，EMA的纯价格配置不能直接用于模型预热。
+        required = {
+            "open", "high", "low", "close",
+            "volume", "value", "open_interest",
+        }
+        missing = required - config.columns.keys()
+        if missing:
+            raise HistoryError(
+                f"Hybrid 历史配置缺少原始字段: {sorted(missing)}"
+            )
+
+    return HistoryService(
+        database_config=config,
+        file_path=history_file,
+        missing_policy="fail",
+    )
 
 
 def warm_history(runner, *, product: str, history_minutes=0, resume=False, model_bar_timestamp='start'):
