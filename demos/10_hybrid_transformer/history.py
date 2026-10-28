@@ -91,6 +91,9 @@ def warm_history(runner, *, product: str, history_minutes=0, resume=False, model
         print(f"Hybrid预热失败: instrument={runner.bound_instrument} phase={phase} "
               f"required={len(stamps)} elapsed_seconds={time.monotonic() - started:.3f} "
               f"error={type(error).__name__}: {error}", flush=True)
+        # 区分数据库读取失败和查询成功但分钟未匹配；保留原异常停止启动。
+        print("Hybrid历史读取审计: " + json.dumps(
+            service.last_audit, ensure_ascii=False, default=str), flush=True)
         raise
     # 记录窗口最后一个事件时间，实时publish用它排除重叠的分钟。
     runner.history_last_ns = max((bar.ts_event for bar in result.bars), default=-1)
