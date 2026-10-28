@@ -1,4 +1,8 @@
-"""Hybrid 原始分钟预热；共用历史 Provider，不发布历史目标。"""
+"""Hybrid原始分钟预热：先填模型窗口，再进入实时策略处理。
+
+build_history只构建历史服务；warm_history才读取指定交易分钟的数据。
+整个预热过程调用预测器的专用接口，不把旧行情送入策略开仓回调。
+"""
 import json
 from pathlib import Path
 
@@ -10,11 +14,17 @@ MINUTE = 60_000_000_000
 
 
 def build_history(*, history_config: Path | None = None, history_file: Path | None = None):
+    """返回HistoryService，保留数据库/本地文件两种来源的框架能力。
+
+    history_config是历史行情数据库配置JSON，与实时market_config用途不同。
+    本函数读取配置；按哪些分钟真正取数，由warm_history决定。
+    """
     config = None
     if history_config is not None:
         values = json.loads(Path(history_config).read_text())
         config = DolphinDbHistoryConfig(
             connection=DolphinDbReferenceConfig.from_env(), **values)
+        # Hybrid需要成交额和持仓量；仅有OHLCV的历史不能按同一研究口径预热。
         required = {'open', 'high', 'low', 'close', 'volume', 'value', 'open_interest'}
         if required - config.columns.keys():
             raise HistoryError(f"Hybrid 历史配置缺少原始字段: {sorted(required - config.columns.keys())}")
@@ -22,15 +32,23 @@ def build_history(*, history_config: Path | None = None, history_file: Path | No
 
 
 def warm_history(runner, *, product: str, history_minutes=0, resume=False, model_bar_timestamp='start'):
+    """读取启动边界之前的N个交易分钟，调用predictor.warm_history填充窗口。
+
+    history_minutes=0时不读历史，后续依靠实时分钟积累窗口。
+    resume改变本次读取的审计阶段名称；恢复的批次/订单由统一检查点负责。
+    """
     if not history_minutes:
         return
+    # 启动时正在形成的分钟尚未结束，先向下对齐到已完成的分钟边界。
     end = runner._clock_ns() // MINUTE * MINUTE
+    # 使用交易日历取N个分钟，而不是从墙钟时间简单减去N分钟；午休等间隔会跳过。
     stamps = runner.calendar.last_minutes(end, history_minutes)
     print(f"Hybrid预热开始: required={len(stamps)} instrument={runner.bound_instrument}", flush=True)
     result = runner.history_service.load(str(runner.bound_instrument), stamps,
         phase='recovery' if resume else 'preopen')
     rows = []
     for bar in result.bars:
+        # 数据供应器已标准化字段；这里继续拒绝缺少量额/持仓量或混入复权价格的数据。
         fields = ('open', 'high', 'low', 'close', 'volume', 'value', 'open_interest')
         if any(getattr(bar, field) is None for field in fields):
             raise HistoryError('Hybrid历史分钟必须包含原始OHLCV、value、open_interest')
@@ -41,8 +59,11 @@ def warm_history(runner, *, product: str, history_minutes=0, resume=False, model
         point = ns_datetime(bar.ts_event, runner.calendar.zone)
         if runner.calendar.window(point) is None:
             raise HistoryError('Hybrid历史包含盘外分钟')
+        # 历史Bar事件采用结束边界减1ns；先还原边界，再转成模型约定的开始/结束标签。
         label = bar.ts_event + 1 - (MINUTE if model_bar_timestamp == 'start' else 0)
         row = {name: float(getattr(bar, name)) for name in fields if name != 'open_interest'}
+        # open_interest是框架字段名，openint是当前研究工作流使用的名称。
+        # VWAP = 本周期成交额 / 本周期成交量 / 每手合约乘数。
         row.update(trade_time=ns_datetime(label, runner.calendar.zone), code=product,
                    openint=float(bar.open_interest),
                    vwap=float(bar.value / bar.volume / runner.strategy.config.contract_multiplier))
@@ -50,6 +71,8 @@ def warm_history(runner, *, product: str, history_minutes=0, resume=False, model
         if not row['low'] - tolerance <= row['vwap'] <= row['high'] + tolerance:
             raise HistoryError('Hybrid历史VWAP与OHLC不一致')
         rows.append(row)
+    # 专用预热接口不经strategy.on_custom_bar，因此不会重建历史交易批次。
     count = runner.strategy.predictor.warm_history(rows)
+    # 记录窗口最后一个事件时间，实时publish用它排除重叠的分钟。
     runner.history_last_ns = max((bar.ts_event for bar in result.bars), default=-1)
     print(f"Hybrid预热完成: loaded={count} sources={result.sources}", flush=True)
