@@ -184,6 +184,13 @@ class DolphinDbMarketConverter:
             )
             if (value := _finite(row.get(name), name, optional=True)) is not None
         }
+        # 完整期货模型显式使用的原始精度；标准 BAR 消费者保持原行为。
+        for name in ("open", "high", "low", "close", "volume", "value", "openint"):
+            raw = _finite(row.get(name), name, optional=True)
+            if raw is not None:
+                factors[name] = float(volume) if name == "volume" else raw
+        if volume_mode == "cumulative":
+            factors["source_volume"] = float(cumulative)
         self._bar_keys.add(key)
         if volume_mode == "cumulative":
             self._bar_volumes[volume_key] = (day, ts_event, cumulative)

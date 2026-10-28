@@ -42,7 +42,7 @@ def assemble_strategy(runner, strategy, *, feeds, execution, bindings):
         data, route = bindings.data[0], bindings.execution[0]
         if (not isinstance(data, DataBinding) or not isinstance(route, ExecutionRoute)
                 or data.instrument_id != route.instrument_id
-                or data.data_type is not DataType.BAR
+                or data.data_type not in {DataType.BAR, DataType.CUSTOM_BAR}
                 or data.data_key != str(data.instrument_id)
                 or route.client_id != execution.client.client_id):
             raise ValueError("固定角色数据与真实路由不匹配")
@@ -60,5 +60,6 @@ def assemble_strategy(runner, strategy, *, feeds, execution, bindings):
         runner.add_role_strategy(strategy, feed_id=data.feed_id,
             instrument_id=data.instrument_id, client_id=route.client_id,
             references=guard.references, product=guard.product, role=guard.role,
-            target_key=route.target_key, processed_ns=guard.processed_ns, bar_spec=data.bar_spec)
+            target_key=route.target_key, processed_ns=guard.processed_ns, bar_spec=data.bar_spec,
+            **({"data_type": data.data_type} if data.data_type is not DataType.BAR else {}))
     return runner

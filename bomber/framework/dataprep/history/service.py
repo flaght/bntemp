@@ -121,7 +121,7 @@ class HistoryService:
                     previous = selected.get(bar.ts_event)
                     if previous is not None and any(getattr(previous, field) is not None
                             and getattr(bar, field) is not None and getattr(previous, field) != getattr(bar, field)
-                            for field in ("close", "adjusted_close", "open", "high", "low", "volume")):
+                            for field in ("close", "adjusted_close", "open", "high", "low", "volume", "value", "open_interest")):
                         raise HistoryError("文件和数据库同一分钟内容冲突，须核验来源版本")
                     if previous is None:
                         selected[bar.ts_event] = bar

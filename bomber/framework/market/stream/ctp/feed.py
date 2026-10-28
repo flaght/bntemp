@@ -85,6 +85,7 @@ class CtpLiveDataFeed(StreamDataFeed):
         self._latest_trading_day: str | None = None
         self._latest_receive_monotonic_ns: int | None = None
         self._depth_observations: dict[InstrumentId, CtpDepthObservation] = {}
+        self._depth_handlers = []
 
     @property
     def depth_observations(self) -> dict[InstrumentId, CtpDepthObservation]:
@@ -239,6 +240,10 @@ class CtpLiveDataFeed(StreamDataFeed):
         self.report_stream_interruption(f"CTP行情接口错误: {_error_text(error)}")
         logger.error("CTP 行情接口错误: %s", _error_text(error))
 
+    def register_depth_handler(self, handler) -> None:
+        """原始已核验深度观察；回调须只入队，不在网络线程计算策略。"""
+        self._depth_handlers.append(handler)
+
     def on_depth_market_data(self, data: Mapping[str, Any]) -> None:
         symbol = str(data.get("InstrumentID") or "").strip()
         instrument_id = self._symbol_to_instrument.get(symbol)
@@ -269,6 +274,8 @@ class CtpLiveDataFeed(StreamDataFeed):
             # Source health cannot depend on a derived TradeTick being emitted.
             if not self._health_monitor.on_observation(ts_event, str(instrument_id), kind="ctp-depth"):
                 return
+            for handler in tuple(self._depth_handlers):
+                handler(instrument_id, ts_event, data)
             for event in events:
                 if self._event_is_subscribed(instrument_id, event):
                     self.enqueue_event(event)

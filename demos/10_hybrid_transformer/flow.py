@@ -151,6 +151,24 @@ class LiveFlow:
             raise ValueError("Lumina 未提供全部基础因子计算器")
         self.history = []
 
+    def warm_history(self, rows):
+        """批量装入完整研究口径行情；不生成或发布历史目标。"""
+        prepared = []
+        previous = None
+        for bar in rows:
+            missing = set(BAR_COLUMNS) - set(bar)
+            if missing:
+                raise ValueError(f"预热行情缺少字段: {sorted(missing)}")
+            row = {name: bar[name] for name in BAR_COLUMNS}
+            row["trade_time"] = pd.Timestamp(row["trade_time"])
+            row["code"] = str(row["code"]).upper()
+            if row["code"] != self.code or (previous is not None and row["trade_time"] <= previous):
+                raise ValueError("预热品种不一致或时间重复/倒退")
+            previous = row["trade_time"]
+            prepared.append(row)
+        self.history = prepared[-self.history_bars:]
+        return len(self.history)
+
     def _current_factors(self):
         return self._calculate_factors(pd.DataFrame.from_records(
             self.history))[2]
