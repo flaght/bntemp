@@ -6,6 +6,7 @@
 
 | 函数 | 所属模块 | 用途 | 查询关键词 |
 | --- | --- | --- | --- |
+| [run_live（新手组装导读）](demos/run_live.md) | `demos.10_hybrid_transformer.run_live` | 按启动、组装、预热、分钟处理、到期、恢复和停机顺序理解Hybrid Live | context、inputs、session、Runtime、Runner、模型、批次、目标 |
 | [input_session](dataprep/input_session.md) | `bomber.framework.dataprep.session` | 管理单次运行的输入会话，复用缓存、文件版本和诊断，异常时尝试输出失败报告 | 装饰器、InputSession、嵌套调用、读取缓存、输入诊断、report_dir |
 | [BarReadSpec](dataprep/BarReadSpec.md) | `bomber.framework.dataprep.contracts` | 声明 Bar 字段、时间、交易日、可用时间和数值校验规则 | OHLCV、timestamp_label、field_mapping、available_column、value_policy、成交量 |
 | [PreparedFrameReader](dataprep/PreparedFrameReader.md) | `bomber.framework.dataprep.bars` | 将已准备 DataFrame 适配为逐行读取接口，复用标准化行情 | Reader、DataFrame、PreparedFrame、内存回放、行号、避免二次读取 |
@@ -85,6 +86,7 @@ doc/functions/
 │   ├── source_config.md
 │   └── MarketSourceConfig.md
 └── demos/
+    ├── run_live.md
     ├── HybridLiveReport.md
     ├── HybridSessionLifecycle.md
     ├── prepare_inputs.md

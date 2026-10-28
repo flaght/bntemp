@@ -167,6 +167,8 @@ fees = CommissionConfig(
 
 ## Live：CTP / DolphinDB 可配置行情
 
+第一次接手代码，建议先阅读[Hybrid Live新手组装导读](../../doc/functions/demos/run_live.md)。它按实际调用顺序解释Runtime、Runner、策略和执行端，源码 `run_live.py` 与 `history.py` 也已补充对应注释。
+
 入口为 `python -m demos.10_hybrid_transformer.run_live`，每个进程只运行一个品种、一条 Hybrid 策略。
 
 运行代码集中在 `run_live.py`，命令行只保留业务输入和运行开关。各函数仅接收其使用的显式参数，命令行对象只在解析和main读取字段时存在，不沿调用链传递；Runner不保存整份命令行配置。`build_strategy()` 独立声明模型和策略，参数解析阶段不构造它们。
