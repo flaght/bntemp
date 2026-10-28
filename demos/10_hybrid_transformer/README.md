@@ -168,6 +168,15 @@ fees = CommissionConfig(
 ## Live：CTP / DolphinDB 可配置行情
 
 入口为 `python -m demos.10_hybrid_transformer.run_live`，每个进程只运行一个品种、一条 Hybrid 策略。
+
+入口按职责分为三个文件，现有命令行选项、默认值和启动命令保持兼容：
+
+| 文件 | 职责 |
+| --- | --- |
+| `live_args.py` | 按运行、模型、历史预热、参考资料、风控和恢复分组解析参数，只校验输入 |
+| `live_session.py` | 准备参考与行情、构建模型/策略/Runner、绑定执行和检查点 |
+| `run_live.py` | 创建生命周期与运行报告，在 `main()` 中显式接线并启动运行器 |
+
 行情源沿用公共 `--market-source` / `--market-config`；执行模式为 `recording` 或 `simnow`，默认 Recording。
 首版使用 realtime、固定会话主力和 SHFE/INE 执行范围；跨交易日自动重登录、动态换月和共享账户宿主未接入。
 
