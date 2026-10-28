@@ -2,8 +2,8 @@
 
 用途：把Hybrid已准备的参考、日历和行情对象装配成供ManagedLiveRuntime启动的完整Live会话。
 
-- 实际定义：`demos.10_hybrid_transformer.run_live.assemble`；区别于公共assemble_strategy。
-- [函数与入口](../../../demos/10_hybrid_transformer/run_live.py) · [模型适配器](../../../demos/10_hybrid_transformer/model_adapter.py)
+- 实际定义：`demos.10_hybrid_transformer.live_session.assemble`；区别于公共assemble_strategy。
+- [函数定义](../../../demos/10_hybrid_transformer/live_session.py) · [运行入口](../../../demos/10_hybrid_transformer/run_live.py) · [模型适配器](../../../demos/10_hybrid_transformer/model_adapter.py)
 - 核对日期：2026-10-28，Asia/Shanghai。
 
 ## 1. 签名与前置条件
@@ -106,7 +106,7 @@ Recording也构造上述组件并计算model_identity，但不创建manager、�
 ```python
 from importlib import import_module
 
-entry = import_module("demos.10_hybrid_transformer.run_live")
+entry = import_module("demos.10_hybrid_transformer.live_session")
 
 def session_factory(args, lifecycle):
     return lambda inputs, context: entry.assemble(args, inputs, lifecycle)

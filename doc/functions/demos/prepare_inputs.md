@@ -2,8 +2,8 @@
 
 用途：为Hybrid Live读取国内期货参考资料、加载交易日历并创建上游行情对象，供后续assemble使用。
 
-- 实际定义：`demos.10_hybrid_transformer.run_live.prepare_inputs`，不是框架通用同名函数。
-- [函数与接线入口](../../../demos/10_hybrid_transformer/run_live.py) · [参考缓存](../../../bomber/framework/dataprep/live_cached_role.py)
+- 实际定义：`demos.10_hybrid_transformer.live_session.prepare_inputs`，不是框架通用同名函数。
+- [函数定义](../../../demos/10_hybrid_transformer/live_session.py) · [接线入口](../../../demos/10_hybrid_transformer/run_live.py) · [参考缓存](../../../bomber/framework/dataprep/live_cached_role.py)
 - 核对日期：2026-10-28，Asia/Shanghai。
 
 ## 1. 签名与调用时机
@@ -72,7 +72,7 @@ prepare_inputs提供当前合约、日历和上游行情。assemble创建分钟�
 ```python
 from importlib import import_module
 
-entry = import_module("demos.10_hybrid_transformer.run_live")
+entry = import_module("demos.10_hybrid_transformer.live_session")
 
 def input_factory(args, lifecycle):
     return lambda context: entry.prepare_inputs(args, context, lifecycle)

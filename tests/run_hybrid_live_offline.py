@@ -5,7 +5,7 @@ from types import SimpleNamespace as NS
 from decimal import Decimal
 from tempfile import TemporaryDirectory
 from unittest.mock import patch, Mock
-from datetime import date
+from datetime import date, datetime
 import sys
 import json
 import unittest
@@ -29,6 +29,7 @@ InstrumentId = namespace['InstrumentId']
 InstrumentId.venue = property(lambda self: self.value.rsplit('.', 1)[1])
 base = sys.modules['bomber.framework.market.basic.base']
 live = import_module('demos.10_hybrid_transformer.run_live')
+assembly = import_module('demos.10_hybrid_transformer.live_session')
 adapter = import_module('demos.10_hybrid_transformer.model_adapter')
 from tests.test_demo_hybrid_live import calendar, ns
 
@@ -78,7 +79,7 @@ class HybridAssemblyTests(unittest.TestCase):
                         args += ['--market-bar-table', 'fixture', '--market-bar-timestamp', 'end', '--market-volume-mode', 'per-bar']
                     parsed = live.parse_args(args)
                     with patch.object(adapter, 'MizarWorkflowAdapter', Predictor):
-                        session = live.assemble(parsed, NS(references=refs, calendar=calendar(), upstream=Upstream('fixture')), NS(driver=None))
+                        session = assembly.assemble(parsed, NS(references=refs, calendar=calendar(), upstream=Upstream('fixture')), NS(driver=None))
                     session.runner._validate_configuration()
                     now = [ns('2026-10-28 09:02:02')]
                     session.runner._clock_ns = lambda: now[0]
@@ -93,7 +94,7 @@ class HybridAssemblyTests(unittest.TestCase):
                             ts_event=stamp, ts_init=now[0], open=100, high=100, low=100, close=100, volume=2)
                         event = base.make_custom_bar(bar, dict(open=100, high=100, low=100, close=100,
                             volume=2, value=2000, open_interest=500,
-                            trade_time=live.datetime.fromisoformat('2026-10-28T09:01:00+08:00')))
+                            trade_time=datetime.fromisoformat('2026-10-28T09:01:00+08:00')))
                         session.runner.publish('model-bars', bar)
                         session.runner.publish('model-bars', event)
                         self.assertEqual(session.strategy.bars_used, 1)
@@ -131,7 +132,7 @@ class HybridAssemblyTests(unittest.TestCase):
             refs.instrument_meta=lambda:base.InstrumentMeta(instrument,price_precision=0,multiplier=Decimal(10))
             driver=Mock(driver_id=live.CLIENT_ID,account_id='fixture')
             with patch.object(adapter,'MizarWorkflowAdapter',Predictor):
-                session=live.assemble(args,NS(references=refs,calendar=calendar(),upstream=Upstream('fixture')),NS(driver=driver))
+                session=assembly.assemble(args,NS(references=refs,calendar=calendar(),upstream=Upstream('fixture')),NS(driver=driver))
             self.assertIs(session.strategy._checkpoint.__self__,session.manager)
             self.assertIs(session.manager.state_components['hybrid'].strategy,session.strategy)
             self.assertIs(session.manager.target_store,session.runner.target_store)
@@ -139,9 +140,9 @@ class HybridAssemblyTests(unittest.TestCase):
             driver.start.assert_not_called()
             driver.submit_order.assert_not_called()
             self.assertFalse((root/'state.json').exists())
-            before=live.model_identity(args)
+            before=assembly.model_identity(args)
             (root/'directions.csv').write_text('formula,direction\nf,-1\n')
-            self.assertNotEqual(before,live.model_identity(args))
+            self.assertNotEqual(before,assembly.model_identity(args))
 
 
 if __name__ == '__main__':
