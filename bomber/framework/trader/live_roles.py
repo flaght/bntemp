@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import time
 
 from bomber.framework.datahub.sector_roles import SectorDataUnavailable
-from bomber.framework.market.basic.base import Bar, DataType
+from bomber.framework.market.basic.base import Bar, CustomBar, DataType
 from .contracts import DataBinding, ExecutionRoute, RuntimeMode
 from .runner import UnifiedStrategyRunner
 
@@ -45,16 +45,19 @@ class FixedRoleLiveRunner(UnifiedStrategyRunner):
 
     def add_role_strategy(self, strategy, *, feed_id, instrument_id, client_id,
                           references, product, role, target_key, processed_ns,
-                          bar_spec="1-MINUTE"):
+                          bar_spec="1-MINUTE", data_type=DataType.BAR):
         if self._role_binding is not None:
             raise ValueError("固定角色在线装配仅支持一个策略")
         if not callable(processed_ns) or not target_key:
             raise ValueError("须显式提供处理时间读取器和逻辑目标键")
+        if data_type not in {DataType.BAR, DataType.CUSTOM_BAR}:
+            raise ValueError("固定角色只支持 BAR/CUSTOM_BAR")
         if role not in {"main", "secondary", "near", "far"}:
             raise ValueError("角色须为main/secondary/near/far")
         self.add_strategy(strategy, data_bindings=(DataBinding(
-            str(instrument_id), feed_id, instrument_id, DataType.BAR, bar_spec),),
+            str(instrument_id), feed_id, instrument_id, data_type, bar_spec),),
             execution_routes=(ExecutionRoute(target_key, client_id, instrument_id),))
+        self._role_data_type = data_type
         self._role_binding = _RoleBinding(strategy, feed_id, instrument_id, client_id,
             references, product.strip().upper(), role, target_key, processed_ns)
 
@@ -102,7 +105,11 @@ class FixedRoleLiveRunner(UnifiedStrategyRunner):
         return super().continue_execution_target(strategy_id, target_key, as_of_ns, **kwargs)
 
     def publish(self, feed_id, event):
-        if not isinstance(event, Bar) or self._role_binding is None:
+        bar = event.bar if isinstance(event, CustomBar) else event
+        if not isinstance(bar, Bar) or self._role_binding is None:
+            return super().publish(feed_id, event)
+        is_custom = isinstance(event, CustomBar)
+        if is_custom != (self._role_data_type is DataType.CUSTOM_BAR):
             return super().publish(feed_id, event)
         with self._submit_lock:
             binding = self._role_binding
@@ -110,7 +117,7 @@ class FixedRoleLiveRunner(UnifiedStrategyRunner):
                 return super().publish(feed_id, event)
             if self._role_change_reason is not None:
                 raise RuntimeError(self._role_change_reason)
-            key = (feed_id, event.bar_type.instrument_id)
+            key = (feed_id, bar.bar_type.instrument_id)
             if event.ts_event <= self._last_live_bar_ns.get(key, -1):
                 return
             self._last_live_bar_ns[key] = event.ts_event
@@ -128,7 +135,7 @@ class FixedRoleLiveRunner(UnifiedStrategyRunner):
             super().publish(feed_id, event)
             if self._started and reference_ready and binding.processed_ns() == event.ts_event:
                 self.continue_execution_target(binding.strategy.strategy_id, binding.target_key,
-                    event.ts_event, trigger_instrument_id=event.bar_type.instrument_id)
+                    event.ts_event, trigger_instrument_id=bar.bar_type.instrument_id)
 
 
 class SessionRoleLiveRunner(FixedRoleLiveRunner):
@@ -171,7 +178,7 @@ class SessionRoleLiveRunner(FixedRoleLiveRunner):
         self.accept_bars = True
 
     def publish(self, feed_id, event):
-        if not isinstance(event, Bar) or not self.accept_bars:
+        if not isinstance(event, (Bar, CustomBar)) or not self.accept_bars:
             return
         if event.ts_event < self.first_complete_bar_ns:
             return

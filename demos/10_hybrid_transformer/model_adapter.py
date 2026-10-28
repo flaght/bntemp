@@ -6,7 +6,9 @@ from importlib import import_module
 from math import isfinite
 from pathlib import Path
 from typing import Mapping
-from . import flow as live_flow
+def _load_live_flow():
+    """装配模型时才加载研究依赖，CLI和契约检查不需要Torch。"""
+    return import_module(__package__ + ".flow")
 
 
 
@@ -18,6 +20,7 @@ class MizarWorkflowAdapter:
                  history_bars: int = 1500, min_raw_bars: int = 300,
                  device: str = "auto") -> None:
         
+        live_flow = _load_live_flow()
         self.code = str(code).strip().upper()
         self.signal_id = str(signal_id).strip()
         self.signal_method = str(signal_method).strip()
@@ -39,6 +42,9 @@ class MizarWorkflowAdapter:
             signals_method=[{"signal_method": self.signal_method,
                              "signal_params": dict(self.signal_params)}],
         )
+
+    def warm_history(self, rows) -> int:
+        return self.workflow.warm_history(rows)
 
     def on_bar(self, bar: Mapping[str, object]) -> dict | None:
         if str(bar.get("code", "")).upper() != self.code:

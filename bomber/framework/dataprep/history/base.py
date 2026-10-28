@@ -38,17 +38,19 @@ class HistoryBar:
     low: Decimal | None = None
     volume: Decimal | None = None
     cumulative_factor: Decimal | None = None
+    value: Decimal | None = None
+    open_interest: Decimal | None = None
 
     def __post_init__(self):
         if not self.instrument_id or type(self.ts_event) is not int or (self.ts_event + 1) % MINUTE_NS:
             raise HistoryError("历史分钟须使用完整分钟末最后1ns及真实合约标识")
         if self.close is None and self.adjusted_close is None:
             raise HistoryError("历史分钟缺少收盘价")
-        for name in ("open", "high", "low", "close", "adjusted_close", "volume", "cumulative_factor"):
+        for name in ("open", "high", "low", "close", "adjusted_close", "volume", "cumulative_factor", "value", "open_interest"):
             value = getattr(self, name)
             if value is not None:
                 value = Decimal(str(value))
-                if not value.is_finite() or (value < 0 if name == "volume" else value <= 0):
+                if not value.is_finite() or (value < 0 if name in {"volume", "value", "open_interest"} else value <= 0):
                     raise HistoryError(f"历史分钟{name}无效")
                 object.__setattr__(self, name, value)
         if self.adjusted_close is None and self.close is not None and self.cumulative_factor is not None:

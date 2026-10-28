@@ -24,7 +24,7 @@ class FileHistoryProvider(HistoryProvider):
                 row["ts_event"] = int(row["ts_event"])
                 if request.start_ns <= row["ts_event"] < request.end_ns:
                     rows.append(HistoryBar(**{k: row[k] for k in (
-                        "instrument_id", "ts_event", "close", "adjusted_close", "open", "high", "low", "volume", "cumulative_factor") if k in row and row[k] != ""}))
+                        "instrument_id", "ts_event", "close", "adjusted_close", "open", "high", "low", "volume", "cumulative_factor", "value", "open_interest") if k in row and row[k] != ""}))
         return select_bars(rows, request)
 
     def close(self):

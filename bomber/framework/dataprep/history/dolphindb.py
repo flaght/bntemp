@@ -27,7 +27,7 @@ class DolphinDbHistoryConfig:
             raise HistoryError("行情数据库须为安全的dfs路径")
         if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", self.table) is None:
             raise HistoryError("行情表名无效；须提供实际表名")
-        allowed = {"instrument_id", "ts_event", "close", "adjusted_close", "open", "high", "low", "volume", "cumulative_factor"}
+        allowed = {"instrument_id", "ts_event", "close", "adjusted_close", "open", "high", "low", "volume", "cumulative_factor", "value", "open_interest"}
         columns = dict(self.columns)
         composite = self.date_column is not None or self.time_column is not None
         required = {"instrument_id"} if composite else {"instrument_id", "ts_event"}

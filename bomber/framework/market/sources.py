@@ -133,7 +133,8 @@ def create_market_feed(config, source_id, *, lifecycle=None, flow_path=None, env
 
 
 def assemble_minute_market(args, upstream, source_id, profile, instruments, expected_day,
-                           *, after_tick=None, clock_ns=None, fallback_events=None, fallback_receives=None):
+                           *, after_tick=None, clock_ns=None, fallback_events=None, fallback_receives=None,
+                           futures_calendar=None, model_timestamp="start"):
     """公共Live装配，CTP保留深度/逐笔门禁，分钟源使用真实Bar逐合约门禁。"""
     from bomber.framework.trader.runtime.live.channels.ctp import CtpMarketChannel, InstrumentHealthGate
     from bomber.framework.trader.runtime.live.profiles import build_minute_feed
@@ -150,14 +151,26 @@ def assemble_minute_market(args, upstream, source_id, profile, instruments, expe
         gate = InstrumentHealthGate(upstream, instruments, expected_day, policy=profile,
             max_age_seconds=getattr(args, "instrument_max_age_seconds", 10), clock_ns=clock_ns,
             fallback_events=fallback_events, fallback_receives=fallback_receives)
-        feed = build_minute_feed(source_id, upstream, profile, after_tick=after_tick,
-            max_age_seconds=getattr(args, "instrument_max_age_seconds", 10), clock_ns=clock_ns)
+        if futures_calendar is None:
+            feed = build_minute_feed(source_id, upstream, profile, after_tick=after_tick,
+                max_age_seconds=getattr(args, "instrument_max_age_seconds", 10), clock_ns=clock_ns)
+        else:
+            if profile.environment != "realtime":
+                raise ValueError("完整期货分钟使用真实事件时间，不支持接收时间 Replay")
+            from bomber.framework.market.stream.futures_minute import FuturesMinuteBarFeed
+            feed = FuturesMinuteBarFeed(source_id, upstream, config=config, calendar=futures_calendar,
+                model_timestamp=model_timestamp, clock_ns=clock_ns)
         return feed, CtpMarketChannel(upstream, expected_day, profile=profile, instrument_health=gate), gate
     from bomber.framework.market.stream.completed import CompletedMinuteBarFeed
     from bomber.framework.trader.runtime.live.channels.dolphin import DolphinMarketChannel
     from bomber.framework.trader.runtime.live.channels.binance import BinanceMarketChannel
     from bomber.framework.trader.runtime.live.health import InstrumentMarketChannel
-    feed = CompletedMinuteBarFeed(source_id, upstream, config=config, clock_ns=clock_ns)
+    if futures_calendar is None:
+        feed = CompletedMinuteBarFeed(source_id, upstream, config=config, clock_ns=clock_ns)
+    else:
+        from bomber.framework.market.stream.futures_minute import FuturesMinuteBarFeed
+        feed = FuturesMinuteBarFeed(source_id, upstream, config=config, calendar=futures_calendar,
+            model_timestamp=model_timestamp, clock_ns=clock_ns)
     feed.required_instruments = frozenset(instruments)
     channel = (DolphinMarketChannel(upstream, max_receive_age_seconds=config.max_age_seconds,
         event_offset_seconds=60 if config.timestamp_label == "start" else 0, clock_ns=clock_ns)

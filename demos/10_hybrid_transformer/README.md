@@ -77,7 +77,7 @@ strategy = demo.HybridTransformerStrategy(
 
 Runner 用 `DataBinding(..., DataType.CUSTOM_BAR, "1-MINUTE")` 接收模型事件；模拟执行桥仅消费同一 Feed 的 `DataType.BAR`，不能把伴生 `CUSTOM_BAR` 再送入撮合。框架 `MappedBarParser` 保留原生行情先、策略事件后的顺序，两个事件共享同一个 Bar 及其时间戳。
 
-历史入口为每个真实合约注册静态 `ExecutionRoute`，目标键为 `<product>_main:<symbol>`，并把 `target_keys` 映射交给策略。主力换月只影响新批次的合约选择，旧批次在原合约保留至到期，不能将整个净仓位提前迁移到新主力。自行装配且未提供映射时仅支持单一合约，换约会明确报错。该 Demo 仍只提供历史入口，不提供实盘报单入口。
+历史入口为每个真实合约注册静态 `ExecutionRoute`，目标键为 `<product>_main:<symbol>`，并把 `target_keys` 映射交给策略。主力换月只影响新批次的合约选择，旧批次在原合约保留至到期，不能将整个净仓位提前迁移到新主力。自行装配且未提供映射时仅支持单一合约，换约会明确报错。另有独立 Live 入口 `run_live.py`，支持 CTP/DolphinDB 行情与 Recording/SimNow 执行，参数和验收边界见下文。
 
 ## 持仓周期行为示例与时间口径（以下以 hold_bars=5 为例）
 
@@ -164,3 +164,141 @@ fees = CommissionConfig(
 4. 先运行记录目标/模拟执行，核对成交回报及仓位；此目录没有 `run_live.py`，不会启动 CTP 实盘报单。实盘入口须沿用 Bomber 的账户锁、行情健康、恢复检查点、订单上限和显式报单门控，不能直接复制 EMA 的启动参数。
 
 当前实现**策略层、Mizar 预测适配器、已准备行情的解析器及历史模拟入口**，但尚未在目标环境的真实行情文件上完成集成验收。Mizar Workflow 每根 bar 重新计算其保留窗口，长区间运行可能较慢；先跑短区间核对信号与耗时。在线 Runner 仍未接入。特别是主力原始合约 bar 若与训练时的连续行情构造不同，不可直接把模拟结果视为投研回测复现。
+
+## Live：CTP / DolphinDB 可配置行情
+
+入口为 `python -m demos.10_hybrid_transformer.run_live`，每个进程只运行一个品种、一条 Hybrid 策略。
+行情源沿用公共 `--market-source` / `--market-config`；执行模式为 `recording` 或 `simnow`，默认 Recording。
+首版使用 realtime、固定会话主力和 SHFE/INE 执行范围；跨交易日自动重登录、动态换月和共享账户宿主未接入。
+
+- CTP：原始深度中的累计 `Volume/Turnover` 按交易日差分，持仓量取分钟最后值；首个部分分钟丢弃。
+- DolphinDB：使用已完成分钟流；须声明 `start/end` 时间标签和 `per-bar/cumulative` 量额口径。表应沿用公共适配器的 `Code/date/minTime/open/high/low/close/volume` 字段，成交额提供 `value` 或 `turnover`，持仓量提供 `open_interest` 或 `openint`。
+- `--market-volume-mode` 在完整期货路径中同时声明成交量和成交额的口径，二者须一致。混合口径须先在来源表规范化，不能以末价乘成交量代替实际成交额。
+- `--market-bar-timestamp` 描述 DDB 来源标签；`--model-bar-timestamp` 描述研究模型使用的标签，两者独立。模型默认 `start`，必须与训练数据一致。
+- CTP 时段末精确结束边界快照并入最后一分钟；没有后续成交时最多等待 1 秒封闭完整桶。OHLC 来自深度快照末价，须在部署时与研究分钟逐字段核对。
+- 交易时段、夜盘归属和分钟期限使用同一 `SessionCalendar`；交易所由合约资料决定。会话中资料/交易日变更按框架闭闸并保存状态，不自动迁移持仓。
+
+模型计算链、五个交易分钟批次及总手数预算继续复用当前回测策略。
+Live 控制线程先处理已到达完整分钟，再调用已有 `on_time()` 处理到期；新生命周期没有增加行情源异常后的自动补偿交易。
+健康检查失败时沿用框架停止路径，不能把到期目标提交等同于实际成交。
+
+### 启动参数
+
+连接凭据沿用项目 `.env` 的 CTP/DDB 配置。交易日和资料来源日须按实际会话核对，夜盘不能直接使用自然日期。
+以下路径、交易日和例外表需要替换为当前部署值。示例先运行 Recording，不产生柜台订单。
+
+```bash
+cd /workspace/worker/pj/Chrono/nautilus_trader_demo/pro
+export PYTHONPATH="$(pwd):/workspace/worker/pj/KiChaos${PYTHONPATH:+:$PYTHONPATH}"
+export IMPLUSE_VERSION=all
+
+# 用同一组业务参数，仅切换行情源。日历例外表须实际存在且覆盖本次范围。
+hybrid_args=(
+  --connect --mode recording --product RB
+  --release-path /ABS/PATH/TO/RB_MODEL_RELEASE
+  --directions-file /ABS/PATH/TO/feature_directions.csv
+  --signal-config /ABS/PATH/TO/signals.json
+  --expected-trading-day YYYYMMDD
+  --expected-source-day YYYYMMDD
+  --reference-database dfs://bomber_daily
+  --calendar-id china.sse
+  --trading-hours-database dfs://bomber_static
+  --trading-hours-table fut_trading_session
+  --session-overrides-table YOUR_SESSION_OVERRIDES_TABLE
+  --history-bars 1500 --min-raw-bars 300
+  --history-minutes 1500 --history-config /ABS/PATH/TO/hybrid_history.json
+  --model-bar-timestamp start --device cpu
+  --max-contracts 10 --seconds 600
+)
+
+# 方案一：CTP 深度聚合。
+python -u -m demos.10_hybrid_transformer.run_live \
+  "${hybrid_args[@]}" --market-source ctp
+
+# 方案二：DolphinDB 完整分钟流。下面声明结束标签、量额均为本周期值。
+python -u -m demos.10_hybrid_transformer.run_live \
+  "${hybrid_args[@]}" --market-source dolphindb \
+  --market-bar-table YOUR_FUTURES_MINUTE_STREAM \
+  --market-bar-timestamp end --market-volume-mode per-bar
+```
+
+也可通过 `--market-config` 读取相同字段，命令行显式参数覆盖 JSON：
+
+```json
+{
+  "source": "dolphindb",
+  "table": "YOUR_FUTURES_MINUTE_STREAM",
+  "timestamp_label": "end",
+  "volume_mode": "per-bar",
+  "max_age_seconds": 120
+}
+```
+
+SimNow 模式将示例中的 `--mode recording` 改为 `--mode simnow`，另外传入：
+
+```text
+--strategy-position-source fills --account-reconciliation off
+--enable-orders --confirm-simnow
+--state-file /ABS/PATH/TO/hybrid_RB_TD.json
+--max-notional 1000000 --max-session-orders 100
+```
+
+这会向 SimNow 报单。`fills/off` 是策略归属成交账本模式，资金和订单仍使用交易账户。
+新会话使用不存在的状态文件；同交易日、同合约、同模型及配置恢复使用原文件加 `--resume`。
+停机撤销活动订单并保存状态，不自动平掉剩余仓位。
+
+### 历史模型预热
+
+历史预热复用框架 Provider，但必须提供完整原始行情，不能使用 EMA 的 `adjusted_close` 历史配置。
+`history_minutes` 是交易分钟根数，应满足 `min_raw_bars <= history_minutes <= history_bars`；默认为 0 时仅靠实时行情预热。
+恢复持仓必须提供历史预热。历史不足、字段缺失或来源冲突直接失败，不填造成交额、不发布历史信号。
+
+`hybrid_history.json` 示例（库、表及实际列名须替换；下例明确来源是北京时间、开始标签）：
+
+```json
+{
+  "database": "dfs://YOUR_MINUTE_DATABASE",
+  "table": "YOUR_FUTURES_MINUTE_TABLE",
+  "columns": {
+    "instrument_id": "symbol",
+    "ts_event": "datetime",
+    "open": "open",
+    "high": "high",
+    "low": "low",
+    "close": "close",
+    "volume": "volume",
+    "value": "value",
+    "open_interest": "open_interest"
+  },
+  "time_unit": "ns",
+  "time_label": "start",
+  "instrument_format": "symbol",
+  "venue": "SHFE",
+  "source_timezone": "Asia/Shanghai"
+}
+```
+
+若来源已经保存 UTC 纳秒，应设置 `source_timezone=UTC`，不能重复减八小时。
+可用 `--history-file` 提供框架 JSONL/CSV 完整分钟；时间 `ts_event` 为 UTC 分钟结束减1ns、合约带交易所后缀。
+盘前阶段优先文件并由数据库补足；`--resume` 的恢复阶段使用数据库。
+
+### 检查点与报告
+
+SimNow 装配时将 `HybridCheckpoint`、模型/信号配置摘要、日历指纹注册进统一 `RuntimeStateManager`，并调用 `strategy.bind_checkpoint(manager.save)`。
+目标相同的批次续期也保存；恢复后保持原批次绝对期限，模型窗口通过历史重新预热。
+不兼容 EMA 的旧状态文件，也不自动接受跨交易日或模型变更的状态。
+
+每次运行输出 `summary.json`、`events.txt`、`signals.csv`、`batches.csv` 和最终只读 `strategy_state.json`。
+运行状态通过与是否发生真实成交分开：合法零信号可以没有成交，报告的 `fills_received` 只由执行回报计数。
+
+离线验证：
+
+```bash
+python -B -m unittest tests.test_demo_hybrid_live tests.test_demo_hybrid_holdings \
+  tests.test_demo_hybrid_timing tests.test_demo_hybrid_flow tests.test_futures_bar_values -q
+python -B tests/run_hybrid_live_offline.py
+python -B tests/run_option_vega_offline.py --market-sources
+```
+
+离线装配使用原生SDK实体与模型的替身，其余 Runner、路由和 Recording 执行链使用真实代码。
+真实 DDB/CTP 数据接续、完整模型性能及 SimNow 成交需在目标 Linux 环境验收。
