@@ -142,8 +142,10 @@ def parse_args(argv=None):
             raise ValueError('历史预热须同时声明history-minutes及history-config/history-file')
         if args.history_config and not args.history_config.is_file() or args.history_file and not args.history_file.is_file():
             raise ValueError('历史配置或文件不存在')
-        if args.resume and (not args.history_minutes or not args.history_config):
-            raise ValueError('恢复须提供history-minutes和数据库history-config重新预热')
+        # 不读历史时，恢复持仓义务后从实时完整分钟重新积累模型窗口。
+        # 显式启用恢复历史时仍只使用数据库，不以旧文件补造断线期间的分钟。
+        if args.resume and args.history_minutes and not args.history_config:
+            raise ValueError('启用恢复历史时须提供数据库history-config；实时预热使用history-minutes=0')
         if args.mode == 'simnow':
             # 新会话不能覆盖现有状态文件；恢复必须明确指定原文件与--resume。
             if not (args.enable_orders and args.confirm_simnow and args.state_file):
@@ -510,6 +512,8 @@ def build_runtime(
         strategy = session.strategy
         return {
             'bars_used': strategy.bars_used, 'last_prediction': strategy.last_prediction,
+            'model_window_bars': len(strategy.predictor.workflow.history),
+            'model_min_raw_bars': MODEL_MIN_RAW_BARS,
             'last_targets': strategy.last_targets,
             'active_batches': strategy.holdings.snapshot_state()['active'],
             'order_updates_received': strategy.order_updates_received,
@@ -527,7 +531,10 @@ def build_runtime(
         count = strategy.bars_used
         if count != getattr(session, '_reported_bars', -1):
             session._reported_bars = count
-            print(f"Hybrid分钟: bars={count} prediction={strategy.last_prediction} "
+            # bars_used可从检查点恢复；模型窗口本次重新积累，二者不能混为一谈。
+            model_bars = len(strategy.predictor.workflow.history)
+            print(f"Hybrid分钟: bars={count} model_window={model_bars} "
+                  f"min_raw_bars={MODEL_MIN_RAW_BARS} prediction={strategy.last_prediction} "
                   f"targets={strategy.last_targets} active_batches={len(strategy.holdings.active)}", flush=True)
 
     # lambda在这里被创建但没有执行。Runtime.start先取得context，再调用准备回调；
