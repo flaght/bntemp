@@ -176,7 +176,7 @@ fees = CommissionConfig(
 - 模型默认设置：CPU、历史窗口1500根、最低300根、开始时间标签；由本文件的 `MODEL_*` 常量明确声明。
 - 策略开仓间隔默认1分钟，持仓周期和信号函数仍按外部信号文件的品种配置读取。
 - `main()` 将解析结果逐项转换为显式关键字参数传给 `build_runtime()`；不传命令行Namespace。命令行未声明的查询超时、报单上限、名义金额、限价偏移及执行政策沿用函数默认值：15秒、100笔、1000000、1跳、fills/off。需调整时在代码调用中显式传入对应关键字参数。
-- `prepare_inputs()` 默认参考超时15秒、刷新5秒。参考库沿用 `DDB_REFERENCE_DATABASE`；需要独立时段库时在该函数调用中传入 `trading_hours_database`。
+- `prepare_inputs()` 默认参考超时15秒、刷新5秒。主力/条款参考库沿用 `DDB_REFERENCE_DATABASE`，通常为 `dfs://bomber_daily`。时段库独立配置，依次采用显式 `trading_hours_database`、`DDB_TRADING_HOURS_DATABASE`、默认 `dfs://bomber_static`；表沿用 `DDB_TRADING_HOURS_TABLE`，默认 `fut_trading_session`。不再把参考库自动当作时段库。
 - 日历默认 `china.sse`，可用 `BOMBER_CALENDAR_ID` 指定；时段表和例外表沿用 `DDB_TRADING_HOURS_TABLE`、`DDB_SESSION_OVERRIDES_TABLE`。没有例外时仍需显式 `--no-session-overrides`。
 
 行情源通过 `--market-source` / `--market-config` 选择；执行模式为 `recording` 或 `simnow`，默认 Recording。
