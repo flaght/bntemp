@@ -23,7 +23,7 @@ from bomber.framework.dataprep.reference_freshness import ReferenceFreshnessPoli
 from bomber.framework.dataprep.session_inputs import load_session_inputs, session_inputs_from_args, validate_session_arguments
 from bomber.framework.dataprep.sources import DataSourcePurpose, DolphinDbReferenceConfig, ReferenceSourceFactory
 from bomber.framework.market.basic.base import CustomBar, DataType
-from bomber.framework.market.sources import assemble_minute_market, create_market_feed, market_config_from_args, source_config
+from bomber.framework.market.sources import MarketSourceConfig, assemble_minute_market, create_market_feed, market_config_from_args, source_config
 from bomber.framework.trader import DataBinding, ExecutionRoute, RiskLimits
 from bomber.framework.trader.assembly import RoleGuard, StrategyBindings, assemble_strategy
 from bomber.framework.trader.execution.builders import ExecutionComponents, attach_ctp_persistence, build_ctp_execution
@@ -326,21 +326,29 @@ class HybridLiveReport(LiveRunReport):
         return super().write(status=status, fields=fields, session=session, events=events)
 
 
-def build_runtime(args, *, query_timeout=15, max_session_orders=100,
-                  max_notional=Decimal('1000000'), limit_offset_ticks=1,
-                  execution_policy=None):
-    """运行细项使用默认值；需要调整时在代码中显式传入。"""
-    market_config = source_config(args)
+def build_runtime(
+    *, product: str, release_path: Path, directions_file: Path, signal_config: Path,
+    expected_trading_day: str, expected_source_day: str,
+    mode='recording', max_contracts=10, seconds=600,
+    market_config: MarketSourceConfig | None = None,
+    calendar_id='china.sse', no_session_overrides=False,
+    history_minutes=0, history_config: Path | None = None, history_file: Path | None = None,
+    state_file: Path | None = None, resume=False, report_dir: Path | None = None,
+    query_timeout=15, max_session_orders=100, max_notional=Decimal('1000000'),
+    limit_offset_ticks=1, execution_policy=None,
+):
+    """显式接收业务输入；调用方省略的选项沿用这里的默认值。"""
+    market_config = market_config if market_config is not None else MarketSourceConfig()
     execution_policy = execution_policy or ExecutionPolicy('off', 'fills')
-    if args.mode not in {'recording', 'simnow'}:
+    if mode not in {'recording', 'simnow'}:
         raise ValueError('mode 仅支持 recording 或 simnow')
     if market_config.source not in {'ctp', 'dolphindb'}:
         raise ValueError('Hybrid实时行情仅支持 ctp 或 dolphindb')
-    if args.mode == 'recording' and args.resume:
+    if mode == 'recording' and resume:
         raise ValueError('recording 模式不支持恢复交易会话')
     if execution_policy.position_source is not StrategyPositionSource.FILLS:
         raise ValueError('recording/simnow 模式须使用 fills 仓位来源')
-    if not math.isfinite(args.seconds) or args.seconds <= 0:
+    if not math.isfinite(seconds) or seconds <= 0:
         raise ValueError('seconds 必须是有限正数')
     if not math.isfinite(query_timeout) or not 0 < query_timeout <= 120:
         raise ValueError('CTP查询超时须在0至120秒')
@@ -349,16 +357,31 @@ def build_runtime(args, *, query_timeout=15, max_session_orders=100,
     if not max_notional.is_finite() or max_notional <= 0:
         raise ValueError('名义上限须为有限正数')
 
-    if args.mode == 'recording':
-        lifecycle = HybridRecordingLifecycle(expected_trading_day=args.expected_trading_day,
+    product = product.strip().upper()
+    report_dir = Path(report_dir) if report_dir is not None else Path(__file__).parent/'results'/'live'
+    # 仅为现有会话辅助函数适配属性访问；Runtime接口不接收命令行Namespace。
+    session_options = SimpleNamespace(
+        product=product, release_path=Path(release_path), directions_file=Path(directions_file),
+        signal_config=Path(signal_config), expected_trading_day=expected_trading_day,
+        expected_source_day=expected_source_day, mode=mode, max_contracts=max_contracts,
+        seconds=seconds, market_source_config=market_config, calendar_id=calendar_id,
+        no_session_overrides=no_session_overrides, history_minutes=history_minutes,
+        history_config=Path(history_config) if history_config is not None else None,
+        history_file=Path(history_file) if history_file is not None else None,
+        state_file=Path(state_file) if state_file is not None else None,
+        resume=resume, report_dir=report_dir,
+    )
+
+    if mode == 'recording':
+        lifecycle = HybridRecordingLifecycle(expected_trading_day=expected_trading_day,
             market_source=market_config.source)
     else:
         transport = build_simnow_transport(CtpTdApiTransport, client_id=CLIENT_ID,
             flow_path='/tmp/bomber-hybrid-td', timeout_seconds=query_timeout)
         lifecycle = HybridSessionLifecycle(transport,
             md_front=required('CTP_MD_ADDRESS') if market_config.source == 'ctp' else None,
-            orders=True, max_session_orders=max_session_orders, expected_trading_day=args.expected_trading_day,
-            resume=args.resume, account_reconciliation=execution_policy.account_reconciliation)
+            orders=True, max_session_orders=max_session_orders, expected_trading_day=expected_trading_day,
+            resume=resume, account_reconciliation=execution_policy.account_reconciliation)
 
     def describe(session):
         if session is None:
@@ -373,8 +396,8 @@ def build_runtime(args, *, query_timeout=15, max_session_orders=100,
             'history': session.runner.history_service.last_audit,
         }
 
-    report = HybridLiveReport(args.report_dir, prefix='hybrid-'+args.mode,
-        metadata={'mode': args.mode, 'product': args.product, 'market_config': market_config.identity,
+    report = HybridLiveReport(report_dir, prefix='hybrid-'+mode,
+        metadata={'mode': mode, 'product': product, 'market_config': market_config.identity,
             'execution_policy': execution_policy.snapshot_state()}, describe=describe)
 
     def progress(session):
@@ -386,16 +409,36 @@ def build_runtime(args, *, query_timeout=15, max_session_orders=100,
                   f"targets={strategy.last_targets} active_batches={len(strategy.holdings.active)}", flush=True)
 
     return ManagedLiveRuntime(CLIENT_ID, controller=lifecycle,
-        prepare_inputs=lambda context: prepare_inputs(args, context, lifecycle),
-        assemble_session=lambda inputs, context: assemble(args, inputs, lifecycle,
+        prepare_inputs=lambda context: prepare_inputs(session_options, context, lifecycle),
+        assemble_session=lambda inputs, context: assemble(session_options, inputs, lifecycle,
             execution_policy=execution_policy, max_notional=max_notional,
             limit_offset_ticks=limit_offset_ticks),
-        report=report, seconds=args.seconds, progress=progress)
+        report=report, seconds=seconds, progress=progress)
 
 
 def main(argv=None):
     load_dotenv()
-    runtime = build_runtime(parse_args(argv))
+    args = parse_args(argv)
+    runtime = build_runtime(
+        product=args.product,
+        release_path=args.release_path,
+        directions_file=args.directions_file,
+        signal_config=args.signal_config,
+        expected_trading_day=args.expected_trading_day,
+        expected_source_day=args.expected_source_day,
+        mode=args.mode,
+        max_contracts=args.max_contracts,
+        seconds=args.seconds,
+        market_config=source_config(args),
+        calendar_id=args.calendar_id,
+        no_session_overrides=args.no_session_overrides,
+        history_minutes=args.history_minutes,
+        history_config=args.history_config,
+        history_file=args.history_file,
+        state_file=args.state_file,
+        resume=args.resume,
+        report_dir=args.report_dir,
+    )
     try:
         return runtime.run()
     finally:
