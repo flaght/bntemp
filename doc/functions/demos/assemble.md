@@ -2,18 +2,19 @@
 
 用途：把Hybrid已准备的参考、日历和行情对象装配成供ManagedLiveRuntime启动的完整Live会话。
 
-- 实际定义：`demos.10_hybrid_transformer.live_session.assemble`；区别于公共assemble_strategy。
-- [函数定义](../../../demos/10_hybrid_transformer/live_session.py) · [运行入口](../../../demos/10_hybrid_transformer/run_live.py) · [模型适配器](../../../demos/10_hybrid_transformer/model_adapter.py)
+- 实际定义：`demos.10_hybrid_transformer.run_live.assemble`；区别于公共assemble_strategy。
+- [函数与入口](../../../demos/10_hybrid_transformer/run_live.py) · [模型适配器](../../../demos/10_hybrid_transformer/model_adapter.py)
 - 核对日期：2026-10-28，Asia/Shanghai。
 
 ## 1. 签名与前置条件
 
 ```python
-def assemble(args, inputs, lifecycle):
+def assemble(args, inputs, lifecycle, *, execution_policy=None,
+             max_notional=Decimal('1000000'), limit_offset_ticks=1):
     ...
 ```
 
-三个参数均必填，无默认值。args应通过Hybrid parse_args；inputs为prepare_inputs返回对象；lifecycle为同一会话控制器，SimNow需要其driver。
+前三个参数必填；执行政策、名义金额上限与价格偏移使用默认值。args应通过Hybrid parse_args；inputs为prepare_inputs返回对象；lifecycle为同一会话控制器，SimNow需要其driver。
 
 Runtime在finish_preparation后调用，保证预检结束，再安装正式执行持久化钩子。返回后检查Runner为LIVE，再controller.start。
 
@@ -27,18 +28,18 @@ Runtime在finish_preparation后调用，保证预检结束，再安装正式执�
 | inputs.calendar / upstream | 交易日历与已构造上游Feed |
 | args.mode | 等于simnow才启用orders，其他走Recording，须依赖入口白名单 |
 | args.signal_config/product | 选定signal_id、signal_method、signal_params、hold_bars |
-| args.release_path/directions_file/device | 模型目录、方向文件、设备；入口device默认cpu |
-| args.history_bars/min_raw_bars | 模型窗口默认1500，最低原始分钟数300 |
-| args.max_contracts/rebalance_minutes | 默认10手、1分钟，进入策略配置及风控 |
-| args.max_notional/limit_offset_ticks | 默认1000000、1跳，SimNow使用 |
+| args.release_path/directions_file | 模型目录和方向文件；设备由MODEL_DEVICE声明 |
+| MODEL_HISTORY_BARS / MODEL_MIN_RAW_BARS | 模型窗口1500、最低300根，由代码声明 |
+| args.max_contracts / REBALANCE_MINUTES | 仓位上限可从命令行调整，开仓间隔默认1分钟 |
+| max_notional / limit_offset_ticks | 函数默认1000000、1跳，SimNow使用 |
 | args.state_file | SimNow持久化文件；Recording入口拒绝 |
-| args.model_bar_timestamp | 默认start，模型分钟时间标签，不是接收时间 |
+| MODEL_BAR_TIMESTAMP | 代码默认start，模型分钟时间标签 |
 
 其他行情、历史和政策参数由辅助函数消费。日期、文件存在性、授权与恢复组合主要由parse_args验证。
 
 ## 3. 分钟行情与就绪检查
 
-固定instrument=references.instrument_id，加载信号配置，创建CtpLiveProfile('realtime')；assemble_minute_market包装upstream为HYBRID_1M，传单合约、参考交易日、calendar及model_bar_timestamp，并注册合约元数据。
+固定instrument=references.instrument_id，创建CtpLiveProfile('realtime')；assemble_minute_market包装upstream为HYBRID_1M，传单合约、参考交易日、calendar及MODEL_BAR_TIMESTAMP，并注册合约元数据。
 
 因为传入futures_calendar，CTP Tick与数据库分钟路径均使用完整期货分钟包装和对应健康检查，而非不加筛选地输入模型。
 
@@ -60,7 +61,7 @@ build_ctp_execution还接收tick、multiplier、limit_offset_ticks、session_che
 
 ## 5. 模型、策略、Runner和绑定
 
-MizarWorkflowAdapter构造时加载研究工作流及模型资料。HybridTransformerConfig取信号文件hold_bars，开启record_signals，交易所及乘数来自参考。
+build_strategy函数中明确构造MizarWorkflowAdapter并加载模型资料，再创建HybridTransformerConfig和HybridTransformerStrategy。HybridTransformerConfig取信号文件hold_bars，开启record_signals，交易所及乘数来自参考。
 
 HybridLiveRunner共享execution.positions，配置references、session_check、orders和instrument_health；附加args、calendar、strategy、client，将history_last_ns设为-1并创建history_service。build_history可读取历史JSON配置，此时尚未load历史分钟。
 
@@ -106,7 +107,7 @@ Recording也构造上述组件并计算model_identity，但不创建manager、�
 ```python
 from importlib import import_module
 
-entry = import_module("demos.10_hybrid_transformer.live_session")
+entry = import_module("demos.10_hybrid_transformer.run_live")
 
 def session_factory(args, lifecycle):
     return lambda inputs, context: entry.assemble(args, inputs, lifecycle)
