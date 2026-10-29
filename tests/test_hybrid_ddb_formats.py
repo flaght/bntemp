@@ -96,14 +96,54 @@ class MinuteStateTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'已封闭分钟'):
             self.push(self.state(volume=3,second='59'))
 
-    def test_older_versions_ignored_but_equal_version_conflict_and_volume_rollback_reject(self):
+    def test_older_versions_ignored_equal_timestamp_progress_allowed_and_volume_rollback_reject(self):
         self.push(self.state(volume=5,second='30'))
         self.assertEqual(self.push(self.state(volume=2,second='01')),())
         self.assertEqual(self.buffer.ignored_old_versions,1)
-        with self.assertRaisesRegex(ValueError,'版本内容冲突'):
-            self.push(self.state(volume=6,second='30'))
+        self.assertEqual(self.push(self.state(volume=6,second='30')),())
         with self.assertRaisesRegex(ValueError,'成交量或成交额倒退'):
             self.push(self.state(volume=3,second='31'))
+
+    def test_reported_millisecond_collision_accepts_77_to_80_contracts_and_closes_latest_once(self):
+        import numpy as np
+        first=self.state('22:03',volume=77)
+        first.update(barTime=np.datetime64('2026-10-29T22:03:00.000'),open=3041,high=3041,
+            low=3040,close=3041,turnover=2341280,open_interest=1749804,
+            updateTime=np.datetime64('2026-10-29T22:03:15.282'))
+        last=dict(first,close=3040,volume=80,turnover=2432480,open_interest=1749807)
+        def push(point):
+            return self.buffer.push('rb2701',point,received_ns=ns('2026-10-29 22:05'))
+        self.assertEqual(push(first),())
+        self.assertEqual(push(last),())
+        self.assertEqual(push(last),())
+        self.assertEqual(push(self.state('22:04')),(last,))
+        self.assertEqual(push(last),())
+
+    def test_equal_timestamp_ambiguous_or_inconsistent_progress_does_not_replace_pending(self):
+        cases=[dict(volume=3),dict(turnover=3000),
+               dict(volume=3,turnover=3000,open=101),
+               dict(volume=3,turnover=3000,high=100),
+               dict(volume=3,turnover=3000,low=100),
+               dict(volume=3,turnover=3000,volume_baseline_ok=False)]
+        for changes in cases:
+            with self.subTest(changes=changes):
+                self.buffer.reset()
+                first=self.state()
+                first.update(high=101,low=99)
+                self.push(first)
+                with self.assertRaisesRegex(ValueError,'无法确认快照先后'):
+                    self.push(dict(first,**changes))
+                self.assertEqual(self.push(self.state('10:56')),(first,))
+
+    def test_equal_timestamp_volume_or_amount_rollback_rejects_without_replacing_pending(self):
+        for changes in (dict(volume=1),dict(turnover=1000)):
+            with self.subTest(changes=changes):
+                self.buffer.reset()
+                first=self.state()
+                self.push(first)
+                with self.assertRaisesRegex(ValueError,'成交量或成交额倒退'):
+                    self.push(dict(first,**changes))
+                self.assertEqual(self.push(self.state('10:56')),(first,))
 
     def test_nanosecond_revisions_remain_ordered_for_sdk_and_string_values(self):
         import numpy as np
@@ -139,14 +179,15 @@ class MinuteStateTests(unittest.TestCase):
 
     def test_true_equal_version_conflict_reports_exact_field_values_without_replacing_pending(self):
         first=self.state(volume=2)
-        changed=self.state(volume=3)
+        changed=self.state()
+        changed.update(high=101,close=101,open_interest=501)
         self.push(first)
         with self.assertRaisesRegex(ValueError,'同一状态版本内容冲突') as raised:
             self.push(changed)
         message=str(raised.exception)
         for detail in ('rb2701','barTime=', 'revision_ns=', 'previous_updateTime=',
-                       'current_updateTime=', "'volume': {'previous': 2.0, 'current': 3.0}",
-                       "'turnover': {'previous': 2000.0, 'current': 3000.0}"):
+                       'current_updateTime=', "'close': {'previous': 100.0, 'current': 101.0}",
+                       "'open_interest': {'previous': 500.0, 'current': 501.0}"):
             self.assertIn(detail,message)
         self.assertEqual(self.push(self.state('10:56')),(first,))
 
@@ -178,7 +219,7 @@ class MinuteStateTests(unittest.TestCase):
         feed.enqueue_event=converted.append
         with patch('bomber.framework.market.stream.dolphin.feed.time.time_ns',return_value=ns('2026-10-29 10:56:02')):
             feed.on_stream_row(spec,self.state(volume=2))
-            feed.on_stream_row(spec,self.state(volume=5,second='59'))
+            feed.on_stream_row(spec,self.state(volume=5))
             self.assertFalse(converted)
             feed.on_stream_row(spec,self.state('10:56',volume=1))
         self.assertEqual(len(converted),1)

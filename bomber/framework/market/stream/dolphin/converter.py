@@ -399,17 +399,24 @@ class DolphinDbMinuteStateBuffer:
             if revision < previous[1]:
                 self.ignored_old_versions += 1
                 return ()
-            if revision == previous[1] and signature != previous[2]:
-                fields = ("open", "high", "low", "close", "volume", "turnover",
-                          "open_interest", "volume_baseline_ok")
-                changes = {name: {"previous": old, "current": new}
-                           for name, old, new in zip(fields, previous[2], signature) if old != new}
-                raise ValueError(f"同一状态版本内容冲突: Code={row.get('Code')!r} "
-                    f"barTime={row.get('barTime')!r} revision_ns={revision} "
-                    f"previous_updateTime={previous[3].get('updateTime')!r} "
-                    f"current_updateTime={row.get('updateTime')!r} changes={changes}")
             if signature[4] < previous[2][4] or signature[5] < previous[2][5]:
                 raise ValueError("同一分钟状态的成交量或成交额倒退")
+            if revision == previous[1] and signature != previous[2]:
+                before = previous[2]
+                # updateTime可能只有毫秒精度，同一批更新会共享时间戳，并非唯一序号。
+                # 量额同时增长、开盘不变、高低点只扩展，才能确认这是后续分钟快照。
+                progresses = (signature[4] > before[4] and signature[5] > before[5]
+                    and signature[0] == before[0] and signature[1] >= before[1]
+                    and signature[2] <= before[2] and signature[-1] == before[-1])
+                if not progresses:
+                    fields = ("open", "high", "low", "close", "volume", "turnover",
+                              "open_interest", "volume_baseline_ok")
+                    changes = {name: {"previous": old, "current": new}
+                               for name, old, new in zip(fields, before, signature) if old != new}
+                    raise ValueError(f"同一状态版本内容冲突，无法确认快照先后: Code={row.get('Code')!r} "
+                        f"barTime={row.get('barTime')!r} revision_ns={revision} "
+                        f"previous_updateTime={previous[3].get('updateTime')!r} "
+                        f"current_updateTime={row.get('updateTime')!r} changes={changes}")
             self._pending[key] = current
             return ()
         self._closed[key] = previous
