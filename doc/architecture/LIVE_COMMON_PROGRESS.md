@@ -65,7 +65,9 @@ PYTHONPATH=.:.validation/packages python -B -m tests.run_live_continuous_offline
 
 远端后续反馈`shared-ipc`49项、`shared-discovery`4项通过，随后在`ctp-depth-health`停止。原因是提取实际深度回调的测试Handler遗漏初始化`_depth_handlers`；真实Feed构造器已有该初始化。已补齐测试装配，并在成功发布用例中断言无错误日志；本地该组8项通过，待远端复验。
 
-最新远端验收推进至`cross-live`：83项中，DCE／CZCE平今优先记账用例的两个子场景因简化回报缺少`client_order_id`报错。已改用标准`ExecutionReport`，同时核验原今昨仓、盈亏及费用审计订单ID；本地该用例两个场景通过。本机SDK夹具无法完整运行原生行情装配，完整83项仍待远端复验。
+`cross-live`远端复验已通过：83项，测试耗时0.886秒，模块耗时2.145秒。此前DCE／CZCE平今优先记账用例因简化回报缺少`client_order_id`报错，现已改用标准`ExecutionReport`，同时核验原今昨仓、盈亏及费用审计订单ID。本次日志确认该选定组通过；完整集中离线验收的通过结果仍待确认。
+
+最新远端验收在`live-common`停止：EMA恢复测试在`sys.modules`补丁内加载整个策略模块，退出补丁后卸载新导入的NumPy，下一项再次导入其原生扩展时报错。已改为直接加载该组核验的两个实际恢复函数，避免不必要的SDK导入；策略和运行时代码未变。本地按集中验收入口运行`live-common`129项通过，公共生命周期汇总309项通过，两组有重叠；待远端同步复验。
 
 - 在已安装Bomber原生引擎的环境运行完整EMA数值和原生Live装配回归；本机结果不替代该验收。
 - 在目标运行机验证真实DolphinDB读取、历史落库与实时衔接，以及SimNow午休／跨日／同文件恢复／正常停机。

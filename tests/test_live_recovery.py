@@ -344,10 +344,18 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(lifecycle.expected_position, -1)
 
     def ema_hooks(self):
-        aliases = {'bomber.framework.trader.runtime.live.recovery': recovery,
-                   'bomber.framework.trader.runtime.live.channels.ctp_recovery': ctp}
-        with patch.dict(sys.modules, aliases):
-            return load('demos.01_main_ema._test_recovery_hooks', 'demos/01_main_ema/recovery.py')
+        # 只加载本组核验的实际函数；不在sys.modules补丁内导入整套SDK及NumPy。
+        path = ROOT / 'demos/01_main_ema/recovery.py'
+        tree = ast.parse(path.read_text())
+        nodes = [node for node in tree.body if isinstance(node, ast.FunctionDef)
+                 and node.name in {'validate_restored_session', 'verify_managed_position'}]
+        namespace = {
+            'validate_ctp_restored_positions': ctp.validate_ctp_restored_positions,
+            'restored_target_revision': recovery.restored_target_revision,
+            'validate_ctp_account': ctp.validate_ctp_account,
+        }
+        exec(compile(ast.Module(body=nodes, type_ignores=[]), str(path), 'exec'), namespace)
+        return NS(**namespace)
 
     def test_ema_restore_sets_revision_without_bound_strategy_or_old_signal(self):
         hooks = self.ema_hooks()
