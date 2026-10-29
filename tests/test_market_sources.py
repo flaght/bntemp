@@ -174,6 +174,18 @@ class MinuteSourceTests(unittest.TestCase):
         self.assertFalse(feed.is_connected)
         self.assertEqual(feed.config.front,"tcp://fake:1234")
 
+    def test_dolphin_factory_uses_market_connection_and_streaming_port(self):
+        from tests.test_dolphindb_connections import LEGACY, SPLIT
+        for scoped, expected in (({}, 8800), ({"DDB_MARKET_STREAMING_PORT": "8801"}, 8801)):
+            with self.subTest(scoped=scoped), patch.dict(os.environ,
+                    {**LEGACY, **SPLIT, "DDB_STREAMING_PORT": "8800", **scoped}, clear=True):
+                feed = create_market_feed(MarketSourceConfig(source="dolphindb", table="minute_stream",
+                    timestamp_label="end", volume_mode="per-bar"), "split-dolphin")
+                self.assertFalse(feed.is_connected)
+                self.assertEqual((feed.config.host, feed.config.port, feed.config.username,
+                    feed.config.password, feed.config.streaming_port),
+                    ("market", 8850, "market-user", "market-secret", expected))
+
     def test_bn_factory_uses_correct_market_and_ignores_open_kline(self):
         from bomber.framework.market.basic.base import InstrumentId, InstrumentMeta
         for market_type, symbol in (("spot","BTCUSDT"),("futures","BTCUSDT-PERP")):

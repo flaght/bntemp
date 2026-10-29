@@ -403,8 +403,9 @@ python demos/08_option_vega/check_backtest_data.py \
 
 | 环境变量 | 用途与默认值 |
 | --- | --- |
-| `DDB_HOST / DDB_USERNAME / DDB_PASSWORD` | DolphinDB 连接必需；指数及默认参考资料共用这些凭据 |
-| `DDB_PORT / DDB_STREAMING_PORT` | 连接端口默认 8848；流订阅监听端口默认 0 |
+| `DDB_MARKET_HOST / DDB_MARKET_USERNAME / DDB_MARKET_PASSWORD` | 行情流与指数 DFS 查询连接；各项未设置时兼容旧 `DDB_HOST / DDB_USERNAME / DDB_PASSWORD` |
+| `DDB_REFERENCE_HOST / DDB_REFERENCE_USERNAME / DDB_REFERENCE_PASSWORD` | 期货/期权基础资料连接；各项未设置时兼容旧 `DDB_*`，不会读取 `DDB_MARKET_*` |
+| `DDB_MARKET_PORT / DDB_REFERENCE_PORT / DDB_MARKET_STREAMING_PORT` | 连接端口默认 8848；流监听端口默认 0；各项兼容旧 `DDB_PORT / DDB_STREAMING_PORT` |
 | `DDB_REFERENCE_DATABASE` | 参考资料库默认 `dfs://bomber_daily`；可用 `--reference-database` 覆盖 |
 | `DDB_FUT_BASIC_TABLE / DDB_OPT_BASIC_TABLE` | 参考表默认 `fut_basic / opt_basic` |
 | `DDB_INDEX_BAR_TABLE` | 标准指数流表，或用 `--index-bar-table`；DFS 模式不使用此变量 |

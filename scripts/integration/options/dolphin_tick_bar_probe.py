@@ -98,11 +98,10 @@ def main(argv=None):
     if args.tick_table == args.bar_table:
         parser.error("tick和Bar须为不同流表")
     from dotenv import load_dotenv
+    from bomber.framework.dolphindb import DolphinDbConnectionConfig, connection_env
     from bomber.framework.market.native.dolphin.driver import create_native_driver, NativeDolphinSubscription
     load_dotenv(ROOT / ".env")
-    for name in ("DDB_HOST", "DDB_USERNAME", "DDB_PASSWORD"):
-        if not os.getenv(name):
-            raise RuntimeError(f"缺少环境配置 {name}")
+    connection = DolphinDbConnectionConfig.from_env(purpose="market")
     directory = args.report_dir / f"sample-{time.time_ns()}"
     directory.mkdir(parents=True)
     stop = threading.Event()
@@ -114,8 +113,8 @@ def main(argv=None):
         probe = TickBarProbe(keys, output)
         try:
             driver = create_native_driver()
-            driver.start(os.environ["DDB_HOST"], int(os.getenv("DDB_PORT", "8848")),
-                os.environ["DDB_USERNAME"], os.environ["DDB_PASSWORD"], streaming_port=0)
+            driver.start(connection.host, connection.port, connection.username, connection.password,
+                streaming_port=int(connection_env("market", "STREAMING_PORT", "0")))
             for kind, table in (("tick", args.tick_table), ("bar", args.bar_table)):
                 if stop.is_set():
                     break

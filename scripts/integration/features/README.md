@@ -7,6 +7,10 @@ Payload由声明式Schema生成，字段是有限float，实例不可变；普�
 Schema不执行计算公式；新算法由计算函数实现，已有数据库结果直接映射。
 没有新增特征专用Provider、Feed、Channel，没有数据库写入或策略报单。
 
+Live 示例和只读探针默认读取 `DDB_MARKET_*` 连接，逐项兼容旧 `DDB_*`。
+`scripts.integration.features.read_only` 查询参考类特征时可加 `--dolphindb-purpose reference`，
+改用 `DDB_REFERENCE_*`；连接示例见[双服务器配置](../../../demos/market_sources/dolphindb.env.example)。
+
 ## 1. 从已收盘Bar构建
 
 `example.py`的`build_feature()`使用通用类型；核心代码为：

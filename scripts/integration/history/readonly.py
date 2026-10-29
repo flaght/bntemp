@@ -8,7 +8,8 @@ from dotenv import load_dotenv
 
 from bomber.framework.dataprep.history import (
     DolphinDbHistoryConfig, HistoryProviderFactory, HistoryRequest, HistoryError)
-from bomber.framework.dataprep.sources import DolphinDbReferenceConfig, DataSourcePurpose
+from bomber.framework.dataprep.sources import DataSourcePurpose
+from bomber.framework.dolphindb import DolphinDbConnectionConfig
 
 
 def probe(config, request, *, expected_bars=None, factory=HistoryProviderFactory):
@@ -80,7 +81,7 @@ def main(argv=None):
     data.pop("factor_database", None)
     data.pop("factor_source_days", None)
     config = DolphinDbHistoryConfig(
-        connection=DolphinDbReferenceConfig.from_env(read_timeout_seconds=args.timeout), **data)
+        connection=DolphinDbConnectionConfig.from_env(purpose="market", read_timeout_seconds=args.timeout), **data)
     result = probe(config, args.request, expected_bars=args.expected_bars)
     if args.report:
         write_report(args.report, result)

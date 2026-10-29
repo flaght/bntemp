@@ -32,7 +32,7 @@
 | [architecture](architecture/README.md) | 集成架构原稿与修订稿、框架状态、进度快照、行情分层评估 | 5 |
 | [data](#数据契约与会话规则) | DataHub、基础条款、期货期权数据及会话通用化两份关联稿 | 5 |
 | [strategies](#策略与公共输入设计) | 示例适配、输入层设计和实现交接 | 3 |
-| [integration](#系统对接) | LXGBN / DXBM LXG 外部系统接入 | 2 |
+| [integration](#系统对接) | LXGBN / DXBM LXG 外部系统接入 | 3 |
 | [audits](#架构审查与缺口) | GAP 清单、评估快照、品种专用代码审查 | 3 |
 | [HANDOFF](HANDOFF/README.md) | 按策略、实盘、历史、GAP、协调细分，历史版本随主题保存 | 36 |
 | [evidence](evidence/README.md) | 校验清单、补丁与同步脚本 | 54 |
@@ -71,6 +71,7 @@
 
 | 文档 | 用途和状态 |
 | --- | --- |
+| [LXGBN_EXPORTED_LIBRARY_REVIEW](integration/LXGBN_EXPORTED_LIBRARY_REVIEW_2026-10-29.md) | 真实 stgWrapper 导出源码/pyd/策略例子与 SDK 对照：版本疑点、原生字段映射、最小补充和接线顺序 |
 | [LXGBN_SDK_INTEGRATION_GUIDE](integration/LXGBN_SDK_INTEGRATION_GUIDE_2026-10-21.md) | 已实现 SDK 的 Windows 内嵌接入指南，含报单/成交通知、宿主三端口、线程/水位、九个可运行无柜台例子及实机验收清单 |
 | [DXBM_LXG_INTEGRATION_SPEC](integration/DXBM_LXG_INTEGRATION_SPEC.md) | v0.8 双方评审草案：订单命令、回调、策略归属、恢复和能力声明；不代表适配器已实现 |
 

@@ -64,9 +64,10 @@ class DolphinDbRawConfig:
     quality_column: str | None = None
 
     def __post_init__(self):
+        from ...dolphindb import DolphinDbConnectionConfig
         from ..sources.dolphindb import DolphinDbReferenceConfig
-        if not isinstance(self.connection, DolphinDbReferenceConfig):
-            raise FeatureError("原表连接须为DolphinDbReferenceConfig")
+        if not isinstance(self.connection, (DolphinDbConnectionConfig, DolphinDbReferenceConfig)):
+            raise FeatureError("原表连接须为DolphinDbConnectionConfig或DolphinDbReferenceConfig")
         if type(self.database) is not str or re.fullmatch(r"dfs://[A-Za-z0-9_/-]+", self.database) is None:
             raise FeatureError("原表数据库须为安全DFS路径")
         for name in (self.table, self.key_column, self.partition_date, self.revision_column, self.quality_column):

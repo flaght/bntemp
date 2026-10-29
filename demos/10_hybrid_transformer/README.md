@@ -179,6 +179,13 @@ fees = CommissionConfig(
 - `prepare_inputs()` 默认参考超时15秒、刷新5秒。主力/条款参考库沿用 `DDB_REFERENCE_DATABASE`，通常为 `dfs://bomber_daily`。时段库独立配置，依次采用显式 `trading_hours_database`、`DDB_TRADING_HOURS_DATABASE`、默认 `dfs://bomber_static`；表沿用 `DDB_TRADING_HOURS_TABLE`，默认 `fut_trading_session`。不再把参考库自动当作时段库。
 - 日历默认 `china.sse`，可用 `BOMBER_CALENDAR_ID` 指定；时段表和例外表沿用 `DDB_TRADING_HOURS_TABLE`、`DDB_SESSION_OVERRIDES_TABLE`。没有例外时仍需显式 `--no-session-overrides`。
 
+DolphinDB 连接按用途分离：实时订阅和历史分钟查询使用 `DDB_MARKET_HOST/PORT/USERNAME/PASSWORD`；
+`bomber_daily` 基础资料与 `bomber_static` 交易时段共同使用 `DDB_REFERENCE_HOST/PORT/USERNAME/PASSWORD`。
+各项未设置时兼容回退旧 `DDB_HOST/PORT/USERNAME/PASSWORD`，两组新变量不会互相回退。
+流订阅端口使用 `DDB_MARKET_STREAMING_PORT`，兼容旧 `DDB_STREAMING_PORT`，默认0。
+使用 CTP 且仅本地文件/实时积累窗口时不需要行情服务器连接，基础资料连接仍需配置。
+完整示例见 [DolphinDB 双服务器配置](../market_sources/dolphindb.env.example)。
+
 行情源通过 `--market-source` / `--market-config` 选择；执行模式为 `recording` 或 `simnow`，默认 Recording。
 首版使用 realtime、固定会话主力和 SHFE/INE 执行范围；跨交易日自动重登录、动态换月和共享账户宿主未接入。
 

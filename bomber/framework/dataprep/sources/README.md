@@ -63,7 +63,7 @@ main／second／recent／far 源字段保留，公共角色为 main／secondary�
 
 ## 配置和装配
 
-复用 DDB_HOST、DDB_PORT（默认8848）、DDB_USERNAME、DDB_PASSWORD。密码不放在命令参数、配置 repr 或结果文件中。可选环境变量为 DDB_REFERENCE_DATABASE、DDB_FUT_BASIC_TABLE、DDB_OPT_BASIC_TABLE、DDB_FACTOR_TABLE、DDB_CONTRACT_TABLE、DDB_ENABLE_SSL；实际表名不同时显式配置，不自动尝试 opt_info 或单数因子表。
+连接优先读取 `DDB_REFERENCE_HOST/PORT/USERNAME/PASSWORD`，每项未设置时兼容旧 `DDB_HOST/PORT/USERNAME/PASSWORD`，端口默认8848。SSL优先读取 `DDB_REFERENCE_ENABLE_SSL`，兼容旧 `DDB_ENABLE_SSL`。不读取 `DDB_MARKET_*`；基础资料及静态交易时段共用 reference 连接，库表可分别指定。密码不放在命令参数、配置 repr 或结果文件中。可选环境变量为 DDB_REFERENCE_DATABASE、DDB_FUT_BASIC_TABLE、DDB_OPT_BASIC_TABLE、DDB_FACTOR_TABLE、DDB_CONTRACT_TABLE；实际表名不同时显式配置，不自动尝试 opt_info 或单数因子表。两台服务器的配置示例见 [公共行情配置](../../../../demos/market_sources/README.md#dolphindb-行情与基础资料连接)。
 
 ```python
 from bomber.framework.dataprep.sources import DolphinDbReferenceConfig, ReferenceSourceFactory

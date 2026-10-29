@@ -233,13 +233,14 @@ class HistoryAdjustmentTests(unittest.TestCase):
         self.assertEqual(strategy.fills_received, 0)
 
     def test_build_history_accepts_explicit_factor_map_without_connecting(self):
-        from bomber.framework.dataprep.sources import DolphinDbReferenceConfig
         module = import_module("demos.01_main_ema.history")
         args = SimpleNamespace(history_config=ROOT / "demos/01_main_ema/history_im_20260922.json",
             history_db="dolphindb", history_file=None, history_missing_policy="fail", reference_timeout=15)
-        fake = DolphinDbReferenceConfig("fake", 8848, "fake", "fake")
-        with patch.object(module.DolphinDbReferenceConfig, "from_env", return_value=fake):
+        from tests.test_dolphindb_connections import SPLIT
+        with patch.dict("os.environ", SPLIT, clear=True):
             service = module.build_history(args)
+        self.assertEqual(service.config.connection.host, "market")
+        self.assertEqual(service.price_adjuster.config.host, "reference")
         self.assertEqual(service.price_adjuster.source_days, {DAY: SOURCE})
         self.assertEqual(service.config.date_column, "date")
 

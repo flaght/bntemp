@@ -6,7 +6,7 @@ from pathlib import Path
 
 from bomber.framework.dataprep.history import (
     DolphinDbHistoryConfig, HistoryBar, HistoryError, HistoryService, HistoryUnavailable)
-from bomber.framework.dataprep.sources import DolphinDbReferenceConfig
+from bomber.framework.dolphindb import DolphinDbConnectionConfig
 
 
 class CalendarHistory:
@@ -84,8 +84,8 @@ def build_history(args, calendar):
         # 同一原始分钟配置可与01共用；跨期信号不加载复权因子。
         data.pop("factor_database", None)
         data.pop("factor_source_days", None)
-        config = DolphinDbHistoryConfig(connection=DolphinDbReferenceConfig.from_env(
-            read_timeout_seconds=args.reference_timeout), **data)
+        config = DolphinDbHistoryConfig(connection=DolphinDbConnectionConfig.from_env(
+            purpose="market", read_timeout_seconds=args.reference_timeout), **data)
         if "close" not in config.columns:
             raise HistoryError("跨期历史配置必须提供原始close")
     service = HistoryService(database_backend=args.history_db, database_config=config,

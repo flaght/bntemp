@@ -25,8 +25,31 @@ Live 使用 DolphinDB 时，已有命令追加：
 08 已有 `stream_cffex_1min` 证据不意味着该表覆盖 RB、HC、CU；01/03/04 必须核实对应业务流。
 
 命令行显式参数覆盖 JSON；未声明的字段沿用默认。01/03/04 的流表也可来自 `DDB_MARKET_BAR_TABLE`，
-08 保留 `DDB_OPTION_BAR_TABLE`。连接凭据仍用 `DDB_HOST/PORT/USERNAME/PASSWORD/STREAMING_PORT`，不写入 JSON。
+08 保留 `DDB_OPTION_BAR_TABLE`。连接凭据不写入 JSON，按下面的用途独立配置。
 Live JSON 中的 `source` 可为 `ctp`、`dolphindb`、`bn-ws`，回测为 `file`。
+
+## DolphinDB 行情与基础资料连接
+
+两台服务器的完整环境变量示例见 [dolphindb.env.example](dolphindb.env.example)。
+
+| 用途 | 连接变量 | 库表选择 |
+| --- | --- | --- |
+| 实时分钟订阅、历史分钟预热、08 指数 DFS 查询 | `DDB_MARKET_HOST/PORT/USERNAME/PASSWORD` | 原 market/history/指数数据集配置 |
+| 主力、条款、复权因子等基础资料 | `DDB_REFERENCE_HOST/PORT/USERNAME/PASSWORD` | `DDB_REFERENCE_DATABASE`，默认 `dfs://bomber_daily` |
+| Hybrid 静态交易时段 | 同一组 `DDB_REFERENCE_*` | `DDB_TRADING_HOURS_DATABASE`，默认 `dfs://bomber_static`；表默认 `fut_trading_session` |
+
+连接变量逐项优先读取用途前缀；未设置的项兼容回退旧 `DDB_HOST/PORT/USERNAME/PASSWORD`。
+用途前缀已设置但值为空或端口无效时报错，不静默回退；`MARKET` 和 `REFERENCE` 不互相回退。
+端口默认 8848。旧环境无需立即迁移；两台服务器建议完整填写各自四项连接参数。
+实时流的 `DDB_MARKET_STREAMING_PORT` 同样优先于旧 `DDB_STREAMING_PORT`，默认 0。
+DFS 查询的 SSL 分别读取 `DDB_MARKET_ENABLE_SSL`、`DDB_REFERENCE_ENABLE_SSL`，
+未设置时兼容 `DDB_ENABLE_SSL`，默认 false；实时流沿用现有 SDK 传输设置。
+
+`DolphinDbConnectionConfig.from_env(purpose="market")` 只装配连接，不携带参考库或表名。
+`DolphinDbReferenceConfig.from_env()` 固定读取 reference 连接，`bomber_daily` 与
+`bomber_static` 可以在同一基础资料服务器上选择不同库。
+CTP 实时行情且未启用 DolphinDB 历史或指数查询时，无需配置 `DDB_MARKET_*`；
+参考资料仍按其实际来源读取 `DDB_REFERENCE_*`。
 
 BN-WS 公共工厂支持 BINANCE 现货和永续：`market_type=spot|futures`，可选 `ws_base_url`；
 未指定 URL 时按市场类型选择已有 WS 端点。只消费完成的 1 分钟 Kline，永续标识为 `*-PERP.BINANCE`。

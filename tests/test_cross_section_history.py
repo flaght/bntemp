@@ -191,10 +191,11 @@ class CrossHistoryTests(unittest.TestCase):
             reference_max_source_age_days=14, factor_date_basis="source", history_file=None,
             history_stage="recovery", history_minutes=0, lookback=20, history_missing_policy="fail",
             _session_calendars=self.calendars)
-        from bomber.framework.dataprep.sources import DolphinDbReferenceConfig
-        cfg = DolphinDbReferenceConfig("fake", 8848, "fake", "fake")
-        with patch.object(DolphinDbReferenceConfig, "from_env", return_value=cfg):
+        from tests.test_dolphindb_connections import SPLIT
+        with patch.dict("os.environ", SPLIT, clear=True):
             history = self.module.build_history(args, NS(instrument_ids=self.ids))
+        self.assertTrue(all(service.config.connection.host == "market" for service in history.services.values()))
+        self.assertTrue(all(service.price_adjuster.config.host == "reference" for service in history.services.values()))
         self.assertEqual(history.minutes, 21)
         self.assertTrue(all(isinstance(s.price_adjuster, self.api.SessionReferenceFactorAdjuster)
                             for s in history.services.values()))

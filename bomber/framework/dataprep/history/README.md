@@ -14,6 +14,12 @@ JSONL和带表头CSV采用标准字段：instrument_id、ts_event，以及close/
 
 DolphinDB配置显式声明DFS路径、表名、字段映射、时间单位（ns/ms/s）、时间标签（start/end_ns）和合约格式（full/symbol，symbol须固定venue）。PF0912新增date_column/time_column组合字段，须明确source_timezone=UTC或Asia/Shanghai、time_label=start、time_unit=ns，不同时映射ts_event；查询用concatDateTime/nanotimestamp，显式LONG纳秒常量和北京时间偏移，避免默认INT溢出。只读查询按合约/时间限定，多读一行检测行数截断。连接复用DDB环境配置及超时，表名和行情字段不猜测。当前读取分钟表，尚未实现原始Tick聚合、跨表历史因子连接、历史版本as-of选择、跨主力换月连续行情。
 
+历史分钟连接使用 `DolphinDbConnectionConfig.from_env(purpose="market")`，优先读取
+`DDB_MARKET_HOST/PORT/USERNAME/PASSWORD/ENABLE_SSL`，逐项兼容旧 `DDB_*`。
+主力资料、复权因子及交易时段仍通过 `DolphinDbReferenceConfig.from_env()` 读取
+`DDB_REFERENCE_*`，不会跟随分钟行情切换服务器。库表和字段映射仍由历史 JSON 显式指定。
+原来直接传入 `DolphinDbReferenceConfig` 连接对象的调用保持兼容；环境变量装配入口已按用途分开。
+
 后续MongoDB适配继承同一契约并注册，协调器和策略不变：
 
 ```python

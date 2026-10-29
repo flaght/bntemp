@@ -6,6 +6,7 @@ import os
 import re
 from threading import RLock
 
+from ...dolphindb import DolphinDbConnectionConfig
 from .base import ReferenceDataSource, ReferenceDataset, ReferenceQuery, ReferenceSourceError
 from .normalize import normalize_dolphindb_frame, validate_hours_query
 
@@ -46,13 +47,10 @@ class DolphinDbReferenceConfig:
 
     @classmethod
     def from_env(cls, *, database=None, read_timeout_seconds=15):
-        def required(name):
-            value = os.getenv(name, "").strip()
-            if not value:
-                raise ValueError(f"缺少环境变量: {name}")
-            return value
-        return cls(host=required("DDB_HOST"), port=int(os.getenv("DDB_PORT", "8848")),
-            username=required("DDB_USERNAME"), password=required("DDB_PASSWORD"),
+        connection = DolphinDbConnectionConfig.from_env(purpose="reference",
+            read_timeout_seconds=read_timeout_seconds)
+        return cls(host=connection.host, port=connection.port,
+            username=connection.username, password=connection.password,
             database=database or os.getenv("DDB_REFERENCE_DATABASE", "dfs://bomber_daily"),
             futures_table=os.getenv("DDB_FUT_BASIC_TABLE", "fut_basic"),
             options_table=os.getenv("DDB_OPT_BASIC_TABLE", "opt_basic"),
@@ -61,7 +59,7 @@ class DolphinDbReferenceConfig:
             hours_table=os.getenv("DDB_TRADING_HOURS_TABLE", "trading_hours"),
             overrides_table=os.getenv("DDB_SESSION_OVERRIDES_TABLE") or None,
             read_timeout_seconds=read_timeout_seconds,
-            enable_ssl=os.getenv("DDB_ENABLE_SSL", "false").lower() in {"1", "true", "yes"})
+            enable_ssl=connection.enable_ssl)
 
 
 def _session_factory(**kwargs):

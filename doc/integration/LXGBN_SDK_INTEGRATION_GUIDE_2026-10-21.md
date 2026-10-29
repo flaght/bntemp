@@ -4,6 +4,10 @@
 
 2026-10-22 补充：报单通知、成交通知、策略通知字段及回调先后顺序，见第 5 节。第 9 节新增对应的可运行用例 09。
 
+2026-10-29 已收到 `3rd/lxgbn` 原生导出源码、Windows 库及策略例子。具体成员映射、源码/二进制版本疑点和最小接线方案见 [导出库集成分析](LXGBN_EXPORTED_LIBRARY_REVIEW_2026-10-29.md)。收到导出文件不代表实际签名、字段、查询和线程条件均已满足本指南契约。
+
+可先复用已实现的 [stgWrapper 接线组件](../../scripts/integration/lxgbn/STG_WRAPPER_ADAPTER.md)，其中原生函数、真实 CallbackFacts 和一致绑定查询必须显式注入；普通 SDK 导入不加载 Windows 库。
+
 本文按已经实现的 SDK 编写。Bomber 是被调用方，LXGBN 是 Windows 宿主：**LXGBN 在自己的内嵌 Python 中加载 Bomber、推送行情和回报，并接收 SDK 发出的报撤单请求。** SDK 不创建独立交易进程，不登录或关闭 LXGBN，不加载另一份厂商 SDK。
 
 历史原生结构、接口讨论见 [DXBM_LXG_INTEGRATION_SPEC.md](DXBM_LXG_INTEGRATION_SPEC.md)。该文件中的 Market/FAK/FOK、算法单等讨论不能作为本期已实现能力。本文接口与源码不一致时，以本期交付源码为准，不自行猜测原生接口或字段。

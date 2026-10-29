@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-29",
+  "scope": "rebuilt_library_static_comparison",
+  "file": "3rd/lxgbn/IndexFutStg/lib/stgWrapper.pyd",
+  "sha256": "089dae4773e4034cbb9c8714c0b8eb2406b084030d9935fbb584df0bc9ede7d0",
+  "bytes": 3319296,
+  "machine": "0x8664",
+  "previous_sha256": "21d0121eda22439d1fdd31e330b3e83531ac77e5c2100daf7bb7540bd0f8d5c4",
+  "previous_bytes": 3268096,
+  "imports": [
+    "libzmq.dll",
+    "WS2_32.dll",
+    "libmysql.dll",
+    "qpidmessaging.dll",
+    "qpidtypes.dll",
+    "libopenblas.dll",
+    "KERNEL32.dll",
+    "ADVAPI32.dll",
+    "ole32.dll",
+    "OLEAUT32.dll",
+    "ODBC32.dll",
+    "python312.dll",
+    "MSVCP140.dll",
+    "VCRUNTIME140_1.dll",
+    "VCRUNTIME140.dll",
+    "api-ms-win-crt-heap-l1-1-0.dll",
+    "api-ms-win-crt-runtime-l1-1-0.dll",
+    "api-ms-win-crt-stdio-l1-1-0.dll",
+    "api-ms-win-crt-string-l1-1-0.dll",
+    "api-ms-win-crt-time-l1-1-0.dll",
+    "api-ms-win-crt-convert-l1-1-0.dll",
+    "api-ms-win-crt-utility-l1-1-0.dll",
+    "api-ms-win-crt-math-l1-1-0.dll",
+    "api-ms-win-crt-filesystem-l1-1-0.dll"
+  ],
+  "python_module_exports": [
+    "PyInit_stgWrapper"
+  ],
+  "null_terminated_python_name_suffix_present": {
+    "sendOrder": true,
+    "cancelOrder": true,
+    "getOrder": true,
+    "onOrderAck": true,
+    "onOrderFill": true,
+    "onOrderFinished": true,
+    "EnumNTDirectOrder": true,
+    "OrderMsg_attr_t": false,
+    "OrderMsg_attr_t ": true,
+    "status_t": false,
+    "status_t ": true
+  },
+  "relevant_native_exports": [
+    "?cancelOrder@IPyStrategy@@QEAA_NH@Z",
+    "?getOrder@IPyStrategy@@QEAA?AV?$shared_ptr@UOrderMsg_t@common@bomber@@@std@@H@Z",
+    "?onOrderAck@IPyStrategy@@UEAAXHV?$shared_ptr@UOrderMsg_t@common@bomber@@@std@@@Z",
+    "?onOrderFill@IPyStrategy@@UEAAXHV?$shared_ptr@UOrderMsg_t@common@bomber@@@std@@V?$shared_ptr@UExecutionMsg_t@common@bomber@@@3@@Z",
+    "?onOrderFinished@IPyStrategy@@UEAAXHV?$shared_ptr@UOrderMsg_t@common@bomber@@@std@@@Z",
+    "?sendOrder@IPyStrategy@@QEAAHV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@W4OrderMsg_dir_t@api@bomber@@_J_KW4EnumAlgoOrderType@56@H@Z"
+  ],
+  "interpretation": "Six direct-order Python names and EnumNTDirectOrder are now found. Native callback symbols now contain an int argument, consistent with 2/3/2 source callbacks; sendOrder symbol includes an additional int. Exact Python signatures/semantics remain for Windows verification. status_t and OrderMsg_attr_t still have trailing spaces.",
+  "not_verified": [
+    "Windows import",
+    "exact Python function signatures and result meanings",
+    "limit-price/open-close command semantics",
+    "callback field completeness",
+    "binding query and delivery consistency",
+    "GIL/threads",
+    "actual trading"
+  ]
+}
