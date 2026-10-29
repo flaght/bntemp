@@ -8,6 +8,16 @@ LXGBN（DXBM-LXG）是 Windows 交易宿主，本项目是供其内嵌 Python �
 
 不依赖原生签名的接线组件已在 [stg_wrapper_adapter.py](stg_wrapper_adapter.py) 实现，装配和缺失事实要求见 [组件说明](STG_WRAPPER_ADAPTER.md)。其字段转换/命令关联/回调桥使用原生形状替身及真实 SDK 回归；尚未接入实际 pyd 的报撤单函数。组件位于外部 scripts，不改变此前验证的 Bomber wheel。
 
+Windows 新库导出检查已通过，实际路径为 `D:\bomber\IndexFutStg\lib`。将更新后的 wrapper_surface_probe.py 放回原 scripts 目录，可增加 `--with-bomber` 在同一进程先加载厂商库再运行已安装 wheel 的数值检查；同目录须有 environment_probe.py 和 native_value_probe.py：
+
+```cmd
+"D:\lxgbn-test\wheel-verify-20261021\Scripts\python.exe" -I "D:\bomber\scripts\integration\lxgbn\wrapper_surface_probe.py" --lib-dir "D:\bomber\IndexFutStg\lib" --with-bomber --output "D:\lxgbn-test\wrapper-bomber-coexistence.json"
+```
+
+预期 `Required wrapper names: PRESENT` 和 `Same-process native values: PASS`。不调用 Start/initialize/交易方法；同进程通过仍不表示价格/开平发送、真实绑定查询、回调线程/GIL 已验收。
+
+用户已提供该命令的完整 PASS 报告，见 [同进程 Windows 验证证据](../../../doc/evidence/live/M02_LXGBN_WINDOWS_COEXISTENCE_20261029.json)：8 个 Bomber 模块均来自验证 venv 的 site-packages，四项数值检查通过。本阶段无需重复构建，后续依赖原生报撤单/查询语义、缺失事实来源和宿主调度的确认。
+
 CTP 已有实际链路继续复用；BN 本期延后。首期仅测试环境，一个策略、一份绑定、一个合约，普通限价 Normal 与投机。实际 Windows/柜台联调尚未完成。
 
 ## Python 3.12 已确认后的第一步

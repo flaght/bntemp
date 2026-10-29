@@ -17,6 +17,7 @@ class MarketSourceConfig:
     max_age_seconds: float = 120
     ws_base_url: str | None = None
     market_type: str = "spot"
+    bar_mode: str = "completed"
 
     def __post_init__(self):
         if self.source not in {"file", "ctp", "bn-ws", "dolphindb"}:
@@ -31,9 +32,18 @@ class MarketSourceConfig:
         if self.market_type not in {"spot", "futures"}:
             raise ValueError("BN market_type须为spot/futures")
 
+        if self.bar_mode not in {"completed", "state"}:
+            raise ValueError("bar_mode须为completed或state")
+        if self.bar_mode == "state" and (self.source != "dolphindb"
+                or self.timestamp_label != "start" or self.volume_mode != "per-bar"):
+            raise ValueError("分钟状态流须为DolphinDB/start/per-bar，不能把日累计量当作本分钟量")
+
     @property
     def identity(self):
-        return asdict(self)
+        values = asdict(self)
+        if self.bar_mode == "completed":
+            values.pop("bar_mode")  # 保持已有CTP/完成分钟检查点身份不变。
+        return values
 
 
 def add_market_source_arguments(parser, *, backtest=False, table_env="DDB_MARKET_BAR_TABLE"):
@@ -91,7 +101,7 @@ def source_config(args):
         max_age_seconds=getattr(args, "market_bar_max_age_seconds", 120))
 
 
-def create_dolphin_bar_feed(table, source_id, *, max_age_seconds=120, volume_mode="per-bar"):
+def create_dolphin_bar_feed(table, source_id, *, max_age_seconds=120, volume_mode="per-bar", bar_mode="completed"):
     from bomber.framework.market.stream.dolphin import DolphinDbLiveDataFeed, DolphinDbConfig, DolphinDbStreamSpec
     from bomber.framework.market.stream.health import StreamHealthConfig
     from bomber.framework.dolphindb import DolphinDbConnectionConfig, connection_env
@@ -103,7 +113,7 @@ def create_dolphin_bar_feed(table, source_id, *, max_age_seconds=120, volume_mod
         streaming_port=int(connection_env("market", "STREAMING_PORT", "0")),
         streams=(DolphinDbStreamSpec.bar(table,
             action_name=f"{source_id.replace('-', '_')}_{os.getpid()}_{time.time_ns()}",
-            auto_schema=True, volume_mode=volume_mode, local_receipt_time=True),)),
+            auto_schema=True, volume_mode=volume_mode, local_receipt_time=True, bar_mode=bar_mode),)),
         source_id=source_id, health_config=StreamHealthConfig(startup_grace_seconds=max_age_seconds,
             stale_after_seconds=max_age_seconds))
 
@@ -124,7 +134,7 @@ def create_market_feed(config, source_id, *, lifecycle=None, flow_path=None, env
             flow_path=flow_path), dce_use_receive_date=environment == "realtime"))
     elif config.source == "dolphindb":
         feed = create_dolphin_bar_feed(config.table, source_id,
-            max_age_seconds=config.max_age_seconds, volume_mode=config.volume_mode)
+            max_age_seconds=config.max_age_seconds, volume_mode=config.volume_mode, bar_mode=config.bar_mode)
     else:
         from bomber.framework.market.stream.bn.feed import BNWSConfig, BNWSStreamDataFeed
         url = config.ws_base_url or ("wss://fstream.binance.com" if config.market_type == "futures"

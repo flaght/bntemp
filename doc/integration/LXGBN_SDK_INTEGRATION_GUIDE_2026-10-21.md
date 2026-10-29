@@ -8,6 +8,8 @@
 
 可先复用已实现的 [stgWrapper 接线组件](../../scripts/integration/lxgbn/STG_WRAPPER_ADAPTER.md)，其中原生函数、真实 CallbackFacts 和一致绑定查询必须显式注入；普通 SDK 导入不加载 Windows 库。
 
+用户已补充线程/停机约束：回调线程由 C++ 创建，原生报撤单及查询可在任意线程调用；SDK owner 调度由 Python 决定，退出采用整个进程退出后重启。下文“同一宿主线程”指 Python 接入侧选定的 SDK owner 线程，不要求原生提供专用 timer。C++ 进入 Python 的 GIL、真实回调执行和未决订单恢复仍需现场核对，进程退出不等于交易所活动单已撤。
+
 本文按已经实现的 SDK 编写。Bomber 是被调用方，LXGBN 是 Windows 宿主：**LXGBN 在自己的内嵌 Python 中加载 Bomber、推送行情和回报，并接收 SDK 发出的报撤单请求。** SDK 不创建独立交易进程，不登录或关闭 LXGBN，不加载另一份厂商 SDK。
 
 历史原生结构、接口讨论见 [DXBM_LXG_INTEGRATION_SPEC.md](DXBM_LXG_INTEGRATION_SPEC.md)。该文件中的 Market/FAK/FOK、算法单等讨论不能作为本期已实现能力。本文接口与源码不一致时，以本期交付源码为准，不自行猜测原生接口或字段。

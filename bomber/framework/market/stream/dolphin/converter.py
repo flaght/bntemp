@@ -123,12 +123,15 @@ class DolphinDbMarketConverter:
         instrument_id: InstrumentId,
         meta: InstrumentMeta,
         bar_spec: str,
-        *, volume_mode: str = "per-bar", received_ns: int | None = None,
+        *, volume_mode: str = "per-bar", received_ns: int | None = None, timestamp_field: str | None = None,
     ) -> list[ConvertedEvent]:
         resolved_spec = bar_spec.upper()
         # minTime 是 Bar 时间标识；updateTime 是入库或更新时间，
         # 不是行情 Bar 的时间戳。
-        ts_event = _combine_ns(row.get("date"), row.get("minTime"), 0, self.timezone)
+        ts_event = (_timestamp_ns(row.get(timestamp_field), self.timezone) if timestamp_field
+                    else _combine_ns(row.get("date"), row.get("minTime"), 0, self.timezone))
+        if ts_event is None:
+            raise ValueError("分钟行情缺少完整时间戳")
         ts_init = received_ns if received_ns is not None else (
             _timestamp_ns(row.get("updateTime"), self.timezone) or time.time_ns())
         key = (instrument_id, resolved_spec, ts_event)
@@ -351,3 +354,59 @@ def _load_timezone(name: str) -> tzinfo:
 def _trade_id(instrument_id: InstrumentId, ts_event: int, cumulative: int) -> str:
     source = f"{instrument_id}|{ts_event}|{cumulative}".encode()
     return "ddb-" + hashlib.blake2b(source, digest_size=16).hexdigest()
+
+class DolphinDbMinuteStateBuffer:
+    """同一合约下一分钟到达才封闭上一分钟；不以墙钟猜测完成。"""
+    def __init__(self, timezone_name="Asia/Shanghai"):
+        self.timezone = _load_timezone(timezone_name)
+        self._pending = {}
+        self._closed = {}
+        self.ignored_old_versions = 0
+        self.discarded_baseline_minutes = 0
+
+    def reset(self):
+        self._pending.clear()
+        self._closed.clear()
+
+    def _signature(self, row):
+        return tuple(_nonnegative(row.get(key), key) for key in
+            ("open", "high", "low", "close", "volume", "turnover", "open_interest"))
+
+    def push(self, key, row, *, received_ns):
+        row = dict(row)
+        stamp = _timestamp_ns(row.get("barTime"), self.timezone)
+        revision = _timestamp_ns(row.get("updateTime"), self.timezone)
+        if stamp is None or stamp % 60_000_000_000 or stamp > received_ns or revision is None:
+            raise ValueError("分钟状态须有已开始的完整barTime时间戳及updateTime版本")
+        baseline = row.get("volume_baseline_ok")
+        if baseline is None or str(baseline).lower() not in {"true", "false"}:
+            raise ValueError("分钟状态须明确volume_baseline_ok布尔值")
+        signature = self._signature(row) + (str(baseline).lower(),)
+        closed = self._closed.get(key)
+        if closed is not None and stamp <= closed[0]:
+            if stamp == closed[0] and signature == closed[2]:
+                return ()
+            raise ValueError("已封闭分钟收到不同内容或倒退状态，不能改写已发布行情")
+        previous = self._pending.get(key)
+        current = (stamp, revision, signature, row)
+        if previous is None:
+            self._pending[key] = current
+            return ()
+        if stamp < previous[0]:
+            raise ValueError("分钟状态时间倒退")
+        if stamp == previous[0]:
+            if revision < previous[1]:
+                self.ignored_old_versions += 1
+                return ()
+            if revision == previous[1] and signature != previous[2]:
+                raise ValueError("同一状态版本内容冲突")
+            if signature[4] < previous[2][4] or signature[5] < previous[2][5]:
+                raise ValueError("同一分钟状态的成交量或成交额倒退")
+            self._pending[key] = current
+            return ()
+        self._closed[key] = previous
+        self._pending[key] = current
+        if previous[2][-1] != "true":
+            self.discarded_baseline_minutes += 1
+            return ()
+        return (previous[3],)

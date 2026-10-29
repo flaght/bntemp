@@ -10,7 +10,7 @@
 | --- | --- |
 | `CommandLinks(binding)` | 当前进程的 SDK 整数 ID/request_id/原生单号关联；发送前登记；拒绝复用和覆盖。不维护仓位、成交账本或另一份订单状态机 |
 | `NativeHostPort(links, send=..., cancel=..., query=...)` | 接收 Bomber 契约并调用显式注入函数；未全部接线时查询报错阻止 SDK 启动；不推断任何原生返回码 |
-| `NativeEnums.from_module(rp)` | 读取实际枚举成员，拒绝未知值和错误尾空格导出；不猜原生整数 |
+| `NativeEnums.from_module(rp)` | 读取实际枚举成员，拒绝未知值；可显式指定已确认的 status_name，不自动猜别名或整数 |
 | `NativeCallbackCopies(...)` | 读取厂商已知的 Order/Trade 字段，配合宿主补充事实生成值快照，核对合约/策略/订单关联/量价/开平 |
 | `CallbackFacts` | 宿主提供已验证绑定、真实交付序号、事件时间、普通单属性及成交投机属性等缺失事实；不预填能力或时间 |
 | `NativeCallbacks(copies)` | 2/3/2 回调复制转发，故障返回 False，记录 first `last_error` 并通知 SDK 断开；不调用 poll |
@@ -60,6 +60,8 @@ copies = adapter['NativeCallbackCopies'](
 
 `read_native_facts(kind, command, order, fill)` 由宿主实现，返回 CallbackFacts。kind 为 ack/fill/finished。其责任是从真实绑定上下文、已确认时间单位和原生交付流取得以下值：
 
+Windows 报告已确认本次库状态枚举的实际名字是 `status_t `（尾空格），装配时将示例中的 `NativeEnums.from_module(rp)` 替换为 `NativeEnums.from_module(rp, status_name='status_t ')`。这是单点显式配置；对方将来修正名字后改回默认配置即可，不修改原生模块，也不把枚举改成硬编码整数。
+
 | 字段 | 来源及要求 |
 | --- | --- |
 | `binding` | 真实账户、策略、合约、交易日/命名空间已核对后返回的 Binding；不能把所有传入对象都直接套配置 |
@@ -74,6 +76,8 @@ copies = adapter['NativeCallbackCopies'](
 组件直接读取这些已提供的原生名称：`Order.Id/GetInst()/strategyId/direction/offset/status/hedgeFlag/volumeTraded`，固定量从配置指定的字段取得；`Trade.tradeId/orderId/strategyId/direction/offset/price/volume`。没有字段别名猜测，没有回退到错误大小写字段。
 
 复制失败、未知 ID、方向/绑定不符、SDK 拒绝入队均返回 False。`bridge.last_error` 保留首个结构化错误：callback、error_type、error；宿主须将其连同原生事实写入自己的日志。不要只记录最后一个通用“故障已锁存”，也不要保存借用原生指针用于延迟复制。后续 poll 的错误仍由 owner 调度器捕获并记录，桥返回 True 不表示 OMS 已接受。
+
+已确认 C++ 三个原生回调返回 void；Python 桥的 bool 返回只供包装层检查，不能假定 Boost.Python 把 False 传给原生调用者。组件在失败时仍主动调用 SDK on_disconnect 闭闸，宿主需记录 last_error 并保留事实。
 
 ## 4. 装配代码
 
@@ -143,7 +147,11 @@ if values is not None:
 
 DataBinding 也须配置成 BAR、feed_id=lxg、bar_spec=1-MINUTE，业务策略使用 on_bar。Bar 时间字段由 confirmed_bar_timestamp_ns 从真实 `raw_bar.timeStamp` 等已确认源读取；组件不自动推断微秒/毫秒。历史预热另走已有流程，本组件不把历史 Bar 当作实时目标触发。
 
-原生回调边界还需捕获 Bar 属性/转换/dispatcher 队列异常，记录并调用 session.on_disconnect；行情错误不能穿过 C++ 边界。没有行情时仍由 owner 定时器调 session.poll。实际 timer/dispatcher API 未确认，本组件没有偷偷创建 Python 调度线程。
+原生回调边界还需捕获 Bar 属性/转换/dispatcher 队列异常，记录并调用 session.on_disconnect；行情错误不能穿过 C++ 边界。没有行情时仍由 owner 定时器调 session.poll。
+
+用户现已明确：回调线程由 C++ 创建；原生报撤单和查询可在任意线程调用；调度由 Python 决定。因此接入层可统一选择一个 Python owner 线程/事件循环驱动 SDK，无需等待原生 timer API。组件本身仍不自动创建线程，具体 owner 循环在现场包装中接入；不能从任意原生回调线程调用 SDK poll/on_market。C++ 线程执行 Python override 所需 GIL 和原生对象有效期仍须由绑定层保证。
+
+退出方式明确为整个进程退出再重启。计划内退出先完成 begin_stop/回报核对/finish_stop 并保存；非正常退出后保留检查点和原生事实，重启先只读核对，不假设原生活动单随进程退出已撤，也不自动重发。CommandLinks 不自动恢复历史关联的限制仍有效。
 
 ## 6. 本地验证与未完成边界
 
@@ -154,6 +162,6 @@ python3.12 -m unittest tests.test_lxgbn_wrapper_adapter \
 
 新增用例使用与已提供的原生导出字段同形的替身和自定义非默认整数枚举；真实 Runner/OMS/策略归属/风控/JSON 持久化参与执行，行情标识/类型在开发机用受控替身。覆盖同步回调前关联、原生值复制生命周期、订单/成交通知、去重、两阶段停止、撤单拒绝、未知发送保留、重复 ID、身份/枚举/缺失字段拒绝、游标缺口、SDK 入队拒绝以及 Bar 时间/周期/历史过滤。
 
-尚未完成：真实 stgWrapper 版本和回调 ABI 验证、原生限价/开平发送参数及返回码绑定、真实 CallbackFacts 和 BindingSnapshot 提供、Windows Bar 实体运行、timer/GIL 及原生恢复关联。模块可独立评审和替身测试通过，不表示能绕过这些条件启动真实交易。
+已确认真实 stgWrapper 导出版本/回调声明及同进程行情数值兼容；C++ 回调线程、原生任意线程调用、Python 负责调度和进程退出重启也已得到答复。尚未完成：实际回调执行及 GIL 验证、原生限价/开平发送参数及返回码绑定、真实 CallbackFacts/BindingSnapshot、Python owner 循环现场接入、真实 Windows Bar 转换及原生恢复关联。模块可独立评审和替身测试通过，不表示能绕过这些条件启动真实交易。
 
-本轮新增 22 项接线用例，与现有 LXGBN/公共执行组合共 88 项通过；[结构化验证记录](../../../doc/evidence/live/M02_LXGBN_WRAPPER_OFFLINE_20261029.json) 保存命令、结果及尚未验证范围。
+初次 22 项接线用例与既有回归共 88 项通过。Windows 导出报告到达后，新增显式尾空格配置用例及两项同进程检查控制流用例，合计 91 项通过；[结构化验证记录](../../../doc/evidence/live/M02_LXGBN_WRAPPER_OFFLINE_20261029.json) 保存两次运行、当前文件哈希及尚未验证范围。

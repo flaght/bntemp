@@ -56,6 +56,8 @@ BAR_COLUMNS = (
     "updateTime",
 )
 BAR_REQUIRED_COLUMNS = ("minTime", "date", "Code", "open", "high", "low", "close", "volume")
+BAR_STATE_REQUIRED_COLUMNS = ("barTime", "date", "Code", "open", "high", "low", "close",
+    "volume", "turnover", "open_interest", "volume_baseline_ok", "updateTime")
 
 
 @dataclass(frozen=True)
@@ -73,6 +75,7 @@ class DolphinDbStreamSpec:
     auto_schema: bool = False
     volume_mode: Literal["per-bar", "cumulative"] = "per-bar"
     local_receipt_time: bool = False
+    bar_mode: str = "completed"
 
     def __post_init__(self) -> None:
         if self.kind not in {"tick", "bar"}:
@@ -89,6 +92,11 @@ class DolphinDbStreamSpec:
                 f"{self.kind} columns do not match the exp5 schema; "
                 f"expected {expected!r}",
             )
+        if self.bar_mode not in {"completed", "state"}:
+            raise ValueError("Bar模式须为completed/state")
+        if self.bar_mode == "state" and (self.kind != "bar" or not self.auto_schema
+                or self.volume_mode != "per-bar" or self.bar_spec.upper() != "1-MINUTE"):
+            raise ValueError("分钟状态流须为自动字段、1-MINUTE和per-bar量额")
         if self.batch_size < 0:
             raise ValueError("batch_size must be non-negative")
         if self.throttle < 0:

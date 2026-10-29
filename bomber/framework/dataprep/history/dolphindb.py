@@ -27,6 +27,7 @@ class DolphinDbHistoryConfig:
     volume_mode: str = "per-bar"
     # 运行时复用策略的会话日历，不在JSON中另存一份日期规则。
     session_calendar: SessionCalendar | None = field(default=None, repr=False, compare=False)
+    time_column_kind: str = "time"
 
     def __post_init__(self):
         if re.fullmatch(r"dfs://[A-Za-z0-9_/-]+", self.database) is None:
@@ -54,6 +55,10 @@ class DolphinDbHistoryConfig:
         if self.instrument_format not in {"full", "symbol"} or (self.instrument_format == "symbol"
                 and (self.venue is None or re.fullmatch(r"[A-Z0-9]+", self.venue) is None)):
             raise HistoryError("symbol格式须明确固定Venue，不能猜测交易所")
+        if self.time_column_kind not in {"time", "timestamp"}:
+            raise HistoryError("time_column_kind须为time/timestamp")
+        if self.time_column_kind == "timestamp" and (not composite or self.date_basis != "trading"):
+            raise HistoryError("交易日分区的完整时间列须配置date_column/time_column及date_basis=trading")
         if self.date_basis not in {"calendar", "trading"} or self.volume_mode not in {"per-bar", "cumulative"}:
             raise HistoryError("历史日期口径须为calendar/trading，量额口径须为per-bar/cumulative")
         if self.date_basis == "trading" and (not composite
@@ -164,8 +169,10 @@ class DolphinDbHistoryProvider(HistoryProvider):
         dates = ",".join(f"{day[:4]}.{day[4:6]}.{day[6:]}" for day in days)
         fields = ",".join(f"{physical} as {logical}" for logical, physical in c.columns.items())
         # 读取涉及的完整交易日：累计量额差分需要请求窗口之前的基准，不能先截窗口再diff。
+        clock_field = (f'long(nanotimestamp({c.time_column})) as history_time_ns'
+            if c.time_column_kind == "timestamp" else f'string({c.time_column}) as history_time')
         return (f'select top {request.max_rows + 1} {fields},'
-            f'string({c.date_column}) as history_day,string({c.time_column}) as history_time '
+            f'string({c.date_column}) as history_day,{clock_field} '
             f'from loadTable("{c.database}","{c.table}") '
             f'where {c.columns["instrument_id"]}="{symbol}",{c.date_column} in [{dates}] '
             f'order by {c.date_column},{c.time_column}')
@@ -177,7 +184,26 @@ class DolphinDbHistoryProvider(HistoryProvider):
         for source in rows:
             row = dict(source)
             owner = str(row.pop("history_day")).replace(".", "").replace("-", "")
-            clock = str(row.pop("history_time"))
+            actual_stamp = None
+            if c.time_column_kind == "timestamp":
+                value = row.pop("history_time_ns")
+                if int(value) != value:
+                    raise HistoryError("历史完整时间戳精度丢失")
+                label_ns = int(value) - (8 * 3600 * 10**9 if c.source_timezone == "Asia/Shanghai" else 0)
+                if label_ns % MINUTE_NS:
+                    raise HistoryError("历史完整时间戳须对齐分钟")
+                actual_stamp = label_ns + (MINUTE_NS - 1 if c.time_label == "start" else -1)
+                if actual_stamp >= request.end_ns:
+                    continue
+                point = ns_datetime(actual_stamp, c.session_calendar.zone)
+                window = c.session_calendar.window(point)
+                if window is None:
+                    continue  # 盘外或收盘边界的快照不是完整交易分钟，也不能用作模型行情。
+                clock = ns_datetime(label_ns, c.session_calendar.zone).strftime("%H:%M:%S")
+                if window.trading_day != owner:
+                    raise HistoryError("历史自然时间戳与交易日分区不一致")
+            else:
+                clock = str(row.pop("history_time"))
             try:
                 parsed = datetime.strptime(clock.split(".")[0], "%H:%M:%S")
                 if "." in clock and int(clock.split(".", 1)[1]) != 0:
@@ -188,6 +214,8 @@ class DolphinDbHistoryProvider(HistoryProvider):
             if key not in labels:
                 raise HistoryError(f"历史交易日/分钟不在会话内: day={owner} time={clock}")
             stamp, index = labels[key]
+            if actual_stamp is not None and actual_stamp != stamp:
+                raise HistoryError("历史完整时间戳与交易会话定位不一致")
             if stamp >= request.end_ns:
                 continue  # 不使用请求截止后的行，包括尚未完成的当前分钟。
             if c.instrument_format == "symbol":

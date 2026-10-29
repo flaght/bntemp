@@ -302,6 +302,29 @@ flush和fsync，再向策略发布。首个不完整分钟不录制；同一分�
 程序停机后保留行情文件即可，勿用同一个文件记录其他品种、来源或乘数口径。
 同步到远程时，除framework改动外，还需将demo的run_live.py和history.py同步到实际执行的prod目录。
 
+### 新DolphinDB分钟状态流
+
+公共连接分离已经接入：实时订阅和历史分钟读取 `DDB_MARKET_*`；基础资料及静态时段读取
+`DDB_REFERENCE_*`。两组新变量逐项兼容旧 `DDB_*`，旧变量仍指向基础服务器时，须完整配置
+行情组，避免兼容回退读到旧服务器。配置文件不放地址或密码。
+
+新增 `market_dolphindb_rb.json`：`market_bar_state_v2_shfe`，`bar_mode=state`，
+时间标签start，量额per-bar。该流的volume/turnover是本分钟量额，cum_volume/cum_turnover才是
+交易日累计值；不能对volume/turnover再次做分钟差分。
+
+状态流按用户选择采用“同合约下一分钟到达，封闭上一分钟”。同一分钟的多次状态覆盖待完成版本；
+只发布最后一份一次，并使用完整barTime自然时间。旧版本忽略，同版本冲突、量额倒退、已封闭分钟
+的不同内容均报告异常。volume_baseline_ok=false的分钟不发布为完整行情。
+休盘前最后一根不会由定时器推测完成，将等待下一条分钟状态；该机制尚未实际服务器联调。
+如果未来服务器增加完成标记或独立完整分钟流，可以再接入明确完成语义。
+
+选择DolphinDB状态行情时使用 `--market-source dolphindb --market-config <路径>/market_dolphindb_rb.json`。
+先使用recording模式验证，只积累实时窗口时保持history-minutes=0。启用数据库预热时再加
+history-config=history_rb.json；2026-10-29探查只有约103行，包含形成中分钟，还不足最低300根，
+配置更新不代表当前历史覆盖已满足要求。不要降低模型最低根数来掩盖缺失。
+
+CTP路径、本地分钟录制和已存CTP会话身份保持兼容；本次不修改策略、模型和持仓期限。
+
 ### 历史模型预热
 
 历史预热复用框架 Provider，但必须提供完整原始行情，不能使用 EMA 的 `adjusted_close` 历史配置。
@@ -309,7 +332,7 @@ flush和fsync，再向策略发布。首个不完整分钟不录制；同一分�
 可使用历史服务或实时完整分钟重新预热；启用历史服务时，历史不足、字段缺失或来源冲突直接失败，不填造成交额、不发布历史信号。
 
 已按 `01_main_ema` 的 `HistoryService + DolphinDbHistoryProvider` 路径补充
-`history_rb.json`，对应用户提供的 `dfs://min_bar/shfe_1min`。启动时在原命令上增加：
+`history_rb.json`，对应已确认的新行情表 `dfs://ctp/bar_1min_shfe`。启动时在原命令上增加：
 
 ```bash
 --history-minutes 1500 --history-config demos/10_hybrid_transformer/history_rb.json
@@ -319,9 +342,9 @@ flush和fsync，再向策略发布。首个不完整分钟不录制；同一分�
 已有状态文件按原恢复要求使用 `--resume`，不覆盖旧状态。
 
 该配置使用用户确认的**交易日日期、分钟开始标签**；`turnover → value`，
-`open_interest`直接读取。累计量额口径根据AG截图推断，尚未完成实际RB主力的在线验证；
-如果RB表的生成代码确认是分钟增量，须将 `volume_mode` 改为 `per-bar`。
-交易日日期由本次策略使用的同一个 `SessionCalendar` 还原自然时间，不固定减一天。
+`open_interest`直接读取。新表已通过RB样本确认是交易日累计量额，继续采用 `volume_mode=cumulative`。
+`minTime`现在是完整TIMESTAMP，配置 `time_column_kind=timestamp`，以其自然时间为准，并用 `date`和
+同一个 `SessionCalendar`核对交易日归属，不再拼接交易日与时钟，也不固定减一天。
 累计模式读取涉及交易日的完整行，在请求窗口之前取得基准，量额同时差分，持仓量不差分。
 首个交易分钟采用日内累计值；盘中首行缺少前值时只作基准，不能把此前成交归入这一分钟。
 周末夜盘、跨午夜、午休及交易日重置均按会话规则处理；同日分钟缺口不会合并量额。

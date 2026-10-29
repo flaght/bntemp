@@ -1,0 +1,8 @@
+{
+  "source": "dolphindb",
+  "table": "market_bar_state_v2_shfe",
+  "timestamp_label": "start",
+  "volume_mode": "per-bar",
+  "bar_mode": "state",
+  "max_age_seconds": 120
+}
