@@ -26,7 +26,7 @@ from bomber.framework.trader import (StrategyTemplate, ExecutionRoute, UnifiedSt
 from bomber.framework.trader.execution.ctp import CtpNativeTraderDriver, CtpTdApiTransport, CtpLimitPlanner
 from bomber.framework.trader.execution.ctp.accounting import CtpExecutionAccounting
 from bomber.framework.trader.execution.ctp.ledger import CtpPositionLedger
-from bomber.framework.trader.execution.contracts import OrderSide, PositionEffect, ExecutionReportType
+from bomber.framework.trader.execution.contracts import OrderSide, PositionEffect, ExecutionReport, ExecutionReportType
 from bomber.framework.trader import RiskLimits
 from bomber.framework.trader.execution.builders import build_ctp_portfolio_execution
 from bomber.framework.trader.runtime.ctp import assert_flat_account
@@ -273,11 +273,14 @@ class CrossSectionLiveTests(unittest.TestCase):
                 ledger.apply_fill(instrument, OrderSide.BUY, PositionEffect.OPEN, 1, 110, 10)
                 accounting = CtpExecutionAccounting(ledger, {instrument: 10},
                     generic_close_today_first_venues=("DCE", "CZCE"))
-                accounting.on_report(SimpleNamespace(report_type=ExecutionReportType.FILLED,
+                report = ExecutionReport(backend_id="cross-close-test", client_order_id=f"close-{venue}",
+                    ts_event=BASE, report_type=ExecutionReportType.FILLED,
                     instrument_id=instrument, order_side=OrderSide.SELL, position_effect=PositionEffect.CLOSE,
-                    filled_quantity=Decimal(1), fill_price=Decimal(120)))
+                    order_quantity=1, filled_quantity=1, fill_price=120)
+                accounting.on_report(report)
                 self.assertEqual((ledger.snapshot(instrument).long_today, ledger.snapshot(instrument).long_yesterday), (0, 2))
                 self.assertEqual(accounting.total_realized_pnl, 100)
+                self.assertEqual(accounting.commission_records[0]["client_order_id"], report.client_order_id)
 
     def test_dce_realtime_night_and_midnight_keep_event_time_and_replay_is_unchanged(self):
         for received, clock, expected in (
