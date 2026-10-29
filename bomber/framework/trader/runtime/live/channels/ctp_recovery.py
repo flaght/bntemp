@@ -5,8 +5,9 @@ import time
 
 from ...ctp_account import position_buckets
 from ..contracts import LiveRunContext
+from ..local import strategy_state_lock
 from ..recovery import validate_finished_orders, validate_owned_positions
-from ..readiness import wait_for_session_ready
+from ..lifecycle import close_session_gate, prepare_live_session, activate_live_session, validate_session_checkpoint
 from .ctp import account_lock, occupied_positions
 
 
@@ -61,7 +62,7 @@ def validate_ctp_account(session, transport, binding):
 
 class CtpResumeLifecycle:
     """与CtpSessionLifecycle组合；不将账户未知持仓自动归给当前策略。"""
-    def __init__(self, *args, resume=False, **kwargs):
+    def __init__(self, *args, resume=False, state_file=None, **kwargs):
         super().__init__(*args, **kwargs)
         if resume and (not self.orders or self.adopt_instrument is not None
                        or not self.expected_trading_day):
@@ -69,8 +70,14 @@ class CtpResumeLifecycle:
         self.resuming = resume
         self.resume_ready = False
         self.restored_generation = None
+        self.state_file = state_file
+
+    def lock_state(self, resources):
+        if self.state_file is not None:
+            resources.enter_context(strategy_state_lock(self.state_file))
 
     def prepare(self, resources):
+        self.lock_state(resources)
         if not self.resuming:
             return super().prepare(resources)
         for namespace in dict.fromkeys((self.lock_namespace, *self.legacy_lock_namespaces)):
@@ -102,6 +109,7 @@ class CtpResumeLifecycle:
         if callable(validate_scope):
             validate_scope(session)
         session.runner.accept_bars = False
+        validate_session_checkpoint(session)
         summary = self.restore_session(session, context)
         if summary is None:
             raise RuntimeError("恢复文件不存在，不能作为空仓新会话启动")
@@ -111,26 +119,20 @@ class CtpResumeLifecycle:
         validate_ctp_account(session, self.transport, self.recovery_binding(session))
         if self.driver.trading_day != context.trading_day or self.lost:
             raise RuntimeError("恢复期间会话发生变化")
-        session.runner.start()
-        wait_for_session_ready(session, self.ready_seconds, lost=lambda: bool(self.lost))
-        current = getattr(session.runner, "reference_is_current", None)
-        reference_ok = current() if callable(current) else session.references.spec == session.runner.fixed_spec
-        if not reference_ok or not session.runner.session_ready():
-            raise RuntimeError("恢复准备后参考或行情失效，保持闭闸")
-        getattr(session.manager, "commit_restore", session.manager.save)()
-        self.resume_ready = True
-        session.client.arm_demo(session.client.DEMO_CONFIRMATION)
-        session.runner.begin_bars()
-        self._next_check = time.monotonic() + self.reconcile_seconds
-        print(f"策略会话已恢复: generation={summary.generation} revision={revision} "
-              f"TD={context.trading_day}；持仓保留，重新预热后发布新目标", flush=True)
+        if not prepare_live_session(session, self.ready_seconds, lost=lambda: bool(self.lost)):
+            return
+        if activate_live_session(self, session, restored=True,
+                authorize=lambda: session.client.arm_demo(session.client.DEMO_CONFIRMATION)):
+            self._next_check = time.monotonic() + self.reconcile_seconds
+            print(f"策略会话已恢复: generation={summary.generation} revision={revision} "
+                  f"TD={context.trading_day}；持仓保留，重新预热后发布新目标", flush=True)
 
     def shutdown(self, session, context):
         if self.resuming and not self.resume_ready:
             # 失败状态不得覆盖原文件；未知柜台订单也不自动撤销。
             errors = []
             if session:
-                session.runner.accept_bars = False
+                close_session_gate(session)
                 try:
                     session.runner.stop()
                 except Exception as error:

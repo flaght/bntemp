@@ -128,6 +128,8 @@ CASES = {
     "ema-recovery": ("tests.test_main_ema_recovery",),
     "continuous": ("tests.test_main_ema_continuous",),
     "live-common": ("unittest", "tests.test_live_common", "tests.test_live_channels", "tests.test_live_recovery", "tests.test_execution_composition", "tests.test_live_readiness", "tests.test_ctp_depth_health"),
+    "history-public": ("tests.run_live_history_offline",),
+    "lifecycle-public": ("tests.run_live_lifecycle_offline",),
     "cross-section": ("tests.test_cross_section_live",),
     "signal": ("tests.test_demo_cross_section_signal",),
     "entry": ("tests.run_main_ema_live",),
@@ -141,6 +143,10 @@ CASES = {
     "ctp-driver": ("tests.run_p4_ctp_driver",),
 }
 SOURCES = (
+    "bomber/framework/trader/runtime/live/lifecycle.py",
+    "tests/test_live_lifecycle.py", "tests/run_live_lifecycle_offline.py",
+    "bomber/framework/trader/runtime/live/history.py",
+    "tests/test_live_history.py", "tests/run_live_history_offline.py",
     "bomber/framework/datahub/features/schema.py",
     "bomber/framework/dataprep/features/raw.py",
     "bomber/framework/dataprep/features/definition.py",
@@ -240,7 +246,7 @@ SOURCES = (
     "bomber/framework/trader/live_roles.py",
     "bomber/framework/market/stream/aggregation.py",
     "tests/test_live_common.py",
-    "demos/01_main_ema/continuous.py",
+    "demos/01_main_ema/recovery.py",
     "demos/01_main_ema/checkpoint.py",
     "scripts/integration/reference_data/configs/session_overrides_cu_2026.csv",
     "bomber/framework/trader/runtime/trading_sessions.py",

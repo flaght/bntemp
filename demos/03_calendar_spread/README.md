@@ -1,5 +1,13 @@
 # 单品种跨期价差策略
 
+Live 重复的Local／CTP启动及停机已归入[公共生命周期](../../doc/functions/trader/LiveSessionLifecycle.md)（2026-10-29）；方向、双腿手数和成交验收保留在策略恢复层。
+
+## 公共历史协调（2026-10-29）
+
+Live 的历史阶段、窗口、双腿同步覆盖与实时缓冲放行已接入公共
+`bomber.framework.trader.runtime.live.history`。本策略 `history.py` 仅保留历史配置与原始价差预热，
+原方向、版本和完整双腿要求继续保留。接口及验证见 [Live 历史协调](../../doc/functions/trader/HistoryFrameLoader.md)。
+
 Live入口已实现，见[第4节](#4-live版本)。当前固定交易日和固定双腿；原生离线及在线验收待Linux运行。
 
 ## 2026-10-15：DDB双腿历史预热

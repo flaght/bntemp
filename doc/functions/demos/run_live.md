@@ -84,7 +84,7 @@ Recording不撮合成交，也不创建TD交易通道。CTP行情仍需要MD配�
 
 1. `load_dotenv()`加载环境设置。
 2. `parse_args(argv)`解析命令行并完成本地检查。
-3. 逐个读取返回对象的字段，显式绑定`build_runtime`的参数。常驻模式由`continuous.py`按窗口补充日期和恢复标志；定时模式直接使用声明日期。
+3. 逐个读取返回对象的字段，显式绑定`build_runtime`的参数。常驻模式由公共 `runtime.live.continuous` 提供 `LiveWindowContext`，补充日期、恢复标志和剩余额度；定时模式直接使用声明日期。
 4. 调用 `runtime.run()`。
 5. 最后调用 `runtime.stop()`释放资源；框架有重复调用保护。
 
@@ -264,7 +264,9 @@ Recording不创建恢复管理器。组装最后返回的session把Runner、策�
 
 模型需要过去的分钟窗口才能计算特征。默认 `history_minutes=0`不读取外部历史服务；CTP模式先恢复本机 `results/market/ctp/<真实合约>.jsonl` 中的近期完整分钟，再追加实时行情。无文件时从零积累，不足300根的已存部分也可以恢复。
 
-指定历史预热时，`HybridLiveRunner.begin_bars()`会调用 [history.py](../../../demos/10_hybrid_transformer/history.py)：
+指定历史预热时，公共启动准备调用`HybridLiveRunner.prepare_history()`，读取 [history.py](../../../demos/10_hybrid_transformer/history.py)；模型预热通过后才提交检查点、授权并由begin_bars放行：
+
+交易分钟窗口选择复用 [公共 Live 历史协调](../trader/HistoryFrameLoader.md) 的 `history_stamps`；模型输入转换与预热保留在本策略。
 
 1. 把当前时间对齐到已完成分钟边界。
 2. 通过交易日历取之前N个交易分钟，跳过休市间隔。
@@ -394,8 +396,9 @@ Recording不创建恢复管理器。组装最后返回的session把Runner、策�
 
 ## 常驻模式的外层调用
 
-`main → run_continuous → ContinuousPositionRuntime → HybridWindowRuntime.run → build_runtime → 原会话生命周期`。
-复用08的公共日历调度，模型/策略构建仍在本文件，不把命令行对象传给调度函数。
+`main → 公共 run_continuous → ContinuousPositionRuntime → build_runtime(window_context=...) → ManagedLiveRuntime → 原会话生命周期`。
+公共入口位于 `bomber.framework.trader.runtime.live.continuous`，策略目录不再包含专属 `continuous.py` 或 `HybridWindowRuntime`。
+模型/策略构建仍在本文件，不把命令行对象传给调度函数；模型分钟与Recording批次通过 `session.window_components` 复用状态组件契约续接。
 每个窗口复用原Runtime做连接、核验和停机；休市时没有活动会话，进程按5秒间隔等待。
 
 正常收盘的检查发生在行情健康检查之前：先关闭Bar交易回调、解除报单授权，再保存可封闭的原始末分钟，

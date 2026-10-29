@@ -9,6 +9,8 @@ import time
 from bomber.framework.market.basic.base import Bar, InstrumentId, DataType
 from bomber.framework.trader import DataBinding, ExecutionRoute, PositionManager, RiskLimits, RuntimeMode
 from bomber.framework.trader.runner import UnifiedStrategyRunner
+from bomber.framework.trader.runtime.live.history import (
+    buffer_history_bar, first_complete_minute, start_after_history)
 from bomber.framework.trader.assembly import StrategyBindings, assemble_strategy
 from bomber.framework.trader.execution.builders import build_ctp_portfolio_execution, attach_ctp_persistence
 from bomber.framework.trader.runtime.live.channels.ctp import CtpSessionLifecycle
@@ -131,21 +133,18 @@ class CrossSectionSessionRunner(UnifiedStrategyRunner):
 
     def begin_bars(self):
         if getattr(self, "history_service", None) is not None:
-            with self._submit_lock:
-                self.history_service.flush(self)
+            def validate():
                 if not self.session_ready() or self.references.spec != self.fixed_spec:
                     raise RuntimeError("横截面历史接续后行情或参考失效")
-                pending, self.history_buffer = sorted(self.history_buffer, key=lambda b: b.ts_event), []
-                self.history_buffering, self.accept_bars = False, True
-                for bar in pending:
-                    self.publish(self.market_feed_id, bar)
+            start_after_history(self, flush=lambda: self.history_service.flush(self),
+                validate=validate, replay_buffer=True)
             return
-        self.first_complete_bar_ns = ((self._clock_ns() + MINUTE - 1) // MINUTE + 1) * MINUTE - 1
+        self.first_complete_bar_ns = first_complete_minute(self._clock_ns())
         self.accept_bars = True
 
     def mark_history_live_start(self):
         with self._submit_lock:
-            self.first_complete_bar_ns = ((self._clock_ns() + MINUTE - 1) // MINUTE + 1) * MINUTE - 1
+            self.first_complete_bar_ns = first_complete_minute(self._clock_ns())
 
     def _prepare_history(self):
         self.history_service.warm(self, self._clock_ns())
@@ -164,13 +163,11 @@ class CrossSectionSessionRunner(UnifiedStrategyRunner):
 
     def publish(self, feed_id, event):
         if isinstance(event, Bar) and getattr(self, "history_buffering", False):
-            with self._submit_lock:
-                if self.history_buffering:
-                    if (feed_id != self.market_feed_id or event.bar_type.instrument_id not in self.fixed_ids
-                            or event.ts_event > self._clock_ns() or len(self.history_buffer) >= 10000):
-                        self.close_role_gate("横截面历史缓冲来源、时间、合约或容量无效")
-                    self.history_buffer.append(event)
+            try:
+                if buffer_history_bar(self, feed_id, event):
                     return
+            except Exception as error:
+                self.close_role_gate(str(error))
         if not isinstance(event, Bar) or not self.accept_bars:
             return
         instrument = event.bar_type.instrument_id
@@ -254,12 +251,6 @@ class CrossSectionLifecycle(ResumeLifecycle, CtpSessionLifecycle):
         if stale:
             session.runner.close_role_gate(f"逐合约深度行情陈旧或失效: {stale}")
         return super().poll(session)
-
-    def shutdown(self, session, context):
-        if session:
-            with session.runner._submit_lock:
-                session.runner.accept_bars = False
-        return super().shutdown(session, context)
 
     def verify(self, session):
         required = session.strategy.lookback + 1

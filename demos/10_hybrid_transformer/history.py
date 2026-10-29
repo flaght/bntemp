@@ -5,11 +5,14 @@ build_history只构建历史服务；warm_history才读取指定交易分钟的�
 """
 import json
 import time
+from copy import deepcopy
 from pathlib import Path
 
 from bomber.framework.dataprep.history import HistoryService, DolphinDbHistoryConfig, HistoryError, HistoryResult, HistoryUnavailable
 from bomber.framework.dolphindb import DolphinDbConnectionConfig
 from bomber.framework.calendars.sessions import ns_datetime
+from .checkpoint import validate_model_identity
+from bomber.framework.trader.runtime.live.history import history_stamps
 
 MINUTE = 60_000_000_000
 
@@ -77,7 +80,7 @@ def warm_history(runner, *, product: str, history_minutes=0, resume=False, model
     # 启动时正在形成的分钟尚未结束，先向下对齐到已完成的分钟边界。
     end = runner._clock_ns() // MINUTE * MINUTE
     # 使用交易日历取N个分钟，而不是从墙钟时间简单减去N分钟；午休等间隔会跳过。
-    stamps = runner.calendar.last_minutes(end, history_minutes)
+    stamps = history_stamps(runner.calendar, end, history_minutes)
     service = runner.history_service
     phase = 'recovery' if resume else 'preopen'
     started = time.monotonic()
@@ -118,7 +121,6 @@ def warm_history(runner, *, product: str, history_minutes=0, resume=False, model
               "保持订阅，模型未就绪前不建立新批次", flush=True)
 
 
-
 def warm_recording(runner, *, product: str, max_bars: int, model_bar_timestamp='start'):
     """只恢复本机CTP录制的近期原始分钟；部分窗口也可继续积累，不重放交易。"""
     archive = runner.bar_archive
@@ -127,7 +129,7 @@ def warm_recording(runner, *, product: str, max_bars: int, model_bar_timestamp='
     missing = ()
     if bars:
         # 按交易分钟限制最大回看范围，不能把很久之前的缓存当作近期窗口。
-        expected = runner.calendar.last_minutes(end, max_bars)
+        expected = history_stamps(runner.calendar, end, max_bars)
         allowed = set(expected)
         bars = tuple(bar for bar in bars if bar.ts_event in allowed)
         if bars:
@@ -181,3 +183,47 @@ def _model_rows(bars, runner, product, model_bar_timestamp):
                 f"low={bar.low} high={bar.high}")
         rows.append(row)
     return rows
+
+
+def warm_model_seed(runner, seed, *, identity, max_bars, minimum, minute_ns):
+    """合并同一模型、同一真实合约的已完成窗口；不补造断线分钟。"""
+    if seed is None:
+        return
+    validate_model_identity(seed['identity'], identity)
+    if seed['instrument'] != str(runner.bound_instrument):
+        return  # 新合约只读自己的历史，不能拿旧主力分钟预热。
+    import pandas as pd
+    end = runner._clock_ns() // minute_ns * minute_ns
+    expected = set(history_stamps(runner.calendar, end, max_bars))
+    rows = {}
+    for row in [*seed['rows'], *runner.strategy.predictor.workflow.history]:
+        label = pd.Timestamp(row['trade_time'])
+        if label.tzinfo is None:
+            raise ValueError('持续模型窗口时间必须携带时区')
+        stamp = label.value + minute_ns - 1  # Hybrid固定使用分钟开始标签。
+        if stamp not in expected:
+            continue
+        if stamp in rows and rows[stamp] != row:
+            raise ValueError(f'持续窗口与历史源同一分钟内容冲突: ts_event={stamp}')
+        rows[stamp] = row
+    count = runner.strategy.predictor.warm_history([rows[s] for s in sorted(rows)][-max_bars:])
+    runner.history_last_ns = max(runner.history_last_ns, max(rows, default=-1))
+    print(f'Hybrid休市窗口续接: model_window={count} min_raw_bars={minimum} '
+          f'warmup_remaining={max(0, minimum-count)}；不重放历史交易', flush=True)
+
+
+class ModelWindowState:
+    """保留已完成的原始模型分钟；下一会话由历史接口合并，不重放信号。"""
+    def __init__(self, runner):
+        self.runner = runner
+
+    def snapshot_state(self):
+        runner = self.runner
+        return {
+            "instrument": str(runner.bound_instrument),
+            "identity": deepcopy(runner.model_identity),
+            "rows": deepcopy(list(runner.strategy.predictor.workflow.history)),
+        }
+
+    def restore_state(self, saved):
+        self.runner.model_seed = deepcopy(saved)

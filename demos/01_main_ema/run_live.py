@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+from copy import copy
+from functools import partial
 from bomber.framework.market.sources import (add_market_source_arguments, market_config_from_args,
     source_config, create_market_feed, assemble_minute_market)
 from datetime import datetime
@@ -53,14 +55,10 @@ CLIENT_ID = "main-ema-simnow"
 
 class MainEmaRecordingLifecycle(RecordingExecutionLifecycle, CtpMarketSessionLifecycle):
     """CTP Recording仅使用MD；停机后仍保留实际观测交易日。"""
-    def shutdown(self, session, context):
-        self.recorded_md_day = getattr(session.upstream, "latest_trading_day", None) if session else None
-        return RecordingExecutionLifecycle.shutdown(self, session, context)
-
     def snapshot(self, session, context):
-        fields = RecordingExecutionLifecycle.snapshot(self, session, context)
+        fields = super().snapshot(session, context)
         references = context.references if context else None
-        return {**fields, "observed_md_trading_day": getattr(self, "recorded_md_day", None),
+        return {**fields,
             "simnow_environment": self.profile.environment,
             "replay_md_trading_day": self.profile.replay_md_trading_day,
             "bar_time_basis": self.profile.bar_time_basis,
@@ -448,7 +446,7 @@ def assemble(args, references, driver, upstream, *, positions=None, account_rout
           f"slow_period={args.slow} "
           f"source={'历史Provider，完成后衔接实时Bar' if history_enabled else '实时完整Bar'}", flush=True)
     if continuous or history_enabled:
-        from .continuous import CheckpointedRunner
+        from .history import CheckpointedRunner
         from .checkpoint import EmaCheckpoint
     runner_type = CheckpointedRunner if continuous or history_enabled else SessionRoleLiveRunner
     runner = runner_type(references=references, session_check=check,
@@ -486,11 +484,8 @@ def assemble(args, references, driver, upstream, *, positions=None, account_rout
             runner.history_minutes = history_minutes
             runner.history_buffer = []
             runner.history_buffering = True
-            runner.history_stage = getattr(args, "_history_stage", args.history_stage)
-            if runner.history_stage == "auto":
-                from datetime import datetime as history_datetime
-                from bomber.framework.trader.runtime.trading_sessions import SHANGHAI
-                runner.history_stage = ("recovery" if runner.calendar.window(history_datetime.now(SHANGHAI)) else "preopen")
+            from bomber.framework.trader.runtime.live.history import history_phase
+            runner.history_stage = history_phase(getattr(args, "_history_stage", args.history_stage), (calendar,))
             def prepare_history():
                 from .history import flush_buffer
                 warm_history(runner, runner._clock_ns(), phase=runner.history_stage)
@@ -498,7 +493,7 @@ def assemble(args, references, driver, upstream, *, positions=None, account_rout
             runner.prepare_history = prepare_history
     legacy_states = None
     if continuous and getattr(args, "resume_report", None):
-        from .continuous import legacy_ema_state
+        from .recovery import legacy_ema_state
         from bomber.framework.trader.persistence import JsonStateStore
         persisted = JsonStateStore(args.state_file).load()
         if persisted and not persisted.payload.get("component_states"):
@@ -512,8 +507,18 @@ def assemble(args, references, driver, upstream, *, positions=None, account_rout
         replay_md_trading_day=replay_day, legacy_component_states=legacy_states)
 
 
-def build_runtime(args, *, account_routes=()):
+def build_runtime(args, *, account_routes=(), window_context=None):
     """选择通道生命周期、策略组装工厂与报告积木；构造期间不连接。"""
+    if window_context is not None:
+        args = copy(args)
+        args.run_forever = True
+        args._session_calendar = window_context.calendar
+        args.expected_trading_day = window_context.trading_day
+        args.expected_source_day = window_context.source_day
+        args.max_session_orders = window_context.max_session_orders
+        args.resume = window_context.resume
+        args._window_context = window_context
+        args._history_stage = "recovery" if args.resume else "preopen"
     if args.mode == "model":
         lifecycle = CtpMarketSessionLifecycle(expected_trading_day=args.expected_trading_day,
             environment=args.simnow_environment, replay_md_trading_day=args.replay_md_trading_day, resume=args.resume, state_file=args.state_file, market_source=source_config(args).source)
@@ -544,16 +549,15 @@ def build_runtime(args, *, account_routes=()):
             flow_path="/tmp/bomber-main-ema-td", timeout_seconds=args.query_timeout)
         lifecycle_type, extra = MainEmaSessionLifecycle, {}
         if getattr(args, "run_forever", False):
-            from .continuous import ContinuousLifecycle
-            lifecycle_type = ContinuousLifecycle
-            extra = {"state_file": args.state_file, "window": args._continuous_window,
-                     "stop_event": args._stop_event}
+            from .recovery import EmaCheckpointLifecycle
+            lifecycle_type = EmaCheckpointLifecycle
+            extra = {"state_file": args.state_file, "window_context": args._window_context}
         lifecycle = lifecycle_type(transport, md_front=required("CTP_MD_ADDRESS") if source_config(args).source == "ctp" else None,
             orders=args.mode == "simnow", max_session_orders=args.max_session_orders,
             environment=args.simnow_environment, replay_md_trading_day=args.replay_md_trading_day,
             adopt_instrument=args.adopt_existing_position, expected_position=args.expected_position,
             account_reconciliation=execution_policy_from_args(args).account_reconciliation,
-            **({"resume": args.resume} if not getattr(args, "run_forever", False) else {}),
+            **({"resume": args.resume, "state_file": args.state_file} if not getattr(args, "run_forever", False) else {}),
             expected_trading_day=args.expected_trading_day, legacy_lock_namespaces=("bomber-main-ema",), **extra)
     report = LiveRunReport(args.report_dir, prefix="main-ema-recording" if args.mode == "recording" else "simnow", metadata={
         "market_source": source_config(args).source, "market_config": source_config(args).identity, "mode": args.mode, "product": args.product, "reference_source": args.reference_source,
@@ -609,7 +613,8 @@ def build_runtime(args, *, account_routes=()):
     return ManagedLiveRuntime("main-ema-simnow-runtime", controller=lifecycle,
         prepare_inputs=lambda context: prepare_inputs(args, context, lifecycle),
         assemble_session=lambda inputs, context: assemble(args, inputs.references,
-            lifecycle.driver, inputs.upstream), report=report, seconds=args.seconds, progress=progress)
+            lifecycle.driver, inputs.upstream), report=report, seconds=args.seconds, progress=progress,
+        window_context=window_context)
 
 
 def run_session(args):
@@ -628,8 +633,12 @@ def main(argv=None):
     print(f"Python模式=module Bomber={getattr(bomber, '__version__', 'unknown')} "
           f"framework={bomber.framework.__file__} 策略={Path(__file__).with_name('strategy.py')}", flush=True)
     if args.run_forever:
-        from .continuous import run_continuous
-        run_continuous(args, build_runtime)
+        from bomber.framework.trader.runtime.live.continuous import run_continuous
+        from bomber.framework.trader.runtime.live.channels.ctp import account_lock
+        return run_continuous(partial(build_runtime, args), calendar=runtime_sessions(args),
+            state_file=args.state_file, max_session_orders=args.max_session_orders,
+            order_limit_policy="wait", owner_lock=account_lock(required("CTP_ACCOUNT_ID"),
+                namespace="bomber-main-ema-continuous"))
     else:
         run_session(args)
 

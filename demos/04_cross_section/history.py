@@ -1,15 +1,15 @@
 """横截面Live历史准备：按各品种会话取共同分钟、复权、完整帧初始化。"""
-from datetime import datetime
 from pathlib import Path
 import json
-import time
 
 from bomber.framework.dataprep.history import (
-    HistoryBar, HistoryError, HistoryUnavailable, HistoryService, DolphinDbHistoryConfig,
+    HistoryBar, HistoryError, HistoryService, DolphinDbHistoryConfig,
     SessionReferenceFactorAdjuster)
 from bomber.framework.dataprep.sources import DolphinDbReferenceConfig, DataSourcePurpose
 from bomber.framework.dolphindb import DolphinDbConnectionConfig
 from bomber.framework.dataprep.session_inputs import load_session_inputs, session_inputs_from_args
+from bomber.framework.trader.runtime.live.history import (
+    HistoryFrameLoader, history_stamps, history_phase, buffered_history, complete_buffer_boundary)
 
 
 class CommonCalendar:
@@ -30,56 +30,36 @@ class CommonCalendar:
         return tuple(sorted(set.intersection(*(set(c.missing_minutes(after, before)) for c in self.calendars))))
 
 
-class CrossSectionHistory:
+class CrossSectionHistory(HistoryFrameLoader):
     def __init__(self, services, calendars, minutes, *, missing_policy="fail", stage="recovery"):
+        super().__init__(missing_policy=missing_policy, coverage_key="products")
         self.services, self.calendars = services, calendars
         self.calendar, self.minutes = CommonCalendar(calendars.values()), minutes
-        self.missing_policy, self.stage = missing_policy, stage
-        self.last_audit, self.audit_history = None, []
+        self.stage = stage
 
     def warm(self, runner, before_ns, *, phase=None):
         strategy = runner.strategy
-        stamps = (self.calendar.missing_minutes(strategy.last_emitted_ns, before_ns)
-            if strategy.synchronized_frames else self.calendar.last_minutes(before_ns, self.minutes))
+        stamps = history_stamps(self.calendar, before_ns, self.minutes,
+            after_ns=strategy.last_emitted_ns if strategy.synchronized_frames else None)
         if not stamps:
             return
-        started = time.monotonic()
         print(f"横截面历史预热开始: required={len(stamps)} products={list(runner.instruments)}", flush=True)
-        with runner._submit_lock:
-            buffered = tuple(runner.history_buffer)
-        coverage, prices = {}, {}
-        phase = phase or self.stage
-        for product, instrument in runner.instruments.items():
-            service = self.services[product]
-            live = tuple(HistoryBar(str(instrument), b.ts_event, close=b.close.as_decimal())
-                for b in buffered if b.bar_type.instrument_id == instrument and b.ts_event >= runner.first_complete_bar_ns)
-            result = service.load(str(instrument), stamps, phase=phase, live_bars=live)
-            coverage[product] = {**service.last_audit, "instrument": str(instrument),
-                                 "allowed_missing": self.missing_policy == "allow"}
-            prices[product] = {b.ts_event: b.adjusted_close for b in result.bars}
-        complete = tuple(s for s in stamps if all(s in prices[p] for p in prices))
-        found = set(complete)
-        missing = tuple(s for s in stamps if s not in found)
-        audit = {"phase": phase, "required": len(stamps), "loaded": len(complete), "missing": len(missing),
-            "first_missing_ns": missing[0] if missing else None, "last_missing_ns": missing[-1] if missing else None,
-            "sources": sorted({s for c in coverage.values() for s in c["sources"]}),
-            "allowed_missing": self.missing_policy == "allow", "products": coverage,
-            "load_seconds": round(time.monotonic() - started, 3)}
-        self.last_audit, self.audit_history = audit, (self.audit_history + [audit])[-50:]
-        print(f"横截面历史预热: {audit}", flush=True)
-        if any(c["unavailable_sources"] for c in coverage.values()):
-            raise HistoryUnavailable("横截面历史来源不可用，详见逐品种覆盖")
-        if missing and self.missing_policy == "fail":
-            raise HistoryUnavailable(f"横截面缺少{len(missing)}个完整同步帧；逐品种覆盖={coverage}")
+        buffered = buffered_history(runner)
+        live = {product: tuple(HistoryBar(str(instrument), b.ts_event, close=b.close.as_decimal())
+            for b in buffered if b.bar_type.instrument_id == instrument
+            and b.ts_event >= runner.first_complete_bar_ns) for product, instrument in runner.instruments.items()}
+        loaded = self.load_frames({p: (self.services[p], i) for p, i in runner.instruments.items()},
+            stamps, phase=phase or self.stage, live_bars=live)
+        print(f"横截面历史预热: {self.last_audit}", flush=True)
         source_days = {}
-        for product in coverage.values():
+        for product in self.last_audit["products"].values():
             for row in product.get("price_adjustment") or ():
                 if row.get("factor_date_basis") == "source":
                     source_days.setdefault(row["trading_day"], set()).add(row["source_day"])
         if any(len(days) > 1 for days in source_days.values()):
             raise HistoryError("同一历史交易日的跨品种因子来源日不一致，拒绝混用")
         # 先验证全部输入再推进策略，价格错误不能留下部分初始化窗口。
-        frames = [(s, {p: prices[p][s] for p in prices}) for s in complete]
+        frames = [(stamp, {p: bar.adjusted_close for p, bar in frame.items()}) for stamp, frame in loaded]
         if any(v is None or not v.is_finite() or v <= 0 for _, frame in frames for v in frame.values()):
             raise HistoryError("横截面历史需要有效复权价，不能直接用原始close或当前因子替代")
         with runner._submit_lock:
@@ -88,13 +68,10 @@ class CrossSectionHistory:
                 runner.history_frame_count += 1
 
     def flush(self, runner):
-        groups = {}
-        for bar in runner.history_buffer:
-            if bar.ts_event >= runner.first_complete_bar_ns:
-                groups.setdefault(bar.ts_event, set()).add(bar.bar_type.instrument_id)
-        complete = [s for s, ids in groups.items() if ids == runner.fixed_ids]
-        if complete and max(complete) > runner.strategy.last_emitted_ns:
-            self.warm(runner, max(complete) + 1, phase="recovery")
+        boundary = complete_buffer_boundary(buffered_history(runner), runner.fixed_ids,
+            first_ns=runner.first_complete_bar_ns, after_ns=runner.strategy.last_emitted_ns)
+        if boundary is not None:
+            self.warm(runner, boundary, phase="recovery")
 
 
 def build_history(args, references):
@@ -123,9 +100,6 @@ def build_history(args, references):
             factor_date_basis=args.factor_date_basis, max_source_age_days=args.reference_max_source_age_days)
         services[product] = HistoryService(database_config=config, file_path=args.history_file,
             missing_policy="allow", price_adjuster=adjuster)
-    stage = args.history_stage
-    if stage == "auto":
-        now = datetime.now(next(iter(calendars.values())).zone)
-        stage = "recovery" if all(c.window(now) for c in calendars.values()) else "preopen"
+    stage = history_phase(args.history_stage, calendars.values())
     return CrossSectionHistory(services, calendars, args.history_minutes or args.lookback + 1,
         missing_policy=args.history_missing_policy, stage=stage)

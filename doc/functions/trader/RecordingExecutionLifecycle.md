@@ -6,7 +6,7 @@
 - 实际定义：继承LocalExecutionLifecycle的控制器类，不是执行客户端或Runtime。
 - [生命周期源码](../../../bomber/framework/trader/runtime/live/local.py) · [记录型客户端](../../../bomber/framework/trader/execution/recording.py)
 - [ManagedLiveRuntime调用流程](../../../bomber/framework/trader/runtime/live/runtime.py)
-- 核对日期：2026-10-28，Asia/Shanghai。
+- 核对日期：2026-10-29，Asia/Shanghai。
 
 ## 1. 这个类负责什么
 
@@ -49,10 +49,10 @@ state_file锁按解析后的策略状态文件路径生成哈希，使用/tmp下
 
 1. 将session.runner.accept_bars设为False，先关闭策略分钟接收入口。
 2. 调用runner.start，由已装配Runner启动客户端、来源等。
-3. 每0.2秒检查runner.session_ready；runner.failure或等待超时则失败。
-4. 刷新session.references，重新检查会话就绪。
+3. 使用公共就绪等待器，每轮先刷新参考及可选特征查询，再检查健康；runner.failure或等待超时则失败。
+4. 核对就绪及已声明的参考版本。
 5. 若Runner提供prepare_history，先mark_history_live_start，再准备历史，并再次检查就绪。
-6. 若session.manager存在，调用save。
+6. 若session.manager存在，在稳定阶段校验业务组件目标，再保存或提交暂存恢复。普通Recording入口不装配交易Manager。
 7. 设置resume_ready=True，调用runner.begin_bars开放正式分钟处理。
 
 因此session.runner不仅是最小UnifiedStrategyRunner接口，还需具备本会话约定的session_ready、begin_bars等能力。传入任意Runner并不一定可用。
@@ -68,7 +68,7 @@ state_file锁按解析后的策略状态文件路径生成哈希，使用/tmp下
 | `events(session)` | 无session返回()，否则返回client.requests |
 | `event_label` | 固定为“Recording目标”，供Runtime打印新增请求 |
 
-Recording客户端没有report_errors回报通道，本类覆盖父类_execution_failed，使用`not session.client.is_started`判断执行端失效，不会误访问不存在的report_errors属性。
+Recording客户端没有report_errors回报通道，父类按mode="recording"使用`not session.client.is_started`判断执行端失效，不会误访问不存在的report_errors属性。
 
 行情检查仍保留：session_ready为False会失败；参考资料通过reference_is_current核验，若无该方法则比较references.spec和runner.fixed_spec；资料变化或stale_instruments非空时调用runner.close_role_gate。
 
@@ -85,14 +85,13 @@ shutdown在session存在时关闭accept_bars，并调用runner.stop，然后返�
     "cleanup_errors": [],
     "final_gross": None,
     "final_active_orders": None,
+    "resume_state_preserved": False,
 }
 ```
 
-None表示没有在这里提供物理账户总仓和活动订单信息，不表示已查证账户为零。该覆盖方法不执行父类模型生命周期的停机save，也不读取backend.reports。
+None表示没有在这里提供物理账户总仓和活动订单信息，不表示已查证账户为零。Recording复用公共本地收尾，跳过交易状态保存和backend.reports；Runner停止异常记入cleanup_errors，仍执行其余资源释放。
 
-snapshot返回strategy_position_source="none"、account_reconciliation="off"、execution_origin="recording"、声明的trading_day，以及两个None观测交易日字段。直接使用本类时不会自动报告MD真实交易日，即使session.upstream已有该值。
-
-若停机抛异常，异常由外围ManagedLiveRuntime按其清理与报告逻辑处理；返回空cleanup_errors不等于所有外部清理都保证成功。
+snapshot返回strategy_position_source="none"、account_reconciliation="off"、execution_origin="recording"、声明的trading_day和恢复元数据。停机前保留upstream实际观测MD日；没有观测时保持None。
 
 ## 6. 恢复参数的限制
 
@@ -113,9 +112,7 @@ class HybridRecordingLifecycle(RecordingExecutionLifecycle, CtpMarketSessionLife
         return result
 ```
 
-该组合采用Recording的verify、events、shutdown、snapshot；由于Recording没有自定义__init__，构造时沿方法解析顺序找到CtpMarketSessionLifecycle.__init__，因此可以传expected_trading_day和market_source。
-
-这不意味着CTP父类的所有方法都会自动叠加执行。Recording的shutdown/snapshot没有调用super，因此Hybrid这个组合不会自动执行CtpMarketSessionLifecycle保存停机前MD交易日的覆盖逻辑。Main EMA入口为此另行覆盖shutdown/snapshot，明确记录观测值。
+Recording只保留目标验收和mode声明；events、shutdown、snapshot共用LocalExecutionLifecycle。构造时沿方法解析顺序找到CtpMarketSessionLifecycle.__init__，因此可传expected_trading_day和market_source。停机及快照会经过CTP行情类，统一保留真实MD观测日；01／04原先重复的停机覆盖已删除，Hybrid也使用同一流程。
 
 ## 8. 调用示例与常见问题
 
@@ -136,7 +133,7 @@ assert controller.events(None) == ()
 | 客户端启动状态失效 | RecordingExecutionClient是否被启动或提前停止 |
 | 行情健康/心跳失效 | Recording模式仍执行行情检查，不会因为不下单而忽略坏行情 |
 | 普通构造传expected_trading_day报错 | 本类直接继承的参数名是trading_day；该关键字用于CTP类或相应多继承组合 |
-| 报告观测MD日为None | 本类默认不采集该字段，需对应渠道覆盖 |
+| 报告观测MD日为None | 核对upstream是否实际收到交易日；不以预期日补齐 |
 | resume时缺少属性 | 父类恢复流程需要模型执行会话接口，普通Recording客户端不具备完整能力 |
 
 相关回归：[执行组件测试](../../../tests/test_execution_composition.py)、[行情来源及历史准备测试](../../../tests/test_market_sources.py)。实际组合：[Hybrid实时入口](../../../demos/10_hybrid_transformer/run_live.py)、[Main EMA实时入口](../../../demos/01_main_ema/run_live.py)。

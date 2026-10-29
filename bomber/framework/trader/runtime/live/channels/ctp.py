@@ -10,6 +10,7 @@ import os
 import time
 from urllib.parse import urlsplit
 
+from ..lifecycle import close_session_gate, prepare_live_session, activate_live_session, commit_session_checkpoint
 from ..contracts import (LiveRunContext, ChannelIdentity, ReadinessIssue, ReadinessResult, SessionReadiness)
 from ..profiles import MarketTimeProfile
 from ..health import validate_instrument_max_age, timestamp_issue
@@ -356,6 +357,7 @@ class CtpSessionLifecycle:
         self.reconcile_seconds = reconcile_seconds
         self.lost = []
         self.session = None
+        self.resume_ready = False
         self._next_check = 0
         self._cap_deadline = None
         self._observed_md_day = None
@@ -438,28 +440,12 @@ class CtpSessionLifecycle:
                   f"PositionDate={current.position_date} PositionCost={current.position_cost}", flush=True)
         if self.driver.trading_day != context.trading_day or self.lost:
             raise RuntimeError("装配期间TD会话／交易日发生变化")
-        session.runner.start()
-        deadline = time.monotonic() + self.ready_seconds
-        while not session.runner.session_ready():
-            if self.lost or time.monotonic() >= deadline:
-                raise RuntimeError(f"{self.ready_seconds:g}秒内未取得要求的健康MD／TD会话："
-                    f"TD={self.driver.trading_day} MD={getattr(session.upstream, 'latest_trading_day', None)} "
-                    f"要求MD={self.replay_md_trading_day or context.trading_day} "
-                    f"health={session.upstream.health_snapshot.state} "
-                    f"readiness={readiness_details(session)}")
-            time.sleep(0.2)
-        prepare_history = getattr(session.runner, "prepare_history", None)
-        if callable(prepare_history):
-            session.runner.mark_history_live_start()
-            prepare_history()
-            if not session.runner.session_ready():
-                raise RuntimeError("历史加载后MD/TD未就绪，保持闭闸")
-        if self.orders:
-            session.manager.save()
-            session.client.arm_demo(session.client.DEMO_CONFIRMATION)
-        session.runner.begin_bars()
-        self._next_check = time.monotonic() + self.reconcile_seconds
-        print(f"会话就绪，开始分钟验证：{self.environment}；停机撤单并报告剩余仓位", flush=True)
+        if not prepare_live_session(session, self.ready_seconds, lost=lambda: bool(self.lost)):
+            return
+        authorize = (lambda: session.client.arm_demo(session.client.DEMO_CONFIRMATION)) if self.orders else None
+        if activate_live_session(self, session, authorize=authorize):
+            self._next_check = time.monotonic() + self.reconcile_seconds
+            print(f"会话就绪：{self.environment}；停机撤单并报告剩余仓位", flush=True)
 
     def poll(self, session):
         if session.runner.failure or self.lost:
@@ -546,8 +532,8 @@ class CtpSessionLifecycle:
         self._observed_md_day = getattr(session.upstream, "latest_trading_day", None) if session else None
         self._observed_td_day = self.driver.trading_day or self._observed_td_day
         if session:
-            session.runner.accept_bars = False
-            if self.orders:
+            close_session_gate(session)
+            if self.orders and self.resume_ready:
                 try:
                     session.client.set_risk_mode("HALTED", cancel_active_orders=True)
                     until = time.monotonic() + 10
@@ -565,10 +551,10 @@ class CtpSessionLifecycle:
                     final_gross = occupied_positions(self.transport)
                     self._managed_gross(final_gross)
                 self.driver.reconcile_account_state()
-            if session and self.orders:
-                session.manager.save()
+            if session and self.orders and self.resume_ready:
                 if self.account_reconciliation == "strict" and self._managed_gross(final_gross) != self._expected_gross(session):
                     raise RuntimeError("停机柜台总仓与本地账本不一致")
+                commit_session_checkpoint(session)
         except Exception as error:
             errors.append(str(error))
         try:

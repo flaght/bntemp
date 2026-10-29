@@ -1,12 +1,10 @@
 """08自身的会话恢复与验收；通用账户、订单、归属检查使用公共模块。"""
 import time
 
-from bomber.framework.trader.runtime.live.local import LocalExecutionLifecycle, strategy_state_lock
-from bomber.framework.trader.runtime.live.readiness import wait_for_session_ready
-from bomber.framework.trader.runtime.live.recovery import (validate_finished_orders,
-    validate_owned_positions, restored_target_revision)
+from bomber.framework.trader.runtime.live.local import LocalExecutionLifecycle
+from bomber.framework.trader.runtime.live.recovery import restored_target_revision
 from bomber.framework.trader.runtime.live.channels.ctp import (CtpSessionLifecycle,
-    assert_flat_account, assert_account_ready, occupied_positions)
+    occupied_positions)
 from bomber.framework.trader.runtime.live.channels.ctp_recovery import (
     CtpResumeLifecycle, validate_ctp_restored_positions)
 
@@ -41,6 +39,7 @@ class OptionControl:
 
     def snapshot(self, session, context):
         return {"resume_ready": self.resume_ready,
+            "restored_generation": self.restored_generation,
             "bar_time_basis": "replay_test_mapped" if getattr(getattr(session, "bar_feed", None), "time_map", None) else "source_event",
             "valuation_day": self.valuation_day,
             "request_time_basis": "receive_wall_clock", "reference_time_basis": "observation_wall_clock",
@@ -64,63 +63,22 @@ class OptionLocalLifecycle(OptionControl, LocalExecutionLifecycle):
     def event_label(self):
         return "Recording目标" if self.mode == "recording" else "模型执行回报"
 
-    def start(self, session, context):
-        if self.resuming:
-            restored = session.manager.restore()
-            if restored is None:
-                raise RuntimeError("原策略状态文件不存在")
-            validate_finished_orders(session)
-            owned = validate_owned_positions(session.runner.position_manager, session.recovery_binding,
-                account_scope=session.position_scope)
-            for instrument, quantity in owned.items():
-                if abs(quantity) > getattr(session.execution.client, "position_client", session.execution.client).risk_manager.instrument_limits[instrument].max_abs_position:
-                    raise RuntimeError("恢复策略仓位超过上限")
-            revision = restored_target_revision(session, session.recovery_binding, allow_empty=True)
-            session.strategy.restore_target_revision(revision)
-        session.runner.start()
-        wait_for_session_ready(session, self.ready_seconds)
-        session.references.refresh()
-        if session.manager is not None:
-            session.manager.save()
-        self.resume_ready = True
-        session.runner.begin_bars()
-        print(f"期权会话就绪: execution={self.mode} valuation_day={self.valuation_day}; 停机保留策略仓位", flush=True)
-
     def poll(self, session):
         self.check_frames(session)
         return True
 
-    def events(self, session):
-        if session is None:
-            return ()
-        return session.client.requests if self.mode == "recording" else session.execution.backend.reports
-
     def shutdown(self, session, context):
-        if session is None:
-            return {"cleanup_errors": []}
-        session.strategy.stopping = True
-        session.runner.accept_bars = False
-        if session.upstream is not None:
-            self._observed_md_day = session.upstream.latest_trading_day
-        try:
-            if session.manager is not None and (not self.resuming or self.resume_ready):
-                session.manager.save()
-        finally:
-            session.runner.stop()
-        return {"cleanup_errors": [], "final_gross": None, "final_active_orders": None,
-            "resume_state_preserved": self.resuming and not self.resume_ready}
+        if session is not None:
+            session.strategy.stopping = True
+            self._observed_md_day = getattr(session.upstream, "latest_trading_day", None)
+        return super().shutdown(session, context)
 
 
 class OptionCtpLifecycle(OptionControl, CtpResumeLifecycle, CtpSessionLifecycle):
     def __init__(self, *args, valuation_day, state_file, require_fills=False, **kwargs):
-        super().__init__(*args, **kwargs)
+        super().__init__(*args, state_file=state_file, **kwargs)
         self.valuation_day, self.require_fills = valuation_day, require_fills
         self.bar_time_basis = "source_event"
-        self.state_file = state_file
-
-    def prepare(self, resources):
-        resources.enter_context(strategy_state_lock(self.state_file))
-        return super().prepare(resources)
 
     def validate_restored_session(self, session, day):
         return validate_restored_session(session, day)
@@ -135,27 +93,6 @@ class OptionCtpLifecycle(OptionControl, CtpResumeLifecycle, CtpSessionLifecycle)
         from .rollover import payload_for_day
         return session.manager.restore(payload_transform=lambda payload: payload_for_day(session, payload,
             driver=self.driver, transport=self.transport, day=context.trading_day))
-
-    def start(self, session, context):
-        if self.resuming:
-            return super().start(session, context)
-        self.session = session
-        self._validate_position_scope(session)
-        session.client.start()
-        if self.account_reconciliation == "strict":
-            assert_flat_account(self.driver, self.transport, position_scope=self.position_scope)
-        else:
-            assert_account_ready(self.driver, reconcile_positions=False)
-        if self.driver.trading_day != context.trading_day or self.lost:
-            raise RuntimeError("装配期间TD交易日或连接变化")
-        session.runner.start()
-        wait_for_session_ready(session, self.ready_seconds, lost=lambda: bool(self.lost))
-        session.references.refresh()
-        session.manager.save()
-        session.client.arm_demo(session.client.DEMO_CONFIRMATION)
-        self.resume_ready = True
-        session.runner.begin_bars()
-        self._next_check = time.monotonic() + self.reconcile_seconds
 
     def poll(self, session):
         if self.lost:

@@ -3,12 +3,14 @@ import math
 import time
 
 
-def wait_for_session_ready(session, timeout_seconds, *, lost=None, monotonic=None, sleep=None):
+def wait_for_session_ready(session, timeout_seconds, *, lost=None, monotonic=None, sleep=None, cancelled=None):
     if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
         raise ValueError("就绪等待须为有限正数")
     clock, pause = monotonic or time.monotonic, sleep or time.sleep
     deadline = clock() + timeout_seconds
     while True:
+        if cancelled is not None and cancelled():
+            return False
         if getattr(session.runner, "failure", None):
             raise RuntimeError(session.runner.failure)
         if lost is not None and lost():
@@ -25,6 +27,8 @@ def wait_for_session_ready(session, timeout_seconds, *, lost=None, monotonic=Non
         poll = getattr(session.runner, "poll_features", None)
         if callable(poll):
             poll()
+        if cancelled is not None and cancelled():
+            return False
         if lost is not None and lost():
             raise RuntimeError("等待就绪期间通道连接丢失")
         if clock() >= deadline:

@@ -43,6 +43,7 @@ class ExecutionCompositionTests(unittest.TestCase):
                 ("bomber.framework.market", "bomber/framework/market"),
                 ("bomber.framework.market.basic", "bomber/framework/market/basic"),
                 ("bomber.framework.trader", "bomber/framework/trader"),
+                ("bomber.framework.trader.runtime", "bomber/framework/trader/runtime"),
                 ("bomber.framework.trader.execution", "bomber/framework/trader/execution"),
                 ("bomber.framework.trader.execution.live", "bomber/framework/trader/execution/live")):
             module = ModuleType(name)
@@ -50,7 +51,7 @@ class ExecutionCompositionTests(unittest.TestCase):
             replacements[name] = module
         # 使用临时包命名空间，结束后完整恢复已有SDK模块，不污染其余测试组。
         for name in tuple(sys.modules):
-            if name.startswith(("bomber.framework.trader.", "bomber.framework.market.basic.")):
+            if name not in replacements and name.startswith(("bomber.framework.trader.", "bomber.framework.market.basic.")):
                 replacements[name] = None
         base = ModuleType("bomber.framework.market.basic.base")
         base.InstrumentId, base.DataType = Instrument, DataType

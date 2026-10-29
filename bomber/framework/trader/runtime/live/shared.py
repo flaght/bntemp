@@ -7,28 +7,7 @@ import time
 from bomber.framework.trader.persistence import JsonStateStore
 from .local import strategy_state_lock
 from .health import readiness_failure_context
-
-
-def prepare_strategy_history(session):
-    """行情已订阅且决策关闭时准备历史；失败不开放实时交易。"""
-    runner = session.runner
-    prepare = getattr(runner, "prepare_history", None)
-    if not callable(prepare):
-        return
-    if runner.accept_bars:
-        raise RuntimeError("历史准备必须在实时决策关闭时执行")
-    runner.mark_history_live_start()
-    prepare()
-    # 查库可能耗时，重新观测参考及远程账户，不能沿用查询前的健康状态。
-    session.references.refresh()
-    drain = getattr(session.client, "drain_events", None)
-    if callable(drain):
-        drain()
-    poll = getattr(runner, "poll_live_inputs", None)
-    if callable(poll):
-        poll()
-    if runner.failure or not runner.session_ready():
-        raise RuntimeError(runner.failure or "历史加载后行情/参考/账户未就绪，保持闭闸")
+from .lifecycle import prepare_strategy_history
 
 
 def history_snapshot(session):
@@ -140,7 +119,8 @@ class SharedAccountLiveHost:
             self.resources.enter_context(strategy_state_lock(item.state_file))
         try:
             self._check_preparation()
-            self.account.start(resume=self.resume)
+            prepare_account = getattr(self.account, "start_preparation", self.account.start)
+            prepare_account(resume=self.resume)
             self._check_preparation()
             self.service.start()  # 宿主租约；各Runner取得自己的租约。
             self._started = True
@@ -297,7 +277,9 @@ class SharedAccountLiveHost:
         client = self.service.client
         account = getattr(self, "account", None)
         query_diagnostics = getattr(getattr(account, "transport", None), "query_diagnostics", None)
+        describe = getattr(getattr(account, "manager", None), "describe_checkpoint", None)
         return {"account": self.service.snapshot_state(),
+            "checkpoint": describe() if callable(describe) else None,
             "execution_diagnostics": {"is_reconciled": client.is_reconciled,
                 "is_armed": getattr(client, "is_armed", None),
                 "recovery_required": self.service.position_manager.is_recovery_required(self.service.client_id),
@@ -320,4 +302,6 @@ class SharedAccountLiveHost:
                 "execution_events": item.session.client.event_diagnostics(),
                 "stop_requested_at_ns": item.stop_requested_at_ns,
                 "stopped_at_ns": item.stopped_at_ns,
+                "checkpoint_generation": item.generation,
+                "saved_revision": item.saved_revision,
                 "state_file": str(item.state_file)} for sid, item in self.strategies.items()}}

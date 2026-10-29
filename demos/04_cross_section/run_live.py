@@ -33,13 +33,7 @@ from bomber.framework.trader.runtime.live.local import RecordingExecutionLifecyc
 
 class CrossRecordingLifecycle(RecordingExecutionLifecycle, CtpMarketSessionLifecycle):
     """原生CTP只接MD；历史/实时目标记录不要求物理账户空仓。"""
-    def shutdown(self, session, context):
-        self.recorded_md_day = getattr(session.upstream, "latest_trading_day", None) if session else None
-        return RecordingExecutionLifecycle.shutdown(self, session, context)
 
-    def snapshot(self, session, context):
-        return {**RecordingExecutionLifecycle.snapshot(self, session, context),
-                "observed_md_trading_day": getattr(self, "recorded_md_day", None)}
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -278,7 +272,7 @@ def build_runtime(args, *, account_routes=()):
     lifecycle = CrossSectionLifecycle(transport, md_front=required("CTP_MD_ADDRESS") if source_config(args).source == "ctp" else None,
         orders=args.mode == "simnow", max_session_orders=args.max_session_orders,
         environment=args.simnow_environment, replay_md_trading_day=args.replay_md_trading_day,
-        resume=args.resume,
+        resume=args.resume, state_file=args.state_file,
         scope_to_reference_instruments=True,
         account_reconciliation=execution_policy_from_args(args).account_reconciliation,
         expected_trading_day=args.expected_trading_day, legacy_lock_namespaces=("bomber-main-ema",))

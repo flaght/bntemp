@@ -11,7 +11,8 @@ from pathlib import Path
 from bomber.framework.trader.persistence import JsonStateStore
 from bomber.framework.trader.runtime.trading_sessions import load_sessions, SHANGHAI
 from .checkpoint import EmaCheckpoint
-from .continuous import legacy_ema_state, recover_minutes
+from .recovery import legacy_ema_state
+from .history import recover_minutes
 from .strategy import MainEmaConfig, MainEmaStrategy
 
 

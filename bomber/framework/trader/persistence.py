@@ -194,6 +194,11 @@ class RuntimeStateManager:
         self.ctp_ledgers = dict(ctp_ledgers or {})
         self.ctp_drivers = dict(ctp_drivers or {})
         self.state_components = dict(state_components or {})
+        for name, component in self.state_components.items():
+            if not isinstance(name, str) or not name.strip():
+                raise ValueError("检查点组件名须为非空字符串")
+            if not all(callable(getattr(component, method, None)) for method in ("snapshot_state", "restore_state")):
+                raise TypeError(f"检查点组件缺少 snapshot_state/restore_state: {name}")
         self._ctp_submit_locks: dict[str, Any] = {}
         self._generation = 0
         self._restore_pending = False
@@ -202,6 +207,33 @@ class RuntimeStateManager:
     @property
     def generation(self) -> int:
         return self._generation
+
+    def validate_binding(self, target_store, portfolio_coordinator, position_manager,
+                         *, client_id=None, order_machine=None):
+        """装配后核对同一执行图；禁止把另一会话的 Manager 挂到当前 Runner。"""
+        if (self.target_store is not target_store or self.portfolio_coordinator is not portfolio_coordinator
+                or self.position_manager is not position_manager):
+            raise StatePersistenceError("检查点与运行会话须共享目标、组合和仓位组件")
+        if order_machine is not None and self.order_machines.get(client_id) is not order_machine:
+            raise StatePersistenceError("检查点与执行客户端须共享同一订单状态机")
+
+    def validate_components(self):
+        """供启动提交和停机保存核验稳定业务状态；不用于报单中间态。"""
+        with ExitStack() as stack:
+            for client_id in sorted(self._ctp_submit_locks):
+                stack.enter_context(self._ctp_submit_locks[client_id])
+            with self._lock:
+                for component in self.state_components.values():
+                    validate = getattr(component, "validate_targets", None)
+                    if callable(validate):
+                        validate(self.target_store)
+
+    def describe_checkpoint(self):
+        """运行报告只输出接入和事务元数据，不输出组件状态或凭据。"""
+        with self._lock:
+            return {"state_file": str(self.repository.path), "generation": self._generation,
+                "restore_pending": self._restore_pending, "components": sorted(self.state_components),
+                "order_clients": sorted(self.order_machines), "ctp_accounts": sorted(self.ctp_ledgers)}
 
     def enable_execution_autosave(self, client, backend):
         """非CTP适配器的写前/回报后保存；组件状态由state_components承接。"""
