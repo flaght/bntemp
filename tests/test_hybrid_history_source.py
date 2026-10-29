@@ -159,13 +159,17 @@ class TradingHistoryTests(unittest.TestCase):
         sdk.connect.return_value=True
         sdk.run.return_value=pd.DataFrame([row('21:00:00.000',2),row('21:01:00.000',5)])
         predictor=NS(warm_history=Mock(return_value=2),on_bar=Mock())
-        with patch.object(history.DolphinDbReferenceConfig,'from_env',return_value=self.connection):
+        from tests.test_dolphindb_connections import SPLIT
+        with patch.dict('os.environ', SPLIT, clear=True):
             service=history.build_history(history_config=config_path,calendar=self.calendar)
+        self.assertEqual(service.config.connection.host, 'market')
         runner=NS(calendar=self.calendar,bound_instrument='rb2701.SHFE',history_service=service,
             _clock_ns=lambda:ns('2026-10-16 21:02:03'),
             strategy=NS(config=NS(contract_multiplier=Decimal(10)),predictor=predictor))
         with patch.object(source,'_session_factory',lambda **kwargs:sdk),redirect_stdout(StringIO()) as output:
             history.warm_history(runner,product='RB',history_minutes=2)
+        sdk.connect.assert_called_once_with('market', 8850, 'market-user', 'market-secret',
+            reconnect=False, readTimeout=15, writeTimeout=15)
         prepared=predictor.warm_history.call_args.args[0]
         self.assertEqual([r['volume'] for r in prepared],[2,3])
         self.assertEqual(prepared[0]['trade_time'].isoformat(),'2026-10-16T21:00:00+08:00')

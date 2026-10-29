@@ -2,9 +2,10 @@
 from datetime import date
 from decimal import Decimal
 from importlib import import_module
+from pathlib import Path
 from threading import RLock
 from types import SimpleNamespace as NS
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 import unittest
 
 from tests import test_execution_composition as fixtures
@@ -16,6 +17,18 @@ class Instrument(fixtures.Instrument):
 
 
 class CalendarHistoryTests(unittest.TestCase):
+    def test_builder_reads_minutes_from_market_connection_without_reference_credentials(self):
+        from tests.test_dolphindb_connections import SPLIT
+        module = import_module("demos.03_calendar_spread.history")
+        args = NS(history_config=Path(__file__).resolve().parents[1] / "demos/03_calendar_spread/history_au.json",
+            reference_timeout=9, history_db="dolphindb", history_file=None,
+            history_stage="recovery", history_minutes=5, history_missing_policy="fail")
+        environment = {key: value for key, value in SPLIT.items() if key.startswith("DDB_MARKET_")}
+        with patch.dict("os.environ", environment, clear=True):
+            result = module.build_history(args, self.calendar)
+        connection = result.service.config.connection
+        self.assertEqual((connection.host, connection.port, connection.read_timeout_seconds), ("market", 8850, 9))
+
     def setUp(self):
         fixtures.ExecutionCompositionTests.setUp(self)
         self.strategy_module = import_module("demos.03_calendar_spread.strategy")

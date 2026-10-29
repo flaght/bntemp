@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 
 from bomber.framework.dataprep.history import HistoryService, DolphinDbHistoryConfig, HistoryError, HistoryResult
-from bomber.framework.dataprep.sources import DolphinDbReferenceConfig
+from bomber.framework.dolphindb import DolphinDbConnectionConfig
 from bomber.framework.calendars.sessions import ns_datetime
 
 MINUTE = 60_000_000_000
@@ -41,7 +41,7 @@ def build_history(
             values["session_calendar"] = calendar
 
         config = DolphinDbHistoryConfig(
-            connection=DolphinDbReferenceConfig.from_env(),
+            connection=DolphinDbConnectionConfig.from_env(purpose="market"),
             **values,
         )
 

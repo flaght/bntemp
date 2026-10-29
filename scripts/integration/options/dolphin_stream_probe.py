@@ -70,11 +70,10 @@ def main(argv=None):
     if not 60 <= args.seconds <= 600:
         parser.error("采样时长须为60至600秒")
     from dotenv import load_dotenv
+    from bomber.framework.dolphindb import DolphinDbConnectionConfig, connection_env
     from bomber.framework.market.native.dolphin.driver import create_native_driver, NativeDolphinSubscription
     load_dotenv(ROOT / ".env")
-    for key in ("DDB_HOST", "DDB_USERNAME", "DDB_PASSWORD"):
-        if not os.getenv(key):
-            raise RuntimeError(f"缺少环境配置 {key}")
+    connection = DolphinDbConnectionConfig.from_env(purpose="market")
     print(f"DDB_STREAM_PROBE_VERSION: {PROBE_VERSION}", flush=True)
     selected = {table: keys for table, keys in TABLE_KEYS.items()
                 if args.streams == "both" or table == ("stream_cffex_1min" if args.streams == "market" else "stream_index_1min")}
@@ -92,9 +91,8 @@ def main(argv=None):
                     for sig in (signal.SIGINT, signal.SIGTERM)}
     try:
         driver = create_native_driver()
-        driver.start(os.environ["DDB_HOST"], int(os.getenv("DDB_PORT", "8848")),
-                     os.environ["DDB_USERNAME"], os.environ["DDB_PASSWORD"],
-                     streaming_port=int(os.getenv("DDB_STREAMING_PORT", "0")))
+        driver.start(connection.host, connection.port, connection.username, connection.password,
+                     streaming_port=int(connection_env("market", "STREAMING_PORT", "0")))
         for table in selected:
             if stop.is_set():
                 raise InterruptedError("用户主动停止")

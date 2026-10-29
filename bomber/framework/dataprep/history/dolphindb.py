@@ -5,13 +5,14 @@ from datetime import datetime, timedelta, timezone
 import re
 from threading import RLock
 from .base import HistoryBar, HistoryProvider, HistoryError, HistoryUnavailable, select_bars, MINUTE_NS
+from ...dolphindb import DolphinDbConnectionConfig
 from ..sources.dolphindb import DolphinDbReferenceConfig, _session_factory
 from ...calendars.sessions import SessionCalendar, datetime_ns, ns_datetime
 
 
 @dataclass(frozen=True)
 class DolphinDbHistoryConfig:
-    connection: DolphinDbReferenceConfig
+    connection: DolphinDbConnectionConfig | DolphinDbReferenceConfig
     database: str
     table: str
     columns: dict = field(default_factory=lambda: {"instrument_id": "instrument_id", "ts_event": "ts_event", "close": "close"})

@@ -9,6 +9,7 @@ from bomber.framework.dataprep.history import (
     HistoryService, DolphinDbHistoryConfig, HistoryError, HistoryBar, ReferenceFactorAdjuster,
     SessionReferenceFactorAdjuster, HistoryUnavailable)
 from bomber.framework.dataprep.sources import DolphinDbReferenceConfig
+from bomber.framework.dolphindb import DolphinDbConnectionConfig
 
 
 def build_history(args, *, calendar=None):
@@ -25,7 +26,8 @@ def build_history(args, *, calendar=None):
             source_days = data.pop("factor_source_days", None)
             factor_database = data.pop("factor_database", None)
             config = DolphinDbHistoryConfig(
-                connection=DolphinDbReferenceConfig.from_env(read_timeout_seconds=args.reference_timeout), **data)
+                connection=DolphinDbConnectionConfig.from_env(purpose="market",
+                    read_timeout_seconds=args.reference_timeout), **data)
             if source_days is not None:
                 from datetime import date
                 adjuster = ReferenceFactorAdjuster(

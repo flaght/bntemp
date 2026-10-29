@@ -1,0 +1,189 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-29",
+  "scope": "static_PE_and_source_review",
+  "not_executed": [
+    "Windows import",
+    "rp.Start",
+    "strategy construction",
+    "configuration loading",
+    "network or trading methods"
+  ],
+  "artifacts": [
+    {
+      "file": "3rd/lxgbn/IndexFutStg/lib/stgWrapper.pyd",
+      "bytes": 3268096,
+      "sha256": "21d0121eda22439d1fdd31e330b3e83531ac77e5c2100daf7bb7540bd0f8d5c4",
+      "machine": "0x8664",
+      "imports": [
+        "libzmq.dll",
+        "WS2_32.dll",
+        "libmysql.dll",
+        "qpidmessaging.dll",
+        "qpidtypes.dll",
+        "libopenblas.dll",
+        "KERNEL32.dll",
+        "ADVAPI32.dll",
+        "ole32.dll",
+        "OLEAUT32.dll",
+        "ODBC32.dll",
+        "python312.dll",
+        "MSVCP140.dll",
+        "VCRUNTIME140_1.dll",
+        "VCRUNTIME140.dll",
+        "api-ms-win-crt-heap-l1-1-0.dll",
+        "api-ms-win-crt-runtime-l1-1-0.dll",
+        "api-ms-win-crt-stdio-l1-1-0.dll",
+        "api-ms-win-crt-string-l1-1-0.dll",
+        "api-ms-win-crt-time-l1-1-0.dll",
+        "api-ms-win-crt-convert-l1-1-0.dll",
+        "api-ms-win-crt-utility-l1-1-0.dll",
+        "api-ms-win-crt-math-l1-1-0.dll",
+        "api-ms-win-crt-filesystem-l1-1-0.dll"
+      ],
+      "python_module_exports": [
+        "PyInit_stgWrapper"
+      ],
+      "relevant_native_exports": [
+        "?cancelOrder@IPyStrategy@@QEAA_NH@Z",
+        "?getOrder@IPyStrategy@@QEAA?AV?$shared_ptr@UOrderMsg_t@common@bomber@@@std@@H@Z",
+        "?onOrderAck@IPyStrategy@@UEAAXV?$shared_ptr@UOrderMsg_t@common@bomber@@@std@@@Z",
+        "?onOrderFill@IPyStrategy@@UEAAXV?$shared_ptr@UOrderMsg_t@common@bomber@@@std@@V?$shared_ptr@UExecutionMsg_t@common@bomber@@@3@@Z",
+        "?onOrderFinished@IPyStrategy@@UEAAXV?$shared_ptr@UOrderMsg_t@common@bomber@@@std@@@Z",
+        "?sendOrder@IPyStrategy@@QEAAHV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@W4OrderMsg_dir_t@api@bomber@@_J_KW4EnumAlgoOrderType@56@@Z"
+      ],
+      "null_terminated_python_name_suffix_present": {
+        "initialize": true,
+        "onMarketData": true,
+        "sendTargetVol": true,
+        "sendOrder": false,
+        "cancelOrder": false,
+        "getOrder": false,
+        "onOrderAck": false,
+        "onOrderFill": false,
+        "onOrderFinished": false,
+        "EnumNTDirectOrder": false,
+        "OrderMsg_attr_t ": false,
+        "status_t ": false
+      }
+    },
+    {
+      "file": "3rd/lxgbn/IndexFutStg/lib/stgWrapper.pyd.bk",
+      "bytes": 18671616,
+      "sha256": "1ed239d6845547a1f3fe9c7689a9f76bbb3f2b21330434c18beb1bfca15e6040",
+      "machine": "0x8664",
+      "imports": [
+        "libzmq.dll",
+        "IPHLPAPI.DLL",
+        "WS2_32.dll",
+        "libmysql.dll",
+        "qpidmessagingd.dll",
+        "qpidtypesd.dll",
+        "libopenblas.dll",
+        "KERNEL32.dll",
+        "ADVAPI32.dll",
+        "ole32.dll",
+        "OLEAUT32.dll",
+        "ODBC32.dll",
+        "python36.dll",
+        "MSVCP140D.dll",
+        "VCRUNTIME140D.dll",
+        "ucrtbased.dll"
+      ],
+      "python_module_exports": [
+        "PyInit_stgWrapper"
+      ],
+      "relevant_native_exports": [
+        "?cancelOrder@IPyStrategy@@QEAA_NH@Z",
+        "?getOrder@IPyStrategy@@QEAA?AV?$shared_ptr@UOrderMsg_t@common@bomber@@@std@@H@Z",
+        "?onOrderAck@IPyStrategy@@UEAAXV?$shared_ptr@UOrderMsg_t@common@bomber@@@std@@@Z",
+        "?onOrderFill@IPyStrategy@@UEAAXV?$shared_ptr@UOrderMsg_t@common@bomber@@@std@@V?$shared_ptr@UExecutionMsg_t@common@bomber@@@3@@Z",
+        "?onOrderFinished@IPyStrategy@@UEAAXV?$shared_ptr@UOrderMsg_t@common@bomber@@@std@@@Z",
+        "?sendOrder@IPyStrategy@@QEAAHV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@W4OrderMsg_dir_t@api@bomber@@_J_KW4EnumAlgoOrderType@56@@Z"
+      ],
+      "null_terminated_python_name_suffix_present": {
+        "initialize": true,
+        "onMarketData": true,
+        "sendTargetVol": true,
+        "sendOrder": false,
+        "cancelOrder": false,
+        "getOrder": false,
+        "onOrderAck": false,
+        "onOrderFill": false,
+        "onOrderFinished": false,
+        "EnumNTDirectOrder": false,
+        "OrderMsg_attr_t ": false,
+        "status_t ": false
+      }
+    },
+    {
+      "file": "3rd/lxgbn/IndexFutStg/lib/iPyStrategy.cp312-win_amd64.pyd",
+      "bytes": 74752,
+      "sha256": "364a3973f2f254e3f0e17373db975a197708831a192520653c14bf4fb2c7a09e",
+      "machine": "0x8664",
+      "imports": [
+        "KERNEL32.dll",
+        "api-ms-win-crt-environment-l1-1-0.dll",
+        "api-ms-win-crt-heap-l1-1-0.dll",
+        "api-ms-win-crt-private-l1-1-0.dll",
+        "api-ms-win-crt-runtime-l1-1-0.dll",
+        "api-ms-win-crt-stdio-l1-1-0.dll",
+        "api-ms-win-crt-string-l1-1-0.dll",
+        "api-ms-win-crt-time-l1-1-0.dll",
+        "python312.dll"
+      ],
+      "python_module_exports": [
+        "PyInit_iPyStrategy"
+      ],
+      "relevant_native_exports": [],
+      "null_terminated_python_name_suffix_present": {
+        "initialize": false,
+        "onMarketData": false,
+        "sendTargetVol": false,
+        "sendOrder": false,
+        "cancelOrder": false,
+        "getOrder": false,
+        "onOrderAck": false,
+        "onOrderFill": false,
+        "onOrderFinished": false,
+        "EnumNTDirectOrder": false,
+        "OrderMsg_attr_t ": false,
+        "status_t ": false
+      }
+    },
+    {
+      "file": "3rd/lxgbn/IndexFutStg/lib/CTABarTestDll.dll",
+      "bytes": 4596736,
+      "sha256": "c343d4007b8e199bdbe8b958397c29adede2ba9b1411eaa6f2a031a8fc56c9a7",
+      "machine": "0x8664",
+      "imports": [
+        "stgWrapper64Bit.dll",
+        "python36.dll",
+        "KERNEL32.dll",
+        "MSVCP140D.dll",
+        "VCRUNTIME140D.dll",
+        "ucrtbased.dll",
+        "IPHLPAPI.DLL",
+        "WS2_32.dll"
+      ],
+      "python_module_exports": [],
+      "relevant_native_exports": [],
+      "null_terminated_python_name_suffix_present": {
+        "initialize": false,
+        "onMarketData": false,
+        "sendTargetVol": false,
+        "sendOrder": false,
+        "cancelOrder": false,
+        "getOrder": false,
+        "onOrderAck": false,
+        "onOrderFill": false,
+        "onOrderFinished": false,
+        "EnumNTDirectOrder": false,
+        "OrderMsg_attr_t ": false,
+        "status_t ": false
+      }
+    }
+  ],
+  "source_sha256": "e2b1178d07b9e03d0adb88805f15b69d9b5fb964b9d6eb9e1e0277bc1cdab91b",
+  "interpretation": "Source exposes six direct-order methods/callbacks. The main binary lacks their null-terminated Python names and EnumNTDirectOrder; relevant C++ exports are present with older-looking signatures. Strong source/binary mismatch indication, pending Windows runtime inspection. PE export symbols are not Python module attributes."
+}

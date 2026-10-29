@@ -110,10 +110,10 @@ def backtest(args):
 
 def live(args):
     from dotenv import load_dotenv
-    from bomber.framework.dataprep.sources.dolphindb import DolphinDbReferenceConfig
+    from bomber.framework.dolphindb import DolphinDbConnectionConfig
 
     load_dotenv(Path(__file__).resolve().parents[3] / ".env")
-    bundle = load_feature_bundle(CONFIG, DolphinDbReferenceConfig.from_env(read_timeout_seconds=2))
+    bundle = load_feature_bundle(CONFIG, DolphinDbConnectionConfig.from_env(purpose="market", read_timeout_seconds=2))
     now = datetime.now(ZoneInfo("Asia/Shanghai"))
     start = int(now.replace(hour=9, minute=31, second=0, microsecond=0).timestamp()) * 1_000_000_000
     end = int(now.replace(hour=15, minute=0, second=0, microsecond=0).timestamp()) * 1_000_000_000

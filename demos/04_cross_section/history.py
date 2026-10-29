@@ -8,6 +8,7 @@ from bomber.framework.dataprep.history import (
     HistoryBar, HistoryError, HistoryUnavailable, HistoryService, DolphinDbHistoryConfig,
     SessionReferenceFactorAdjuster)
 from bomber.framework.dataprep.sources import DolphinDbReferenceConfig, DataSourcePurpose
+from bomber.framework.dolphindb import DolphinDbConnectionConfig
 from bomber.framework.dataprep.session_inputs import load_session_inputs, session_inputs_from_args
 
 
@@ -115,8 +116,8 @@ def build_history(args, references):
         factor_db = cfg.pop("factor_database", None) or args.reference_database
         if "factor_source_days" in cfg:
             raise HistoryError("04历史因子按交易会话自动选择，不使用手工来源日映射")
-        config = DolphinDbHistoryConfig(connection=DolphinDbReferenceConfig.from_env(
-            read_timeout_seconds=args.reference_timeout), **cfg) if cfg else None
+        config = DolphinDbHistoryConfig(connection=DolphinDbConnectionConfig.from_env(
+            purpose="market", read_timeout_seconds=args.reference_timeout), **cfg) if cfg else None
         adjuster = SessionReferenceFactorAdjuster(DolphinDbReferenceConfig.from_env(
             database=factor_db, read_timeout_seconds=args.reference_timeout), calendar,
             factor_date_basis=args.factor_date_basis, max_source_age_days=args.reference_max_source_age_days)

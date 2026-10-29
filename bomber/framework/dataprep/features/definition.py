@@ -82,10 +82,11 @@ def source_from_definition(source, connection, spec):
         raise FeatureError("数据库来源不能混用文件配置")
     tables = (DatasetTable(spec.dataset_id, spec.schema_version, source["table"], mapping),)
     if backend == "dolphindb":
+        from ...dolphindb import DolphinDbConnectionConfig
         from ..sources.dolphindb import DolphinDbReferenceConfig
         c = connection.get("dolphindb") if isinstance(connection, Mapping) else connection
-        if not isinstance(c, DolphinDbReferenceConfig):
-            raise FeatureError("DolphinDB连接须通过调用方注入ReferenceConfig")
+        if not isinstance(c, (DolphinDbConnectionConfig, DolphinDbReferenceConfig)):
+            raise FeatureError("DolphinDB连接须通过调用方注入DolphinDbConnectionConfig或DolphinDbReferenceConfig")
         config = DolphinDbFeatureConfig(c.host, c.port, c.username, c.password, source["database"], tables,
             timeout_seconds=c.read_timeout_seconds, enable_ssl=c.enable_ssl)
     else:

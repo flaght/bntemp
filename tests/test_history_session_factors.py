@@ -180,9 +180,11 @@ class SessionFactorTests(unittest.TestCase):
         module = import_module("demos.01_main_ema.history")
         args = SimpleNamespace(history_config=Path(__file__).resolve().parents[1] / "demos/01_main_ema/history_cu.json",
             history_db="dolphindb", reference_timeout=15, history_file=None, history_missing_policy="fail")
-        connection = DolphinDbReferenceConfig("fake", 8848, "fake", "fake")
-        with patch.object(module.DolphinDbReferenceConfig, "from_env", return_value=connection):
+        from tests.test_dolphindb_connections import SPLIT
+        with patch.dict("os.environ", SPLIT, clear=True):
             service = module.build_history(args, calendar=self.calendar)
+        self.assertEqual(service.config.connection.host, "market")
+        self.assertEqual(service.price_adjuster.config.host, "reference")
         self.assertIsInstance(service.price_adjuster, SessionReferenceFactorAdjuster)
         self.assertEqual(service.config.time_label, "end")
         self.assertNotIn("adjusted_close", service.config.columns)

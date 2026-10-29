@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-29",
+  "scope": "optional_wrapper_components_offline",
+  "result": "passed",
+  "tests_total": 88,
+  "new_adapter_tests": 22,
+  "command": "PYTHONPYCACHEPREFIX=/tmp/m02-pycache /Users/kerry/.local/bin/python3.12 -m unittest tests.test_lxgbn_wrapper_adapter tests.test_lxgbn_execution tests.test_execution_composition -q",
+  "observed_summary": "Ran 88 tests in 3.040s; OK",
+  "native_boundary": "Vendor-shaped mutable Order/Trade and non-default IntEnum test doubles; no stgWrapper import or Windows binary execution. SDK Runner/OMS/risk/attribution/JSON persistence are actual implementation; native market types are controlled fixtures.",
+  "implemented": [
+    "pre-send command links",
+    "explicit HostPort function injection",
+    "known-field and enum validation",
+    "required host callback facts",
+    "2/3/2 value-copy callback bridge",
+    "first-error latch and SDK disconnect",
+    "Bar value copy with explicit period/time and historical filtering"
+  ],
+  "not_verified": [
+    "actual pyd/source version match",
+    "native send/cancel/getOrder signatures and results",
+    "native account/time/attribute facts",
+    "binding snapshot and delivery boundary",
+    "owner timer/GIL",
+    "native recovery links",
+    "Windows Bar native construction",
+    "real orders and callbacks"
+  ],
+  "sha256": {
+    "scripts/integration/lxgbn/stg_wrapper_adapter.py": "3635cd552d0413061d7058dbdc217346cc291e02daf117d8a96a69cc821a14cd",
+    "tests/test_lxgbn_wrapper_adapter.py": "a8376404b2b5442650c4676256fd5c6492fad33eee1bff90b2a0faeb7ec8c4f1",
+    "scripts/integration/lxgbn/STG_WRAPPER_ADAPTER.md": "01c6fe9eb8686c207e852fcd7de7adedd173b595dc7d25960610b138ddd3fab7"
+  }
+}

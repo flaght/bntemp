@@ -59,9 +59,13 @@ class SessionInputsTests(unittest.TestCase):
         offline = load_session_inputs(self.inputs)
         live_input = replace(self.inputs, backend="dolphindb", hours_file=None, overrides_file=None,
                              database="dfs://rules", hours_table="hours", overrides_table="exceptions")
-        with patch.dict("os.environ", {"DDB_HOST": "test", "DDB_USERNAME": "user", "DDB_PASSWORD": "secret"}), \
-                patch("bomber.framework.dataprep.sources.dolphindb._session_factory", return_value=self.sdk):
+        from tests.test_dolphindb_connections import SPLIT
+        with patch.dict("os.environ", SPLIT, clear=True), \
+                patch("bomber.framework.dataprep.sources.dolphindb._session_factory", return_value=self.sdk), \
+                patch.object(self.sdk, "connect", wraps=self.sdk.connect) as connect:
             live = load_session_inputs(live_input)
+        connect.assert_called_once_with("reference", 8851, "reference-user", "reference-secret",
+            reconnect=False, readTimeout=15, writeTimeout=15)
         self.assertEqual((offline.start, offline.end), (RULES_START, RULES_END))
         self.assertEqual(offline.provenance["sha256"], live.provenance["sha256"])
         self.assertEqual(offline.last_minutes(ns("2026-10-13T15:00"), 600),

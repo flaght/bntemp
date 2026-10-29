@@ -20,16 +20,17 @@ Live将已核验index_1min.pct_change映射为同一Payload并用FeatureQueryCac
 
 ```python
 from bomber.framework.dataprep.features import load_feature_bundle, FeatureQueryCache
-from bomber.framework.dataprep.sources.dolphindb import DolphinDbReferenceConfig
+from bomber.framework.dolphindb import DolphinDbConnectionConfig
 
-bundle = load_feature_bundle("my_features.json", DolphinDbReferenceConfig.from_env())
+bundle = load_feature_bundle("my_features.json", DolphinDbConnectionConfig.from_env(purpose="market"))
 provider = bundle.provider("basis.five_minute")  # 与指数使用同一通用Provider
 # bundle.registry可装配多个Provider/查询缓存，共享一个DataHub。
 ```
 
 来源支持file标准导出、dolphindb/MongoDB标准信封、dolphindb-raw原表投影。文件默认用于离线，数据库用于Live/导出，不隐式切换。
-MongoDB连接通过 `{"mongodb": {"uri": uri, "timeout_seconds": 15}}` 注入；DolphinDB通过 `{"dolphindb": connection}` 或原ReferenceConfig注入。
+MongoDB连接通过 `{"mongodb": {"uri": uri, "timeout_seconds": 15}}` 注入；DolphinDB通过 `{"dolphindb": connection}` 或连接对象直接注入，支持 `DolphinDbConnectionConfig` 及原 `DolphinDbReferenceConfig`。行情/指数数据使用 `DolphinDbConnectionConfig.from_env(purpose="market")` 读取 `DDB_MARKET_*`；参考资料使用原配置类读取 `DDB_REFERENCE_*`。通用特征由调用方按数据用途选择连接。
 JSON只声明来源和映射，不写凭据。文件相对路径按配置文件目录解析。
+`scripts.integration.features.read_only` 默认使用 market 连接；参考类特征可加 `--dolphindb-purpose reference`。
 原表适配由RawTimestamp声明DATE+日内时间或完整DolphinDB时间，也支持明确UTC整数unix_ns；频率偏移读取Schema.period_ns。
 业务键支持任意正常字符串，保留前导零；数值、字符串、布尔及可空字段按声明解码，不硬绑定指数/一分钟/六位代码。
 

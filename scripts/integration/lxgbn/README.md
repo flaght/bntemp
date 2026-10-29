@@ -4,6 +4,10 @@ LXGBN（DXBM-LXG）是 Windows 交易宿主，本项目是供其内嵌 Python �
 
 交给 LXGBN 开发者的完整接入步骤、报单/成交通知、接口字段和实机测试清单见 [SDK 接入与测试指南](../../../doc/integration/LXGBN_SDK_INTEGRATION_GUIDE_2026-10-21.md)。[sdk_acceptance_example.py](sdk_acceptance_example.py) 提供九个可直接运行的无柜台示例；用例 09 检查 on_order/on_fill 字段及先后顺序。在已安装 wheel 的 Windows Python 中以 `python -I 实际脚本路径` 运行，不注入项目源码目录。
 
+2026-10-29 新收到的 `3rd/lxgbn` 材料分析见 [导出库集成分析](../../../doc/integration/LXGBN_EXPORTED_LIBRARY_REVIEW_2026-10-29.md)。[wrapper_surface_probe.py](wrapper_surface_probe.py) 可在独立 Windows 进程读取指定 stgWrapper.pyd 的真实成员、Boost.Python 签名、枚举和哈希；只检查导出面，不调用 Start/initialize/交易方法，不能代替实际语义及线程验收。
+
+不依赖原生签名的接线组件已在 [stg_wrapper_adapter.py](stg_wrapper_adapter.py) 实现，装配和缺失事实要求见 [组件说明](STG_WRAPPER_ADAPTER.md)。其字段转换/命令关联/回调桥使用原生形状替身及真实 SDK 回归；尚未接入实际 pyd 的报撤单函数。组件位于外部 scripts，不改变此前验证的 Bomber wheel。
+
 CTP 已有实际链路继续复用；BN 本期延后。首期仅测试环境，一个策略、一份绑定、一个合约，普通限价 Normal 与投机。实际 Windows/柜台联调尚未完成。
 
 ## Python 3.12 已确认后的第一步

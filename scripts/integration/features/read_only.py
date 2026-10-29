@@ -36,6 +36,8 @@ def main(argv=None):
     parser.add_argument("--availability", choices=("observed", "source-time", "update-time"))
     parser.add_argument("--timestamp-label", choices=("start", "end", "inclusive-end"))
     parser.add_argument("--timeout", type=int, default=15)
+    parser.add_argument("--dolphindb-purpose", choices=("market", "reference"), default="market",
+        help="DolphinDB连接用途，行情/指数默认market；参考类特征可选reference")
     parser.add_argument("--max-rows", type=int, default=10000)
     parser.add_argument("--export", type=Path)
     parser.add_argument("--report-dir", type=Path, default=Path(__file__).resolve().parents[3]/"tests/results")
@@ -49,7 +51,7 @@ def main(argv=None):
     from bomber.framework.datahub.features import FeatureHub, FeatureQuery, FeatureRequirement
     from bomber.framework.dataprep.features import (bundle_from_definition, FeatureProviderFactory,
         DolphinDbRawFeatureProvider, FeatureRequest, FileFeatureProvider, export_features)
-    from bomber.framework.dataprep.sources.dolphindb import DolphinDbReferenceConfig
+    from bomber.framework.dolphindb import DolphinDbConnectionConfig
     report_dir = args.report_dir/f"feature-readonly-{time.time_ns()}"
     report_dir.mkdir(parents=True, exist_ok=False)
     report = {"status": "running", "dataset_id": args.dataset, "schema_version": args.schema_version,
@@ -61,7 +63,8 @@ def main(argv=None):
         backends = {d["source"]["backend"] for d in definition["datasets"]}
         connections = {}
         if backends.intersection({"dolphindb", "dolphindb-raw"}):
-            connections["dolphindb"] = DolphinDbReferenceConfig.from_env(read_timeout_seconds=args.timeout)
+            connections["dolphindb"] = DolphinDbConnectionConfig.from_env(
+                purpose=args.dolphindb_purpose, read_timeout_seconds=args.timeout)
         if "mongodb" in backends:
             connections["mongodb"] = {"uri": os.getenv("MONGODB_URI"), "timeout_seconds": args.timeout}
         bundle = bundle_from_definition(definition, connections, base_dir=args.config.resolve().parent)

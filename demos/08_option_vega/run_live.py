@@ -239,12 +239,13 @@ def prepare_inputs(args, context, lifecycle):
     index_id = InstrumentId.from_str(args.index_code + ".XSHG")
     index_query_feed = None
     if args.index_source == "dolphindb-dfs":
+        from bomber.framework.dolphindb import DolphinDbConnectionConfig
         from bomber.framework.dataprep.features import FeatureProviderFactory, FeatureQueryCache
         from bomber.framework.dataprep.sources.policy import DataSourcePurpose
         from bomber.framework.market.stream.feature_query import FeatureQueryBarFeed
         bundle, binding = index_bundle(args.index_feature_config, args.index_dataset,
-            args.index_schema_version, connection=DolphinDbReferenceConfig.from_env(
-                read_timeout_seconds=args.index_query_timeout))
+            args.index_schema_version, connection=DolphinDbConnectionConfig.from_env(
+                purpose="market", read_timeout_seconds=args.index_query_timeout))
         raw_config = binding.source_config
         overrides = {}
         for name in ("database", "table", "availability"):

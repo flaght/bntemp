@@ -94,12 +94,13 @@ def source_config(args):
 def create_dolphin_bar_feed(table, source_id, *, max_age_seconds=120, volume_mode="per-bar"):
     from bomber.framework.market.stream.dolphin import DolphinDbLiveDataFeed, DolphinDbConfig, DolphinDbStreamSpec
     from bomber.framework.market.stream.health import StreamHealthConfig
-    from bomber.framework.trader.runtime.live.channels.ctp import required
+    from bomber.framework.dolphindb import DolphinDbConnectionConfig, connection_env
     if not table:
         raise ValueError(f"须配置{source_id}的共享分钟流表")
-    return DolphinDbLiveDataFeed(DolphinDbConfig(host=required("DDB_HOST"),
-        port=int(os.getenv("DDB_PORT", "8848")), username=required("DDB_USERNAME"), password=required("DDB_PASSWORD"),
-        streaming_port=int(os.getenv("DDB_STREAMING_PORT", "0")),
+    connection = DolphinDbConnectionConfig.from_env(purpose="market")
+    return DolphinDbLiveDataFeed(DolphinDbConfig(host=connection.host,
+        port=connection.port, username=connection.username, password=connection.password,
+        streaming_port=int(connection_env("market", "STREAMING_PORT", "0")),
         streams=(DolphinDbStreamSpec.bar(table,
             action_name=f"{source_id.replace('-', '_')}_{os.getpid()}_{time.time_ns()}",
             auto_schema=True, volume_mode=volume_mode, local_receipt_time=True),)),

@@ -225,7 +225,7 @@ z(t) = [S(t) - μ(t)] / σ(t)
 `CTP_BROKER_ID`（默认9999）、`CTP_ACCOUNT_ID`、`CTP_PASSWORD`和
 `CTP_PRODUCTION_MODE`；不要求TD地址、AppID和AuthCode。SimNow另需
 `CTP_TD_ADDRESS`、`CTP_APP_ID`、`CTP_AUTH_CODE`，沿用公共账户锁及模拟盘授权。
-DolphinDB地址、账户及表配置复用`DolphinDbReferenceConfig.from_env`。
+DolphinDB基础资料地址、账户及表配置使用`DolphinDbReferenceConfig.from_env()`，读取`DDB_REFERENCE_*`；行情订阅和历史分钟读取`DDB_MARKET_*`。各项未设置时兼容旧`DDB_*`，两台服务器示例见[公共行情配置](../market_sources/README.md#dolphindb-行情与基础资料连接)。
 
 参考资料使用DolphinDB的角色和期货基础表，不使用分钟文件或复权因子表。
 必须提供所选品种的两个角色及其真实条款；角色来源日严格早于本次参考交易日，
