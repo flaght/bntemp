@@ -66,6 +66,7 @@ class DepthHealthTests(unittest.TestCase):
             _timestamp_ns=lambda data, exchange: data["ts"], depth_reference_price=lambda data: "3000")
         self.handler._lock = threading.RLock()
         self.handler._depth_observations = {}
+        self.handler._depth_handlers = []
         self.handler.enqueue_event = self.received.append
         self.handler._event_is_subscribed = lambda *args: True
 
@@ -121,7 +122,7 @@ class DepthHealthTests(unittest.TestCase):
         handler.config.future_buffer_ns = 100_000_000
         raw = SimpleNamespace(ts_event=wall[0] + 10_000_000)
         handler._converter.convert = lambda *args: (raw,)
-        with patch.object(time, "time_ns", side_effect=lambda: wall[0]):
+        with patch.object(time, "time_ns", side_effect=lambda: wall[0]), self.assertNoLogs(__name__, level="ERROR"):
             self.depth(raw.ts_event)
         self.assertEqual(self.received, [raw])
         observed = handler._depth_observations["IM2610.CFFEX"]

@@ -63,6 +63,8 @@ PYTHONPATH=.:.validation/packages python -B -m tests.run_live_continuous_offline
 
 远端首轮集中验收在`shared-mother-probe`停止：单母单探针调用常规预算轮询，1单额度用尽后母单先被撤销，导致未捕获。已调整专用探针等待循环，保留Driver硬限制及账户／行情健康检查；本地该组17项通过，包含延迟受理和部分成交。远端须同步修复后复验，完整远端验收仍未完成。
 
+远端后续反馈`shared-ipc`49项、`shared-discovery`4项通过，随后在`ctp-depth-health`停止。原因是提取实际深度回调的测试Handler遗漏初始化`_depth_handlers`；真实Feed构造器已有该初始化。已补齐测试装配，并在成功发布用例中断言无错误日志；本地该组8项通过，待远端复验。
+
 - 在已安装Bomber原生引擎的环境运行完整EMA数值和原生Live装配回归；本机结果不替代该验收。
 - 在目标运行机验证真实DolphinDB读取、历史落库与实时衔接，以及SimNow午休／跨日／同文件恢复／正常停机。
 - 同步部署时包含公共Live文件和相应应用依赖，移除01／10旧continuous.py；保留原检查点及已有策略约束。
