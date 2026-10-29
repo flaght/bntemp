@@ -343,9 +343,11 @@ class HistoryTests(unittest.TestCase):
         controller = live.MainEmaSessionLifecycle(session.transport, md_front="tcp://fake:1234", orders=True)
         controller.driver = session.driver
         with patch.object(session.client, "arm_demo") as arm:
-            with self.assertRaisesRegex(RuntimeError, "历史加载后MD/TD未就绪"):
+            with self.assertRaisesRegex(RuntimeError, "保持闭闸"):
                 controller.start(session, SimpleNamespace(trading_day="20260922"))
         arm.assert_not_called()
+        self.assertFalse(session.runner.accept_bars)
+        self.assertFalse(session.client.is_armed)
         self.assertEqual(session.transport._api.sent, [])
 
     def test_live_buffer_warms_without_orders_then_first_new_bar_publishes_current_target(self):
