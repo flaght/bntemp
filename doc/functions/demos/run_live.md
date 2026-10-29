@@ -409,3 +409,14 @@ Recording不创建恢复管理器。组装最后返回的session把Runner、策�
 常驻模式可不填两个expected日期；填写时只检查首个窗口。需要同一个交易状态文件和连续更新的基础资料。
 已用报单额度不会因重建会话清零，主力变化且旧批次未完、未知活动订单、配置变更等情况仍明确停止。
 完整命令和限制见[策略README的常驻说明](../../../demos/10_hybrid_transformer/README.md)。
+
+## Hybrid历史适配层收敛（2026-10-29）
+
+策略`history.py`保留字段需求、研究时间标签、`predictor.warm_history`调用、模型窗口身份及进度。
+JSON组装使用`dataprep.history.build_history_service`，读取/审计/本地归档过滤使用
+`live.history.warm_history_window`，窗口拼接使用`merge_history_rows`。
+历史和实时的OHLCV、持仓量、合约乘数及VWAP校验统一使用框架的期货数值函数。
+
+接口及失败边界见[公共历史说明](../trader/HistoryFrameLoader.md)。命令行、JSON配置与交易状态schema不变。
+同步到服务器时包含策略`history.py`及框架history工厂/导出、公共Live历史模块、期货数值模块和新增的
+`dataprep/history/futures.py`；本次为Python调整，不需要重新编译原生模块。

@@ -1,4 +1,5 @@
 """真实合约分钟落盘、重启恢复和发布前持久化的离线检查。"""
+from bomber.framework.dataprep.history import HistoryService
 from contextlib import redirect_stdout
 from dataclasses import replace
 from decimal import Decimal
@@ -112,7 +113,7 @@ class MinuteArchiveTests(unittest.TestCase):
         archive.close()
         archive=self.archive(max_bars=10).open()
         predictor=NS(warm_history=Mock(return_value=2),on_bar=Mock())
-        runner=NS(bar_archive=archive,calendar=calendar(),history_service=NS(last_audit=None),
+        runner=NS(bar_archive=archive,calendar=calendar(),history_service=HistoryService(missing_policy='allow'),bound_instrument='rb2701.SHFE',
             _clock_ns=lambda:ns('2026-10-28 09:03:02'),
             strategy=NS(config=NS(contract_multiplier=Decimal(10)),predictor=predictor))
         with redirect_stdout(StringIO()) as output:
@@ -121,7 +122,9 @@ class MinuteArchiveTests(unittest.TestCase):
         self.assertEqual(len(rows),2)
         self.assertEqual([r['trade_time'].strftime('%H:%M') for r in rows],['09:00','09:02'])
         self.assertEqual(rows[0]['vwap'],100.025)
-        self.assertEqual(runner.history_service.last_audit['missing'],1)
+        self.assertEqual(runner.history_service.last_audit['required'],10)
+        self.assertEqual(runner.history_service.last_audit['loaded'],2)
+        self.assertEqual(runner.history_service.last_audit['missing'],8)
         self.assertIn('真实缺口',output.getvalue())
         predictor.on_bar.assert_not_called()
         self.assertEqual(runner.history_last_ns,points[-1].ts_event)
@@ -132,7 +135,7 @@ class MinuteArchiveTests(unittest.TestCase):
         archive.append(bar('2026-10-27 09:00:00'))
         archive.append(bar('2026-10-28 09:03:00'))
         predictor=NS(warm_history=Mock(return_value=0))
-        runner=NS(bar_archive=archive,calendar=calendar(),history_service=NS(last_audit=None),
+        runner=NS(bar_archive=archive,calendar=calendar(),history_service=HistoryService(missing_policy='allow'),bound_instrument='rb2701.SHFE',
             _clock_ns=lambda:ns('2026-10-28 09:03:02'),
             strategy=NS(config=NS(contract_multiplier=Decimal(10)),predictor=predictor))
         with redirect_stdout(StringIO()):module.warm_recording(runner,product='RB',max_bars=10)

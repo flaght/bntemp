@@ -6,6 +6,9 @@
 
 | 接口 | 职责 |
 | --- | --- |
+| `build_history_service(...)` | `dataprep.history`从普通行情JSON组装服务，调用方显式提供字段需求、日历和缺失政策；不连接存储 |
+| `warm_history_window(service, *, calendar, instrument, before_ns, minutes, consume, ...)` | 单路完整窗口加载、归档筛选、覆盖审计和预热回调；返回HistoryResult，失败保留原异常 |
+| `merge_history_rows(rows, *, calendar, before_ns, minutes, event_ns)` | 按业务提供的时间映射合并近期完整分钟，相同分钟冲突拒绝，剔除过旧或未来行 |
 | `history_phase(stage, calendars, *, now=None)` | 显式 `preopen/recovery` 优先；`auto` 在全部绑定日历处于交易窗口时选择 `recovery` |
 | `history_stamps(calendar, before_ns, minutes, *, after_ns=None)` | 首次取最近 N 个完整交易分钟；已有断点只取断点之后、边界之前的交易分钟，跳过休市 |
 | `HistoryFrameLoader(missing_policy="fail", coverage_key="instruments")` | 汇总多路历史覆盖，只返回同一分钟各路都有数据的帧 |
@@ -48,10 +51,10 @@ Runner 沿用现有的 `_submit_lock`、`history_buffer`、`history_buffering`�
 | 01 EMA | [history.py](../../../demos/01_main_ema/history.py)、[run_live.py](../../../demos/01_main_ema/run_live.py)：阶段、窗口、缓冲、完整分钟门槛、放行 | 历史复权价、EMA 精确断点、启动最新分钟的 20 秒落库等待政策、指标预热 |
 | 03 Calendar | [history.py](../../../demos/03_calendar_spread/history.py)、[live_runtime.py](../../../demos/03_calendar_spread/live_runtime.py)：同步覆盖、缺口、缓冲、放行 | 原始双腿价差、合约配对、方向与目标版本 |
 | 04 Cross section | [history.py](../../../demos/04_cross_section/history.py)、[live_runtime.py](../../../demos/04_cross_section/live_runtime.py)：同步覆盖、缺口、缓冲、放行 | 跨品种共同日历、历史复权价、因子来源日一致性、横截面指标 |
-| 10 Hybrid | [history.py](../../../demos/10_hybrid_transformer/history.py)：历史／本地归档／窗口续接共用交易分钟选择 | 原始 OHLCV、成交额和持仓量、模型标签与 VWAP、模型原始窗口及真实缺口政策 |
+| 10 Hybrid | [history.py](../../../demos/10_hybrid_transformer/history.py)：配置组装、单路加载审计、本地归档筛选、交易分钟选择与窗口合并全部复用框架 | 声明原始字段需求、研究时间标签、模型预热回调与模型窗口身份 |
 | 08 Vega | 当前没有同类行情历史预热链路，本轮无需接入 | 指数特征查询和期权分钟帧仍按现有流程处理 |
 
-业务 `history.py` 继续负责数据口径与策略预热；此次没有把这些业务文件整份移入公共层。现有历史参数、行情来源优先级、账户恢复和执行政策保持原入口约束。
+业务 `history.py` 只负责数据需求与策略预热适配；Hybrid的原始期货数值和VWAP校验复用`dataprep.history.futures.futures_history_values`，与实时CustomBar共用`market.futures.futures_values`。现有历史参数、行情来源优先级、账户恢复和执行政策保持原入口约束。
 
 ## 验证
 
@@ -73,3 +76,21 @@ PYTHONPATH=. python -B -m tests.run_main_ema_acceptance \
 真实数据库落库、行情并发和柜台联调须在目标运行机验证。同步应用文件时同时同步公共 `live/history.py`，原历史配置文件无需迁移格式。
 
 [返回函数索引](../README.md)
+
+## 单路模型历史的公共加载
+
+```python
+service = build_history_service(history_config=path, calendar=calendar,
+    required_fields=("open", "high", "low", "close", "volume", "value", "open_interest"),
+    missing_policy="allow")
+result = warm_history_window(service, calendar=calendar, instrument=instrument,
+    before_ns=clock_ns(), minutes=300, consume=warm_standard_history_bars)
+```
+
+`consume`负责一次性验证/转换业务输入并调用专用预热接口，不能用于实时开仓回调。
+查询成功但覆盖不足时，`allow`保留实际可读分钟；已配置数据库读取失败仍报错。
+显式传入`archive`只读取该归档的近期交易分钟，不替代调用方声明的数据库恢复源。
+数据库与归档都报告整个请求窗口的`required/loaded/missing`，归档缺失政策也由服务决定。
+
+`merge_history_rows`只处理分钟身份、排序、去重和冲突；模型身份验证及时间标签转换留在业务层。
+共享层不读取Runner、predictor或workflow字段，也不创建第二套Provider/状态恢复流程。

@@ -59,7 +59,9 @@ PYTHONPATH=.:.validation/packages python -B -m tests.run_live_continuous_offline
 
 该表记录剩余范围，不代表新的执行顺序或本次继续实施；未重新调整此前优先级。
 
-## 验收待办
+## 验收进展与待办
+
+**最新结果：用户反馈本轮远端集中离线验收“全部选定离线模块通过”。离线回归阶段已通过，下一步为真实柜台只读、在线Recording及受控订单验收。** 下列排障过程保留为历史记录，其中“待复验”描述为当时状态。
 
 远端首轮集中验收在`shared-mother-probe`停止：单母单探针调用常规预算轮询，1单额度用尽后母单先被撤销，导致未捕获。已调整专用探针等待循环，保留Driver硬限制及账户／行情健康检查；本地该组17项通过，包含延迟受理和部分成交。远端须同步修复后复验，完整远端验收仍未完成。
 
@@ -73,7 +75,7 @@ PYTHONPATH=.:.validation/packages python -B -m tests.run_live_continuous_offline
 
 本轮根据GAP-03远端日志执行[集中排查](LIVE_COMMON_ACCEPTANCE_AUDIT.md)：修复失效的行情工厂测试替换点、收集预期参数拒绝日志，并增加`--keep-going`及4项验收入口回归。现共48组，本机17组直接通过、13组使用既有SDK夹具通过，18组因原生引擎／夹具接口／socket权限限制仍须远端验证。GAP-03的22项通过。远端下一轮使用`python -u -m tests.run_main_ema_acceptance --keep-going`，一次收齐失败组；不再逐组遇错即停后反复同步。
 
-- 在已安装Bomber原生引擎的环境运行完整EMA数值和原生Live装配回归；本机结果不替代该验收。
+- 远端集中离线回归已收到通过反馈；测试数量不按重叠组累加。
 - 在目标运行机验证真实DolphinDB读取、历史落库与实时衔接，以及SimNow午休／跨日／同文件恢复／正常停机。
 - 同步部署时包含公共Live文件和相应应用依赖，移除01／10旧continuous.py；保留原检查点及已有策略约束。
 

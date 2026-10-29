@@ -141,3 +141,83 @@ def start_after_history(runner, *, flush, validate, replay_buffer=False):
         except Exception:
             runner.accept_bars = False
             raise
+
+
+def warm_history_window(service, *, calendar, instrument, before_ns, minutes, consume,
+                        phase="preopen", archive=None, archive_source="local-recording", label=""):
+    """加载完整单路窗口并调用业务预热；统一来源审计、归档过滤和失败日志。
+
+    consume只接收标准HistoryBar。允许覆盖不足与拒绝来源故障分别处理，
+    不调用实时策略，不填造分钟，也不改变服务的来源优先级或恢复阶段。
+    """
+    import json
+    from bomber.framework.dataprep.history import DolphinDbHistoryConfig, HistoryResult
+    if type(minutes) is not int or minutes < 0:
+        raise HistoryError("历史分钟数须为非负整数")
+    if phase not in {"preopen", "recovery"}:
+        raise HistoryError("历史阶段须为preopen/recovery")
+    if not minutes and archive is None:
+        print(f"{label}历史预热未启用: history_minutes=0，等待实时分钟积累窗口", flush=True)
+        return None
+    end = before_ns // MINUTE_NS * MINUTE_NS
+    stamps = history_stamps(calendar, end, minutes)
+    started = monotonic()
+    backend = archive_source if archive is not None else service.backend
+    print(f"{label}预热开始: instrument={instrument} phase={phase} backend={backend} "
+          f"required={len(stamps)} first_ns={stamps[0] if stamps else None} "
+          f"last_ns={stamps[-1] if stamps else None}", flush=True)
+    source = service.config if archive is None else None
+    if isinstance(source, DolphinDbHistoryConfig):
+        print(f"{label}历史数据源: endpoint={source.connection.host}:{source.connection.port} "
+              f"database={source.database} table={source.table}", flush=True)
+    try:
+        if archive is None:
+            result = service.load(str(instrument), stamps, phase=phase)
+            if service.backend in result.unavailable_sources:
+                raise HistoryUnavailable(f"历史行情源读取失败: {service.backend}；请检查连接和查询")
+        else:
+            allowed = set(stamps)
+            bars = tuple(bar for bar in archive.recent(before_ns=end, limit=minutes)
+                         if bar.ts_event in allowed)
+            if any(bar.instrument_id != str(instrument) for bar in bars):
+                raise HistoryError("本地历史归档与真实合约不一致")
+            found = {bar.ts_event for bar in bars}
+            missing = tuple(stamp for stamp in stamps if stamp not in found)
+            # 归档也报告完整请求窗口的实际覆盖，包括尚未录制的前段。
+            result = HistoryResult(bars, missing, (archive_source,), service.missing_policy == "allow")
+            service.last_audit = {"phase": "local-recording", "file": str(archive.path), **result.audit()}
+            service.audit_history = (getattr(service, "audit_history", []) + [service.last_audit])[-50:]
+            if missing and service.missing_policy == "fail":
+                raise HistoryUnavailable(f"本地历史窗口缺少{len(missing)}根完整分钟，首根ts_event={missing[0]}")
+        consume(result.bars)
+    except Exception as error:
+        print(f"{label}预热失败: instrument={instrument} phase={phase} required={len(stamps)} "
+              f"elapsed_seconds={monotonic()-started:.3f} error={type(error).__name__}: {error}", flush=True)
+        print(f"{label}历史读取审计: " + json.dumps(service.last_audit, ensure_ascii=False, default=str), flush=True)
+        raise
+    print(f"{label}历史加载完成: requested={len(stamps)} loaded={len(result.bars)} "
+          f"missing={len(result.missing)} phase={phase} sources={result.sources} "
+          f"elapsed_seconds={monotonic()-started:.3f}", flush=True)
+    if archive is not None:
+        print(f"{label}本地分钟恢复: file={archive.path} loaded={len(result.bars)} "
+              f"missing={len(result.missing)} recorded={archive.recorded_bars}", flush=True)
+    if result.missing:
+        print(f"{label}历史窗口存在真实缺口: first_ns={result.missing[0]} last_ns={result.missing[-1]}；"
+              "不补造分钟、不平移时间", flush=True)
+    return result
+
+
+def merge_history_rows(rows, *, calendar, before_ns, minutes, event_ns):
+    """按已完成交易分钟合并业务行；业务提供时间映射，相同分钟冲突失败。"""
+    expected = set(history_stamps(calendar, before_ns // MINUTE_NS * MINUTE_NS, minutes))
+    selected = {}
+    for row in rows:
+        stamp = event_ns(row)
+        if type(stamp) is not int or (stamp+1) % MINUTE_NS:
+            raise HistoryError("窗口行须对应完整分钟末纳秒")
+        if stamp not in expected:
+            continue
+        if stamp in selected and selected[stamp] != row:
+            raise HistoryError(f"持续窗口与历史源同一分钟内容冲突: ts_event={stamp}")
+        selected[stamp] = row
+    return tuple(selected[stamp] for stamp in sorted(selected))
