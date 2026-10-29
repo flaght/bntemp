@@ -155,9 +155,17 @@ class TradingHistoryTests(unittest.TestCase):
         history=import_module('demos.10_hybrid_transformer.history')
         source=import_module('bomber.framework.dataprep.history.dolphindb')
         config_path=ROOT/'demos/10_hybrid_transformer/history_rb.json'
+        def current_frame(points):
+            converted=[]
+            for point in points:
+                point=dict(point)
+                label='2026-10-16 '+point.pop('history_time')
+                point['history_time_ns']=ns(label)+8*3600*10**9
+                converted.append(point)
+            return pd.DataFrame(converted)
         sdk=Mock()
         sdk.connect.return_value=True
-        sdk.run.return_value=pd.DataFrame([row('21:00:00.000',2),row('21:01:00.000',5)])
+        sdk.run.return_value=current_frame([row('21:00:00.000',2),row('21:01:00.000',5)])
         predictor=NS(warm_history=Mock(return_value=2),on_bar=Mock())
         from tests.test_dolphindb_connections import SPLIT
         with patch.dict('os.environ', SPLIT, clear=True):
@@ -178,7 +186,7 @@ class TradingHistoryTests(unittest.TestCase):
         self.assertEqual(runner.history_last_ns,ns('2026-10-16 21:02')-1)
         self.assertIn('dolphindb',output.getvalue())
         predictor.warm_history.reset_mock()
-        sdk.run.return_value=pd.DataFrame([row('21:00:00.000',2),row('21:01:00.000',5,99000)])
+        sdk.run.return_value=current_frame([row('21:00:00.000',2),row('21:01:00.000',5,99000)])
         with patch.object(source,'_session_factory',lambda **kwargs:sdk),redirect_stdout(StringIO()) as output:
             with self.assertRaisesRegex(HistoryError,'VWAP'):
                 history.warm_history(runner,product='RB',history_minutes=2)

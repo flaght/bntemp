@@ -1,6 +1,6 @@
 {
-  "database": "dfs://min_bar",
-  "table": "shfe_1min",
+  "database": "dfs://ctp",
+  "table": "bar_1min_shfe",
   "columns": {
     "instrument_id": "Code",
     "open": "open",
@@ -19,5 +19,6 @@
   "time_label": "start",
   "instrument_format": "symbol",
   "venue": "SHFE",
-  "volume_mode": "cumulative"
+  "volume_mode": "cumulative",
+  "time_column_kind": "timestamp"
 }

@@ -130,11 +130,12 @@ class NativeEnums:
             object.__setattr__(self, name, MappingProxyType(dict(getattr(self, name))))
 
     @classmethod
-    def from_module(cls, rp):
-        """仅从已加载且确认同版的模块读取枚举；不回退到未知整数。"""
+    def from_module(cls, rp, *, status_name='status_t'):
+        """仅读取显式指定的真实导出名；不自动尝试别名或猜整数。"""
+        status = getattr(rp, _text(status_name, 'status enum name'))
         return cls(
             {rp.OrderMsg_dir_t.Buy: 'BUY', rp.OrderMsg_dir_t.Sell: 'SELL'},
-            {getattr(rp.status_t, name): name for name in
+            {getattr(status, name): name for name in
              ('Blank', 'Submited', 'Acked', 'FullFilled', 'Rejected', 'Cancelled')},
             {rp.OrderMsg_offset_t.Open: 'OPEN', rp.OrderMsg_offset_t.Close: 'CLOSE',
              rp.OrderMsg_offset_t.CloseToday: 'CLOSE_TODAY', rp.OrderMsg_offset_t.CloseYd: 'CLOSE_YESTERDAY'},

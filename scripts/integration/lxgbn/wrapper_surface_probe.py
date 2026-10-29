@@ -12,6 +12,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import runpy
 import struct
 import sys
 
@@ -34,7 +35,7 @@ ENUMS = ('OrderType', 'OrderMsg_dir_t', 'OrderMsg_offset_t',
          'HedgeFlag_type_t', 'OrderMsg_attr_t', 'status_t', 'bar_time_unit_t')
 
 
-def collect_report(lib_dir):
+def collect_report(lib_dir, *, with_bomber=False):
     directory = Path(lib_dir).resolve()
     report = {'schema_version': 1, 'scope': 'wrapper_surface_only',
               'python': platform.python_version(), 'platform': sys.platform,
@@ -43,6 +44,9 @@ def collect_report(lib_dir):
               'required_names_present': False,
               'not_verified': ['函数调用/返回语义', '回调参数数量', '字段实际值/单位',
                                '身份与查询完整性', '线程/GIL', '真实交易']}
+    if with_bomber:
+        report['scope'] = 'wrapper_and_bomber_values'
+        report['coexistence_ready'] = False
     previous = list(sys.path)
     handle = None
     try:
@@ -87,6 +91,11 @@ def collect_report(lib_dir):
         required = ('sendOrder', 'cancelOrder', 'getOrder',
                     'onOrderAck', 'onOrderFill', 'onOrderFinished')
         report['required_names_present'] = all(report['methods'][n]['present'] for n in required)
+        if with_bomber and report['required_names_present']:
+            # DLL 搜索句柄保持到 Bomber 数值检查完成；不注入项目源码。
+            probe = runpy.run_path(str(Path(__file__).with_name('native_value_probe.py')))
+            report['bomber_values'] = probe['collect_report']()
+            report['coexistence_ready'] = report['bomber_values']['native_values_ready'] is True
     except Exception as error:
         report.update(error_type=type(error).__name__, error=str(error))
     finally:
@@ -100,8 +109,10 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--lib-dir', required=True)
     parser.add_argument('--output')
+    parser.add_argument('--with-bomber', action='store_true',
+                        help='加载厂商库后在同一进程运行已安装 Bomber 的数值检查')
     args = parser.parse_args(argv)
-    report = collect_report(args.lib_dir)
+    report = collect_report(args.lib_dir, with_bomber=args.with_bomber)
     payload = json.dumps(report, ensure_ascii=False, indent=2) + '\n'
     if args.output:
         output = Path(args.output)
@@ -109,9 +120,11 @@ def main(argv=None):
         output.write_text(payload, encoding='utf-8')
         print(str(output.resolve()))
         print('Required wrapper names: ' + ('PRESENT' if report['required_names_present'] else 'MISSING/BLOCKED'))
+        if args.with_bomber:
+            print('Same-process native values: ' + ('PASS' if report['coexistence_ready'] else 'BLOCKED'))
     else:
         print(payload, end='')
-    return 0 if report['required_names_present'] else 1
+    return 0 if report.get('coexistence_ready', report['required_names_present']) else 1
 
 
 if __name__ == '__main__':

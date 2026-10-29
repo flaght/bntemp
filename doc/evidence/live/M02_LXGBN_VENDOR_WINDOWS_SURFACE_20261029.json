@@ -1,0 +1,238 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-29",
+  "scope": "user_provided_windows_wrapper_surface",
+  "source": "User-provided Windows console report; wrapper_surface_probe executed against installed wheel verification Python.",
+  "verified": [
+    "Windows CPython 3.12.15 x64 imports new stgWrapper hash",
+    "Required six Python names present",
+    "Exposed callback signatures 2/3/2 excluding self",
+    "Reported Order/Trade attributes and enum values"
+  ],
+  "not_verified": [
+    "Meaning of sendOrder int result and argument units",
+    "Fixed limit-price and position-effect submission",
+    "Actual callback execution, GIL, dispatching",
+    "Trade timestamp and missing identity/attribute facts",
+    "Binding snapshot and delivery boundary",
+    "Co-loading wrapper and Bomber native values",
+    "Real orders"
+  ],
+  "reported": {
+    "schema_version": 1,
+    "scope": "wrapper_surface_only",
+    "python": "3.12.15",
+    "platform": "win32",
+    "bits": 64,
+    "executable": "D:\\lxgbn-test\\wheel-verify-20261021\\Scripts\\python.exe",
+    "lib_dir": "D:\\bomber\\IndexFutStg\\lib",
+    "methods": {
+      "initialize": {
+        "present": true,
+        "doc": "\ninitialize( (IPyStrategy)arg1, (str)arg2, (ITradeEnv)arg3) -> bool :\n\n    C++ signature :\n        bool initialize(class IPyStrategyWrap {lvalue},class std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> >,class bomber::api::ITradeEnv * __ptr64)"
+      },
+      "subInstrument": {
+        "present": true,
+        "doc": "\nsubInstrument( (IPyStrategy)arg1, (str)arg2) -> bool :\n\n    C++ signature :\n        bool subInstrument(class IPyStrategy {lvalue},class std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> >)"
+      },
+      "subBar": {
+        "present": true,
+        "doc": "\nsubBar( (IPyStrategy)arg1, (str)arg2, (bar_time_unit_t)arg3) -> bool :\n\n    C++ signature :\n        bool subBar(class IPyStrategy {lvalue},class std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> >,enum bomber::api::bar_time_unit_t)"
+      },
+      "get_product": {
+        "present": true,
+        "doc": "\nget_product( (IPyStrategy)arg1, (str)arg2) -> str :\n\n    C++ signature :\n        class std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> > get_product(class IPyStrategy {lvalue},class std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> >)"
+      },
+      "sendOrder": {
+        "present": true,
+        "doc": "\nsendOrder( (IPyStrategy)arg1, (str)arg2, (OrderMsg_dir_t)arg3, (int)arg4, (int)arg5, (OrderType)arg6, (int)arg7) -> int :\n\n    C++ signature :\n        int sendOrder(class IPyStrategy {lvalue},class std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> >,enum bomber::api::OrderMsg_dir_t,__int64,unsigned __int64,enum bomber::api::EnumAlgoOrderType,int)"
+      },
+      "cancelOrder": {
+        "present": true,
+        "doc": "\ncancelOrder( (IPyStrategy)arg1, (int)arg2) -> bool :\n\n    C++ signature :\n        bool cancelOrder(class IPyStrategy {lvalue},int)"
+      },
+      "getOrder": {
+        "present": true,
+        "doc": "\ngetOrder( (IPyStrategy)arg1, (int)arg2) -> Order :\n\n    C++ signature :\n        class std::shared_ptr<struct bomber::common::OrderMsg_t> getOrder(class IPyStrategy {lvalue},int)"
+      },
+      "onOrderAck": {
+        "present": true,
+        "doc": "\nonOrderAck( (IPyStrategy)arg1, (int)arg2, (Order)i) -> None :\n\n    C++ signature :\n        void onOrderAck(class IPyStrategy {lvalue},int,class std::shared_ptr<struct bomber::common::OrderMsg_t>)\n\nonOrderAck( (IPyStrategy)arg1, (int)arg2, (Order)i) -> None :\n\n    C++ signature :\n        void onOrderAck(class IPyStrategyWrap {lvalue},int,class std::shared_ptr<struct bomber::common::OrderMsg_t>)"
+      },
+      "onOrderFill": {
+        "present": true,
+        "doc": "\nonOrderFill( (IPyStrategy)arg1, (int)arg2, (Order)arg3, (Trade)i) -> None :\n\n    C++ signature :\n        void onOrderFill(class IPyStrategy {lvalue},int,class std::shared_ptr<struct bomber::common::OrderMsg_t>,class std::shared_ptr<struct bomber::common::ExecutionMsg_t>)\n\nonOrderFill( (IPyStrategy)arg1, (int)arg2, (Order)arg3, (Trade)i) -> None :\n\n    C++ signature :\n        void onOrderFill(class IPyStrategyWrap {lvalue},int,class std::shared_ptr<struct bomber::common::OrderMsg_t>,class std::shared_ptr<struct bomber::common::ExecutionMsg_t>)"
+      },
+      "onOrderFinished": {
+        "present": true,
+        "doc": "\nonOrderFinished( (IPyStrategy)arg1, (int)arg2, (Order)i) -> None :\n\n    C++ signature :\n        void onOrderFinished(class IPyStrategy {lvalue},int,class std::shared_ptr<struct bomber::common::OrderMsg_t>)\n\nonOrderFinished( (IPyStrategy)arg1, (int)arg2, (Order)i) -> None :\n\n    C++ signature :\n        void onOrderFinished(class IPyStrategyWrap {lvalue},int,class std::shared_ptr<struct bomber::common::OrderMsg_t>)"
+      },
+      "onMarketData": {
+        "present": true,
+        "doc": "\nonMarketData( (IPyStrategy)arg1, (MarketData)i) -> None :\n\n    C++ signature :\n        void onMarketData(class IPyStrategyWrap {lvalue},class std::shared_ptr<struct bomber::common::MdMsg_t>)\n\nonMarketData( (IPyStrategy)arg1, (MarketData)i) -> None :\n\n    C++ signature :\n        void onMarketData(class IPyStrategyWrap {lvalue},class std::shared_ptr<struct bomber::common::MdMsg_t>)"
+      },
+      "onBar": {
+        "present": true,
+        "doc": "\nonBar( (IPyStrategy)arg1, (BarData)i) -> None :\n\n    C++ signature :\n        void onBar(class IPyStrategyWrap {lvalue},class std::shared_ptr<struct bomber::api::Bar>)\n\nonBar( (IPyStrategy)arg1, (BarData)i) -> None :\n\n    C++ signature :\n        void onBar(class IPyStrategyWrap {lvalue},class std::shared_ptr<struct bomber::api::Bar>)"
+      },
+      "onBatchBar": {
+        "present": true,
+        "doc": "\nonBatchBar( (IPyStrategy)arg1, (str)arg2, (int)arg3, (BarData)arg4, (bool)i) -> None :\n\n    C++ signature :\n        void onBatchBar(class IPyStrategyWrap {lvalue},class std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> >,unsigned __int64,class std::shared_ptr<struct bomber::api::Bar>,bool)\n\nonBatchBar( (IPyStrategy)arg1, (str)arg2, (int)arg3, (BarData)arg4, (bool)i) -> None :\n\n    C++ signature :\n        void onBatchBar(class IPyStrategyWrap {lvalue},class std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> >,unsigned __int64,class std::shared_ptr<struct bomber::api::Bar>,bool)"
+      },
+      "onBatchBars": {
+        "present": true,
+        "doc": "\nonBatchBars( (IPyStrategy)arg1, (pyBatchBar)i) -> None :\n\n    C++ signature :\n        void onBatchBars(class IPyStrategyWrap {lvalue},class std::map<class std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> >,struct bomber::api::Bar,struct std::less<class std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> > >,class std::allocator<struct std::pair<class std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> > const ,struct bomber::api::Bar> > >)\n\nonBatchBars( (IPyStrategy)arg1, (pyBatchBar)i) -> None :\n\n    C++ signature :\n        void onBatchBars(class IPyStrategyWrap {lvalue},class std::map<class std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> >,struct bomber::api::Bar,struct std::less<class std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> > >,class std::allocator<struct std::pair<class std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> > const ,struct bomber::api::Bar> > >)"
+      },
+      "onIVData": {
+        "present": true,
+        "doc": "\nonIVData( (IPyStrategy)arg1, (IVData)i) -> None :\n\n    C++ signature :\n        void onIVData(class IPyStrategyWrap {lvalue},class std::shared_ptr<struct bomber::common::IVUpdate_t>)\n\nonIVData( (IPyStrategy)arg1, (IVData)i) -> None :\n\n    C++ signature :\n        void onIVData(class IPyStrategyWrap {lvalue},class std::shared_ptr<struct bomber::common::IVUpdate_t>)"
+      },
+      "onGreeksData": {
+        "present": true,
+        "doc": "\nonGreeksData( (IPyStrategy)arg1, (GreeksData)i) -> None :\n\n    C++ signature :\n        void onGreeksData(class IPyStrategyWrap {lvalue},class std::shared_ptr<struct bomber::common::GreeksUpdate_t>)\n\nonGreeksData( (IPyStrategy)arg1, (GreeksData)i) -> None :\n\n    C++ signature :\n        void onGreeksData(class IPyStrategyWrap {lvalue},class std::shared_ptr<struct bomber::common::GreeksUpdate_t>)"
+      }
+    },
+    "fields": {
+      "Order": {
+        "Id": true,
+        "GetInst": true,
+        "direction": true,
+        "price": true,
+        "volumePlanned": true,
+        "volumeSubmitted": true,
+        "volumeTraded": true,
+        "volumeCancelled": true,
+        "offset": true,
+        "hedgeFlag": true,
+        "status": true,
+        "timestampSubmitted": true,
+        "timestampAck": true,
+        "timestampCancelled": true,
+        "strategyId": true,
+        "portfolioId": true,
+        "accountId": false,
+        "attribute": false,
+        "errorMsg": false,
+        "isAlgoOrder": false
+      },
+      "Trade": {
+        "tradeId": true,
+        "orderId": true,
+        "price": true,
+        "volume": true,
+        "direction": true,
+        "offset": true,
+        "strategyId": true,
+        "accountId": false,
+        "hedgeFlag": false,
+        "timestamp": false,
+        "GetInst": false
+      }
+    },
+    "enums": {
+      "OrderType": [
+        {
+          "python_name": "OrderType",
+          "values": {
+            "EnumDefault": 0,
+            "EnumTWap": 1,
+            "EnumVWap": 2,
+            "EnumSimpleTWap": 3,
+            "EnumHitMarket": 4,
+            "EnumDirectOrder": 5,
+            "EnumNTDirectOrder": 6
+          }
+        }
+      ],
+      "OrderMsg_dir_t": [
+        {
+          "python_name": "OrderMsg_dir_t",
+          "values": {
+            "Buy": 1,
+            "Sell": -1,
+            "UnknownDirection": 0
+          }
+        }
+      ],
+      "OrderMsg_offset_t": [
+        {
+          "python_name": "OrderMsg_offset_t",
+          "values": {
+            "Open": 1,
+            "Close": 20,
+            "CloseToday": 22,
+            "CloseYd": 21,
+            "UnknownOffset": 0
+          }
+        }
+      ],
+      "HedgeFlag_type_t": [
+        {
+          "python_name": "HedgeFlag_type_t",
+          "values": {
+            "Speculation": 49,
+            "Arbitrage": 50,
+            "Hedge": 51,
+            "Unknown": 0
+          }
+        }
+      ],
+      "OrderMsg_attr_t": [
+        {
+          "python_name": "OrderMsg_attr_t ",
+          "values": {
+            "Normal": 1,
+            "FAK": 2,
+            "FOK": 3,
+            "Market": 4,
+            "UnknownAttr": 0
+          }
+        }
+      ],
+      "status_t": [
+        {
+          "python_name": "status_t ",
+          "values": {
+            "Blank": 0,
+            "Submited": 1,
+            "Acked": 2,
+            "FullFilled": 4,
+            "Rejected": 8,
+            "Cancelled": 16
+          }
+        }
+      ],
+      "bar_time_unit_t": [
+        {
+          "python_name": "bar_time_unit_t",
+          "values": {
+            "unknow_time_unit": 0,
+            "S1": 1,
+            "S5": 2,
+            "S10": 10,
+            "S15": 3,
+            "M1": 4,
+            "M5": 5,
+            "M15": 6,
+            "M30": 7,
+            "H1": 8,
+            "D1": 9,
+            "W1": 20,
+            "TMax": 11
+          }
+        }
+      ]
+    },
+    "required_names_present": true,
+    "not_verified": [
+      "函数调用/返回语义",
+      "回调参���数量",
+      "字段实际值/单位",
+      "身份与查询完整性",
+      "线程/GIL",
+      "真实交易"
+    ],
+    "module_file": "D:\\bomber\\IndexFutStg\\lib\\stgWrapper.pyd",
+    "sha256": "089dae4773e4034cbb9c8714c0b8eb2406b084030d9935fbb584df0bc9ede7d0"
+  }
+}

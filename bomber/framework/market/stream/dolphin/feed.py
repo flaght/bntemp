@@ -17,8 +17,8 @@ from bomber.framework.market.native.dolphin import (
     NativeDolphinSubscription,
     create_native_driver,
 )
-from bomber.framework.market.stream.dolphin.config import DolphinDbConfig, DolphinDbStreamSpec, BAR_REQUIRED_COLUMNS
-from bomber.framework.market.stream.dolphin.converter import ConvertedEvent, DolphinDbMarketConverter
+from bomber.framework.market.stream.dolphin.config import DolphinDbConfig, DolphinDbStreamSpec, BAR_REQUIRED_COLUMNS, BAR_STATE_REQUIRED_COLUMNS
+from bomber.framework.market.stream.dolphin.converter import ConvertedEvent, DolphinDbMarketConverter, DolphinDbMinuteStateBuffer
 
 
 logger = logging.getLogger("DolphinDbLiveDataFeed")
@@ -46,6 +46,7 @@ class DolphinDbLiveDataFeed(StreamDataFeed):
         self._driver_factory = driver_factory
         self._driver: DolphinDbDriver | None = None
         self._converter = DolphinDbMarketConverter()
+        self._minute_states = DolphinDbMinuteStateBuffer()
         self._symbol_to_instrument: dict[str, InstrumentId] = {}
         self._ready = threading.Event()
         self._observation_lock = threading.RLock()
@@ -131,7 +132,8 @@ class DolphinDbLiveDataFeed(StreamDataFeed):
                     batch_size=spec.batch_size,
                     throttle=spec.throttle,
                     filter=spec.filter,
-                    required_columns=BAR_REQUIRED_COLUMNS if spec.auto_schema else (),
+                    required_columns=(BAR_STATE_REQUIRED_COLUMNS if spec.bar_mode == "state" else BAR_REQUIRED_COLUMNS)
+                        if spec.auto_schema else (),
                 )
                 driver.subscribe(
                     native,
@@ -154,6 +156,7 @@ class DolphinDbLiveDataFeed(StreamDataFeed):
             driver.stop()
         self._driver = None
         self._converter.reset()
+        self._minute_states.reset()
 
     def _on_subscription_added(self, request: SubscriptionRequest) -> None:
         self._validate_request(request)
@@ -187,9 +190,19 @@ class DolphinDbLiveDataFeed(StreamDataFeed):
             if spec.kind == "tick":
                 converted = self._converter.convert_tick(row, instrument_id, meta)
             else:
-                converted = self._converter.convert_bar(row, instrument_id, meta, spec.bar_spec,
-                    volume_mode=spec.volume_mode,
-                    received_ns=time.time_ns() if spec.local_receipt_time else None)
+                with self._observation_lock:
+                    received = time.time_ns()
+                    if spec.bar_mode == "state":
+                        self._latest_received_ns = received
+                        rows = self._minute_states.push((spec.table_name, instrument_id), row, received_ns=received)
+                    else:
+                        rows = (row,)
+                    converted = []
+                    for closed_row in rows:
+                        converted.extend(self._converter.convert_bar(closed_row, instrument_id, meta, spec.bar_spec,
+                            volume_mode=spec.volume_mode,
+                            received_ns=received if spec.local_receipt_time else None,
+                            timestamp_field="barTime" if spec.bar_mode == "state" else None))
             for item in converted:
                 if self._is_subscribed(instrument_id, item):
                     with self._observation_lock:

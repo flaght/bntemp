@@ -331,6 +331,18 @@ class WrapperAdapterTests(unittest.TestCase):
         with self.assertRaises(AttributeError):
             self.a.NativeEnums.from_module(rp)
 
+    def test_confirmed_tail_space_export_can_be_explicitly_selected(self):
+        rp = NS(**vars(self.rp))
+        setattr(rp, 'status_t ', rp.status_t)
+        del rp.status_t
+        enums = self.a.NativeEnums.from_module(rp, status_name='status_t ')
+        self.assertEqual(enums.read('status', Status.Cancelled), 'Cancelled')
+        copies = self.a.NativeCallbackCopies(self.links, enums, instrument_code='rb2701',
+            strategy_id=42, quantity_field='volumeSubmitted', read_facts=lambda *args: self.fact)
+        self.links.register(self.command())
+        snapshot, _ = copies.copy('ack', 1, self.order())
+        self.assertEqual(snapshot.status, 'Acked')
+
     def test_bar_copy_is_independent_with_explicit_time_and_period(self):
         copies = self.a.NativeBarCopies(instrument_code='rb2701', instrument_id='rb2701.SHFE',
             bar_specs={'native-M1': '1-MINUTE'}, timestamp_ns=lambda raw: raw.timeStamp * 1000,

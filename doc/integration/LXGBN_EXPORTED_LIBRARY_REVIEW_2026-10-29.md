@@ -8,16 +8,41 @@
 
 **重编译后更新：主 pyd 已替换为新哈希 `089dae4773e4034cbb9c8714c0b8eb2406b084030d9935fbb584df0bc9ede7d0`。** 六个报撤单/回调 Python 名称和 EnumNTDirectOrder 均已出现，回调 C++ 符号新增整数参数，发送符号也新增整数参数。此前“缺少这些名称/旧回调”的发现针对旧哈希，不再直接套用于新文件。静态对照见 [新库检查记录](../evidence/live/M02_LXGBN_VENDOR_REBUILT_20261029.json)；实际 Python 签名、字段、返回语义和线程仍需 Windows 检查，枚举尾空格尚在。
 
+**Windows 导出检查已完成：**用户在 CPython 3.12.15 x64 的 wheel 验证环境中成功导入 `D:\bomber\IndexFutStg\lib\stgWrapper.pyd`，哈希与新库一致，六个接口均存在；[运行报告](../evidence/live/M02_LXGBN_VENDOR_WINDOWS_SURFACE_20261029.json) 保存原始 docstring、字段及枚举结果。以下第 3 节旧/新库对照是历史定位证据，不再表示当前库无法导入。
+
+| 本次运行确认 | 实际结果及影响 |
+| --- | --- |
+| 三个回调 | 去掉 self 后确为 2/3/2 参数，C++ 返回 void；只确认导出签名，尚未触发真实回调 |
+| sendOrder | `(str, OrderMsg_dir_t, int64, uint64, OrderType, int) -> int`；样例将中间数值作为手数和时间，真实单位/返回语义仍需确认；没有显式独立限价/开平参数 |
+| cancelOrder / getOrder | `(int) -> bool` / `(int) -> Order`；int 的 ID 口径及 bool/不存在含义仍待确认 |
+| 枚举尾空格 | `status_t ` 和 `OrderMsg_attr_t ` 确实存在；组件现支持 `NativeEnums.from_module(rp, status_name='status_t ')` 显式配置，不自动尝试别名或改写原生模块 |
+| Order 缺失字段 | accountId/attribute/errorMsg/isAlgoOrder 均为 false，不能把模块中 attribute 字符串当作 Order.attribute |
+| Trade 缺失字段 | accountId/hedgeFlag/timestamp/GetInst 均为 false，真实成交时间等事实仍需补充 |
+| get_product | 返回 str，不能用 `get_product(code).tickSize`；Product 类型虽在 cpp 导出，如何取得完整产品对象/跳价仍需确认 |
+
+**同进程检查也已完成：**[完整 Windows 证据](../evidence/live/M02_LXGBN_WINDOWS_COEXISTENCE_20261029.json) 确认先加载上述新 stgWrapper 后，Bomber 四项导入及四项原生行情数值检查全部通过，`coexistence_ready=true`。8 个 Bomber 模块来源均在验证 venv 的 site-packages，未注入源码目录。该测试没有调用 Start/initialize/交易方法，不替代实际 LXGBN 宿主回调、只读绑定或报撤单验收。
+
+### 用户补充：线程、调度与重启方式
+
+| 用户提供的信息 | 本次接线采用的含义 |
+| --- | --- |
+| 回调由 C++ 创建的线程触发 | Python 不创建原生回调线程；复制有效期内的对象并转交现有回调桥。尚不能据此推断回调只有一个线程或跨线程有序 |
+| 报单、撤单、查询允许任何线程调用 | 可由 Python 侧选择的单一 owner 线程调用原生方法；不再要求 LXGBN 提供专用发送线程。现有 Bomber 会话仍要求生命周期、行情、poll 在同一线程 |
+| 定时调度由 Python 侧决定 | 接入侧统一安排 owner 线程/事件循环和定时 poll，原生行情在有效期内复制后投递给 owner；无需另向原生方索要 timer API |
+| 退出整个进程，再重启进程 | 采用进程重启作为重新初始化方式，不要求原生提供同进程卸载/重建能力。计划内先执行 SDK 停止核对；直接退出或异常退出则按检查点及原生查询只读恢复，不能假定活动单已撤或未决请求未发送 |
+
+这些是用户补充的接口约束，不等于原生线程/GIL 实机测试已通过。C++ 负责创建线程与执行 Python override 时取得所属解释器的 GIL 是两个环节；当前导出文件没有回调实现，因此仍需确认绑定层已处理 GIL、异常及对象有效期。该项不会转嫁为 Python 创建 C++ 回调线程。
+
 ## 1. 结论
 
 **集成位置已经明确：用一个继承 `stgWrapper.IPyStrategy` 的薄包装，持有现有 Bomber SDK 会话。策略算法继续使用 StrategyTemplate，原生报撤单回到包装层。** 不需要 HTTP 服务、另一个策略引擎或新的通用插件体系。
 
 但当前交付还不能证明能直接接上现有 M02。主要有四个缺口：
 
-1. **旧库导出不一致的主要静态症状已在重编译后修正。** 新主 pyd 已找到 sendOrder/cancelOrder/getOrder、三个回调和 EnumNTDirectOrder；回调符号与 2/3/2 形态一致，但仍须在 Windows 导入后读取真实成员、签名及返回语义，不据此判定全部 ABI 已验收。
+1. **旧库的接口缺失问题已通过重编译及 Windows 导入检查。** 新主 pyd 已确认六个方法和 2/3/2 回调声明；尚待实际回调执行、参数单位/返回语义，不据此判定全部 ABI 已验收。
 2. **例子的 sendOrder 调用不能表达当前 SDK 完整命令。** 样例只有合约、方向、数量、时间、OrderType、整数 ID；没有显式限价、开平、Normal、投机参数。缺失 IPyStrategyWrap.h，无法判断是否有可用重载及 EnumNTDirectOrder 的真实语义。
 3. **Order/Trade 字段完整性仍未确认。** 提供的 cpp 中尤其缺成交时间、成交合约/账户/投机属性、订单属性/拒绝原因，以及原生绑定身份和命名空间验证。新 pyd 出现 attribute 等名称，但不能用模块级字符串证明某个类已暴露该字段，须读取实际 Order/Trade 属性。
-4. **未见一致的策略归属/活动单/交付边界查询，也未见 owner 定时调度入口。** getOrder 单单查询、启动成功和本地回调计数不能替代这些能力。
+4. **未见一致的策略归属/活动单/交付边界查询。** getOrder 单单查询、启动成功和本地回调计数不能替代这些能力。owner 定时调度现已明确由 Python 侧负责，不再视为缺少原生接口。
 
 因此建议先做导出面确认，再做单合约只读接入；先不要改弱 Bomber 的快照/身份要求去迁就样例。此判断不推翻此前 Bomber wheel 在干净 Windows 3.12 环境的导入及数值验证；本次新增的是另一侧的原生接线问题。
 
@@ -177,7 +202,7 @@ class OrderCallbacks:
 
 复制函数读取上述实际小写字段，验证身份后返回 OrderSnapshot/FillSnapshot；一次 Fill 的两份快照共用一个 delivery_sequence。SDK 返回 False 时宿主记错、保留事实并停止新增执行；回调 True 只表示入队，随后 poll 才生成策略 `on_order(OrderUpdateEvent)` 和 `on_fill(FillEvent)`。
 
-原生 cpp 的 `args("i")` 不是 C++ 函数声明，不能仅凭它推断运行时到底有几个参数。必须核对 IPyStrategyWrap 的 override 是否把全部 clientOrderId/order/exec 转发，并确认 GIL、异常截获和原生对象存活期。
+原生 cpp 的 `args("i")` 不是 C++ 函数声明。Windows 报告现已确认导出声明为 2/3/2；仍须核对 IPyStrategyWrap 的真实调用是否把全部 clientOrderId/order/exec 转发，并确认 GIL、异常截获和原生对象存活期。C++ 回调返回 void，因此桥返回的 False 仅供 Python 包装层诊断，不能假定原生调用方收到 bool；故障时依靠 SDK 闭闸、bridge.last_error 和宿主记录/告警处理。
 
 ### 5.4 查询/快照缺口
 
@@ -189,11 +214,13 @@ class OrderCallbacks:
 
 ### 5.5 调度/GIL/停机
 
-样例只展示 onMarketData/onBar，没有普通定时回调、断线通知、停止通知及所属线程说明。只在行情到达时 poll，会导致无行情期间撤单/成交滞留，也无法可靠完成两阶段退出。
+已明确：C++ 创建回调线程，原生报撤单及查询可在任意线程调用，定时调度由 Python 侧决定，退出采用整个进程退出后重启。样例未展示断线通知、回调启动边界和 GIL 实现，这些仍待核实。只在行情到达时 poll 会导致无行情期间撤单/成交滞留，因此 Python 调度必须独立于行情到达。
 
-优先使用 LXGBN 已有的同线程 dispatcher/timer 驱动 start/authorize/on_market/poll/begin_stop/finish_stop；如果已有合法事件循环，就复用它。原生线程可调用三个 onOrder* 进行值复制入队；行情线程若不是 owner，需在宿主边界复制后投递给 owner。不要仅为方便启动一个 Python 线程调用全部方法，原生 sendOrder/cancelOrder 的线程约束尚未确认。
+接线方案为一个 Python owner 调度线程/事件循环串行驱动 start/authorize/on_market/poll/begin_stop/finish_stop，并调用原生发送、撤单和查询。可复用既有 Python 事件循环，或在实际包装中提供单一 Python 工作线程；不为每个回调另起线程。C++ 原生线程调用三个 onOrder* 只做值复制入队；行情若在非 owner 线程到达，先复制成普通值，再经宿主有界队列送 owner。原生允许任意线程调用不取消现有 SDK 对单线程调度和禁止重入的要求。
 
-还需确认外层等待/事件循环是否释放 GIL：原生回调等待 GIL，而 owner 持有 GIL 阻塞等待原生请求，会形成死锁。源码 stgWrapper.cpp 只列导出，无法证明 IPyStrategyWrap 已正确处理。finish_stop 成功后解除回调再释放对象，不直接用 rp.exit 代替回报收尾。
+仍需核对 C++ 线程进入 Python 时的 GIL/异常处理，以及同步原生调用会否持有 GIL 等待另一回调线程；线程可调用性本身不证明不存在这种等待。源码 stgWrapper.cpp 只列导出，无法证明 IPyStrategyWrap 已正确处理。
+
+正常停机在 Python owner 线程 begin_stop，继续回报和 poll，核对无活动单并保存后 finish_stop，再按宿主方式退出整个进程。若外部强制/异常退出，不能保证这段收尾执行；重启后不得删除检查点或重发未知单，仍需实际活动单/成交查询。现有 SDK 不自动接管活动单或未知发送，因此“进程重启”只解决运行环境重建，不代替交易恢复。
 
 ## 6. 行情、产品及样例自身需要修正的地方
 
@@ -205,7 +232,7 @@ class OrderCallbacks:
 | 时间单位 | MarketData.exchangeTSMicro 名称及样例除 1000000 提示可能为微秒；只是线索，不能统一乘 1000 前不确认时区/epoch。Bar 和订单/成交也要分别确认 |
 | Tick 成交量 | MarketData.volume 是否日累计未知；不能直接当 TradeTick 的逐笔 size，也不能凭 lastPrice 每次生成一笔真实成交 |
 | 首期行情选择 | 可先用真实 Bar（make_bar，显式 BarType/周期及历史标记处理）或一级 QuoteTick；bidPrice/bidVolume/askPrice/askVolume 是否数组需在类型/实际值确认后取对应档位，不假定标量 |
-| 价格元数据 | Product.tickSize/qtyTick/minOrdQty、Instrument.multiplier 可复用；区分最小跳价和显示精度；固定绑定订阅不能悄悄自动换月 |
+| 价格元数据 | cpp 的 Product 类型有 tickSize/qtyTick/minOrdQty，但运行报告确认 get_product 返回 str，不能直接从该方法获取 Product 对象；需确认真实取元数据路径。Instrument.multiplier 也需按实际取对象路径读取；区分跳价和显示精度，不悄悄自动换月 |
 | 样例业务交易路径 | onMarketData 每隔一段时间读取 CSV 并 sendTargetVol，会与 Bomber 目标执行并行；接入用新包装类，不保留这条原样发送路径 |
 | 空回调 | onOrderAck/Fill/Finished 直接 return，只是接口演示，必须真正转发 SDK |
 | 批量回调 | onBatchBar 定义在类外，不能据此认为覆盖了 pure_virtual；其他 onIVData/onGreeksData/onBatchBars 同样需核对是否可能触发 |
@@ -218,7 +245,7 @@ class OrderCallbacks:
 | 顺序 | 谁改/做什么 | 通过条件 |
 | --- | --- | --- |
 | 1 真实导出确认 | Windows 运行 wrapper_surface_probe，LXGBN 提供同版声明和发布库 | 六个方法真实存在，2/3/2 回调和 preallocated ID 可用；明确全部参数/返回语义 |
-| 2 原生最小补齐 | LXGBN 修正枚举尾空格，补普通限价参数/缺失快照事实、绑定只读查询和合法 dispatcher | 保留现有 SDK 契约即可完成标准报撤单/查询，不需虚构字段 |
+| 2 原生最小补齐 | LXGBN 补普通限价参数/缺失快照事实和绑定只读查询，明确 GIL/断线边界；枚举尾空格可用已确认的显式配置 | 保留 SDK 契约完成报撤单/查询；Python 负责 owner/定时调度，进程重启不能伪造已撤 |
 | 3 薄包装和离线回归 | 已实现可选 adapter 组件、真实字段名映射、Bar 值复制和 ID 表；原生函数及事实来源待注入 | 与厂商对象导出形状相同的替身回归已通过，缺失字段/错误类型显式失败；不代表真实 pyd 已验收 |
 | 4 只读实机 | 安装已通过的 Bomber wheel，在实际宿主运行探针，再启动真实空绑定但不授权/不输出目标 | 实际导入路径正确，行情可进策略、查询水位一致，报撤单次数为零 |
 | 5 一手测试闭环 | 测试账户显式授权，Normal/投机，完整转发回报 | ID 对应、实际量价开平和归属正确；先 on_order 后 on_fill；撤单真实收尾 |
@@ -228,11 +255,11 @@ class OrderCallbacks:
 
 ## 8. 下一步最需要的结果
 
-先拿到 `wrapper-surface.json` 和与该哈希一致的 `IPyStrategyWrap.h` / 原生报撤单与回调实现。还需要明确一次性列出：
+`wrapper-surface.json` 与同进程兼容报告均已获得并通过。本阶段不再重复编译或单独导入检查；下一步需要与当前哈希一致的 `IPyStrategyWrap.h` / 原生报撤单与回调实现，并明确：
 
 1. sendOrder 是否支持 SDK 预分配整数 ID、固定限价、开平、Normal/投机，何时可能同步回调，以及返回/超时语义。
 2. cancelOrder/getOrder 参数是 SDK ID 还是原生 ID；query_binding 可从哪项原生能力取得策略范围事实及边界。
 3. 真实 Order/Trade 全部字段和枚举映射，成交时间/属性/账户身份如何可靠取得，固定委托量使用哪个字段。
-4. initialize 后回调可能何时开始、是否会交付历史事件；owner 定时调度、断线通知和 GIL/退出如何工作。
+4. initialize 后回调何时开始、是否交付历史事件，断线如何识别，以及原生绑定进入 Python 时的 GIL/异常处理。C++ 回调线程来源、任意线程调用原生方法、Python 负责调度及进程退出重启方式已得到用户答复，不重复索要。
 
 先解决这些具体缺口即可推进，不扩大到全账户风控重写、算法交易、多策略合并或 BN。此前 D5/GAP10 的整体状态仍以实际链路和验收证据为准。

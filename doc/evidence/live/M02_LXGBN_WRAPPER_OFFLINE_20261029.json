@@ -3,10 +3,10 @@
   "date": "2026-10-29",
   "scope": "optional_wrapper_components_offline",
   "result": "passed",
-  "tests_total": 88,
-  "new_adapter_tests": 22,
-  "command": "PYTHONPYCACHEPREFIX=/tmp/m02-pycache /Users/kerry/.local/bin/python3.12 -m unittest tests.test_lxgbn_wrapper_adapter tests.test_lxgbn_execution tests.test_execution_composition -q",
-  "observed_summary": "Ran 88 tests in 3.040s; OK",
+  "tests_total": 91,
+  "new_adapter_tests": 23,
+  "command": "PYTHONPYCACHEPREFIX=/tmp/m02-pycache /Users/kerry/.local/bin/python3.12 -m unittest tests.test_lxgbn_surface_probe tests.test_lxgbn_wrapper_adapter tests.test_lxgbn_execution tests.test_execution_composition -q",
+  "observed_summary": "Ran 91 tests in 3.198s; OK",
   "native_boundary": "Vendor-shaped mutable Order/Trade and non-default IntEnum test doubles; no stgWrapper import or Windows binary execution. SDK Runner/OMS/risk/attribution/JSON persistence are actual implementation; native market types are controlled fixtures.",
   "implemented": [
     "pre-send command links",
@@ -28,8 +28,22 @@
     "real orders and callbacks"
   ],
   "sha256": {
-    "scripts/integration/lxgbn/stg_wrapper_adapter.py": "3635cd552d0413061d7058dbdc217346cc291e02daf117d8a96a69cc821a14cd",
-    "tests/test_lxgbn_wrapper_adapter.py": "a8376404b2b5442650c4676256fd5c6492fad33eee1bff90b2a0faeb7ec8c4f1",
-    "scripts/integration/lxgbn/STG_WRAPPER_ADAPTER.md": "01c6fe9eb8686c207e852fcd7de7adedd173b595dc7d25960610b138ddd3fab7"
-  }
+    "scripts/integration/lxgbn/stg_wrapper_adapter.py": "b07774495af6b893a99bf76255d464e948cfe22a921c0d5e5f759c1a713eadc2",
+    "tests/test_lxgbn_wrapper_adapter.py": "ab4c38dc181ccd33b1c7a2b8233de506abb23fd88665d86169e25dcad9ca617e",
+    "scripts/integration/lxgbn/STG_WRAPPER_ADAPTER.md": "5d251518b36350e472ac2f52f8ea7d4632cd9c3e803f444bca8f080fa700ef60",
+    "scripts/integration/lxgbn/wrapper_surface_probe.py": "01115e20f44e53c57188cebdfedc84579399f501af8cd6cc422f9f2c414c0a0c",
+    "tests/test_lxgbn_surface_probe.py": "56b52bcf361b62345986b629a71817dc1241351525eeabf5c8a64be9ee1195e5"
+  },
+  "previous_run": {
+    "tests_total": 88,
+    "new_adapter_tests": 22,
+    "command": "PYTHONPYCACHEPREFIX=/tmp/m02-pycache /Users/kerry/.local/bin/python3.12 -m unittest tests.test_lxgbn_wrapper_adapter tests.test_lxgbn_execution tests.test_execution_composition -q",
+    "observed_summary": "Ran 88 tests in 3.040s; OK",
+    "sha256": {
+      "scripts/integration/lxgbn/stg_wrapper_adapter.py": "3635cd552d0413061d7058dbdc217346cc291e02daf117d8a96a69cc821a14cd",
+      "tests/test_lxgbn_wrapper_adapter.py": "a8376404b2b5442650c4676256fd5c6492fad33eee1bff90b2a0faeb7ec8c4f1",
+      "scripts/integration/lxgbn/STG_WRAPPER_ADAPTER.md": "01c6fe9eb8686c207e852fcd7de7adedd173b595dc7d25960610b138ddd3fab7"
+    }
+  },
+  "surface_probe_tests": 2
 }
