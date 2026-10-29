@@ -2,7 +2,7 @@
 
 这份说明针对当前的 [run_live.py](../../../demos/10_hybrid_transformer/run_live.py)，按实际调用顺序解释组装过程。建议一边打开源码，一边按本文顺序阅读。
 
-核对日期：2026-10-28，Asia/Shanghai。
+核对日期：2026-10-29，Asia/Shanghai。
 
 源码中先出现一个函数或类，只表示它已定义；它什么时候被调用，要看 `main()` 和 `ManagedLiveRuntime` 的执行顺序。
 
@@ -45,7 +45,7 @@ flowchart LR
 
 Recording不撮合成交，也不创建TD交易通道。CTP行情仍需要MD配置；两种行情路径读取主力与合约参考资料时都使用DolphinDB。
 
-本版本每个会话固定一个品种和一个主力合约，执行范围为SHFE/INE。参考角色或条款发生变化时由现有守卫关闭处理闸门，尚未实现跨交易日自动重登录或自动换月。
+本版本每个会话固定一个品种和一个主力合约，执行范围为SHFE/INE。参考角色或条款发生变化时由现有守卫关闭处理闸门，`--run-forever`可按日历休市等待、跨交易日重登录；有旧批次时不自动移到新主力。
 
 ## 3. 第一次看代码，先认识这些对象
 
@@ -84,7 +84,7 @@ Recording不撮合成交，也不创建TD交易通道。CTP行情仍需要MD配�
 
 1. `load_dotenv()`加载环境设置。
 2. `parse_args(argv)`解析命令行并完成本地检查。
-3. 逐个读取返回对象的字段，显式调用 `build_runtime(product=..., release_path=..., ...)`。
+3. 逐个读取返回对象的字段，显式绑定`build_runtime`的参数。常驻模式由`continuous.py`按窗口补充日期和恢复标志；定时模式直接使用声明日期。
 4. 调用 `runtime.run()`。
 5. 最后调用 `runtime.stop()`释放资源；框架有重复调用保护。
 
@@ -107,7 +107,8 @@ Recording不撮合成交，也不创建TD交易通道。CTP行情仍需要MD配�
 | `--expected-trading-day` | 预期会话交易日，YYYYMMDD |
 | `--expected-source-day` | 参考资料来源日，YYYYMMDD |
 | `--max-contracts` | 全部未到期批次的绝对手数总上限，默认10 |
-| `--seconds` | 启动完成后的持续运行时长，默认600秒 |
+| `--seconds` | 定时模式启动完成后的运行时长，默认600秒；常驻模式忽略 |
+| `--run-forever` | 休市等待，下个窗口自动恢复，支持跨交易日 |
 | `--market-source` | 显式选择CTP或DolphinDB，可覆盖JSON中的来源 |
 | `--market-config` | 行情JSON；DolphinDB表名、标签和量额口径在这里声明 |
 | `--history-minutes` | 历史预热的交易分钟数量，默认0 |
@@ -390,3 +391,18 @@ Recording不创建恢复管理器。组装最后返回的session把Runner、策�
 7. [model_adapter.py](../../../demos/10_hybrid_transformer/model_adapter.py)、[flow.py](../../../demos/10_hybrid_transformer/flow.py)：再深入特征和模型算法。
 
 [返回函数索引](../README.md) · [返回策略说明](../../../demos/10_hybrid_transformer/README.md)
+
+## 常驻模式的外层调用
+
+`main → run_continuous → ContinuousPositionRuntime → HybridWindowRuntime.run → build_runtime → 原会话生命周期`。
+复用08的公共日历调度，模型/策略构建仍在本文件，不把命令行对象传给调度函数。
+每个窗口复用原Runtime做连接、核验和停机；休市时没有活动会话，进程按5秒间隔等待。
+
+正常收盘的检查发生在行情健康检查之前：先关闭Bar交易回调、解除报单授权，再保存可封闭的原始末分钟，
+最后走原撤单/核验/保存流程。因此没有休市断流误报，也不会为保住进程而忽略交易时间内的真实断流。
+窗口间保留模型原始分钟；SimNow的目标/归属/订单/批次从联合检查点恢复。
+跨日只允许身份中的交易日向前变化，今昨仓使用公共CTP结转核验，批次期限不改。
+
+常驻模式可不填两个expected日期；填写时只检查首个窗口。需要同一个交易状态文件和连续更新的基础资料。
+已用报单额度不会因重建会话清零，主力变化且旧批次未完、未知活动订单、配置变更等情况仍明确停止。
+完整命令和限制见[策略README的常驻说明](../../../demos/10_hybrid_transformer/README.md)。
