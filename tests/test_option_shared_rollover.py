@@ -7,7 +7,7 @@ from importlib import import_module
 from pathlib import Path
 from types import SimpleNamespace as NS
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from zoneinfo import ZoneInfo
 
 from bomber.framework.market.basic.base import InstrumentId, make_bar
@@ -17,7 +17,7 @@ from bomber.framework.trader.execution.shared import SharedAccountExecutionServi
 from bomber.framework.trader.persistence import JsonStateStore, StatePersistenceError
 from bomber.framework.trader.runtime.live.channels.ctp_shared import CtpSharedAccountLifecycle
 from bomber.framework.trader.runtime.live.contracts import LiveRunContext
-from bomber.framework.trader.runtime.live.shared import SharedStrategySession
+from bomber.framework.trader.runtime.live.shared import SharedAccountLiveHost, SharedStrategySession
 from scripts.integration.shared_account import factories, rollover
 from tests import test_option_simnow_migrate as fixture
 from tests.test_option_simnow_migrate import Transport, inputs, entry, runtime, CLIENT, OPTION
@@ -124,6 +124,35 @@ class OptionSharedRolloverTests(unittest.TestCase):
             rollover_transform=rollover.payload_for_day, preserve_external=preserve_external)
         account.option_sessions = {CLIENT: session}
         return account, service, session, identity, transport
+
+    def test_host_defers_rollover_commit_until_signal_restore_succeeds(self):
+        account, service, session, identity, transport = self.shared()
+        transport.bucket = "2"
+        item = SharedStrategySession(session, self.root/"worker.json", identity)
+        item.restore = Mock(side_effect=ValueError("signal restore failed"))
+        resources = ExitStack()
+        self.addCleanup(resources.close)
+        host = SharedAccountLiveHost(account, service, [item], resources=resources, resume=True)
+        with self.assertRaisesRegex(ValueError, "signal restore failed"):
+            host.start()
+        self.assertEqual(self.source.read_bytes(), self.before)
+        self.assertTrue(account.manager.describe_checkpoint()["restore_pending"])
+        self.assertFalse(account.client.is_armed)
+        self.assertFalse(transport.sent)
+
+    def test_account_preparation_preserves_original_until_explicit_authorization(self):
+        account, _, _, _, transport = self.shared()
+        transport.bucket = "2"
+        account.start_preparation(resume=True)
+        try:
+            self.assertEqual(self.source.read_bytes(), self.before)
+            self.assertTrue(account.manager.describe_checkpoint()["restore_pending"])
+            self.assertFalse(account.client.is_armed)
+            account.authorize()
+            self.assertFalse(account.manager.describe_checkpoint()["restore_pending"])
+            self.assertNotEqual(self.source.read_bytes(), self.before)
+        finally:
+            account.stop()
 
     def test_normal_resume_rolls_authoritative_yesterday_keeps_original_and_can_select_today(self):
         transport = DetailsTransport("20260814"); transport.bucket = "2"

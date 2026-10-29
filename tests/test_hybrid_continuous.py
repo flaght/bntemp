@@ -24,7 +24,9 @@ from bomber.framework.trader.execution.events import AccountStateEvent, ActiveOr
 from bomber.framework.trader.execution.policy import ExecutionPolicy
 from bomber.framework.trader.persistence import JsonStateStore
 
-continuous=import_module('demos.10_hybrid_transformer.continuous')
+continuous=import_module('bomber.framework.trader.runtime.live.continuous')
+checkpoint=import_module('demos.10_hybrid_transformer.checkpoint')
+history=import_module('demos.10_hybrid_transformer.history')
 MINUTE=60_000_000_000
 CLIENT=live.CLIENT_ID
 
@@ -129,48 +131,46 @@ class ContinuousTests(unittest.TestCase):
 
     def test_calendar_waits_for_lunch_and_enters_next_trading_day_at_night(self):
         now=[dt('2026-10-28 11:29')];stop=Event();seen=[]
-        def factory(**kw):
-            seen.append(kw)
+        def factory(*, window_context):
+            seen.append(window_context)
             def run():
-                now[0]=kw['window'].end
+                now[0]=window_context.window.end
                 if len(seen)==3:stop.set()
                 return {'status':'passed'}
-            worker=NS(run=run)
-            # run()后的会话由真实ManagedLiveRuntime保留；夹具只模拟组装结果。
-            worker.session=NS(references=NS(instrument_id='rb2701.SHFE'),
-                strategy=NS(predictor=NS(workflow=NS(history=[]))),
-                model_identity={'trading_day':kw['expected_trading_day'],'sha256':'same'})
-            return worker
+            return NS(run=run,session=NS(window_components={
+                'recording':NS(snapshot_state=lambda:{'fixture':True})}))
         def wait(_): now[0]+=timedelta(minutes=1)
-        with patch.object(continuous,'recording_snapshot',return_value={'fixture':True}),redirect_stdout(StringIO()):
-            result=continuous.run_continuous(factory,calendar=self.cal,mode='recording',stop_event=stop,
+        with redirect_stdout(StringIO()):
+            result=continuous.run_continuous(factory,calendar=self.cal,stop_event=stop,
                 clock=lambda:now[0],wait=wait)
-        self.assertEqual([x['expected_trading_day'] for x in seen],['20261028','20261028','20261029'])
-        self.assertEqual([x['expected_source_day'] for x in seen],['20261027','20261027','20261028'])
-        self.assertIsNone(seen[0]['recording_state']);self.assertEqual(seen[1]['recording_state'],{'fixture':True})
+        self.assertEqual([x.trading_day for x in seen],['20261028','20261028','20261029'])
+        self.assertEqual([x.source_day for x in seen],['20261027','20261027','20261028'])
+        self.assertEqual(seen[0].state,{})
+        self.assertEqual(seen[1].state,{'recording':{'fixture':True}})
         self.assertEqual(result['windows'],3)
 
     def test_closed_stop_does_not_connect_and_fault_does_not_retry(self):
         stop=Event();factory=Mock()
-        result=continuous.run_continuous(factory,calendar=self.cal,mode='recording',stop_event=stop,
+        result=continuous.run_continuous(factory,calendar=self.cal,stop_event=stop,
             clock=lambda:dt('2026-10-28 12:00'),wait=lambda _:stop.set())
         factory.assert_not_called();self.assertTrue(result['stopped_by_operator'])
         factory.side_effect=RuntimeError('query failure')
         with self.assertRaisesRegex(RuntimeError,'query failure'):
-            continuous.run_continuous(factory,calendar=self.cal,mode='recording',stop_event=Event(),
+            continuous.run_continuous(factory,calendar=self.cal,stop_event=Event(),
                 clock=lambda:dt('2026-10-28 14:00'))
         self.assertEqual(factory.call_count,1)
 
     def test_scheduled_pause_precedes_stale_checks_and_disarms_without_flattening(self):
         lifecycle=object.__new__(live.HybridSessionLifecycle)
-        lifecycle.window=TradingWindow('20261028',dt('2026-10-28 09:00'),dt('2026-10-28 11:30'),'am')
-        lifecycle.stop_event=Event();lifecycle.resuming=False
+        window=TradingWindow('20261028',dt('2026-10-28 09:00'),dt('2026-10-28 11:30'),'am')
+        lifecycle.resuming=False
         runner=NS(_submit_lock=RLock(),accept_bars=True,failure=None)
-        session=NS(runner=runner,client=Mock(report_errors=[]),bar_feed=Mock(),strategy=NS(bars_used=0))
-        with patch.object(live,'datetime') as wall:
-            wall.now.return_value=dt('2026-10-28 11:30')
-            with patch.object(live.CtpSessionLifecycle,'poll',side_effect=AssertionError('不能检查休市心跳')):
-                self.assertFalse(lifecycle.poll(session))
+        session=NS(runner=runner,client=Mock(report_errors=[]),bar_feed=Mock(close_delay_ns=0),
+            strategy=NS(bars_used=0),flush_completed_bars=True)
+        context=continuous.LiveWindowContext(self.cal,window,Event(),'20261027',
+            clock=lambda:dt('2026-10-28 11:30'))
+        self.assertTrue(context.pause_due(session))
+        lifecycle.scheduled_pause=context.scheduled_pause
         self.assertFalse(runner.accept_bars);self.assertTrue(runner.scheduled_pause)
         session.client.disarm.assert_called_once();session.client.submit_targets.assert_not_called()
         lifecycle.verify(session)
@@ -194,7 +194,7 @@ class ContinuousTests(unittest.TestCase):
                 before=self.path.read_bytes()
                 saved=deepcopy(old.strategy.holdings.snapshot_state())
                 new,driver,transport=self.session('20261029',mode='simnow',policy=policy)
-                new.manager.restore(payload_transform=lambda p:continuous.payload_for_day(new,p,
+                new.manager.restore(payload_transform=lambda p:checkpoint.payload_for_day(new,p,
                     driver=driver,transport=transport,day='20261029'))
                 self.assertEqual(new.strategy.holdings.snapshot_state(),saved)
                 self.assertEqual(self.path.read_bytes(),before)
@@ -214,19 +214,19 @@ class ContinuousTests(unittest.TestCase):
         new,driver,transport=self.session('20261029',mode='simnow')
         transport.quantity=1
         with self.assertRaisesRegex(RuntimeError,'柜台总仓'):
-            new.manager.restore(payload_transform=lambda p:continuous.payload_for_day(new,p,
+            new.manager.restore(payload_transform=lambda p:checkpoint.payload_for_day(new,p,
                 driver=driver,transport=transport,day='20261029'))
         self.assertEqual(self.path.read_bytes(),before)
         old={'trading_day':'20261028','sha256':'old','market':{'source':'ctp'}}
         for field,value in [('sha256','changed'),('market',{'source':'dolphindb'}),('trading_day','20261027')]:
             current={**old,'trading_day':'20261029',field:value}
-            with self.assertRaises(ValueError):continuous.validate_model_identity(old,current)
+            with self.assertRaises(ValueError):checkpoint.validate_model_identity(old,current)
 
     def test_live_old_batch_is_not_rebound_to_new_main(self):
         self.old_session();before=self.path.read_bytes()
         new,driver,transport=self.session('20261029',mode='simnow',symbol='rb2705')
         with self.assertRaisesRegex(ValueError,'旧合约仍有'):
-            new.manager.restore(payload_transform=lambda p:continuous.payload_for_day(new,p,
+            new.manager.restore(payload_transform=lambda p:checkpoint.payload_for_day(new,p,
                 driver=driver,transport=transport,day='20261029'))
         self.assertEqual(self.path.read_bytes(),before)
 
@@ -234,7 +234,7 @@ class ContinuousTests(unittest.TestCase):
         self.old_session(flat=True)
         new,driver,transport=self.session('20261029',mode='simnow',symbol='rb2705')
         transport.quantity=0
-        new.manager.restore(payload_transform=lambda p:continuous.payload_for_day(new,p,
+        new.manager.restore(payload_transform=lambda p:checkpoint.payload_for_day(new,p,
             driver=driver,transport=transport,day='20261029'))
         self.assertEqual(new.strategy.last_main,'rb2705')
         self.assertEqual(new.strategy.last_targets,{'rb2705':Decimal(0)})
@@ -253,7 +253,7 @@ class ContinuousTests(unittest.TestCase):
         session.strategy.predictor.warm_history([row(stamps[-1])])
         seed=dict(instrument='rb2701.SHFE',identity=session.model_identity,rows=prior)
         with redirect_stdout(StringIO()) as output:
-            continuous.warm_model_seed(runner,seed,identity=session.model_identity,
+            history.warm_model_seed(runner,seed,identity=session.model_identity,
                 max_bars=1500,minimum=300,minute_ns=MINUTE)
         self.assertEqual(len(session.strategy.predictor.workflow.history),300)
         self.assertEqual(session.strategy.bars_used,0);self.assertFalse(session.strategy.holdings.active)
@@ -262,7 +262,7 @@ class ContinuousTests(unittest.TestCase):
         conflict=deepcopy(seed);conflict['rows'][-1]['close']=101
         session.strategy.predictor.warm_history(prior)
         with self.assertRaisesRegex(ValueError,'内容冲突'):
-            continuous.warm_model_seed(runner,conflict,identity=session.model_identity,
+            history.warm_model_seed(runner,conflict,identity=session.model_identity,
                 max_bars=1500,minimum=300,minute_ns=MINUTE)
 
     def test_stop_during_preparation_does_not_start_warmup_or_expire_positions(self):
@@ -296,7 +296,7 @@ class ContinuousTests(unittest.TestCase):
 
     def test_recording_retains_unexpired_batch_and_revision_in_next_window(self):
         old=self.old_session()
-        saved=continuous.recording_snapshot(old)
+        saved=checkpoint.recording_snapshot(old)
         current,_,_=self.session('20261029',recording_state=saved)
         self.assertEqual(current.strategy.holdings.snapshot_state(),old.strategy.holdings.snapshot_state())
         self.assertEqual(current.strategy._revision,old.strategy._revision)
@@ -304,20 +304,22 @@ class ContinuousTests(unittest.TestCase):
         self.assertEqual(current.strategy.bars_used,1)
 
     def test_daily_order_limit_survives_window_recreation(self):
-        carry={};factory=Mock();stop=Event()
-        window=TradingWindow('20261028',dt('2026-10-28 13:30'),dt('2026-10-28 15:00'),'pm')
+        from contextlib import nullcontext
+        factory=Mock();stop=Event()
         orders={'x':[{'client_order_id':'CTP-9999-fixture-20261028-1'},
                      {'client_order_id':'CTP-9999-fixture-20261027-1'}]}
         saved=NS(payload={'orders':orders})
         factory.return_value.run.return_value={'status':'failed'}
-        with patch.object(continuous.JsonStateStore,'load',return_value=saved),self.assertRaises(RuntimeError):
-            continuous.HybridWindowRuntime(factory,self.cal,window,stop,carry,mode='simnow',
-                state_file=self.path,max_session_orders=10).run()
-        self.assertEqual(factory.call_args.kwargs['max_session_orders'],9)
+        with patch.object(JsonStateStore,'load',return_value=saved),self.assertRaises(RuntimeError):
+            continuous.run_continuous(factory,calendar=self.cal,stop_event=stop,
+                state_file=self.path,max_session_orders=10,owner_lock=nullcontext(),
+                clock=lambda:dt('2026-10-28 13:30'))
+        self.assertEqual(factory.call_args.kwargs['window_context'].max_session_orders,9)
         factory.reset_mock()
-        with patch.object(continuous.JsonStateStore,'load',return_value=saved),self.assertRaisesRegex(RuntimeError,'额度'):
-            continuous.HybridWindowRuntime(factory,self.cal,window,stop,carry,mode='simnow',
-                state_file=self.path,max_session_orders=1).run()
+        with patch.object(JsonStateStore,'load',return_value=saved),self.assertRaisesRegex(RuntimeError,'额度'):
+            continuous.run_continuous(factory,calendar=self.cal,stop_event=stop,
+                state_file=self.path,max_session_orders=1,owner_lock=nullcontext(),
+                clock=lambda:dt('2026-10-28 13:30'))
         factory.assert_not_called()
 
 

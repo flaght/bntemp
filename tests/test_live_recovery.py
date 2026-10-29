@@ -347,7 +347,7 @@ class RecoveryTests(unittest.TestCase):
         aliases = {'bomber.framework.trader.runtime.live.recovery': recovery,
                    'bomber.framework.trader.runtime.live.channels.ctp_recovery': ctp}
         with patch.dict(sys.modules, aliases):
-            return load('_test_main_ema_recovery_hooks', 'demos/01_main_ema/recovery.py')
+            return load('demos.01_main_ema._test_recovery_hooks', 'demos/01_main_ema/recovery.py')
 
     def test_ema_restore_sets_revision_without_bound_strategy_or_old_signal(self):
         hooks = self.ema_hooks()

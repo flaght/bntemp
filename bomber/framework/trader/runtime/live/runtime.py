@@ -6,6 +6,7 @@ import time
 from bomber.framework.trader.contracts import RuntimeMode
 from .contracts import LiveRunContext, LiveSessionControllerPort
 from ..base import RunnerLifecyclePort
+from .lifecycle import validate_session_checkpoint
 
 
 class ManagedLiveRuntime:
@@ -18,7 +19,7 @@ class ManagedLiveRuntime:
     mode = RuntimeMode.LIVE
 
     def __init__(self, runtime_id, *, controller: LiveSessionControllerPort, prepare_inputs, assemble_session,
-                 report, seconds, progress=None, monotonic=None, sleep=None):
+                 report, seconds, progress=None, monotonic=None, sleep=None, window_context=None):
         if not runtime_id.strip() or seconds <= 0:
             raise ValueError("运行标识不能为空，运行时长须为正数")
         self.runtime_id = runtime_id
@@ -27,6 +28,7 @@ class ManagedLiveRuntime:
         self.assemble_session = assemble_session
         self.report = report
         self.seconds = seconds
+        self.window_context = window_context
         self.progress = progress or (lambda session: None)
         self._monotonic = monotonic or (lambda: time.monotonic())
         self._sleep = sleep or (lambda seconds: time.sleep(seconds))
@@ -37,6 +39,7 @@ class ManagedLiveRuntime:
         self.result = None
         self._started = False
         self._preparation_started = False
+        self._session_start_attempted = False
         self._stopped = False
         self._status = "failed"
         self.failure = None
@@ -48,6 +51,10 @@ class ManagedLiveRuntime:
             return
         self.report.begin()
         try:
+            if self.window_context is not None:
+                self.controller.window = self.window_context.window
+                self.controller.stop_event = self.window_context.stop_event
+                self.controller.scheduled_pause = False
             self._preparation_started = True
             self.context = self.controller.prepare(self._resources)
             self.inputs = self.prepare_inputs(self.context)
@@ -55,11 +62,16 @@ class ManagedLiveRuntime:
             self.session = self.assemble_session(self.inputs, self.context)
             if self.session.runner.mode is not RuntimeMode.LIVE:
                 raise ValueError("ManagedLiveRuntime仅接受LIVE Runner")
+            validate_session_checkpoint(self.session)
+            if self.window_context is not None:
+                self.session.runner.window_context = self.window_context
+                self.window_context.restore_components(self.session)
+            self._session_start_attempted = True
             self.controller.start(self.session, self.context)
             self._started = True
         except BaseException as error:
             self.failure = error
-            self.stop()
+            self._finish()
             raise
 
     def run(self):
@@ -67,9 +79,13 @@ class ManagedLiveRuntime:
             return self.result
         try:
             self.start()
-            deadline = self._monotonic() + self.seconds
+            deadline = None if self.window_context is not None else self._monotonic() + self.seconds
             seen = 0
-            while self._monotonic() < deadline:
+            while deadline is None or self._monotonic() < deadline:
+                # 正常休市先于接收心跳/行情健康检查，不能被判为真实断流。
+                if self.window_context is not None and self.window_context.pause_due(self.session, sleep=self._sleep):
+                    self.controller.scheduled_pause = True
+                    break
                 if not self.controller.poll(self.session):
                     break
                 self.progress(self.session)
@@ -84,8 +100,16 @@ class ManagedLiveRuntime:
             self.failure = error
             raise
         finally:
-            self.stop()
+            self._finish()
         return self.result
+
+    def _finish(self):
+        try:
+            self.stop()
+        except Exception as cleanup_error:
+            if self.failure is None:
+                raise
+            self.failure.add_note("停机同时失败: " + str(cleanup_error))
 
     def stop(self):
         if self._stopped:
@@ -99,11 +123,20 @@ class ManagedLiveRuntime:
         errors = []
         try:
             if self._preparation_started:
-                fields.update(self.controller.shutdown(self.session, self.context))
+                # 装配/检查点绑定未通过时，不能让收尾保存尚未启动的会话。
+                fields.update(self.controller.shutdown(
+                    self.session if self._session_start_attempted else None, self.context))
             errors.extend(fields.get("cleanup_errors", ()))
         except Exception as error:
             errors.append(str(error))
         finally:
+            if self.session is not None and not self._session_start_attempted:
+                stop_runner = getattr(self.session.runner, "stop", None)
+                if callable(stop_runner):
+                    try:
+                        stop_runner()
+                    except Exception as error:
+                        errors.append(str(error))
             try:
                 self._resources.close()
             except Exception as error:
@@ -114,7 +147,15 @@ class ManagedLiveRuntime:
                 fields.update(self.controller.snapshot(self.session, self.context))
         except Exception as error:
             errors.append(str(error))
+        if self.window_context is not None:
+            window = self.window_context.window
+            fields.update(scheduled_pause=self.window_context.scheduled_pause,
+                trading_window={"trading_day": window.trading_day,
+                    "segment": window.segment_id, "end": window.end.isoformat()})
         fields["cleanup_errors"] = errors
+        describe = getattr(getattr(self.session, "manager", None), "describe_checkpoint", None)
+        if callable(describe):
+            fields["checkpoint"] = describe()
         if errors:
             self._status = "failed"
         if self.failure is not None:

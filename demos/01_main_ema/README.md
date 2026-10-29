@@ -1,5 +1,25 @@
 # 单品种主力 EMA 回测
 
+Live 启动、恢复后提交和停机已接入[公共生命周期与检查点流程](../../doc/functions/trader/LiveSessionLifecycle.md)（2026-10-29）；精确EMA断点及收盘分钟处理仍由本策略负责。
+
+## 公共历史协调（2026-10-29）
+
+Live 的预热阶段、交易分钟窗口、缓冲校验和预热后放行已接入
+`bomber.framework.trader.runtime.live.history`。历史读取与复权继续使用原 HistoryService，
+EMA 指标和最新分钟落库等待政策保留在本策略 `history.py`。
+公共职责、各策略文件去向及离线验证见 [Live 历史协调](../../doc/functions/trader/HistoryFrameLoader.md)。
+
+## 公共常驻入口（2026-10-29）
+
+`--run-forever` 现在直接接入公共 `bomber.framework.trader.runtime.live.continuous.run_continuous`。
+策略目录原有 `continuous.py` 已删除；指标／完整分钟处理归入 `history.py`，精确断点恢复归入 `recovery.py`。
+正常休市、主动停止和窗口等待由公共 Live 层统一处理；原 CU／realtime SimNow 限制、恢复核验和当日报单额度耗尽后等待政策保留。
+首期未扩展其他品种或Model／Recording常驻。公共参数、同步范围及验证命令见
+[run_continuous](../../doc/functions/trader/run_continuous.md)。
+
+离线聚合检查：`PYTHONPATH=.:.validation/packages python -B -m tests.run_live_continuous_offline`。
+本机无原生Bomber引擎时，此入口只验证EMA接线、日历、暂停和恢复门控，不替代原生指标数值回归。
+
 ## Recording仅接行情（2026-10-16）
 
 `--mode recording`不创建TD、不占用账户锁、不查询资金/委托/柜台持仓，

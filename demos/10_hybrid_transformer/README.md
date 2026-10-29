@@ -1,5 +1,11 @@
 # HybridTransformer 主力合约策略层（按品种外部配置）
 
+Live 启动、恢复提交、状态锁和Recording停机现共用[公共生命周期](../../doc/functions/trader/LiveSessionLifecycle.md)（2026-10-29）；模型身份、旧批次期限及换约约束保留。
+
+Live 历史、CTP 本地分钟和休市窗口续接现已共用 `runtime.live.history.history_stamps` 选择完整交易分钟。
+原始模型字段转换、模型预热与真实缺口政策仍在本策略 `history.py`；见
+[Live 历史协调](../../doc/functions/trader/HistoryFrameLoader.md)（2026-10-29）。
+
 这是独立于 `01_main_ema` 的策略，不修改 EMA。复用其结构：按事件时间取得当前主力，只处理主力的已完成分钟，将模型信号变成**逻辑目标仓位**，由 Bomber 的动态路由和执行风控决定真实合约、委托及成交。策略本身不调用 CTP，也不在导入时连接账户。`run_backtest.py` 提供历史模拟入口，每次选择一个已配置品种独立运行，多个品种可分别提供发布模型、特征方向文件和信号配置。
 
 ## 已实现的边界
@@ -171,7 +177,7 @@ fees = CommissionConfig(
 
 入口为 `python -m demos.10_hybrid_transformer.run_live`，每个进程只运行一个品种、一条 Hybrid 策略。
 
-策略和装配集中在 `run_live.py`，常驻窗口调度在 `continuous.py`，命令行只保留业务输入和运行开关。各函数仅接收其使用的显式参数，命令行对象只在解析和main读取字段时存在，不沿调用链传递；Runner不保存整份命令行配置。`build_strategy()` 独立声明模型和策略，参数解析阶段不构造它们。
+策略和装配集中在 `run_live.py`，常驻窗口调度复用 `bomber.framework.trader.runtime.live.continuous`，命令行只保留业务输入和运行开关。各函数仅接收其使用的显式参数，命令行对象只在解析和main读取字段时存在，不沿调用链传递；Runner不保存整份命令行配置。`build_strategy()` 独立声明模型和策略，参数解析阶段不构造它们。
 
 - 模型默认设置：CPU、历史窗口1500根、最低300根、开始时间标签；由本文件的 `MODEL_*` 常量明确声明。
 - 策略开仓间隔默认1分钟，持仓周期和信号函数仍按外部信号文件的品种配置读取。
@@ -457,13 +463,22 @@ export IMPLUSE_VERSION=all
 ```
 
 SimNow执行时仍须显式`--mode simnow --enable-orders --confirm-simnow --state-file <同一个原状态路径>`，
-不得用新文件绕过旧持仓。此功能新增了`continuous.py`，同步到远程实际执行的`prod/01_hybrid_transformer`
-时须包含它及`run_live.py`；不需要重新编译原生扩展。
+不得用新文件绕过旧持仓。常驻已统一到公共Live模块，策略目录原有 `continuous.py` 已删除。
+同步到远程实际执行的 `prod/01_hybrid_transformer` 时，须同步 `run_live.py`、`history.py`、`checkpoint.py`
+及公共 `runtime/live` 变更，并移除远程旧 `continuous.py`；不需要因此重新编译原生扩展。
+模型窗口与Recording批次通过已有状态组件契约在进程内续接，接口及验证范围见
+[run_continuous](../../doc/functions/trader/run_continuous.md)。
 
 离线回归（复用SDK实体夹具，不联网）：
 
 ```bash
 PYTHONPATH=.:.validation/packages python -B -m unittest tests.test_hybrid_continuous
+```
+
+公共常驻、共享调度兼容与EMA接线的聚合检查：
+
+```bash
+PYTHONPATH=.:.validation/packages python -B -m tests.run_live_continuous_offline
 ```
 
 真实DolphinDB/SimNow跨休盘、跨日接续仍需在Linux运行机验证。

@@ -6,7 +6,7 @@
 - 实际定义：继承LocalExecutionLifecycle的控制器类。
 - [CTP行情生命周期源码](../../../bomber/framework/trader/runtime/live/channels/ctp_market.py) · [父类生命周期](../../../bomber/framework/trader/runtime/live/local.py)
 - [CTP渠道配置与MD配置工厂](../../../bomber/framework/trader/runtime/live/channels/ctp.py)
-- 核对日期：2026-10-28，Asia/Shanghai。
+- 核对日期：2026-10-29，Asia/Shanghai。
 
 ## 1. 这个类负责什么
 
@@ -103,7 +103,7 @@ session还须具备runner、references、manager、client及相应恢复资料�
 
 本类shutdown先保存`session.upstream.latest_trading_day`，设置_md_shutdown=True，再调用父类shutdown。父类关闭accept_bars，按条件保存状态，并在finally中runner.stop。
 
-父类仅在非恢复会话或已resume_ready时保存停机状态；恢复未就绪时保留原恢复状态，不用失败启动覆盖它。返回字段还包括model_reports、resume_state_preserved和未知物理账户状态的None值。
+父类仅在已resume_ready且为Model模式时保存停机状态；准备失败的恢复保留原文件，新会话准备失败不保存半成品。Recording跳过交易状态保存。返回字段还包括model_reports、resume_state_preserved和未知物理账户状态的None值。
 
 snapshot先取得父类模型执行字段：strategy_position_source="model"、account_reconciliation="off"、execution_origin="model"、model="reference-price"、trading_day等。停机前通常读取当前upstream观测日，停机后使用预先保存的_shutdown_md_day。
 
@@ -118,9 +118,7 @@ class RecordingCtpLifecycle(RecordingExecutionLifecycle, CtpMarketSessionLifecyc
     pass
 ```
 
-此顺序使构造使用CTP类的__init__，而_execution_failed、verify、events、shutdown、snapshot优先使用Recording类实现；start/poll继续复用本地父类机制。
-
-方法解析并不自动把两个父类所有覆盖方法串起来。Recording.shutdown/snapshot不调用super，因此这个简单组合不会执行CTP类的停机MD日缓存及模型报告逻辑。需要观测MD日报告时，应像Main EMA入口那样显式覆盖并保留该值，不能只看类名就推断报告字段已采集。
+此顺序使构造使用CTP类的__init__，Recording提供目标验收及mode声明，启动、事件读取和本地收尾共用LocalExecutionLifecycle。Recording不再覆盖shutdown/snapshot，因此组合会经过CTP行情类的MD日缓存。01／04／10不再需要各自重复保存停机观测值。
 
 当前HybridRecordingLifecycle正是该继承顺序，并在poll前推进bar_feed、之后处理持仓到期；其记录目标验收仍由Recording分支负责。
 
@@ -170,7 +168,7 @@ assert controller.event_label == "Recording目标"
 | 缺少MD变量 | market_source精确为ctp时会在构造阶段读取必需变量 |
 | 没有TD地址却能构造 | 属于MD独立配置的正常行为，不创建交易会话 |
 | verify要求模型成交 | 直接使用本类继承模型验收，Recording应使用对应控制器或组合 |
-| Feed停机后报告丢交易日 | 是否调用本类shutdown，或被Recording覆盖方法截断 |
+| Feed停机后报告丢交易日 | 是否使用公共收尾并保留停止前实际观测值 |
 | observed_md日为None | 是否真的收到并保留了来源观测，不能用期望值替换 |
 | ready_seconds关键字报错 | 本类构造没有暴露该参数，使用父类默认30秒 |
 | 状态锁冲突 | 是否多个进程使用相同策略状态路径，而不是物理账户占用 |

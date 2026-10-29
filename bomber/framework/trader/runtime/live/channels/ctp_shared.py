@@ -269,12 +269,17 @@ class CtpSharedAccountLifecycle:
         self._ready = True
         self._next_check = time.monotonic() + self.reconcile_seconds
 
+    def start_preparation(self, *, resume):
+        """宿主先完成策略恢复和历史准备，再由 authorize 提交暂存账户状态。"""
+        return self.start(resume=resume, commit_restored=False)
+
     def authorize(self):
         if not self._ready:
             raise RuntimeError("账户恢复或预检尚未完成")
         if self.position_scope is not None:
             self._validate_account()
-        self.manager.save()
+        self.manager.validate_components()
+        self.manager.commit_restore()
         self.client.arm_demo(self.client.DEMO_CONFIRMATION)
 
     def reconcile_checkpoint(self, *, new_account_config=None):
@@ -435,6 +440,7 @@ class CtpSharedAccountLifecycle:
                     or any(self.execution.positions.snapshot().working_quantities.values())):
                 raise RuntimeError("最终查询成功但仍有未决执行状态，禁止完成停止")
             self.execution.positions.complete_working_recovery(self.service.client_id, {})
+        self.manager.validate_components()
         self.manager.save()
         self.final_gross = gross
         self.final_active_orders = len(active)

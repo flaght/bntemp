@@ -1,5 +1,7 @@
 # 认购期权卖方与同月期货对冲策略（08_option_vega）
 
+2026-10-29：独立入口的重复启动／恢复／停机已接入[公共生命周期](../../doc/functions/trader/LiveSessionLifecycle.md)。共享宿主在信号恢复和准备通过后才提交暂存账户状态；选约、期权与指数行情要求、原仓归属及server／worker停机顺序保留。
+
 按固定 Vega 预算卖出虚值认购期权，以实际归属成交仓位计算 Delta，再用同月期货对冲。默认组合为 MO / IM / 000852。回测与 Live 共用 `OptionVegaStrategy` 和 `assembly.py`，只替换输入来源、执行组件和生命周期。
 
 本文按当前入口源码及 `doc/` 专项交接整理，更新日期为 **2026-10-14（Asia/Shanghai）**。操作入口如下：

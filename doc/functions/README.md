@@ -2,6 +2,8 @@
 
 本目录集中说明函数的用途、参数、输入文件、返回结果和使用约束。按模块分类，每个函数单独一篇文档，文件名使用函数名，方便按名称和参数检索。
 
+Live公共化的完成状态、验证结果与剩余事项统一见[当前进度台账](../architecture/LIVE_COMMON_PROGRESS.md)；各函数页说明接口及职责边界。
+
 ## 函数列表
 
 | 函数 | 所属模块 | 用途 | 查询关键词 |
@@ -38,6 +40,10 @@
 | [HybridLiveReport](demos/HybridLiveReport.md) | `demos.10_hybrid_transformer.run_live` | 写出Hybrid信号、批次、策略状态及公共运行报告 | signals.csv、batches.csv、strategy_state、summary |
 | [HybridSessionLifecycle](demos/HybridSessionLifecycle.md) | `demos.10_hybrid_transformer.run_live` | 管理Hybrid的CTP会话、恢复校验、分钟轮询与到期验收 | 同日恢复、零信号、hold目标、expire_due、SimNow |
 | [ManagedLiveRuntime](trader/ManagedLiveRuntime.md) | `bomber.framework.trader.runtime.live.runtime` | 协调Live准备、装配、启动、轮询、停机和报告 | 回调、ExitStack、seconds、run、start、stop |
+| [run_continuous](trader/run_continuous.md) | `bomber.framework.trader.runtime.live.continuous` | 按交易窗口启动Live会话、休市等待、停止及组件状态续接 | run-forever、LiveWindowContext、跨日、停止信号、报单额度 |
+| [Live历史协调](trader/HistoryFrameLoader.md) | `bomber.framework.trader.runtime.live.history` | 共用预热窗口、同步覆盖、缺口与实时缓冲放行 | HistoryFrameLoader、history_stamps、start_after_history、完整分钟、历史预热 |
+| [Live公共生命周期](trader/LiveSessionLifecycle.md) | `bomber.framework.trader.runtime.live.lifecycle` | 统一准备、恢复后提交、授权、关闸与停机 | prepare_live_session、activate_live_session、恢复保护、Recording |
+| [RuntimeStateManager](trader/RuntimeStateManager.md) | `bomber.framework.trader.persistence` | 检查点组件接入、运行对象核验、稳定目标及事务诊断 | validate_binding、validate_components、generation、commit_restore |
 | [prepare_inputs](demos/prepare_inputs.md) | `demos.10_hybrid_transformer.run_live` | 读取参考资料、加载日历并创建上游行情 | LiveRunContext、DolphinDB、来源日、CachedRoleReferences |
 | [assemble](demos/assemble.md) | `demos.10_hybrid_transformer.run_live` | 装配Hybrid分钟、执行、模型、策略、绑定和持久化会话 | Recording、SimNow、模型加载、SessionReadiness、manager |
 | [ExecutionPolicy](trader/ExecutionPolicy.md) | `bomber.framework.trader.execution.policy` | 声明账户对账与仓位来源组合，校验恢复一致性 | strict、observe、off、fills、model、snapshot_state |

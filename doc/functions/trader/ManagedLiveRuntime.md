@@ -5,7 +5,7 @@
 - 导入路径：`from bomber.framework.trader.runtime.live.runtime import ManagedLiveRuntime`
 - 兼容路径：`from bomber.framework.trader.runtime.managed import ManagedLiveRuntime`
 - [实现](../../../bomber/framework/trader/runtime/live/runtime.py) · [控制器与上下文契约](../../../bomber/framework/trader/runtime/live/contracts.py)
-- 核对日期：2026-10-28，Asia/Shanghai。
+- 核对日期：2026-10-29，Asia/Shanghai。
 
 ## 1. 职责与适用范围
 
@@ -17,7 +17,7 @@
 
 ```python
 def __init__(self, runtime_id, *, controller, prepare_inputs, assemble_session,
-             report, seconds, progress=None, monotonic=None, sleep=None):
+             report, seconds, progress=None, monotonic=None, sleep=None, window_context=None):
     ...
 ```
 
@@ -32,6 +32,7 @@ def __init__(self, runtime_id, *, controller, prepare_inputs, assemble_session,
 | progress | None | poll返回真后调用progress(session)，默认空操作 |
 | monotonic | None | 无参数单调时钟，默认time.monotonic，用于计算截止时刻 |
 | sleep | None | sleep(seconds)，默认time.sleep，每轮传入0.2 |
+| window_context | None | LiveWindowContext；按窗口和停止信号结束，忽略seconds计时，并续接已注册的窗口状态组件 |
 
 两个工厂是可调用对象，不要求函数名一致。返回值没有统一数据类限制，但session必须提供runner，且runner.mode必须是RuntimeMode.LIVE这个枚举成员。
 
@@ -43,7 +44,8 @@ report.begin()
   → prepare_inputs(context) → inputs
   → controller.finish_preparation(context)
   → assemble_session(inputs, context) → session
-  → 检查session.runner.mode
+  → 检查session.runner.mode及检查点绑定对象
+  → 如有窗口上下文：绑定窗口并恢复session.window_components
   → controller.start(session, context)
 ```
 
@@ -55,7 +57,7 @@ start成功返回None，设置_started=True；已启动时再次start为空操�
 
 ## 4. run的循环和返回值
 
-start完成后才计算deadline=单调时钟当前值+seconds，因此seconds不包含准备、模型加载、启动和停机耗时，也不保证总进程时长恰好等于seconds。
+单次模式在start完成后计算deadline=单调时钟当前值+seconds，因此seconds不包含准备、模型加载、启动和停机耗时。提供window_context时不按seconds到期；每轮先检查窗口结束或停止信号，正常暂停先于健康轮询。详见[公共常驻入口](run_continuous.md)。
 
 每轮先poll(session)。返回False立即退出循环，这一轮不调用progress、打印新增事件或sleep，但仍会verify。返回真则调用progress、获取events并切片打印新增项，再sleep(0.2)。实际周期还包含回调耗时，不是精确5Hz调度。
 
@@ -76,9 +78,11 @@ events应返回支持len和切片、顺序稳定且累计追加的序列；Runti
   → report.write(status, fields, session, events)
 ```
 
-只有开始过prepare才调用shutdown和snapshot；控制器须容忍session=None、context=None等部分启动状态。资源释放在shutdown之后、snapshot之前，快照应能使用已保存的停机观测。
+只有开始过prepare才调用shutdown和snapshot；控制器须容忍session=None、context=None等部分启动状态。装配或检查点绑定失败、尚未尝试controller.start时，shutdown接收session=None，Runtime另行释放已装配Runner，避免收尾写入错误的检查点。资源释放在shutdown之后、snapshot之前，快照应能使用已保存的停机观测。
 
-shutdown、资源关闭或snapshot的普通Exception记录为cleanup_errors，清理继续；有错误则状态改failed，写报告后抛RuntimeError。报告写入及最终events读取没有单独保护，也可能抛出；不能承诺任何故障下都能完整写报告，清理异常也可能成为最终对外异常。
+shutdown、资源关闭或snapshot的普通Exception记录为cleanup_errors，清理继续；有错误则状态改failed。已有启动或运行异常时保留原异常，停机错误附到异常note；只有停机失败时抛RuntimeError。报告写入及最终events读取本身仍可能失败，资源清理先于报告写入完成。
+
+真实RuntimeStateManager会补充checkpoint元数据：状态文件、代次、组件集合、待提交恢复状态和订单客户端。详细流程见[公共会话生命周期](LiveSessionLifecycle.md)及[检查点接入](RuntimeStateManager.md)。
 
 stop先设置_stopped，后续调用为空操作，不会重试失败清理。start后直接stop而没有run/verify，状态仍为初始failed；start只代表启动。start前stop不会连接或写报告，并使实例永久结束。
 

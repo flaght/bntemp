@@ -19,7 +19,9 @@ from tests.run_p4_ctp_recovery import RecoveryTransport, _active
 
 ema = import_module("demos.01_main_ema.strategy")
 checkpoint = import_module("demos.01_main_ema.checkpoint")
-continuous = import_module("demos.01_main_ema.continuous")
+continuous = import_module("bomber.framework.trader.runtime.live.continuous")
+history = import_module("demos.01_main_ema.history")
+recovery = import_module("demos.01_main_ema.recovery")
 ROOT = Path(__file__).resolve().parents[1]
 MINUTE = 60_000_000_000
 
@@ -187,7 +189,7 @@ class ContinuousTests(unittest.TestCase):
         component.warm_closed(ns("2026-10-09T09:01:00") - 1, 110000)
         before = component.snapshot_state()
         with self.assertRaisesRegex(RuntimeError, "缺少2根"):
-            continuous.recover_minutes(component, self.calendar, ns("2026-10-09T09:03:00"), None)
+            history.recover_minutes(component, self.calendar, ns("2026-10-09T09:03:00"), None)
         self.assertEqual(component.snapshot_state(), before)
 
     def test_gap_replay_is_indicator_only_and_validates_all_rows_first(self):
@@ -197,7 +199,7 @@ class ContinuousTests(unittest.TestCase):
         rows = [{"instrument_id": "cu2611.SHFE", "ts_event": ns(f"2026-10-09T09:0{i}:00") - 1,
                  "adjusted_close": "110100"} for i in (2, 3)]
         path.write_text("\n".join(json.dumps(row) for row in rows))
-        continuous.recover_minutes(component, self.calendar, ns("2026-10-09T09:03:00"), path)
+        history.recover_minutes(component, self.calendar, ns("2026-10-09T09:03:00"), path)
         self.assertEqual(component.strategy.bars_used, 3)
         self.assertEqual(component.strategy._revision, 0)
         self.assertIsNone(component.strategy.last_target)
@@ -227,12 +229,13 @@ class ContinuousTests(unittest.TestCase):
                 driver.stop()
 
     def test_shutdown_bar_failure_still_runs_cancel_query_and_release(self):
-        lifecycle = object.__new__(continuous.ContinuousLifecycle)
+        lifecycle = object.__new__(recovery.EmaCheckpointLifecycle)
         lifecycle.window = SimpleNamespace(end=datetime(2026, 1, 1, tzinfo=SHANGHAI))
+        lifecycle.resuming = False
         session = SimpleNamespace(runner=SimpleNamespace(failure=None, accept_bars=True),
             client=SimpleNamespace(disarm=Mock()), bar_feed=SimpleNamespace(
                 drain_completed=Mock(side_effect=RuntimeError("close bar failed"))))
-        with patch.object(continuous.CtpSessionLifecycle, "shutdown",
+        with patch.object(recovery.CtpSessionLifecycle, "shutdown",
                 return_value={"cleanup_errors": [], "final_active_orders": 0}) as cleanup:
             result = lifecycle.shutdown(session, None)
         cleanup.assert_called_once_with(session, None)
@@ -246,20 +249,16 @@ class ContinuousTests(unittest.TestCase):
                 return False
             def wait(self, seconds):
                 moments[0] = datetime(2026, 10, 9, 10, 30, tzinfo=SHANGHAI)
-        args = SimpleNamespace(product="CU", trading_calendar=None, _session_calendar=self.calendar,
-            state_file=state, max_session_orders=4)
         factory = Mock(return_value=SimpleNamespace(run=lambda: {"status": "failed"}))
-        live = import_module("demos.01_main_ema.run_live")
-        with patch.object(continuous, "account_lock", return_value=nullcontext()), \
-                patch.object(live, "required", return_value="demo"):
-            with self.assertRaisesRegex(RuntimeError, "不自动重启"):
-                continuous.run_continuous(args, factory, clock=lambda: moments[0], stop_event=Stop())
+        with self.assertRaisesRegex(RuntimeError, "不自动重启"):
+            continuous.run_continuous(factory,calendar=self.calendar,state_file=state,
+                max_session_orders=4,owner_lock=nullcontext(),clock=lambda:moments[0],stop_event=Stop())
         self.assertEqual(factory.call_count, 1)
-        worker = factory.call_args.args[0]
-        self.assertIs(worker._session_calendar, self.calendar)
-        self.assertEqual(worker.expected_trading_day, "20261009")
-        self.assertEqual(worker.expected_source_day, "20261008")
-        self.assertFalse(worker.resume)
+        context = factory.call_args.kwargs['window_context']
+        self.assertIs(context.calendar, self.calendar)
+        self.assertEqual(context.trading_day, "20261009")
+        self.assertEqual(context.source_day, "20261008")
+        self.assertFalse(context.resume)
 
 
 if __name__ == "__main__":

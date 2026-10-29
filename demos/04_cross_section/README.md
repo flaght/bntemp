@@ -1,5 +1,13 @@
 # 多品种主力横截面动量策略
 
+Live 启动、恢复、状态锁与稳定检查点核验现由[公共生命周期](../../doc/functions/trader/LiveSessionLifecycle.md)统一处理（2026-10-29）；组合业务校验保留，重复Recording停机代码已删除。
+
+## 公共历史协调（2026-10-29）
+
+Live 的历史阶段、窗口、同步覆盖和实时缓冲放行已接入公共
+`bomber.framework.trader.runtime.live.history`。本策略保留跨品种共同日历、历史复权价与因子来源日一致性检查，
+以及横截面指标预热。接口及验证见 [Live 历史协调](../../doc/functions/trader/HistoryFrameLoader.md)。
+
 ## 1. 使用方法
 
 ### 回测启动命令

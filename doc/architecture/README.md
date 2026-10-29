@@ -22,6 +22,7 @@
 | 文档 | 内容与阅读位置 |
 | --- | --- |
 | [STRATEGY_ARCHITECTURE](STRATEGY_ARCHITECTURE.md) | 统一策略框架的运行结构、模块职责和实现验证状态台账，区别于系统级目标设计 |
+| [Live公共能力提取进度](LIVE_COMMON_PROGRESS.md) | 2026-10-29：生命周期、历史、常驻和检查点公共化的当前状态、五策略文件对应、309／82／91项本地结果及待办 |
 | [PROJECT_PROGRESS](PROJECT_PROGRESS.md) | 截至 2026-09-22 的台账摘要，保留当时进度；后续状态查实现台账和专项证据 |
 | [MARKET_DATA_CYTHON_EVALUATION](MARKET_DATA_CYTHON_EVALUATION.md) | 行情订阅与调度保留 Python、原生对象和 SDK 热路径采用 Cython/C++ 的分层选型讨论 |
 | [M02 执行客户端替换设计](M02_EXECUTION_CLIENT_DESIGN_2026-10-19.md) | LXGBN Windows 宿主调用项目 SDK 的实现及改动清单；CTP 复用，BN 延后，实机待验 |

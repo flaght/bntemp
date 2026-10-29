@@ -2,6 +2,7 @@
 import json
 import os
 import time
+from decimal import Decimal
 from contextlib import nullcontext
 from pathlib import Path
 
@@ -10,6 +11,10 @@ from bomber.framework.dataprep.history import (
     SessionReferenceFactorAdjuster, HistoryUnavailable)
 from bomber.framework.dataprep.sources import DolphinDbReferenceConfig
 from bomber.framework.dolphindb import DolphinDbConnectionConfig
+from bomber.framework.market.basic.base import Bar
+from bomber.framework.trader.live_roles import SessionRoleLiveRunner
+from bomber.framework.trader.runtime.live.history import (
+    history_stamps, first_complete_minute, buffered_history, buffer_history_bar, start_after_history)
 
 
 def build_history(args, *, calendar=None):
@@ -83,15 +88,11 @@ def warm_history(runner, before_ns, *, phase):
     checkpoint = runner.ema_checkpoint
     strategy = checkpoint.strategy
     live_bars = buffered_bars(runner)
-    if strategy.bars_used:
-        if strategy.last_processed_ns >= before_ns:
-            raise HistoryError("指标断点晚于历史恢复边界")
-        stamps = tuple(runner.calendar.missing_minutes(strategy.last_processed_ns, before_ns))
-    else:
-        stamps = runner.calendar.last_minutes(before_ns, runner.history_minutes)
-        if not stamps and live_bars:
-            first = min(bar.ts_event for bar in live_bars)
-            stamps = tuple(runner.calendar.missing_minutes(first - 60_000_000_000, before_ns))
+    stamps = history_stamps(runner.calendar, before_ns, runner.history_minutes,
+        after_ns=strategy.last_processed_ns if strategy.bars_used else None)
+    if not strategy.bars_used and not stamps and live_bars:
+        first = min(bar.ts_event for bar in live_bars)
+        stamps = tuple(runner.calendar.missing_minutes(first - 60_000_000_000, before_ns))
     started = time.monotonic()
     action = "历史预热" if not strategy.bars_used else "历史回补"
     # 无缺口的逐分钟检查不打印，实际预热/回补始终记录来源和覆盖。
@@ -131,8 +132,7 @@ def warm_history(runner, before_ns, *, phase):
 def buffered_bars(runner):
     if not getattr(runner, "history_buffer", ()):
         return ()
-    with runner._submit_lock:
-        events = tuple(getattr(runner, "history_buffer", ()))
+    events = buffered_history(runner)
     result = []
     for bar in events:
         if bar.ts_event < runner.first_complete_bar_ns:
@@ -155,3 +155,117 @@ def flush_buffer(runner):
     with runner._submit_lock:
         runner.history_buffer = [bar for bar in runner.history_buffer
             if bar.ts_event > runner.ema_checkpoint.strategy.last_processed_ns]
+
+
+def recover_minutes(checkpoint, calendar, before_ns, path):
+    if not checkpoint.strategy.bars_used:
+        return
+    if checkpoint.strategy.last_processed_ns >= before_ns:
+        raise RuntimeError("EMA断点晚于恢复边界，拒绝未来状态或行情倒序")
+    missing = list(calendar.missing_minutes(checkpoint.strategy.last_processed_ns, before_ns))
+    if not missing:
+        return
+    required = set(missing)
+    rows = {}
+    if path:
+        with Path(path).open() as handle:
+            for line in handle:
+                item = json.loads(line)
+                stamp = item["ts_event"]
+                if stamp in required:
+                    if stamp in rows or item["instrument_id"] != checkpoint.instrument:
+                        raise ValueError("恢复分钟重复或真实合约不一致")
+                    price = Decimal(str(item["adjusted_close"]))
+                    if not price.is_finite() or price <= 0:
+                        raise ValueError("恢复分钟复权价无效")
+                    rows[stamp] = price
+    absent = [stamp for stamp in missing if stamp not in rows]
+    if absent:
+        raise RuntimeError(f"EMA恢复缺少{len(absent)}根完整交易分钟，首根ts_event={absent[0]}；"
+                           "保持闭闸，须提供--recovery-bars权威完整分钟，不能用当前价格补造")
+    for stamp in missing:
+        checkpoint.warm_closed(stamp, rows[stamp])
+
+
+def warm_closed_bar(runner, bar):
+    """收盘分钟只推进指标；与停机 drain 共用，不发布休市目标。"""
+    if (bar.ts_event < runner.first_complete_bar_ns
+            or bar.ts_event <= runner.ema_checkpoint.strategy.last_processed_ns):
+        return
+    boundary = bar.ts_event // 60_000_000_000 * 60_000_000_000
+    if getattr(runner, "history_service", None) is not None:
+        warm_history(runner, boundary, phase="recovery")
+    else:
+        recover_minutes(runner.ema_checkpoint, runner.calendar, boundary, runner.recovery_bars)
+    factor = runner.references.snapshot(bar.ts_event).factor(runner.ema_checkpoint.strategy.config.product, "main")
+    runner.ema_checkpoint.warm_closed(bar.ts_event, bar.close.as_decimal() * factor)
+
+
+class CheckpointedRunner(SessionRoleLiveRunner):
+    """Bar更新与提交/回报保存共享执行锁，确保EMA和目标同代快照。"""
+    def _pause_for_window(self, event, client):
+        window = getattr(self, "window_context", None)
+        if not isinstance(event, Bar) or window is None or not window.stop_requested():
+            return False
+        window.pause_runner(self, client)
+        if (window.now() >= window.window.end
+                and event.ts_event < int(window.window.end.timestamp() * 1e9)):
+            warm_closed_bar(self, event)
+        return True
+
+    def publish(self, feed_id, event):
+        with self._submit_lock:
+            if isinstance(event, Bar) and getattr(self, "history_buffering", False):
+                try:
+                    if buffer_history_bar(self, feed_id, event):
+                        return
+                except Exception as error:
+                    self.failure, self.accept_bars = str(error), False
+                    client = next(iter(self._clients.values()))
+                    disarm = getattr(client, "disarm", None)
+                    if callable(disarm):
+                        disarm("history_buffer_failure")
+                    raise
+            client = next(iter(self._clients.values()))
+            with getattr(client, "_submit_lock", nullcontext()):
+                try:
+                    if self._pause_for_window(event, client):
+                        return None
+                    if (isinstance(event, Bar) and self.accept_bars and event.ts_event >= self.first_complete_bar_ns
+                            and event.ts_event > self.ema_checkpoint.strategy.last_processed_ns):
+                        boundary = event.ts_event // 60_000_000_000 * 60_000_000_000
+                        if getattr(self, "history_service", None) is not None:
+                            warm_history(self, boundary, phase="recovery")
+                        else:
+                            recover_minutes(self.ema_checkpoint, self.calendar, boundary, self.recovery_bars)
+                    if self._pause_for_window(event, client):
+                        return None
+                    result = super().publish(feed_id, event)
+                    if self.accept_bars and self.manager is not None:
+                        self.manager.save()
+                    return result
+                except Exception as error:
+                    self.failure = str(error)
+                    self.accept_bars = False
+                    disarm = getattr(client, "disarm", None)
+                    if callable(disarm):
+                        disarm("continuous_bar_or_checkpoint_failure")
+                    raise
+
+    def mark_history_live_start(self):
+        with self._submit_lock:
+            now = self._clock_ns()
+            self.first_complete_bar_ns = max(self.first_complete_bar_ns,
+                first_complete_minute(now))
+
+    def begin_bars(self):
+        window = getattr(self, "window_context", None)
+        if window is not None and window.stop_requested():
+            window.pause_runner(self)
+            return
+        if getattr(self, "history_service", None) is None:
+            return super().begin_bars()
+        def validate():
+            if self.failure or not self.session_ready():
+                raise RuntimeError(self.failure or "历史/实时衔接后MD/TD不健康")
+        start_after_history(self, flush=lambda: flush_buffer(self), validate=validate)

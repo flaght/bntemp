@@ -21,6 +21,8 @@ from bomber.framework.trader.execution.risk import RiskLimits, MarketReferencePr
 from bomber.framework.trader.runtime.live.channels.ctp import (
     CtpLiveProfile, CtpExecutionChannel)
 from bomber.framework.trader.runtime.live.contracts import SessionReadiness
+from bomber.framework.trader.runtime.live.history import (
+    buffer_history_bar, first_complete_minute, start_after_history)
 from bomber.framework.trader.runtime.live.local import LocalExecutionChannel
 from bomber.framework.trader.runtime.live.health import validate_instrument_max_age
 from bomber.framework.trader.runtime.live.recovery import (
@@ -84,21 +86,15 @@ class CalendarSessionRunner(UnifiedStrategyRunner):
     def begin_bars(self):
         with self._submit_lock:
             if getattr(self, "history_service", None) is not None:
-                self.history_service.flush(self)
-                self._check()
-                pending = sorted(self.history_buffer, key=lambda bar: bar.ts_event)
-                self.history_buffer = []
-                self.history_buffering = False
-                self.accept_bars = True
-                for bar in pending:
-                    self.publish(self.market_feed_id, bar)
+                start_after_history(self, flush=lambda: self.history_service.flush(self),
+                    validate=self._check, replay_buffer=True)
                 return
             if self.strategy._revision:
                 session = SimpleNamespace(runner=self, strategy=self.strategy)
                 self.strategy.rewarm_after_restore(restore_direction(session))
             # 第一个不完整分钟不进入信号窗口。
             now = self._clock_ns()
-            self.first_complete_bar_ns = ((now + MINUTE - 1) // MINUTE + 1) * MINUTE - 1
+            self.first_complete_bar_ns = first_complete_minute(now)
             self.pending_frames.clear()
             self.accept_bars = True
 
@@ -108,7 +104,7 @@ class CalendarSessionRunner(UnifiedStrategyRunner):
                 self.strategy.rewarm_after_restore(restore_direction(
                     SimpleNamespace(runner=self, strategy=self.strategy)))
             now = self._clock_ns()
-            self.first_complete_bar_ns = ((now + MINUTE - 1) // MINUTE + 1) * MINUTE - 1
+            self.first_complete_bar_ns = first_complete_minute(now)
 
     def _prepare_history(self):
         if getattr(self, "history_service", None) is not None:
@@ -172,16 +168,11 @@ class CalendarSessionRunner(UnifiedStrategyRunner):
 
     def publish(self, feed_id, event):
         if isinstance(event, Bar) and getattr(self, "history_buffering", False):
-            with self._submit_lock:
-                if self.history_buffering:
-                    if feed_id != self.market_feed_id or event.bar_type.instrument_id not in self.fixed_ids:
-                        self.close_role_gate("跨期历史缓冲来源或合约不符")
-                    if event.ts_event > self._clock_ns():
-                        self.close_role_gate("跨期历史缓冲Bar来自未来")
-                    if len(self.history_buffer) >= 10000:
-                        self.close_role_gate("跨期历史加载期间实时缓冲溢出")
-                    self.history_buffer.append(event)
+            try:
+                if buffer_history_bar(self, feed_id, event):
                     return
+            except Exception as error:
+                self.close_role_gate(str(error))
         if not isinstance(event, Bar) or not self.accept_bars:
             return
         instrument = event.bar_type.instrument_id
