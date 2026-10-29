@@ -16,6 +16,7 @@ for name in ("TradeTickBarFeed", "ReceiveTimeTradeTickBarFeed"):
 if __name__ == "__main__":
     suite = unittest.defaultTestLoader.loadTestsFromNames([
         "tests.test_live_history",
+        "tests.test_history_warmup",
         "tests.test_calendar_spread_history",
         "tests.test_cross_section_history",
         "tests.test_hybrid_history_source",

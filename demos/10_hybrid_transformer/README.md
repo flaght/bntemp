@@ -482,3 +482,20 @@ PYTHONPATH=.:.validation/packages python -B -m tests.run_live_continuous_offline
 ```
 
 真实DolphinDB/SimNow跨休盘、跨日接续仍需在Linux运行机验证。
+
+## 历史预热适配层收敛（2026-10-29）
+
+`history.py`现只保留研究字段需求、模型时间标签、预测器预热和模型窗口身份适配。
+配置JSON解析、DolphinDB服务构建、单路加载/审计、本地归档过滤和窗口合并复用公共框架；
+历史/实时VWAP使用相同的期货数值校验。历史不足继续等待实时分钟，来源故障和数据冲突仍阻止启动。
+归档审计现在按整个请求窗口计算缺失数量，包括尚未录制的前段，而非仅统计已有数据之间的内部缺口。
+
+启动命令和现有JSON配置不变。部署时同步本目录`history.py`以及框架：
+`dataprep/history/factory.py`、`dataprep/history/__init__.py`、新增`dataprep/history/futures.py`、
+`market/futures.py`、`trader/runtime/live/history.py`。完整公共历史回归包含新测试`tests/test_history_warmup.py`。
+详细接口见[公共历史预热](../../doc/functions/trader/HistoryFrameLoader.md)。
+
+历史读取数量与模型门槛分别设置：`--history-minutes`允许0至1500，0表示关闭外部历史读取。
+例如设置260，在没有已有模型窗口且实际读到260根的情况下，继续积累至少40根完整实时分钟后才达到
+`MODEL_MIN_RAW_BARS=300`的最低门槛；因子/序列条件仍须满足。读取数量不写入模型恢复身份，
+无需为此修改原检查点或降低模型最小根数。

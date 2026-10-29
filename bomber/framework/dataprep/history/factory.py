@@ -51,3 +51,37 @@ class HistoryProviderFactory:
         if not isinstance(provider_type, type) or not issubclass(provider_type, HistoryProvider):
             raise TypeError("工厂只接受HistoryProvider子类")
         cls._providers[name] = provider_type
+
+
+def build_history_service(*, history_config=None, history_file=None, calendar=None,
+                          required_fields=(), missing_policy="fail", connection=None):
+    """组装普通历史行情JSON和服务；不打开连接，不创建另一份会话日历。
+
+    字段需求和缺失政策由业务显式声明。文件优先级、盘中恢复禁用文件、
+    Provider去重和故障语义继续由HistoryService负责。
+    """
+    import json
+    from pathlib import Path
+    from .base import HistoryError
+    from .dolphindb import DolphinDbHistoryConfig
+    from .service import HistoryService
+    from ...dolphindb import DolphinDbConnectionConfig
+
+    if missing_policy not in {"fail", "allow"}:
+        raise HistoryError("历史缺失策略须为fail/allow")
+    config = None
+    if history_config is not None:
+        values = json.loads(Path(history_config).read_text())
+        if not isinstance(values, dict):
+            raise HistoryError("历史配置须为JSON对象")
+        if values.get("date_basis") == "trading":
+            if calendar is None:
+                raise HistoryError("交易日历史预热缺少会话日历")
+            values["session_calendar"] = calendar
+        values.setdefault("allow_missing_minutes", missing_policy == "allow")
+        config = DolphinDbHistoryConfig(connection=(connection if connection is not None else
+            DolphinDbConnectionConfig.from_env(purpose="market")), **values)
+        missing = set(required_fields) - config.columns.keys()
+        if missing:
+            raise HistoryError(f"历史配置缺少所需字段: {sorted(missing)}")
+    return HistoryService(database_config=config, file_path=history_file, missing_policy=missing_policy)
