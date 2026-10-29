@@ -65,6 +65,8 @@ PYTHONPATH=.:.validation/packages python -B -m tests.run_live_continuous_offline
 
 远端后续反馈`shared-ipc`49项、`shared-discovery`4项通过，随后在`ctp-depth-health`停止。原因是提取实际深度回调的测试Handler遗漏初始化`_depth_handlers`；真实Feed构造器已有该初始化。已补齐测试装配，并在成功发布用例中断言无错误日志；本地该组8项通过，待远端复验。
 
+最新远端验收推进至`cross-live`：83项中，DCE／CZCE平今优先记账用例的两个子场景因简化回报缺少`client_order_id`报错。已改用标准`ExecutionReport`，同时核验原今昨仓、盈亏及费用审计订单ID；本地该用例两个场景通过。本机SDK夹具无法完整运行原生行情装配，完整83项仍待远端复验。
+
 - 在已安装Bomber原生引擎的环境运行完整EMA数值和原生Live装配回归；本机结果不替代该验收。
 - 在目标运行机验证真实DolphinDB读取、历史落库与实时衔接，以及SimNow午休／跨日／同文件恢复／正常停机。
 - 同步部署时包含公共Live文件和相应应用依赖，移除01／10旧continuous.py；保留原检查点及已有策略约束。
