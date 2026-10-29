@@ -217,35 +217,82 @@ class ProbeNativeTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 probe.validate_td(driver, args)
 
+    def probe_host(self, cleanup):
+        directory = Path(cleanup.enter_context(TemporaryDirectory()))
+        modules = self.native_modules()
+        _, _, transport, _, resources = self.native_account(directory / "unused.json", modules, scoped=True)
+        transport.gross = {"ag2612.SHFE": (0, 1)}
+        args = probe.parse_args(["--trading-day", "20261013", "--connect", "--submit",
+            "--confirm-simnow", "--instrument", "cu2612.SHFE", "--limit-price", "2990"])
+        spec = NS(tick=Decimal(1), multiplier=Decimal(1))
+        holder = {}
+        def validate():
+            if holder:
+                holder["host"].service.prices.update(self.instrument, 3000, time.time_ns() - 1_000_000_000)
+        driver = modules.driver.CtpNativeTraderDriver("account", "demo", transport,
+            enable_simnow_orders=True, max_session_orders=1, disconnect_handler=lambda reason: None)
+        host = probe.build_host(args, driver, transport, spec, self.instrument,
+                                validate, resources, directory / "probe-account.json")
+        holder["host"] = host
+        validate()
+        host.start()
+        cleanup.callback(host.stop)
+        return host, transport, directory, validate
+
     def test_real_probe_builder_preserves_external_positions_and_uses_fresh_state(self):
         with ExitStack() as cleanup:
-            directory = Path(cleanup.enter_context(TemporaryDirectory()))
-            modules = self.native_modules()
-            unused, _, transport, _, resources = self.native_account(directory / "unused.json", modules, scoped=True)
-            transport.gross = {"ag2612.SHFE": (0, 1)}
-            args = probe.parse_args(["--trading-day", "20261013", "--connect", "--submit",
-                "--confirm-simnow", "--instrument", "cu2612.SHFE", "--limit-price", "2990"])
-            spec = NS(tick=Decimal(1), multiplier=Decimal(1))
-            holder = {}
-            def validate():
-                if holder:
-                    holder["host"].service.prices.update(self.instrument, 3000, time.time_ns() - 1_000_000_000)
-            driver = modules.driver.CtpNativeTraderDriver("account", "demo", transport,
-                enable_simnow_orders=True, max_session_orders=1, disconnect_handler=lambda reason: None)
-            host = probe.build_host(args, driver, transport, spec, self.instrument,
-                                    validate, resources, directory / "probe-account.json")
-            holder["host"] = host
-            validate()
-            host.start()
-            cleanup.callback(host.stop)
+            host, transport, directory, validate = self.probe_host(cleanup)
             result = probe.exercise(host, self.instrument, Decimal(2990), validate, timeout=1)
+            self.assertIsNotNone(result.mother, result.wait_outcome)
             self.assertEqual(result.mother["submitting_strategy"], "mother-probe-two")
             self.assertEqual(result.result(host, runtime_status="completed")["status"], "passed")
+            self.assertIsNone(host.service.execution_stop)
+            self.assertEqual(len(transport.sent), 1)
+            self.assertEqual(host.account.driver.order_budget, {"limit": 1, "submitted": 1})
+            from bomber.framework.trader.execution.contracts import OrderBudgetExhausted
+            with self.assertRaises(OrderBudgetExhausted):
+                host.account.driver.check_order_capacity(1)
             host.stop()
             self.assertEqual(host.account.final_gross, {"ag2612.SHFE": (Decimal(0), Decimal(1))})
             self.assertEqual(host.account.final_active_orders, 0)
             self.assertTrue((directory / "probe-account.json").exists())
             self.assertFalse((directory / "unused.json").exists())
+
+    def test_single_order_probe_waits_for_delayed_acceptance_before_owner_cancel(self):
+        with ExitStack() as cleanup:
+            host, transport, _, validate = self.probe_host(cleanup)
+            on_order = transport.on_order
+            pending = []
+            transport.on_order = pending.append
+            def acknowledge(_seconds):
+                self.assertFalse(transport.canceled)
+                self.assertTrue(all(row.active for row in host.strategies.values()))
+                while pending:
+                    on_order(pending.pop(0))
+                transport.on_order = on_order
+            with patch.object(probe.time, "sleep", side_effect=acknowledge):
+                result = probe.exercise(host, self.instrument, Decimal(2990), validate, timeout=1)
+            self.assertEqual(result.wait_outcome, "accepted_observed")
+            self.assertEqual(result.result(host, runtime_status="completed")["status"], "passed")
+            self.assertEqual(len(transport.sent), 1)
+            self.assertIsNone(host.service.execution_stop)
+
+    def test_single_order_probe_waits_for_partial_fill_without_budget_stop(self):
+        with ExitStack() as cleanup:
+            host, transport, _, validate = self.probe_host(cleanup)
+            def partial(_seconds):
+                self.assertFalse(transport.canceled)
+                self.assertTrue(all(row.active for row in host.strategies.values()))
+                transport.fill(transport.sent[0]["OrderRef"], 1)
+            with patch.object(probe.time, "sleep", side_effect=partial):
+                result = probe.exercise(host, self.instrument, Decimal(2990), validate,
+                    timeout=1, cancel_after="partial", partial_wait_seconds=1)
+            self.assertEqual(result.wait_outcome, "partial_observed")
+            self.assertEqual(probe.partial_cancel_result(result,
+                host.account.execution.backend.reports, "completed")["status"], "passed")
+            self.assertEqual(len(transport.sent), 1)
+            self.assertIsNone(host.service.execution_stop)
+            self.assertTrue(host.strategies["mother-probe-two"].active)
 
     def test_two_sources_form_one_explicit_limit_mother_and_non_submitter_cancels(self):
         with ExitStack() as cleanup:

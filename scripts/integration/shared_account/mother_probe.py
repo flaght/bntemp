@@ -198,7 +198,10 @@ def exercise(host, instrument, price, validate, *, timeout, cancel_after="accept
     deadline = time.monotonic() + timeout
     partial_deadline = None
     while True:
-        host.service.poll()
+        host.account.poll()
+        # 单母单验收由Driver硬限1单；常规poll会因额度用尽先撤掉待观察母单。
+        # 此处只排空停止回报，账户、行情健康和等待期限仍由本循环核验。
+        host.service.poll_stopping()
         for item in items:
             item.session.client.drain_events()
         types = {row.report_type.value for row in host.account.execution.backend.reports}
@@ -220,7 +223,6 @@ def exercise(host, instrument, price, validate, *, timeout, cancel_after="accept
         if partial_deadline is None and now >= deadline:
             probe.wait_outcome = "acceptance_timeout"
             break
-        host.account.poll()
         if observe_health is not None:
             observe_health()
         time.sleep(0.02)

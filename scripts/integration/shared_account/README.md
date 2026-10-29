@@ -492,6 +492,8 @@ python -u -m scripts.integration.shared_account.mother_probe \
 peer_state_after_owner_cancel和unexpected_fill。正式交易状态持久化仍使用原框架，
 不是拼接柜台回报或手工改策略仓位。全部成交抢先撤单为not_exercised，不登记撤单
 通过；真实部分成交和拒单按实际回报分别判断。
+单母单等待期间使用账户健康轮询和`poll_stopping`排空回报，并保留行情检查及等待期限。
+常规`service.poll()`会在1单额度用尽时停止全部贡献、提前撤掉待观察母单，因此不用于此等待循环；Driver的1单硬限制继续生效。
 本机/远端受控装配回归可单独运行`python -u -m tests.run_main_ema_acceptance --only shared-mother-probe`；
 该组传输为替身，不能代替此入口在Linux上的只读和SimNow实际验收。
 
