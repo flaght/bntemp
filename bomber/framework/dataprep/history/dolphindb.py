@@ -28,6 +28,7 @@ class DolphinDbHistoryConfig:
     # 运行时复用策略的会话日历，不在JSON中另存一份日期规则。
     session_calendar: SessionCalendar | None = field(default=None, repr=False, compare=False)
     time_column_kind: str = "time"
+    allow_missing_minutes: bool = False
 
     def __post_init__(self):
         if re.fullmatch(r"dfs://[A-Za-z0-9_/-]+", self.database) is None:
@@ -55,6 +56,8 @@ class DolphinDbHistoryConfig:
         if self.instrument_format not in {"full", "symbol"} or (self.instrument_format == "symbol"
                 and (self.venue is None or re.fullmatch(r"[A-Z0-9]+", self.venue) is None)):
             raise HistoryError("symbol格式须明确固定Venue，不能猜测交易所")
+        if type(self.allow_missing_minutes) is not bool:
+            raise HistoryError("allow_missing_minutes须为布尔值")
         if self.time_column_kind not in {"time", "timestamp"}:
             raise HistoryError("time_column_kind须为time/timestamp")
         if self.time_column_kind == "timestamp" and (not composite or self.date_basis != "trading"):
@@ -231,8 +234,11 @@ class DolphinDbHistoryProvider(HistoryProvider):
             if c.volume_mode == "cumulative":
                 current = point
                 if previous is not None and previous[0] == owner:
+                    if (current.volume < previous[2].volume or current.value < previous[2].value
+                            or (current.volume == previous[2].volume) != (current.value == previous[2].value)):
+                        raise HistoryError(f"累计历史量额倒退或不同步: ts_event={stamp}")
                     if previous[1] + 1 != index:
-                        if stamp >= request.start_ns:
+                        if stamp >= request.start_ns and not c.allow_missing_minutes:
                             raise HistoryError(f"累计历史缺少前一分钟，不能把跨分钟量额归入本分钟: ts_event={stamp}")
                         previous = (owner, index, current)
                         continue
@@ -241,7 +247,7 @@ class DolphinDbHistoryProvider(HistoryProvider):
                 elif index == 0:
                     volume, value = current.volume, current.value
                 else:
-                    # 窗口首行是盘中快照，只作差分基准；覆盖检查会拒绝缺少的目标分钟。
+                    # 窗口首行是盘中快照，只作差分基准；覆盖检查记录该目标分钟缺失。
                     previous = (owner, index, current)
                     continue
                 previous = (owner, index, current)

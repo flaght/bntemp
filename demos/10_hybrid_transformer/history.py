@@ -7,7 +7,7 @@ import json
 import time
 from pathlib import Path
 
-from bomber.framework.dataprep.history import HistoryService, DolphinDbHistoryConfig, HistoryError, HistoryResult
+from bomber.framework.dataprep.history import HistoryService, DolphinDbHistoryConfig, HistoryError, HistoryResult, HistoryUnavailable
 from bomber.framework.dolphindb import DolphinDbConnectionConfig
 from bomber.framework.calendars.sessions import ns_datetime
 
@@ -40,6 +40,8 @@ def build_history(
             # 用交易日对应的会话窗口还原夜盘、跨午夜分钟的自然日期。
             values["session_calendar"] = calendar
 
+        # 历史不足时保留可用分钟；累计量额缺少前值的分钟不合并、不补造。
+        values.setdefault("allow_missing_minutes", True)
         config = DolphinDbHistoryConfig(
             connection=DolphinDbConnectionConfig.from_env(purpose="market"),
             **values,
@@ -59,7 +61,7 @@ def build_history(
     return HistoryService(
         database_config=config,
         file_path=history_file,
-        missing_policy="fail",
+        missing_policy="allow",
     )
 
 
@@ -82,8 +84,15 @@ def warm_history(runner, *, product: str, history_minutes=0, resume=False, model
     print(f"Hybrid预热开始: instrument={runner.bound_instrument} phase={phase} "
           f"backend={service.backend} required={len(stamps)} "
           f"first_ns={stamps[0] if stamps else None} last_ns={stamps[-1] if stamps else None}", flush=True)
+    if isinstance(service.config, DolphinDbHistoryConfig):
+        source = service.config
+        print(f"Hybrid历史数据源: endpoint={source.connection.host}:{source.connection.port} "
+              f"database={source.database} table={source.table}", flush=True)
     try:
         result = service.load(str(runner.bound_instrument), stamps, phase=phase)
+        # 只允许真实覆盖不足；读取失败不能被解释成“没有历史”。
+        if service.backend in result.unavailable_sources:
+            raise HistoryUnavailable(f"历史行情源读取失败: {service.backend}；请检查连接和查询")
         rows = _model_rows(result.bars, runner, product, model_bar_timestamp)
         # 专用预热接口不经strategy.on_custom_bar，因此不会重建历史交易批次。
         count = runner.strategy.predictor.warm_history(rows)
@@ -97,8 +106,16 @@ def warm_history(runner, *, product: str, history_minutes=0, resume=False, model
         raise
     # 记录窗口最后一个事件时间，实时publish用它排除重叠的分钟。
     runner.history_last_ns = max((bar.ts_event for bar in result.bars), default=-1)
-    print(f"Hybrid预热完成: loaded={count} phase={phase} {result.audit()} "
+    workflow = getattr(runner.strategy.predictor, 'workflow', None)
+    minimum = getattr(workflow, 'min_raw_bars', 300)
+    remaining = max(0, minimum - count)
+    print(f"Hybrid历史加载完成: requested={len(stamps)} loaded={count} "
+          f"missing={len(result.missing)} model_window={count} min_raw_bars={minimum} "
+          f"warmup_remaining={remaining} phase={phase} sources={result.sources} "
           f"elapsed_seconds={time.monotonic() - started:.3f}", flush=True)
+    if remaining:
+        print(f"Hybrid模型预热等待: 已装入{count}根历史分钟，仍需至少{remaining}根完整实时分钟；"
+              "保持订阅，模型未就绪前不建立新批次", flush=True)
 
 
 

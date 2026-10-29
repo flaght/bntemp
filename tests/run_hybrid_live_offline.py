@@ -302,5 +302,18 @@ class HybridAssemblyTests(unittest.TestCase):
             source.close.assert_called_once()
 
 
+    def test_recording_accepts_real_minutes_before_model_is_ready_but_rejects_no_data_and_failure(self):
+        lifecycle=object.__new__(live.HybridRecordingLifecycle)
+        session=NS(runner=NS(failure=None),strategy=NS(bars_used=2,last_prediction=None),client=NS(requests=[]))
+        lifecycle.verify(session)
+        session.strategy.bars_used=0
+        with self.assertRaisesRegex(RuntimeError,'没有处理完整实时分钟'):
+            lifecycle.verify(session)
+        session.strategy.bars_used=2
+        session.runner.failure='state conversion failed'
+        with self.assertRaisesRegex(RuntimeError,'state conversion failed'):
+            lifecycle.verify(session)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
