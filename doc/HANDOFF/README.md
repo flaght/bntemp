@@ -1,5 +1,7 @@
 # Bomber 交接记录分类索引
 
+2026-10-29公共Live模块：[当前进度与接手事项](../architecture/LIVE_COMMON_PROGRESS.md)。生命周期、历史协调和检查点接入已实现，01／10常驻迁移完成；08已有公共常驻能力，高层接入待统一。最近离线回归309／82／91项通过，原生与真实外部系统验收另列；05模块式预检尚未实现、优先级保持5。
+
 2026-10-14最新08：[共享执行接入与启动跨日恢复](live/HANDOFF_OPTION_VEGA_SHARED_ROLLOVER_2026-10-14.md)。已接入option_vega工厂、指数查询/封帧及选约去重；CFFEX已终结订单可按当日权威今昨仓/成本恢复。原仓快捷入口运行至收盘或主动停止；离线通过，服务器实际恢复仍待核对。
 
 2026-10-13会话专项：[静态Provider／CU真实两源对照及旧日历清理](../data/TRADING_SESSION_GENERALIZATION_2026-10-09.md)已完成；历史源配置统一、可用CU分钟源和正式历史接续仍待完成。当前Replay为实时Bar预热进度，未取得最终summary；详见[证据](../evidence/live/TRADING_SESSIONS_CU_PASS_20261013.json)。

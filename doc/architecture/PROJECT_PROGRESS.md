@@ -1,5 +1,7 @@
 # Bomber pro 项目进度报告（更新版）
 
+> 本文保留2026-09-22历史快照。2026-10-29的Live公共模块实施、验证与待办见[当前专项进度](LIVE_COMMON_PROGRESS.md)，不以本文早期状态代替最新专项记录。
+
 **截至：2026 年 9 月 22 日。** 本报告依据更新后的[项目状态台账 (line 826)](/Users/kerry/work/bomber1/pro/doc/architecture/STRATEGY_ARCHITECTURE.md:826)及最新策略架构文档整理，未重新运行测试。
 
 ---

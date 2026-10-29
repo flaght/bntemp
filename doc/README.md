@@ -1,5 +1,7 @@
 # Bomber 项目文档导航
 
+2026-10-29 Live公共能力提取：[当前进度台账](architecture/LIVE_COMMON_PROGRESS.md)。01生命周期、02历史协调、04检查点接入已实现并通过本地离线回归；03完成01／10首批迁移，08已有公共常驻链路、高层接入待统一；05模块式预检保持优先级5、尚未实现。台账包含309／82／91项验证结果及待验收边界。
+
 这里按主题组织系统设计、数据契约、策略方案、外部接口、架构审查与交接记录。同一主题的原稿、修订稿和历史记录放在一起，版本与验收状态在索引中说明。先根据下面的阅读入口选择主文档，再进入对应专项。
 
 整理日期：2026-10-10，Asia/Shanghai。原有 16 份专题文档、37 份交接文档和 54 份校验及补丁材料已分类迁移。新旧路径见 [迁移说明](MIGRATION_2026-10-10.md)。
@@ -12,6 +14,7 @@
 | --- | --- | --- |
 | 函数用途、参数和调用示例 | [函数说明索引](functions/README.md) | 按模块分类，逐个函数查询输入、返回值、时间约定和常见错误 |
 | 项目整体结构和实现进度 | [统一策略架构与状态台账](architecture/STRATEGY_ARCHITECTURE.md) | 框架模块、运行链路、实现及验证进度的主要入口 |
+| 本轮Live公共模块进度 | [Live公共能力提取进度](architecture/LIVE_COMMON_PROGRESS.md) | 01—06工作项状态、五策略接入、08常驻范围、离线结果及后续待办 |
 | 系统目标和职责边界 | [系统目标架构](architecture/ARCHITECTURE_FIXED.md) | 区分目标设计与已经实现的能力 |
 | 当前架构缺口 | [GAP 评估快照](audits/ARCHITECTURE_GAP_REVIEW_2026-10-09.md) → [完整跟踪清单](audits/ARCHITECTURE_GAPS_2026-10-09.md) | 前者便于掌握评估时状态，后者保留逐项验收标准及过程 |
 | 九个策略及公共输入层 | [策略框架交接](HANDOFF/demos/HANDOFF_DEMOS_FRAMEWORK_2026-10-07.md) → [输入层实现记录](strategies/DEMOS_INPUT_STAGE1_IMPLEMENTATION_2026-10-04.md) | 具体入口和参数继续查各 demo 的 README |
