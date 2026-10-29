@@ -449,8 +449,14 @@ class HybridSessionLifecycle(CtpResumeLifecycle, CtpSessionLifecycle):
 class HybridRecordingLifecycle(RecordingExecutionLifecycle, CtpMarketSessionLifecycle):
     """只记录策略目标，仍使用真实行情、参考、模型和批次逻辑。
 
-    父类Recording的验收要求取得目标请求；这里不创建TD交易通道。
+    不创建TD交易通道；窗口积累期间收到完整分钟即可验证行情接入。
     """
+    def verify(self, session):
+        if session.runner.failure:
+            raise RuntimeError(session.runner.failure)
+        if not session.strategy.bars_used:
+            raise RuntimeError('没有处理完整实时分钟，检查行情订阅')
+
     def poll(self, session):
         session.bar_feed.poll()
         result = super().poll(session)
