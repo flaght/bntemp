@@ -71,6 +71,8 @@ PYTHONPATH=.:.validation/packages python -B -m tests.run_live_continuous_offline
 
 最新远端验收在`history-provider`停止：历史后行情失效已被公共生命周期正确拒绝，但测试仍匹配旧错误文本。已更新为公共闭闸提示，并补充实时决策、下单授权均保持关闭的断言。未改变运行行为。本地公共历史82项及生命周期21项通过；依赖原生EMA的完整41项待远端复验。
 
+本轮根据GAP-03远端日志执行[集中排查](LIVE_COMMON_ACCEPTANCE_AUDIT.md)：修复失效的行情工厂测试替换点、收集预期参数拒绝日志，并增加`--keep-going`及4项验收入口回归。现共48组，本机17组直接通过、13组使用既有SDK夹具通过，18组因原生引擎／夹具接口／socket权限限制仍须远端验证。GAP-03的22项通过。远端下一轮使用`python -u -m tests.run_main_ema_acceptance --keep-going`，一次收齐失败组；不再逐组遇错即停后反复同步。
+
 - 在已安装Bomber原生引擎的环境运行完整EMA数值和原生Live装配回归；本机结果不替代该验收。
 - 在目标运行机验证真实DolphinDB读取、历史落库与实时衔接，以及SimNow午休／跨日／同文件恢复／正常停机。
 - 同步部署时包含公共Live文件和相应应用依赖，移除01／10旧continuous.py；保留原检查点及已有策略约束。

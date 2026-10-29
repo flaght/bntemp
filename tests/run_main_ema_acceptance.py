@@ -11,6 +11,7 @@ import time
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CASES = {
+    "acceptance-runner": ("unittest", "tests.test_main_ema_acceptance"),
     "sessions": ("tests.test_session_calendar",),
     "trading-hours": ("unittest", "tests.test_trading_hours", "tests.test_session_inputs",
                       "tests.test_trading_calendar", "tests.test_calendars_compiled",
@@ -67,6 +68,7 @@ CASES = {
     "entry": ("tests.run_main_ema_live",),
 }
 SOURCES = (
+    "tests/run_main_ema_acceptance.py", "tests/test_main_ema_acceptance.py",
     "bomber/framework/trader/execution/contracts.py",
     "bomber/framework/trader/execution/live/backend.py",
     "demos/03_calendar_spread/run_live.py",
@@ -333,6 +335,7 @@ def check_reference_deployment():
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--only", choices=tuple(CASES), action="append", help="只复测指定失败模块，可重复")
+    parser.add_argument("--keep-going", action="store_true", help="失败后继续其他独立离线模块，最后汇总全部失败")
     parser.add_argument("--timeout", type=float, default=180, help="每模块超时秒数")
     parser.add_argument("--report-dir", type=Path, default=PROJECT_ROOT / "tests/results")
     parser.add_argument("--list", action="store_true")
@@ -359,6 +362,7 @@ def main():
                 indent=2) + "\n", encoding="utf-8")
             print(f"部署核对失败：{error}。尚未开始测试。", flush=True)
             return 2
+    failures = []
     for key, command in selected.items():
         started = time.monotonic()
         print(f"\n验证模块：{key}", flush=True)
@@ -375,12 +379,19 @@ def main():
         print(output, end="" if output.endswith("\n") else "\n", flush=True)
         row = {"module": key, "exit_code": code, "seconds": round(time.monotonic() - started, 3)}
         result["modules"].append(row)
-        result["status"] = "failed" if code else "running"
+        if code:
+            failures.append(key)
+        result["status"] = "failed" if failures else "running"
         (report_dir / "summary.json").write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         print(f"模块结果: {row}", flush=True)
-        if code:
+        if code and not args.keep_going:
             print(f"停止。同步修复后仅复测：python -u -m tests.run_main_ema_acceptance --only {key}", flush=True)
             return 1
+    if failures:
+        print(f"离线验收失败模块：{', '.join(failures)}", flush=True)
+        retry = " ".join(f"--only {key}" for key in failures)
+        print(f"修复后集中复测：python -u -m tests.run_main_ema_acceptance --keep-going {retry}", flush=True)
+        return 1
     result["status"] = "passed"
     (report_dir / "summary.json").write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print("全部选定离线模块通过；仍须本次柜台只读、在线Recording及受控订单验收。", flush=True)
