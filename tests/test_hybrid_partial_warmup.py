@@ -109,14 +109,21 @@ class PartialHistoryTests(unittest.TestCase):
             provider._read_trading(rows,request)
 
     def test_live_runner_waits_with_299_history_bars_and_predicts_only_after_next_complete_bar(self):
-        self._assert_live_window_readiness(299)
+        self._assert_live_window_readiness(299, minimum=300)
 
     def test_260_requested_history_bars_still_require_40_live_bars_before_first_target(self):
+        self._assert_live_window_readiness(260, minimum=300)
+
+    def test_default_260_minimum_predicts_on_the_260th_raw_bar(self):
+        self._assert_live_window_readiness(259)
+
+    def test_260_history_bars_are_ready_but_do_not_replay_historical_signals(self):
         self._assert_live_window_readiness(260)
 
-    def _assert_live_window_readiness(self, history_count):
+    def _assert_live_window_readiness(self, history_count, *, minimum=None):
         from tests import run_hybrid_live_offline as fixture
         live=fixture.live
+        minimum=live.MODEL_MIN_RAW_BARS if minimum is None else minimum
         class WaitingPredictor(fixture.Predictor):
             def __init__(self,**kwargs):
                 super().__init__(**kwargs)
@@ -138,7 +145,8 @@ class PartialHistoryTests(unittest.TestCase):
                 spec=NS(venue='SHFE',currency='CNY',tick=Decimal(1),multiplier=Decimal(10)),
                 snapshot=lambda stamp:NS(instrument=lambda p,r:'rb2701',factor=lambda p,r:Decimal(1)))
             refs.instrument_meta=lambda:fixture.base.InstrumentMeta(instrument,price_precision=0,multiplier=Decimal(10))
-            with patch.dict('os.environ',SPLIT,clear=True),patch.object(fixture.adapter,'MizarWorkflowAdapter',WaitingPredictor):
+            with patch.dict('os.environ',SPLIT,clear=True),patch.object(fixture.adapter,'MizarWorkflowAdapter',WaitingPredictor), \
+                    patch.object(live,'MODEL_MIN_RAW_BARS',minimum):
                 session=live.assemble(NS(references=refs,calendar=self.calendar,upstream=fixture.Upstream('fixture')),
                     NS(driver=None),product='RB',release_path=root/'release',directions_file=root/'directions.csv',
                     signal_config=signal,market_config=live.load_market_config(ROOT/'demos/10_hybrid_transformer/market_dolphindb_rb.json'),
@@ -159,7 +167,7 @@ class PartialHistoryTests(unittest.TestCase):
                 self.assertIsNone(session.strategy.last_prediction)
                 self.assertFalse(session.client.requests)
                 self.assertFalse(session.strategy.holdings.active)
-                required=300-history_count
+                required=max(1,minimum-history_count)
                 for index in range(required):
                     now[0]=ns('2026-10-28 09:05:02')+index*MINUTE
                     stamp=ns('2026-10-28 09:05')+index*MINUTE-1
@@ -174,7 +182,8 @@ class PartialHistoryTests(unittest.TestCase):
                         self.assertIsNone(session.strategy.last_prediction)
                         self.assertFalse(session.client.requests)
                         self.assertFalse(session.strategy.holdings.active)
-                self.assertEqual(len(session.strategy.predictor.workflow.history),300)
+                self.assertEqual(session.strategy.predictor.workflow.min_raw_bars,minimum)
+                self.assertEqual(len(session.strategy.predictor.workflow.history),history_count+required)
                 self.assertEqual(session.strategy.bars_used,required)
                 self.assertEqual(len(session.strategy.holdings.active),1)
                 self.assertEqual(dict(session.client.requests[-1].logical_targets),{'rb_main':Decimal(2)})

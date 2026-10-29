@@ -62,7 +62,7 @@ MINUTE = 60_000_000_000  # 框架时间戳的单位为纳秒；这里是一分�
 # 模型与策略声明的默认设置；不扩展成命令行开关。
 MODEL_DEVICE = 'cpu'           # 模型推理设备；需要GPU时在代码里改这里。
 MODEL_HISTORY_BARS = 1500      # 工作流最多保留的原始分钟窗口。
-MODEL_MIN_RAW_BARS = 300       # 最少原始分钟数；其他因子/模型条件仍可能需要继续预热。
+MODEL_MIN_RAW_BARS = 260       # 最少原始分钟数；其他因子/模型条件仍可能需要继续预热。
 MODEL_BAR_TIMESTAMP = 'start'  # 研究数据用分钟开始标签；与事件实际可用时间是两个概念。
 REBALANCE_MINUTES = 1          # 新批次的开仓检查间隔；持仓到期仍每轮检查。
 

@@ -179,7 +179,7 @@ fees = CommissionConfig(
 
 策略和装配集中在 `run_live.py`，常驻窗口调度复用 `bomber.framework.trader.runtime.live.continuous`，命令行只保留业务输入和运行开关。各函数仅接收其使用的显式参数，命令行对象只在解析和main读取字段时存在，不沿调用链传递；Runner不保存整份命令行配置。`build_strategy()` 独立声明模型和策略，参数解析阶段不构造它们。
 
-- 模型默认设置：CPU、历史窗口1500根、最低300根、开始时间标签；由本文件的 `MODEL_*` 常量明确声明。
+- 模型默认设置：CPU、历史窗口1500根、最低260根、开始时间标签；由本文件的 `MODEL_*` 常量明确声明。
 - 策略开仓间隔默认1分钟，持仓周期和信号函数仍按外部信号文件的品种配置读取。
 - `main()` 将解析结果逐项转换为显式关键字参数传给 `build_runtime()`；不传命令行Namespace。命令行未声明的查询超时、报单上限、名义金额、限价偏移及执行政策沿用函数默认值：15秒、100笔、1000000、1跳、fills/off。需调整时在代码调用中显式传入对应关键字参数。
 - `prepare_inputs()` 默认参考超时15秒、刷新5秒。主力/条款参考库沿用 `DDB_REFERENCE_DATABASE`，通常为 `dfs://bomber_daily`。时段库独立配置，依次采用显式 `trading_hours_database`、`DDB_TRADING_HOURS_DATABASE`、默认 `dfs://bomber_static`；表沿用 `DDB_TRADING_HOURS_TABLE`，默认 `fut_trading_session`。不再把参考库自动当作时段库。
@@ -272,8 +272,8 @@ DolphinDB分钟表停止更新时，使用 `--market-source ctp --history-minute
 通道正常且满足执行条件时，已有批次仍按原期限推进到期目标。旧恢复目标不会作为新信号重复执行。
 
 日志 `bars` 是策略累计处理根数，恢复后可能非零；`model_window` 是本次模型实际窗口根数，
-`min_raw_bars=300`只是最低输入门槛，因子和序列条件可能要求继续积累。仅运行一段不足300个
-有效分钟的夜盘不能保证产生预测；不能为尽快交易而降低研究所需窗口。
+`min_raw_bars=260`是Live最低原始分钟门槛；第260根起允许进入预测计算，因子和序列条件仍须满足，
+并不保证立即产生有效预测或非零信号。
 模型DataFrame不写入交易检查点，重启从独立原始分钟文件恢复；自动跨交易日重登录由 `--run-forever` 单独启用。
 
 ### CTP分钟自动落盘与重启复用
@@ -295,7 +295,7 @@ flush和fsync，再向策略发布。首个不完整分钟不录制；同一分�
 文件单写锁防止两个进程同时追加；磁盘写入失败时不发布该分钟，沿用正常故障停机路径。
 
 `--market-source ctp --history-minutes 0` 在打开本机存档后自动恢复近期窗口，最多1500根；
-不足300根也可以恢复已有部分，再继续积累，不要求文件一开始就有300根。范围限制为最近1500个
+不足260根也可以恢复已有部分，再继续积累，不要求文件一开始就有260根。范围限制为最近1500个
 交易分钟，不把很久之前的行情当成近期窗口。启动日志 `Hybrid本地分钟恢复` 包含file、loaded、missing和recorded；
 运行报告增加bar_file和recorded_bars。
 
@@ -326,10 +326,10 @@ flush和fsync，再向策略发布。首个不完整分钟不录制；同一分�
 
 选择DolphinDB状态行情时使用 `--market-source dolphindb --market-config <路径>/market_dolphindb_rb.json`。
 先使用recording模式验证，只积累实时窗口时保持history-minutes=0。启用数据库预热时再加
-history-config=history_rb.json；2026-10-29探查只有约103行，包含形成中分钟，还不足最低300根，
-不足300根时会先装入实际可用的分钟并接续推送；模型最低根数保持300。
+history-config=history_rb.json；2026-10-29探查只有约103行，包含形成中分钟，还不足当前最低260根，
+不足260根时会先装入实际可用的分钟并接续推送。
 
-CTP路径、本地分钟录制和已存CTP会话身份保持兼容；本次不修改策略、模型和持仓期限。
+CTP路径、本地分钟录制和已存CTP会话身份保持兼容；持仓期限保持原配置；旧检查点的模型门槛若为300，须先显式迁移到260再恢复。
 
 ### 历史模型预热
 
@@ -393,8 +393,8 @@ CTP路径、本地分钟录制和已存CTP会话身份保持兼容；本次不�
 启用历史服务时，盘前阶段优先文件并由数据库补足，`--resume`恢复阶段使用数据库；`history-minutes=0`不读外部历史服务，CTP仍恢复本机录制窗口。
 
 
-历史请求300根而只有103根可用时，会打印 `requested=300 loaded=103 missing=197 model_window=103 warmup_remaining=197`。
-空结果会打印loaded=0并继续等待300根实时分钟。这里的loaded指通过字段和数值校验、实际装入模型的分钟，
+历史请求300根而只有103根可用时，会打印 `requested=300 loaded=103 missing=197`，模型窗口日志为 `model_window=103 min_raw_bars=260 warmup_remaining=157`。
+空结果会打印loaded=0并继续等待260根实时分钟。这里的loaded指通过字段和数值校验、实际装入模型的分钟，
 不等于数据库原始行数；累计量额的首行和缺口后首行可能只作差分基准。
 每根实时分钟日志打印model_window和warmup_remaining，运行报告也保存history_loaded_bars和warmup_remaining_bars。
 只允许“数据不足”继续；查询失败、无效字段、量额倒退或同一分钟冲突仍失败。恢复持仓的绝对到期时间不受模型预热等待影响。
@@ -496,6 +496,8 @@ PYTHONPATH=.:.validation/packages python -B -m tests.run_live_continuous_offline
 详细接口见[公共历史预热](../../doc/functions/trader/HistoryFrameLoader.md)。
 
 历史读取数量与模型门槛分别设置：`--history-minutes`允许0至1500，0表示关闭外部历史读取。
-例如设置260，在没有已有模型窗口且实际读到260根的情况下，继续积累至少40根完整实时分钟后才达到
-`MODEL_MIN_RAW_BARS=300`的最低门槛；因子/序列条件仍须满足。读取数量不写入模型恢复身份，
-无需为此修改原检查点或降低模型最小根数。
+当前 `MODEL_MIN_RAW_BARS=260`：读取到260根有效原始分钟就达到输入门槛，无需再等40根。
+历史预热不会重放预测或开仓；后续完整实时分钟才触发新的预测和批次，因子/序列条件仍须满足。
+读取数量不写入模型恢复身份，但最低原始分钟数会写入。旧检查点若保存300，须先备份并显式
+仅迁移 `component_states.live_session.identity.min_raw_bars` 为260，再由正常恢复流程核验账户和批次；
+不能直接删除检查点或绕过其他身份校验。

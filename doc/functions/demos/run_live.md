@@ -129,7 +129,7 @@ Recording不撮合成交，也不创建TD交易通道。CTP行情仍需要MD配�
 | --- | --- | --- |
 | 推理设备 | cpu | MODEL_DEVICE |
 | 最大模型历史窗口 | 1500根原始分钟 | MODEL_HISTORY_BARS |
-| 最低原始分钟数 | 300根 | MODEL_MIN_RAW_BARS |
+| 最低原始分钟数 | 260根 | MODEL_MIN_RAW_BARS |
 | 模型时间标签 | start | MODEL_BAR_TIMESTAMP |
 | 新批次检查间隔 | 1分钟 | REBALANCE_MINUTES |
 | CTP查询超时 | 15秒 | build_runtime默认参数 |
@@ -140,7 +140,8 @@ Recording不撮合成交，也不创建TD交易通道。CTP行情仍需要MD配�
 
 `main()`没有传入查询超时等关键字，因此Python直接使用函数签名中的默认值。以后若要在代码中调整，显式传入 `query_timeout=20` 即可，无需把它再次变成命令行开关。
 
-300根是一个预热门槛，因子和模型输入还需要有效数值。满足根数并不保证每次都会返回有效预测。
+260根是Live原始分钟门槛，第260根起允许计算预测；因子和模型输入仍需要有效数值。
+历史预热只装入窗口，新的完整实时分钟才驱动预测。原检查点保存300时，需要显式迁移这一身份参数后再恢复。
 
 ## 6. `build_runtime()`为什么没有立即启动模型和行情
 
@@ -262,7 +263,7 @@ Recording不创建恢复管理器。组装最后返回的session把Runner、策�
 
 ## 9. 通道就绪后，为什么还要预热
 
-模型需要过去的分钟窗口才能计算特征。默认 `history_minutes=0`不读取外部历史服务；CTP模式先恢复本机 `results/market/ctp/<真实合约>.jsonl` 中的近期完整分钟，再追加实时行情。无文件时从零积累，不足300根的已存部分也可以恢复。
+模型需要过去的分钟窗口才能计算特征。默认 `history_minutes=0`不读取外部历史服务；CTP模式先恢复本机 `results/market/ctp/<真实合约>.jsonl` 中的近期完整分钟，再追加实时行情。无文件时从零积累，不足260根的已存部分也可以恢复。
 
 指定历史预热时，公共启动准备调用`HybridLiveRunner.prepare_history()`，读取 [history.py](../../../demos/10_hybrid_transformer/history.py)；模型预热通过后才提交检查点、授权并由begin_bars放行：
 
