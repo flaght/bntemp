@@ -1,9 +1,10 @@
 """GAP-03来源隔离、参考时效及导出可复现性验收；仅假SDK及临时文件。"""
 from datetime import date
-from contextlib import ExitStack
+from contextlib import ExitStack, redirect_stderr
 from decimal import Decimal
 from importlib import import_module
 import json
+from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
@@ -80,16 +81,16 @@ class Gap03Tests(unittest.TestCase):
         args = live.parse_args(["--connect", "--product", "RB", "--expected-source-day", "20260921"])
         self.assertEqual(args.reference_source, "dolphindb")
         self.assertEqual((args.factor_date_basis, args.reference_max_source_age_days), ("source", 14))
-        with self.assertRaises(SystemExit):
+        with redirect_stderr(StringIO()), self.assertRaises(SystemExit):
             live.parse_args(["--connect", "--product", "RB"])
 
     def test_file_reference_requires_explicit_test_mode(self):
         live = import_module("demos.01_main_ema.run_live")
         base = ["--connect", "--product", "RB", "--reference-source", "file"]
-        with self.assertRaises(SystemExit):
+        with redirect_stderr(StringIO()), self.assertRaises(SystemExit):
             live.parse_args(base)
         self.assertTrue(live.parse_args([*base, "--allow-file-reference-test"]).allow_file_reference_test)
-        with self.assertRaises(SystemExit):
+        with redirect_stderr(StringIO()), self.assertRaises(SystemExit):
             live.parse_args(["--connect", "--product", "RB", "--expected-source-day", "20260921",
                 "--allow-file-reference-test"])
 
@@ -101,7 +102,7 @@ class Gap03Tests(unittest.TestCase):
                 "DDB_HOST": "fake", "DDB_USERNAME": "fake", "DDB_PASSWORD": "fake"}), \
                 patch.object(live.ReferenceSourceFactory, "create_for", return_value=self.source), \
                 patch.object(live, "resolve_paths", side_effect=AssertionError("禁止回退本地")) as files, \
-                patch.object(live, "CtpLiveDataFeed") as feed:
+                patch.object(live, "create_market_feed") as feed:
             with self.assertRaises(ReferenceSourceError):
                 live.prepare_inputs(args, SimpleNamespace(trading_day="20260922", resources=resources),
                     SimpleNamespace(transport=None))
