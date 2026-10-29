@@ -112,6 +112,30 @@ class LocalFlowTests(unittest.TestCase):
             self.assertEqual(set(result.models), {1, 2})
             self.assertEqual(model.call_count, 2)
 
+    def test_260th_raw_bar_enters_factor_calculation_and_earlier_bars_do_not(self):
+        class FactorsReached(Exception):
+            pass
+        with TemporaryDirectory() as directory, local_flow_with_stubbed_dependencies() as flow:
+            checkpoint = self.release(Path(directory))
+            flow.feature_A = SimpleNamespace(_dependency=('close',))
+            with patch.object(flow, '_checkpoint', side_effect=checkpoint), \
+                    patch.object(flow, '_factors_infos', return_value=[]), \
+                    patch.object(flow, 'HybridTransformerRegressor', FakeModel), \
+                    patch.object(flow.pd, 'Timestamp', side_effect=lambda value: value, create=True):
+                workflow = flow.LiveFlow(directory, 'directions.csv', 'P', min_raw_bars=260)
+                workflow._current_factors = Mock(side_effect=FactorsReached)
+                row = {key: 100 for key in flow.BAR_COLUMNS}
+                row['code'] = 'P'
+                for index in range(259):
+                    row['trade_time'] = index
+                    self.assertIsNone(workflow.on_bar(row))
+                workflow._current_factors.assert_not_called()
+                row['trade_time'] = 259
+                with self.assertRaises(FactorsReached):
+                    workflow.on_bar(row)
+                workflow._current_factors.assert_called_once_with()
+                self.assertEqual(len(workflow.history), 260)
+
     def test_seed_drift_rejected_before_loading_second_model(self):
         for field in ('features', 'lookback', 'ret_scale_by_code', 'loss_config', 'architecture'):
             with self.subTest(field=field), TemporaryDirectory() as directory, \

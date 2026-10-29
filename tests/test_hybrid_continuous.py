@@ -139,7 +139,7 @@ class ContinuousTests(unittest.TestCase):
             self.assertEqual(parsed.history_minutes,count)
             identity=live.model_identity(release_path=self.release,directions_file=self.directions,
                 signal_config=self.signal,market_config=parsed.market_source_config,trading_day='20261030')
-            self.assertEqual(identity['min_raw_bars'],300)
+            self.assertEqual(identity['min_raw_bars'],260)
         for count in (-1,1501):
             with patch('sys.stderr',StringIO()),self.assertRaises(SystemExit):
                 live.parse_args(self.cli()+['--run-forever','--history-minutes',str(count),
