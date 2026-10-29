@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import math
+import re
 import time
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time as datetime_time, timedelta, timezone, tzinfo
@@ -289,16 +290,16 @@ def _combine_ns(day_value: Any, clock_value: Any, millisec: int, tz: tzinfo) -> 
 def _timestamp_ns(value: Any, tz: tzinfo) -> int | None:
     if value is None or str(value) in {"", "NaT", "None"}:
         return None
-    if isinstance(value, datetime):
-        timestamp = value
-    else:
-        text = str(value).strip().replace("/", "-")
-        if "T" not in text and " " not in text:
-            return None
-        timestamp = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    text = str(value).strip().replace("/", "-")
+    if "T" not in text and " " not in text:
+        return None
+    timestamp = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    # datetime只保留微秒；流表的NANOTIMESTAMP版本和分钟边界仍需保留纳秒尾数。
+    fraction = re.search(r"[T ]\d{2}:\d{2}:\d{2}[.,](\d+)", text)
+    remainder = int((fraction.group(1) + "000000000")[:9]) % 1000 if fraction else 0
     if timestamp.tzinfo is None:
         timestamp = timestamp.replace(tzinfo=tz)
-    return _datetime_to_ns(timestamp)
+    return _datetime_to_ns(timestamp) + remainder
 
 
 def _date_text(value: Any) -> str:
@@ -399,7 +400,14 @@ class DolphinDbMinuteStateBuffer:
                 self.ignored_old_versions += 1
                 return ()
             if revision == previous[1] and signature != previous[2]:
-                raise ValueError("同一状态版本内容冲突")
+                fields = ("open", "high", "low", "close", "volume", "turnover",
+                          "open_interest", "volume_baseline_ok")
+                changes = {name: {"previous": old, "current": new}
+                           for name, old, new in zip(fields, previous[2], signature) if old != new}
+                raise ValueError(f"同一状态版本内容冲突: Code={row.get('Code')!r} "
+                    f"barTime={row.get('barTime')!r} revision_ns={revision} "
+                    f"previous_updateTime={previous[3].get('updateTime')!r} "
+                    f"current_updateTime={row.get('updateTime')!r} changes={changes}")
             if signature[4] < previous[2][4] or signature[5] < previous[2][5]:
                 raise ValueError("同一分钟状态的成交量或成交额倒退")
             self._pending[key] = current

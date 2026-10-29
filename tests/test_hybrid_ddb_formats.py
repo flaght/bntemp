@@ -105,6 +105,51 @@ class MinuteStateTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'成交量或成交额倒退'):
             self.push(self.state(volume=3,second='31'))
 
+    def test_nanosecond_revisions_remain_ordered_for_sdk_and_string_values(self):
+        import numpy as np
+        for representation in (str, pd.Timestamp, np.datetime64):
+            with self.subTest(representation=representation.__name__):
+                self.buffer.reset()
+                first=self.state(volume=2)
+                last=self.state(volume=5)
+                first['updateTime']=representation('2026-10-29T10:55:01.123456001')
+                last['updateTime']=representation('2026-10-29T10:55:01.123456999')
+                self.assertEqual(self.push(first),())
+                self.assertEqual(self.push(last),())
+                # 迟到的旧纳秒版本仍被忽略，而非覆盖最后状态。
+                self.assertEqual(self.push(first),())
+                self.assertEqual(self.push(self.state('10:56')),(last,))
+
+    def test_timestamp_timezone_and_fraction_precision_are_preserved(self):
+        converter=import_module('bomber.framework.market.stream.dolphin.converter')
+        base=ns('2026-10-29 10:55:01')
+        for fraction,delta in [('',0),('.1',100_000_000),('.123',123_000_000),
+                               ('.123456',123_456_000),('.123456789',123_456_789)]:
+            for stamp in ('2026-10-29T10:55:01'+fraction,
+                          '2026-10-29 10:55:01'+fraction+'+08:00',
+                          '2026-10-29T02:55:01'+fraction+'Z'):
+                with self.subTest(stamp=stamp):
+                    self.assertEqual(converter._timestamp_ns(stamp,self.buffer.timezone),base+delta)
+
+    def test_submicrosecond_bar_time_is_not_rounded_into_a_complete_minute(self):
+        point=self.state()
+        point['barTime']='2026-10-29T10:55:00.000000001'
+        with self.assertRaisesRegex(ValueError,'完整barTime'):
+            self.push(point)
+
+    def test_true_equal_version_conflict_reports_exact_field_values_without_replacing_pending(self):
+        first=self.state(volume=2)
+        changed=self.state(volume=3)
+        self.push(first)
+        with self.assertRaisesRegex(ValueError,'同一状态版本内容冲突') as raised:
+            self.push(changed)
+        message=str(raised.exception)
+        for detail in ('rb2701','barTime=', 'revision_ns=', 'previous_updateTime=',
+                       'current_updateTime=', "'volume': {'previous': 2.0, 'current': 3.0}",
+                       "'turnover': {'previous': 2000.0, 'current': 3000.0}"):
+            self.assertIn(detail,message)
+        self.assertEqual(self.push(self.state('10:56')),(first,))
+
     def test_unknown_baseline_minute_discarded_and_session_last_minute_waits_for_next(self):
         self.push(self.state(baseline=False))
         self.assertEqual(self.push(self.state('10:56')),())
