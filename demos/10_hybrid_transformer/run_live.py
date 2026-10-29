@@ -105,7 +105,7 @@ def parse_args(argv=None):
     parser.add_argument('--expected-trading-day', help='定时模式必填；常驻模式可选，仅核对首个窗口')
     parser.add_argument('--expected-source-day', help='定时模式必填；常驻模式按前一交易日刷新')
     parser.add_argument('--run-forever', action='store_true', help='按日历常驻：休市等待，跨交易日自动续接；忽略seconds')
-    parser.add_argument('--max-contracts', type=int, default=10)
+    parser.add_argument('--max-contracts', type=int, default=5)
     parser.add_argument('--seconds', type=float, default=600)
     parser.add_argument('--market-source', choices=('ctp', 'dolphindb'))
     parser.add_argument('--market-config', type=Path, help='行情源配置；DolphinDB在JSON中声明表名、时间标签和量额口径')
@@ -139,8 +139,10 @@ def parse_args(argv=None):
             raise ValueError('模型发布目录或方向文件不存在')
         if not args.signal_config.is_file():
             raise ValueError('信号配置文件不存在')
-        if args.max_contracts < 1 or not math.isfinite(args.seconds) or args.seconds <= 0:
-            raise ValueError('最大手数和运行时间须为正，运行时间须为有限数')
+        if not 1 <= args.max_contracts <= 5:
+            raise ValueError('Live总持仓上限须为1至5手；每批开仓最多1手')
+        if not math.isfinite(args.seconds) or args.seconds <= 0:
+            raise ValueError('运行时间须为有限正数')
         # 读取数量可以少于模型门槛；不足部分由实时分钟积累，不改变恢复身份。
         if not 0 <= args.history_minutes <= MODEL_HISTORY_BARS:
             raise ValueError(f'历史预热根数须为0至{MODEL_HISTORY_BARS}之间的整数')
@@ -349,7 +351,21 @@ class HybridLiveRunner(SessionRoleLiveRunner):
         with self._submit_lock:
             # 先处理已经到达的完整Bar，再处理同一边界的独立时钟。
             now = self._clock_ns()
-            # 即使当前没有新的模型输出，已有批次的期限也继续由日历推进。
+            boundary = now // MINUTE * MINUTE
+            due = [batch.expires_at_ns for batch in self.strategy.holdings.active
+                   if batch.expires_at_ns <= boundary]
+            if (due and min(due) == boundary and self.strategy.last_prediction is not None
+                    and self.strategy.last_processed_ns < boundary - 1):
+                # 模型已就绪，但到期分钟的Bar/推理尚未到：等本分钟信号后一次计算净目标。
+                # 不用上一分钟的方向续持，也不先平再开。缺失整根分钟则下一边界仍按时钟退出；
+                # 恢复后模型未就绪、显式None预测和模型异常继续走原到期/故障处理。
+                if getattr(self, '_waiting_expiry_boundary_ns', None) != boundary:
+                    self._waiting_expiry_boundary_ns = boundary
+                    point = datetime.fromtimestamp(boundary // 1_000_000_000, self.strategy.calendar.zone)
+                    print(f'Hybrid到期等待: boundary={point.isoformat()} due_batches={len(due)}；'
+                          '等待本分钟信号后合并目标，不先平再开', flush=True)
+                return
+            self._waiting_expiry_boundary_ns = None
             self.strategy.on_time(now)
             if self.orders and self.strategy.last_targets:
                 self.continue_execution_target(self.strategy.strategy_id, self.strategy.config.target_key,
@@ -357,12 +373,14 @@ class HybridLiveRunner(SessionRoleLiveRunner):
 
 
 def build_strategy(references, calendar, *, product: str, release_path: Path,
-                   directions_file: Path, signal_config: Path, max_contracts=10):
+                   directions_file: Path, signal_config: Path, max_contracts=5):
     """只构建预测器与策略，返回HybridTransformerStrategy。
 
     selected是信号配置数据；predictor执行特征和模型计算；策略再把信号转换为
     批次与目标仓位。这里不启动行情，也不主动向柜台下单。
     """
+    if type(max_contracts) is not int or not 1 <= max_contracts <= 5:
+        raise ValueError('Hybrid Live总持仓上限须为1至5手')
     # 到装配阶段才导入模型适配器，其构造过程会加载研究工作流和模型资料。
     from .model_adapter import MizarWorkflowAdapter
     selected = load_product_signal(signal_config, product)
@@ -381,13 +399,13 @@ def build_strategy(references, calendar, *, product: str, release_path: Path,
         rebalance_minutes=REBALANCE_MINUTES,
         # 策略目标和ExecutionRoute使用同一个显式键，不依赖配置类自动补全。
         target_key=f"{product.strip().lower()}_main",
-        contract_multiplier=references.spec.multiplier, record_signals=True)
+        contract_multiplier=references.spec.multiplier, record_signals=True, max_entry_contracts=1)
     return HybridTransformerStrategy(CLIENT_ID, references, predictor, config, calendar=calendar)
 
 
 def assemble(inputs, lifecycle, *, product: str, release_path: Path, directions_file: Path,
              signal_config: Path, market_config: MarketSourceConfig, mode='recording',
-             max_contracts=10, state_file: Path | None = None,
+             max_contracts=5, state_file: Path | None = None,
              history_minutes=0, history_config: Path | None = None, history_file: Path | None = None,
              resume=False, execution_policy=None,
              max_notional=Decimal('1000000'), limit_offset_ticks=1, bar_directory: Path | None = None,
@@ -420,7 +438,7 @@ def assemble(inputs, lifecycle, *, product: str, release_path: Path, directions_
     if orders:
         check = SessionReadiness(market_channel, CtpExecutionChannel(lifecycle.driver,
             references.trading_day.strftime('%Y%m%d'), require_orders=True))
-        # 从-10手调至+10手可能需要20手增量，因此单笔上限与最终净仓上限不同。
+        # 从-5手调至+5手可能需要10手增量；每批开仓仍限1手，执行端按今昨仓规划开平。
         limits = RiskLimits(max_order_quantity=2*max_contracts, max_abs_position=max_contracts,
             max_order_notional=max_notional, max_abs_position_notional=max_notional,
             max_market_age_ns=120_000_000_000, contract_multiplier=references.spec.multiplier)
@@ -563,7 +581,7 @@ class HybridLiveReport(LiveRunReport):
 def build_runtime(
     *, product: str, release_path: Path, directions_file: Path, signal_config: Path,
     expected_trading_day: str | None = None, expected_source_day: str | None = None,
-    mode='recording', max_contracts=10, seconds=600,
+    mode='recording', max_contracts=5, seconds=600,
     market_config: MarketSourceConfig | None = None,
     calendar_id='china.sse', no_session_overrides=False,
     history_minutes=0, history_config: Path | None = None, history_file: Path | None = None,
@@ -589,6 +607,8 @@ def build_runtime(
         from bomber.framework.trader.runtime.live.continuous import LiveWindowContext
         window_context = LiveWindowContext(None, window, stop_event or Event(), expected_source_day,
             resume=resume, max_session_orders=max_session_orders)
+    if type(max_contracts) is not int or not 1 <= max_contracts <= 5:
+        raise ValueError('Hybrid Live总持仓上限须为1至5手')
     if not expected_trading_day or not expected_source_day:
         raise ValueError('单次会话须提供交易日和来源日，常驻会话由窗口确定日期')
     market_config = market_config if market_config is not None else MarketSourceConfig()

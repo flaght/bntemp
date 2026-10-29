@@ -269,7 +269,7 @@ class LiveRunnerTests(unittest.TestCase):
     def test_clock_expiry_is_independent_of_new_prediction(self):
         runner=object.__new__(self.runner_type())
         runner.accept_bars=True;runner._submit_lock=RLock();runner._clock_ns=lambda:123
-        runner.strategy=NS(on_time=Mock(),last_targets={})
+        runner.strategy=NS(on_time=Mock(),last_targets={},holdings=NS(active=()))
         runner.orders=False
         runner.expire_due()
         runner.strategy.on_time.assert_called_once_with(123)

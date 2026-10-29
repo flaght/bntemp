@@ -181,6 +181,10 @@ fees = CommissionConfig(
 
 - 模型默认设置：CPU、历史窗口1500根、最低260根、开始时间标签；由本文件的 `MODEL_*` 常量明确声明。
 - 策略开仓间隔默认1分钟，持仓周期和信号函数仍按外部信号文件的品种配置读取。
+- Live总手数上限默认5，允许设置1至5；每批开仓显式限制最多1手（`max_entry_contracts=1`），不随总预算放大。研究入口未声明该限制时仍沿用原槽位量化。
+- 各分钟信号仍建立独立批次，分别持有5个交易分钟。到期时先把到期仓和本分钟新信号合成净目标：同向同手数不发委托，反向只发净变化，信号0只退出到期仓，不建立反向批次。
+- 模型已经产生过有效预测而到期分钟Bar尚未送达时，独立时钟在当分钟保留到期批次，打印`Hybrid到期等待`，待该分钟信号完成后合并；不会用上一分钟方向续持。如果整根到期分钟缺失，到下一边界仍由时钟退出，迟到旧Bar不得补开。恢复冷模型或模型异常沿用原到期/故障处理。
+- 旧10手/每批2手的检查点与新手数配置不相容；不得直接改写未到期批次。须先在旧配置下处理完原仓位并核对订单，再迁移空仓检查点后恢复。
 - `main()` 将解析结果逐项转换为显式关键字参数传给 `build_runtime()`；不传命令行Namespace。命令行未声明的查询超时、报单上限、名义金额、限价偏移及执行政策沿用函数默认值：15秒、100笔、1000000、1跳、fills/off。需调整时在代码调用中显式传入对应关键字参数。
 - `prepare_inputs()` 默认参考超时15秒、刷新5秒。主力/条款参考库沿用 `DDB_REFERENCE_DATABASE`，通常为 `dfs://bomber_daily`。时段库独立配置，依次采用显式 `trading_hours_database`、`DDB_TRADING_HOURS_DATABASE`、默认 `dfs://bomber_static`；表沿用 `DDB_TRADING_HOURS_TABLE`，默认 `fut_trading_session`。不再把参考库自动当作时段库。
 - 日历默认 `china.sse`，可用 `BOMBER_CALENDAR_ID` 指定；时段表和例外表沿用 `DDB_TRADING_HOURS_TABLE`、`DDB_SESSION_OVERRIDES_TABLE`。没有例外时仍需显式 `--no-session-overrides`。
@@ -226,7 +230,7 @@ hybrid_args=(
   --expected-source-day YYYYMMDD
   --no-session-overrides
   --history-minutes 1500 --history-config /ABS/PATH/TO/hybrid_history.json
-  --max-contracts 10 --seconds 600
+  --max-contracts 5 --seconds 600
 )
 
 # 方案一：CTP 深度聚合。
@@ -457,7 +461,7 @@ export IMPLUSE_VERSION=all
   --release-path /workspace/worker/pj/Chrono/genuis/mizar/records/ricso2/1release/rbb/10002 \
   --directions-file /workspace/worker/pj/Chrono/genuis/mizar/records/ricso2/rbb/rulex/113001/nxt1_ret_5h/cohort_pro.csv \
   --signal-config "$PWD/prod/01_hybrid_transformer/signal_config.json" \
-  --max-contracts 10 \
+  --max-contracts 5 \
   --history-minutes 300 \
   --history-config "$PWD/prod/01_hybrid_transformer/history_rb.json" \
   --report-dir "$PWD/prod/01_hybrid_transformer/results/live" \

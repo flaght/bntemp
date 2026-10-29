@@ -14,10 +14,13 @@ class HybridCheckpoint:
 
     def config(self):
         s, c = self.strategy, self.strategy.config
-        return dict(product=c.product, venue=c.venue, signal_id=c.signal_id,
+        result = dict(product=c.product, venue=c.venue, signal_id=c.signal_id,
                     hold_bars=c.hold_bars, max_contracts=c.max_contracts,
                     rebalance_minutes=c.rebalance_minutes, contract_multiplier=str(c.contract_multiplier),
                     target_key=c.target_key, target_keys=s.target_keys)
+        if c.max_entry_contracts is not None:
+            result['max_entry_contracts'] = c.max_entry_contracts
+        return result
 
     def snapshot_state(self):
         s = self.strategy
@@ -34,7 +37,8 @@ class HybridCheckpoint:
             raise ValueError("须在策略启动前恢复 Hybrid 检查点")
         if state.get('version') != 1 or state.get('config') != self.config():
             raise ValueError("Hybrid 检查点版本、策略配置或执行路由不一致")
-        ledger = PeriodHoldings(s.config.hold_bars, s.config.max_contracts, calendar=s.calendar)
+        ledger = PeriodHoldings(s.config.hold_bars, s.config.max_contracts, calendar=s.calendar,
+                                max_entry_contracts=s.config.max_entry_contracts)
         ledger.restore_state(state['holdings'])
         counters = ('revision', 'bars_used', 'order_updates_received', 'fills_received')
         if any(type(state.get(k)) is not int or state[k] < 0 for k in counters):

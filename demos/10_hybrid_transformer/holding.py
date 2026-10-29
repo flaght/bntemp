@@ -72,16 +72,23 @@ class PeriodHoldings:
     bar_index/opened_bar/expires_bar 仅用于核对交易分钟位置。断线漏收时按
     日历补计经过的分钟，不创建历史开仓；批次 ID 使用建立时的结束时间戳。
     """
-    def __init__(self, holding_bars: int, max_contracts: int, *, calendar) -> None:
+    def __init__(self, holding_bars: int, max_contracts: int, *, calendar,
+                 max_entry_contracts: int | None = None) -> None:
         if type(holding_bars) is not int or holding_bars < 1:
             raise ValueError("持仓周期须为正整数")
         if type(max_contracts) is not int or max_contracts < 1:
             raise ValueError("总手数上限须为正整数")
+        if max_entry_contracts is not None and (type(max_entry_contracts) is not int
+                or not 1 <= max_entry_contracts <= max_contracts):
+            raise ValueError("每批开仓手数上限须为不超过总上限的正整数")
         self.calendar = calendar
         self.holding_bars = holding_bars
         self.max_contracts = max_contracts
+        self.max_entry_contracts = max_entry_contracts
         base, extra = divmod(max_contracts, holding_bars)
-        self.capacities = tuple(base + int(slot < extra) for slot in range(holding_bars))
+        budgets = tuple(base + int(slot < extra) for slot in range(holding_bars))
+        self.capacities = (budgets if max_entry_contracts is None else
+                           tuple(min(budget, max_entry_contracts) for budget in budgets))
         self.bar_index = -1
         self.last_bar_ns = -1
         self.last_check_ns = -1
@@ -146,7 +153,7 @@ class PeriodHoldings:
             row["signal_time"] = value.isoformat() if hasattr(value, "isoformat") else str(value)
             batches.append(row)
         return {"version": 1, "holding_bars": self.holding_bars,
-                "max_contracts": self.max_contracts,
+                "max_contracts": self.max_contracts, "max_entry_contracts": self.max_entry_contracts,
                 "calendar": self.calendar.provenance["sha256"],
                 "bar_index": self.bar_index, "last_bar_ns": self.last_bar_ns,
                 "last_check_ns": self.last_check_ns, "active": batches}
@@ -154,7 +161,8 @@ class PeriodHoldings:
     def restore_state(self, state: dict) -> None:
         """先完整校验再赋值；过期批次保留原期限，恢复后的时钟负责清理。"""
         expected = {"version": 1, "holding_bars": self.holding_bars,
-                    "max_contracts": self.max_contracts, "calendar": self.calendar.provenance["sha256"]}
+                    "max_contracts": self.max_contracts, "max_entry_contracts": self.max_entry_contracts,
+                    "calendar": self.calendar.provenance["sha256"]}
         if not isinstance(state, dict) or any(state.get(k) != v for k, v in expected.items()):
             raise ValueError("持仓检查点的版本、预算、周期或交易日历不一致")
         index, last, checked = (state.get(k) for k in ("bar_index", "last_bar_ns", "last_check_ns"))
