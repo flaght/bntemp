@@ -129,6 +129,22 @@ class ContinuousTests(unittest.TestCase):
         with redirect_stdout(StringIO()),patch('sys.stderr',StringIO()),self.assertRaises(SystemExit):
             live.parse_args(self.cli())
 
+    def test_history_read_count_is_independent_of_model_minimum(self):
+        config=self.root/'history.json'
+        config.write_text('{}')
+        for count in (0,1,260,299,300,1500):
+            command=self.cli()+['--run-forever','--history-minutes',str(count)]
+            if count:command+=['--history-config',str(config)]
+            parsed=live.parse_args(command)
+            self.assertEqual(parsed.history_minutes,count)
+            identity=live.model_identity(release_path=self.release,directions_file=self.directions,
+                signal_config=self.signal,market_config=parsed.market_source_config,trading_day='20261030')
+            self.assertEqual(identity['min_raw_bars'],300)
+        for count in (-1,1501):
+            with patch('sys.stderr',StringIO()),self.assertRaises(SystemExit):
+                live.parse_args(self.cli()+['--run-forever','--history-minutes',str(count),
+                    '--history-config',str(config)])
+
     def test_calendar_waits_for_lunch_and_enters_next_trading_day_at_night(self):
         now=[dt('2026-10-28 11:29')];stop=Event();seen=[]
         def factory(*, window_context):

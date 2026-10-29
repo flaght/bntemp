@@ -494,3 +494,8 @@ PYTHONPATH=.:.validation/packages python -B -m tests.run_live_continuous_offline
 `dataprep/history/factory.py`、`dataprep/history/__init__.py`、新增`dataprep/history/futures.py`、
 `market/futures.py`、`trader/runtime/live/history.py`。完整公共历史回归包含新测试`tests/test_history_warmup.py`。
 详细接口见[公共历史预热](../../doc/functions/trader/HistoryFrameLoader.md)。
+
+历史读取数量与模型门槛分别设置：`--history-minutes`允许0至1500，0表示关闭外部历史读取。
+例如设置260，在没有已有模型窗口且实际读到260根的情况下，继续积累至少40根完整实时分钟后才达到
+`MODEL_MIN_RAW_BARS=300`的最低门槛；因子/序列条件仍须满足。读取数量不写入模型恢复身份，
+无需为此修改原检查点或降低模型最小根数。

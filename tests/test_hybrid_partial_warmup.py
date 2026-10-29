@@ -109,6 +109,12 @@ class PartialHistoryTests(unittest.TestCase):
             provider._read_trading(rows,request)
 
     def test_live_runner_waits_with_299_history_bars_and_predicts_only_after_next_complete_bar(self):
+        self._assert_live_window_readiness(299)
+
+    def test_260_requested_history_bars_still_require_40_live_bars_before_first_target(self):
+        self._assert_live_window_readiness(260)
+
+    def _assert_live_window_readiness(self, history_count):
         from tests import run_hybrid_live_offline as fixture
         live=fixture.live
         class WaitingPredictor(fixture.Predictor):
@@ -136,33 +142,40 @@ class PartialHistoryTests(unittest.TestCase):
                 session=live.assemble(NS(references=refs,calendar=self.calendar,upstream=fixture.Upstream('fixture')),
                     NS(driver=None),product='RB',release_path=root/'release',directions_file=root/'directions.csv',
                     signal_config=signal,market_config=live.load_market_config(ROOT/'demos/10_hybrid_transformer/market_dolphindb_rb.json'),
-                    history_minutes=300,history_config=ROOT/'demos/10_hybrid_transformer/history_rb.json')
+                    history_minutes=260 if history_count==260 else 300,history_config=ROOT/'demos/10_hybrid_transformer/history_rb.json')
             now=[self.end+2_000_000_000]
             session.runner._clock_ns=lambda:now[0]
             session.runner._session_check=lambda:True
             session.runner.instrument_health=None
             provider=Mock()
-            provider.read.return_value=tuple(point(s) for s in self.stamps[-299:])
+            provider.read.return_value=tuple(point(s) for s in self.stamps[-history_count:])
             session.runner.start()
             try:
                 with patch('bomber.framework.dataprep.history.service.HistoryProviderFactory.create_for',return_value=provider), \
                         redirect_stdout(StringIO()):
                     session.runner.begin_bars()
                 self.assertTrue(session.runner.accept_bars)
-                self.assertEqual(len(session.strategy.predictor.workflow.history),299)
+                self.assertEqual(len(session.strategy.predictor.workflow.history),history_count)
                 self.assertIsNone(session.strategy.last_prediction)
                 self.assertFalse(session.client.requests)
                 self.assertFalse(session.strategy.holdings.active)
-                now[0]=ns('2026-10-28 09:05:02')
-                stamp=ns('2026-10-28 09:05')-1
-                bar=fixture.base.make_bar(instrument_id=instrument,meta=refs.instrument_meta(),ts_event=stamp,
-                    ts_init=now[0],open=100,high=100,low=100,close=100,volume=2)
-                event=fixture.base.make_custom_bar(bar,dict(open=100,high=100,low=100,close=100,
-                    volume=2,value=2000,open_interest=500,
-                    trade_time=datetime.fromisoformat('2026-10-28T09:04:00+08:00')))
-                session.runner.publish('model-bars',event)
+                required=300-history_count
+                for index in range(required):
+                    now[0]=ns('2026-10-28 09:05:02')+index*MINUTE
+                    stamp=ns('2026-10-28 09:05')+index*MINUTE-1
+                    bar=fixture.base.make_bar(instrument_id=instrument,meta=refs.instrument_meta(),ts_event=stamp,
+                        ts_init=now[0],open=100,high=100,low=100,close=100,volume=2)
+                    from bomber.framework.calendars.sessions import ns_datetime
+                    event=fixture.base.make_custom_bar(bar,dict(open=100,high=100,low=100,close=100,
+                        volume=2,value=2000,open_interest=500,
+                        trade_time=ns_datetime(stamp+1-MINUTE,self.calendar.zone)))
+                    session.runner.publish('model-bars',event)
+                    if index<required-1:
+                        self.assertIsNone(session.strategy.last_prediction)
+                        self.assertFalse(session.client.requests)
+                        self.assertFalse(session.strategy.holdings.active)
                 self.assertEqual(len(session.strategy.predictor.workflow.history),300)
-                self.assertEqual(session.strategy.bars_used,1)
+                self.assertEqual(session.strategy.bars_used,required)
                 self.assertEqual(len(session.strategy.holdings.active),1)
                 self.assertEqual(dict(session.client.requests[-1].logical_targets),{'rb_main':Decimal(2)})
             finally:session.runner.stop()

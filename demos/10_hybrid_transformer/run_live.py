@@ -141,8 +141,9 @@ def parse_args(argv=None):
             raise ValueError('信号配置文件不存在')
         if args.max_contracts < 1 or not math.isfinite(args.seconds) or args.seconds <= 0:
             raise ValueError('最大手数和运行时间须为正，运行时间须为有限数')
-        if args.history_minutes and not MODEL_MIN_RAW_BARS <= args.history_minutes <= MODEL_HISTORY_BARS:
-            raise ValueError('历史预热根数须介于模型最小根数与历史窗口之间')
+        # 读取数量可以少于模型门槛；不足部分由实时分钟积累，不改变恢复身份。
+        if not 0 <= args.history_minutes <= MODEL_HISTORY_BARS:
+            raise ValueError(f'历史预热根数须为0至{MODEL_HISTORY_BARS}之间的整数')
         if bool(args.history_config or args.history_file) != bool(args.history_minutes):
             raise ValueError('历史预热须同时声明history-minutes及history-config/history-file')
         if args.history_config and not args.history_config.is_file() or args.history_file and not args.history_file.is_file():
