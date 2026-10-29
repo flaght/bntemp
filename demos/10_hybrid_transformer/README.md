@@ -161,7 +161,7 @@ fees = CommissionConfig(
 1. 核对每根原始 `trade_time` 是训练数据使用的时间标签，完整分钟可用时间不早于收盘时间；验证 `value/volume/contract_multiplier` 得到的 VWAP 与研究数据一致，特别检查夜盘、换月和零成交分钟。
 2. 对相同原始 bar 逐行比较 Mizar 研究特征、三 seed `predicted_z`、融合 `predicted_z` 和所配信号函数的输出。允许误差阈值要先定义；跨阈值导致的信号状态差异应为零或经明确批准。
 3. 以整数手量化后的目标做独立回测，计入手续费、滑点、换手、最大持仓和换月成本。此前连续仓位评估的收益率不可直接充当真实手数回测收益。
-4. 先运行记录目标/模拟执行，核对成交回报及仓位；此目录没有 `run_live.py`，不会启动 CTP 实盘报单。实盘入口须沿用 Bomber 的账户锁、行情健康、恢复检查点、订单上限和显式报单门控，不能直接复制 EMA 的启动参数。
+4. 先运行记录目标/模拟执行，核对成交回报及仓位；本目录的 `run_live.py` 通过显式授权接入 SimNow，沿用 Bomber 的账户锁、行情健康、恢复检查点、订单上限和显式报单门控，不能直接复制 EMA 的启动参数。
 
 当前实现**策略层、Mizar 预测适配器、已准备行情的解析器及历史模拟入口**，但尚未在目标环境的真实行情文件上完成集成验收。Mizar Workflow 每根 bar 重新计算其保留窗口，长区间运行可能较慢；先跑短区间核对信号与耗时。在线 Runner 仍未接入。特别是主力原始合约 bar 若与训练时的连续行情构造不同，不可直接把模拟结果视为投研回测复现。
 
@@ -171,7 +171,7 @@ fees = CommissionConfig(
 
 入口为 `python -m demos.10_hybrid_transformer.run_live`，每个进程只运行一个品种、一条 Hybrid 策略。
 
-运行代码集中在 `run_live.py`，命令行只保留业务输入和运行开关。各函数仅接收其使用的显式参数，命令行对象只在解析和main读取字段时存在，不沿调用链传递；Runner不保存整份命令行配置。`build_strategy()` 独立声明模型和策略，参数解析阶段不构造它们。
+策略和装配集中在 `run_live.py`，常驻窗口调度在 `continuous.py`，命令行只保留业务输入和运行开关。各函数仅接收其使用的显式参数，命令行对象只在解析和main读取字段时存在，不沿调用链传递；Runner不保存整份命令行配置。`build_strategy()` 独立声明模型和策略，参数解析阶段不构造它们。
 
 - 模型默认设置：CPU、历史窗口1500根、最低300根、开始时间标签；由本文件的 `MODEL_*` 常量明确声明。
 - 策略开仓间隔默认1分钟，持仓周期和信号函数仍按外部信号文件的品种配置读取。
@@ -187,7 +187,7 @@ DolphinDB 连接按用途分离：实时订阅和历史分钟查询使用 `DDB_M
 完整示例见 [DolphinDB 双服务器配置](../market_sources/dolphindb.env.example)。
 
 行情源通过 `--market-source` / `--market-config` 选择；执行模式为 `recording` 或 `simnow`，默认 Recording。
-首版使用 realtime、固定会话主力和 SHFE/INE 执行范围；跨交易日自动重登录、动态换月和共享账户宿主未接入。
+Live使用 realtime、每个活动会话固定主力和 SHFE/INE 执行范围。`--run-forever` 复用08的公共日历调度，支持休市等待和跨交易日自动重登录；有旧批次时不自动移仓，共享账户宿主未接入。
 
 - CTP：原始深度中的累计 `Volume/Turnover` 按交易日差分，持仓量取分钟最后值；首个部分分钟丢弃。
 - DolphinDB：使用已完成分钟流；须声明 `start/end` 时间标签和 `per-bar/cumulative` 量额口径。表应沿用公共适配器的 `Code/date/minTime/open/high/low/close/volume` 字段，成交额提供 `value` 或 `turnover`，持仓量提供 `open_interest` 或 `openint`。
@@ -268,7 +268,7 @@ DolphinDB分钟表停止更新时，使用 `--market-source ctp --history-minute
 日志 `bars` 是策略累计处理根数，恢复后可能非零；`model_window` 是本次模型实际窗口根数，
 `min_raw_bars=300`只是最低输入门槛，因子和序列条件可能要求继续积累。仅运行一段不足300个
 有效分钟的夜盘不能保证产生预测；不能为尽快交易而降低研究所需窗口。
-模型DataFrame不写入交易检查点，重启从独立原始分钟文件恢复；不包含自动跨交易日重登录。
+模型DataFrame不写入交易检查点，重启从独立原始分钟文件恢复；自动跨交易日重登录由 `--run-forever` 单独启用。
 
 ### CTP分钟自动落盘与重启复用
 
@@ -397,7 +397,7 @@ CTP路径、本地分钟录制和已存CTP会话身份保持兼容；本次不�
 
 SimNow 装配时将 `HybridCheckpoint`、模型/信号配置摘要、日历指纹注册进统一 `RuntimeStateManager`，并调用 `strategy.bind_checkpoint(manager.save)`。
 目标相同的批次续期也保存；恢复后保持原批次绝对期限，模型窗口通过本机录制、历史服务或实时完整分钟重新积累。
-不兼容 EMA 的旧状态文件，也不自动接受跨交易日或模型变更的状态。
+不兼容EMA的旧状态文件。定时模式仍只接受同交易日恢复；常驻模式允许核验后向前跨日，模型/信号/行情口径变更仍拒绝恢复。
 
 每次运行输出 `summary.json`、`events.txt`、`signals.csv`、`batches.csv` 和最终只读 `strategy_state.json`。
 运行状态通过与是否发生真实成交分开：合法零信号可以没有成交，报告的 `fills_received` 只由执行回报计数。
@@ -413,3 +413,57 @@ python -B tests/run_option_vega_offline.py --market-sources
 
 离线装配使用原生SDK实体与模型的替身，其余 Runner、路由和 Recording 执行链使用真实代码。
 真实 DDB/CTP 数据接续、完整模型性能及 SimNow 成交需在目标 Linux 环境验收。
+
+## 按交易日历一直运行（2026-10-29）
+
+增加 `--run-forever` 即启用常驻。`--seconds`不再控制退出；不带该开关时，原定时模式保持不变。
+进程在休市期间等待，不执行策略，也不把正常休市静默解释为行情断流。进入下一窗口时重新连接、
+刷新主力/条款/复权资料并预热，交易日来自日历窗口，SimNow还核对实际TD登录日。
+`--expected-trading-day`/`--expected-source-day`在此模式可省略；若提供，仅核对第一个活动窗口，
+以后自动采用窗口交易日及其前一交易日，不用每天修改启动命令。
+
+- 午休、夜盘结束、日盘收盘和周末由同一SessionCalendar决定。日历维护范围或参考资料失效仍报错，不推测缺失规则。
+- SimNow复用同一个`--state-file`：文件存在则恢复，不存在则新建；不需要手工加`--resume`。
+  休盘只撤销活动委托，保留成交仓位和未到期批次；跨日先核验柜台并结转今昨仓，原文件在提交时自动备份。
+- `HoldingBatch.opened_at_ns/expires_at_ns`不改变，五分钟仍按交易分钟计算，休盘和重连不会重置期限。
+  模型尚未重新就绪时，健康通道上的已有批次仍由独立到期时钟管理。
+- 同一进程在窗口间保留最近1500根原始模型分钟，与新读历史按时间合并；不重放旧信号或旧委托。
+  进程重启后仍使用显式历史配置或CTP原始分钟文件恢复窗口，Recording没有可恢复的交易账户状态。
+- 主力在两个窗口之间变化时，只有旧批次、旧仓位和目标均清零才可续接新合约；有余仓则保留检查点并报错，不迁移旧批次。
+  单个活动窗口内仍由固定主力守卫检查角色和条款变化。
+- 报单上限按当个交易日已保存的订单累计扣减，午休重连不刷新额度。真实断流、拒单、恢复冲突、停机核验失败仍停止，不盲目重启。
+- 按一次Ctrl+C或发送SIGTERM会走正常停止、撤单与保存；不强制平掉已有仓位。常驻依赖终端/宿主进程持续存活。
+
+服务器按当前DolphinDB分钟源做Recording常驻验证：
+
+```bash
+cd /workspace/worker/pj/Chrono/nautilus_trader_demo/pro
+export PYTHONPATH="$PWD:/workspace/worker/pj/KiChaos${PYTHONPATH:+:$PYTHONPATH}"
+export IMPLUSE_VERSION=all
+
+/workspace/worker/env/chs-live/bin/python -u \
+  -m prod.01_hybrid_transformer.run_live \
+  --connect --run-forever --mode recording --product RB \
+  --market-source dolphindb \
+  --market-config "$PWD/prod/01_hybrid_transformer/market_dolphindb_rb.json" \
+  --release-path /workspace/worker/pj/Chrono/genuis/mizar/records/ricso2/1release/rbb/10002 \
+  --directions-file /workspace/worker/pj/Chrono/genuis/mizar/records/ricso2/rbb/rulex/113001/nxt1_ret_5h/cohort_pro.csv \
+  --signal-config "$PWD/prod/01_hybrid_transformer/signal_config.json" \
+  --max-contracts 10 \
+  --history-minutes 300 \
+  --history-config "$PWD/prod/01_hybrid_transformer/history_rb.json" \
+  --report-dir "$PWD/prod/01_hybrid_transformer/results/live" \
+  --no-session-overrides
+```
+
+SimNow执行时仍须显式`--mode simnow --enable-orders --confirm-simnow --state-file <同一个原状态路径>`，
+不得用新文件绕过旧持仓。此功能新增了`continuous.py`，同步到远程实际执行的`prod/01_hybrid_transformer`
+时须包含它及`run_live.py`；不需要重新编译原生扩展。
+
+离线回归（复用SDK实体夹具，不联网）：
+
+```bash
+PYTHONPATH=.:.validation/packages python -B -m unittest tests.test_hybrid_continuous
+```
+
+真实DolphinDB/SimNow跨休盘、跨日接续仍需在Linux运行机验证。

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import replace
+from functools import partial
 from datetime import datetime
 from decimal import Decimal
 import hashlib
@@ -101,8 +102,9 @@ def parse_args(argv=None):
     parser.add_argument('--directions-file', type=Path, required=True)
     parser.add_argument('--signal-config', type=Path, required=True)
     # trading_day是本次会话的交易日；source_day是主力/条款参考资料的来源日。
-    parser.add_argument('--expected-trading-day', required=True)
-    parser.add_argument('--expected-source-day', required=True)
+    parser.add_argument('--expected-trading-day', help='定时模式必填；常驻模式可选，仅核对首个窗口')
+    parser.add_argument('--expected-source-day', help='定时模式必填；常驻模式按前一交易日刷新')
+    parser.add_argument('--run-forever', action='store_true', help='按日历常驻：休市等待，跨交易日自动续接；忽略seconds')
     parser.add_argument('--max-contracts', type=int, default=10)
     parser.add_argument('--seconds', type=float, default=600)
     parser.add_argument('--market-source', choices=('ctp', 'dolphindb'))
@@ -126,7 +128,9 @@ def parse_args(argv=None):
         args.market_source_config = load_market_config(args.market_config, source=args.market_source)
         for name in ('expected_trading_day', 'expected_source_day'):
             value = getattr(args, name)
-            if datetime.strptime(value, '%Y%m%d').strftime('%Y%m%d') != value:
+            if value is None and args.run_forever:
+                continue
+            if value is None or datetime.strptime(value, '%Y%m%d').strftime('%Y%m%d') != value:
                 raise ValueError('交易日/来源日须为YYYYMMDD')
         args.product = args.product.strip().upper()
         if not args.product.isalpha():
@@ -145,13 +149,13 @@ def parse_args(argv=None):
             raise ValueError('历史配置或文件不存在')
         # 不读外部历史时，恢复持仓义务及本机CTP窗口，再追加实时完整分钟。
         # 显式启用恢复历史时仍只使用数据库，不以旧文件补造断线期间的分钟。
-        if args.resume and args.history_minutes and not args.history_config:
+        if (args.resume or args.run_forever and args.mode == 'simnow') and args.history_minutes and not args.history_config:
             raise ValueError('启用恢复历史时须提供数据库history-config；实时预热使用history-minutes=0')
         if args.mode == 'simnow':
             # 新会话不能覆盖现有状态文件；恢复必须明确指定原文件与--resume。
             if not (args.enable_orders and args.confirm_simnow and args.state_file):
                 raise ValueError('SimNow须 --enable-orders --confirm-simnow --state-file')
-            if args.resume != args.state_file.is_file():
+            if not args.run_forever and args.resume != args.state_file.is_file():
                 raise ValueError('新会话须新状态文件；恢复须原文件并加--resume')
         elif args.enable_orders or args.confirm_simnow or args.state_file or args.resume:
             raise ValueError('Recording不接受交易授权、交易状态文件或恢复参数')
@@ -244,6 +248,8 @@ class HybridLiveRunner(SessionRoleLiveRunner):
     def begin_bars(self):
         """在生命周期确认通道就绪后，预热模型并开放实时分钟处理。"""
         with self._submit_lock:
+            if self.pause_requested():
+                return
             if self.history_minutes or self.bar_archive is None:
                 warm_history(self, product=self.strategy.config.product,
                     history_minutes=self.history_minutes, resume=self.resuming,
@@ -251,13 +257,43 @@ class HybridLiveRunner(SessionRoleLiveRunner):
             else:
                 warm_recording(self, product=self.strategy.config.product, max_bars=MODEL_HISTORY_BARS,
                     model_bar_timestamp=MODEL_BAR_TIMESTAMP)
+            from .continuous import warm_model_seed
+            warm_model_seed(self, getattr(self, 'model_seed', None), identity=self.model_identity,
+                max_bars=MODEL_HISTORY_BARS, minimum=MODEL_MIN_RAW_BARS, minute_ns=MINUTE)
+            if self.pause_requested():
+                return
             super().begin_bars()
             # 历史窗口已预热至启动边界；排除历史重复并保留完整实时分钟。
             self.first_complete_bar_ns = max(self.first_complete_bar_ns, self.history_last_ns + MINUTE)
             self.expire_due()
 
+    def pause_requested(self):
+        """启动/历史读取期间越过收盘或收到停止信号时，不开放交易回调。"""
+        window = getattr(self, 'continuous_window', None)
+        stop = getattr(self, 'continuous_stop_event', None)
+        paused = window is not None and ((stop is not None and stop.is_set())
+            or self._clock_ns() >= int(window.end.timestamp()*1e9))
+        if paused:
+            self.accept_bars = False
+            self.scheduled_pause = True
+            disarm = getattr(self.client, 'disarm', None)
+            if callable(disarm):
+                disarm('scheduled_pause_or_stop')
+        return paused
+
     def publish(self, feed_id, event):
         """处理新旧窗口交接，再由父类把已完成CustomBar交给策略。"""
+        window = getattr(self, 'continuous_window', None)
+        if window is not None and (getattr(self, 'scheduled_pause', False)
+                or self._clock_ns() >= int(window.end.timestamp()*1e9)):
+            # 正常收盘只保存最后一个已封闭模型分钟，不产生休市后的新目标。
+            if isinstance(event, CustomBar) and event.ts_event > self.history_last_ns:
+                from bomber.framework.market.futures import futures_bar_values
+                values = futures_bar_values(event, contract_multiplier=self.strategy.config.contract_multiplier)
+                self.strategy.predictor.warm_history([*self.strategy.predictor.workflow.history,
+                    {'trade_time': event.factors['trade_time'], 'code': self.strategy.config.product, **values}])
+                self.history_last_ns = event.ts_event
+            return None
         if isinstance(event, CustomBar):
             # 历史窗口已经包含的分钟不能再次触发预测和开仓。
             if event.ts_event <= self.history_last_ns:
@@ -289,7 +325,8 @@ class HybridLiveRunner(SessionRoleLiveRunner):
 
     def expire_due(self):
         """在正常运行的控制循环中，用当前时钟检查批次到期并继续执行目标。"""
-        if not self.accept_bars:
+        window = getattr(self, 'continuous_window', None)
+        if not self.accept_bars or window is not None and self._clock_ns() >= int(window.end.timestamp()*1e9):
             return
         with self._submit_lock:
             # 先处理已经到达的完整Bar，再处理同一边界的独立时钟。
@@ -335,7 +372,8 @@ def assemble(inputs, lifecycle, *, product: str, release_path: Path, directions_
              max_contracts=10, state_file: Path | None = None,
              history_minutes=0, history_config: Path | None = None, history_file: Path | None = None,
              resume=False, execution_policy=None,
-             max_notional=Decimal('1000000'), limit_offset_ticks=1, bar_directory: Path | None = None):
+             max_notional=Decimal('1000000'), limit_offset_ticks=1, bar_directory: Path | None = None,
+             window=None, stop_event=None, recording_state=None, model_seed=None):
     """把资料、行情、执行、策略和持久化连接成session，交给生命周期启动。
 
     inputs是prepare_inputs的返回结果；session则还包含Runner、执行客户端、
@@ -343,6 +381,8 @@ def assemble(inputs, lifecycle, *, product: str, release_path: Path, directions_
     """
     execution_policy = execution_policy or ExecutionPolicy('off', 'fills')
     references, calendar, upstream = inputs.references, inputs.calendar, inputs.upstream
+    if window is not None and window not in calendar.windows(window.trading_day):
+        raise ValueError('持续调度窗口与本次权威会话日历不一致')
     # 1. 根据主力参考确定本次真实合约，例如rb2701.SHFE；当前Live会话固定此合约。
     instrument = references.instrument_id
     profile = CtpLiveProfile('realtime')
@@ -382,6 +422,11 @@ def assemble(inputs, lifecycle, *, product: str, release_path: Path, directions_
     runner = HybridLiveRunner(references=references, session_check=check, orders=orders,
         position_manager=execution.positions, instrument_health=health)
     runner.calendar, runner.strategy, runner.client = calendar, strategy, execution.client
+    runner.continuous_window, runner.model_seed = window, model_seed
+    runner.continuous_stop_event = stop_event
+    runner.model_identity = model_identity(release_path=release_path, directions_file=directions_file,
+        signal_config=signal_config, market_config=market_config,
+        trading_day=references.trading_day.strftime('%Y%m%d'))
     runner.history_minutes, runner.resuming = history_minutes, resume
     runner.history_last_ns = -1
     runner.bar_archive = archive
@@ -401,9 +446,7 @@ def assemble(inputs, lifecycle, *, product: str, release_path: Path, directions_
     assemble_strategy(runner, strategy, feeds={'model-bars': feed}, execution=execution, bindings=bindings)
     # 6. 为同一次联合检查点增加批次、交易日历及模型资料身份，供恢复时一起核对。
     components = {'hybrid': HybridCheckpoint(strategy), 'session_rules': SessionRulesCheckpoint(calendar),
-        'live_session': SessionIdentityCheckpoint(model_identity(
-            release_path=release_path, directions_file=directions_file, signal_config=signal_config,
-            market_config=market_config, trading_day=references.trading_day.strftime('%Y%m%d')))}
+        'live_session': SessionIdentityCheckpoint(runner.model_identity)}
     manager = attach_ctp_persistence(execution, runner, state_file=state_file,
         state_components=components) if orders else None
     runner.manager = manager
@@ -411,18 +454,71 @@ def assemble(inputs, lifecycle, *, product: str, release_path: Path, directions_
         # 传入函数本身，尚未执行save()；后续批次/目标/时钟变化会触发保存。
         strategy.bind_checkpoint(manager.save)
     # 字段是后续生命周期使用的已构造对象；这里的SimpleNamespace是会话返回结果。
-    return SimpleNamespace(runner=runner, strategy=strategy, execution=execution, client=execution.client,
+    session = SimpleNamespace(runner=runner, strategy=strategy, execution=execution, client=execution.client,
         driver=lifecycle.driver, upstream=upstream, ledger=execution.ledger, manager=manager,
         references=references, bar_feed=feed, market_profile=profile, readiness=check,
         recovery_binding=StrategyPositionBinding(strategy.strategy_id, execution.client.client_id,
-            {strategy.config.target_key: instrument}))
+            {strategy.config.target_key: instrument}), model_identity=runner.model_identity)
+    if recording_state is not None:
+        from .continuous import restore_recording
+        restore_recording(session, recording_state)
+    return session
 
 
-class HybridSessionLifecycle(CtpResumeLifecycle, CtpSessionLifecycle):
+class HybridWindowControl:
+    """在休市边界先关闭目标提交，再走原停机流程；交易时段健康检查保持原样。"""
+    window = None
+    stop_event = None
+    scheduled_pause = False
+
+    def pause_due(self, session):
+        if self.window is None:
+            return False
+        if ((self.stop_event is not None and self.stop_event.is_set())
+                or datetime.now(self.window.end.tzinfo) >= self.window.end):
+            with session.runner._submit_lock:
+                session.runner.accept_bars = False
+                session.runner.scheduled_pause = True
+                disarm = getattr(session.client, 'disarm', None)
+                if callable(disarm):
+                    disarm('scheduled_pause_or_stop')
+            self.scheduled_pause = True
+            # 给精确收盘快照保留Feed原有的封闭延迟（默认1秒），此时已禁单。
+            if datetime.now(self.window.end.tzinfo) >= self.window.end:
+                delay = getattr(session.bar_feed, 'close_delay_ns', 0)
+                delay = delay if type(delay) is int else 0
+                remaining = (int(self.window.end.timestamp()*1e9)+delay-time.time_ns())/1e9
+                if remaining > 0:
+                    time.sleep(min(remaining, 1.0))
+            # CTP可封闭已完成的末分钟；DDB状态流不靠墙钟猜最后版本。
+            session.bar_feed.poll()
+            return True
+        return False
+
+    def snapshot(self, session, context):
+        fields = super().snapshot(session, context)
+        fields['scheduled_pause'] = self.scheduled_pause
+        fields['rollover'] = getattr(session, 'rollover_audit', None)
+        if self.window is not None:
+            fields['trading_window'] = dict(trading_day=self.window.trading_day,
+                segment=self.window.segment_id, end=self.window.end.isoformat())
+        return fields
+
+
+class HybridSessionLifecycle(HybridWindowControl, CtpResumeLifecycle, CtpSessionLifecycle):
     """SimNow会话控制器：沿用框架连接/恢复/停机流程，补充Hybrid检查和轮询。
 
     CtpResumeLifecycle先处理恢复分支；新会话start会继续交给CtpSessionLifecycle。
     """
+    def restore_session(self, session, context):
+        saved = session.manager.repository.load() if self.window is not None else None
+        if (saved is None or saved.payload['component_states']['live_session']['identity']['trading_day']
+                == context.trading_day):
+            return super().restore_session(session, context)
+        from .continuous import payload_for_day
+        return session.manager.restore(payload_transform=lambda payload: payload_for_day(
+            session, payload, driver=self.driver, transport=self.transport, day=context.trading_day))
+
     def validate_restored_session(self, session, day):
         """联合检查保存的持仓、批次与目标版本，返回恢复流程需要的revision。"""
         validate_ctp_restored_positions(session, day, session.recovery_binding)
@@ -432,6 +528,9 @@ class HybridSessionLifecycle(CtpResumeLifecycle, CtpSessionLifecycle):
         return revision
 
     def poll(self, session):
+        # 休盘须先于接收心跳检查，避免把正常静默解释为断流。
+        if self.pause_due(session):
+            return False
         # 顺序有意义：已到达完整分钟 -> 父类回报/健康检查 -> 当前时钟的到期处理。
         session.bar_feed.poll()
         result = super().poll(session)
@@ -442,11 +541,11 @@ class HybridSessionLifecycle(CtpResumeLifecycle, CtpSessionLifecycle):
         """运行结束时验收处理和执行状态；不强迫产生非零信号或成交。"""
         if session.runner.failure or session.client.report_errors:
             raise RuntimeError(session.runner.failure or 'Hybrid执行回报异常')
-        if not session.strategy.bars_used and not self.resuming:
+        if not session.strategy.bars_used and not self.resuming and not self.scheduled_pause:
             raise RuntimeError('没有处理完整实时分钟')
 
 
-class HybridRecordingLifecycle(RecordingExecutionLifecycle, CtpMarketSessionLifecycle):
+class HybridRecordingLifecycle(HybridWindowControl, RecordingExecutionLifecycle, CtpMarketSessionLifecycle):
     """只记录策略目标，仍使用真实行情、参考、模型和批次逻辑。
 
     不创建TD交易通道；窗口积累期间收到完整分钟即可验证行情接入。
@@ -454,10 +553,12 @@ class HybridRecordingLifecycle(RecordingExecutionLifecycle, CtpMarketSessionLife
     def verify(self, session):
         if session.runner.failure:
             raise RuntimeError(session.runner.failure)
-        if not session.strategy.bars_used:
+        if not session.strategy.bars_used and not self.scheduled_pause:
             raise RuntimeError('没有处理完整实时分钟，检查行情订阅')
 
     def poll(self, session):
+        if self.pause_due(session):
+            return False
         session.bar_feed.poll()
         result = super().poll(session)
         session.runner.expire_due()
@@ -489,6 +590,7 @@ def build_runtime(
     state_file: Path | None = None, resume=False, report_dir: Path | None = None,
     query_timeout=15, max_session_orders=100, max_notional=Decimal('1000000'),
     limit_offset_ticks=1, execution_policy=None, bar_directory: Path | None = None,
+    window=None, stop_event=None, recording_state=None, model_seed=None,
 ):
     """创建并返回ManagedLiveRuntime，此时尚未执行prepare_inputs和assemble。
 
@@ -529,6 +631,8 @@ def build_runtime(
             md_front=required('CTP_MD_ADDRESS') if market_config.source == 'ctp' else None,
             orders=True, max_session_orders=max_session_orders, expected_trading_day=expected_trading_day,
             resume=resume, account_reconciliation=execution_policy.account_reconciliation)
+
+    lifecycle.window, lifecycle.stop_event = window, stop_event
 
     def describe(session):
         # session在准备/装配失败时可能还不存在，报告也要能说明这种失败。
@@ -579,8 +683,10 @@ def build_runtime(
             max_contracts=max_contracts, state_file=state_file, history_minutes=history_minutes,
             history_config=history_config, history_file=history_file, resume=resume,
             execution_policy=execution_policy, max_notional=max_notional,
-            limit_offset_ticks=limit_offset_ticks, bar_directory=bar_directory),
-        report=report, seconds=seconds, progress=progress)
+            limit_offset_ticks=limit_offset_ticks, bar_directory=bar_directory, window=window, stop_event=stop_event,
+            recording_state=recording_state, model_seed=model_seed),
+        report=report, seconds=(max(0.2, (window.end-datetime.now(window.end.tzinfo)).total_seconds())+60
+            if window is not None else seconds), progress=progress)
 
 
 def main(argv=None):
@@ -588,13 +694,11 @@ def main(argv=None):
     load_dotenv()
     args = parse_args(argv)
     # 只转交命令行已声明的字段；query_timeout等未出现的项目由build_runtime取默认值。
-    runtime = build_runtime(
+    factory = partial(build_runtime,
         product=args.product,
         release_path=args.release_path,
         directions_file=args.directions_file,
         signal_config=args.signal_config,
-        expected_trading_day=args.expected_trading_day,
-        expected_source_day=args.expected_source_day,
         mode=args.mode,
         max_contracts=args.max_contracts,
         seconds=args.seconds,
@@ -605,9 +709,19 @@ def main(argv=None):
         history_config=args.history_config,
         history_file=args.history_file,
         state_file=args.state_file,
-        resume=args.resume,
         report_dir=args.report_dir,
     )
+    if args.run_forever:
+        from .continuous import run_continuous
+        calendar = load_session_inputs(SessionInputs(product=args.product, calendar_id=args.calendar_id,
+            database=os.getenv('DDB_TRADING_HOURS_DATABASE') or 'dfs://bomber_static',
+            hours_table=os.getenv('DDB_TRADING_HOURS_TABLE') or 'fut_trading_session',
+            overrides_table=os.getenv('DDB_SESSION_OVERRIDES_TABLE') or None,
+            no_overrides=args.no_session_overrides), purpose=DataSourcePurpose.LIVE_REFERENCE)
+        return run_continuous(factory, calendar=calendar, mode=args.mode, state_file=args.state_file,
+            expected_trading_day=args.expected_trading_day, expected_source_day=args.expected_source_day)
+    runtime = factory(expected_trading_day=args.expected_trading_day,
+        expected_source_day=args.expected_source_day, resume=args.resume)
     try:
         # 这里才进入真实生命周期：prepare/start、持续poll、verify和stop。
         return runtime.run()
