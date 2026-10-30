@@ -17,8 +17,6 @@ from bomber.framework.dataprep.features import load_feature_bundle,FeatureReques
 
 
 
-
-
 MINUTE_NS = 60_000_000_000
 
 
@@ -125,8 +123,7 @@ def moving_average_records(records, input_spec, output_spec, key, window, *, clo
                             "window_resets": len(gaps), "gaps": gaps}
 
 def export_moving_average(window, config, dataset, 
-                schema_version, key, start, end, max_rows, 
-                source_key=None):
+                schema_version, key, start, end, max_rows, source_key=None):
     load_dotenv()
     config = Path(config).expanduser().resolve()
     query_key = key if source_key is None else source_key
@@ -252,12 +249,12 @@ def export_moving_average(window, config, dataset,
 if __name__ == "__main__":
     export_moving_average(
         window=10,
-        config=Path(__file__).resolve().with_name("index_for_08.json"),
+        config=Path(__file__).resolve().with_name("index_tinysoft.json"),
         dataset="index.minute",
-        schema_version=1,
+        schema_version=3,
         key="000852",
-        #source_key="SH000852",
-        start=timestamp("2026-10-10T00:00:00+08:00"),
-        end=timestamp("2026-10-21T15:00:00+08:00"),
+        source_key="SH000852",
+        start=timestamp("2026-10-30T00:00:00+08:00"),
+        end=timestamp("2026-10-30T15:00:00+08:00"),
         max_rows=10000,
     )
