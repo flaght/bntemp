@@ -31,7 +31,7 @@ from bomber.framework.dataprep.live_role import SourceRoleReferences
 from bomber.framework.dataprep.reference_freshness import ReferenceFreshnessPolicy
 from bomber.framework.dataprep.session_inputs import SessionInputs, load_session_inputs, validate_session_inputs
 from bomber.framework.dataprep.sources import DataSourcePurpose, DolphinDbReferenceConfig, ReferenceSourceFactory
-from bomber.framework.market.basic.base import CustomBar, DataType
+from bomber.framework.market.basic.base import Bar, CustomBar, DataType
 from bomber.framework.market.sources import MarketSourceConfig, assemble_minute_market, create_market_feed
 from bomber.framework.trader import DataBinding, ExecutionRoute, RiskLimits
 from bomber.framework.trader.assembly import RoleGuard, StrategyBindings, assemble_strategy
@@ -327,6 +327,9 @@ class HybridLiveRunner(SessionRoleLiveRunner):
                 self.strategy.predictor.warm_history(rows)
                 self.history_last_ns = event.ts_event
                 return
+        elif self.orders and isinstance(event, Bar) and event.bar_type.instrument_id == self.bound_instrument:
+            # 原生Bar先更新执行参考价，再退出已过期旧仓；伴生模型分钟随后才能生成新目标。
+            self.expire_due()
         return super().publish(feed_id, event)
 
     def _submit_locked(self, intent):
@@ -354,6 +357,17 @@ class HybridLiveRunner(SessionRoleLiveRunner):
             boundary = now // MINUTE * MINUTE
             due = [batch.expires_at_ns for batch in self.strategy.holdings.active
                    if batch.expires_at_ns <= boundary]
+            if self.orders:
+                reference = self.execution_prices.get(self.bound_instrument)
+                if reference is None or not 0 <= now - reference.ts_event <= 120_000_000_000:
+                    # 通道就绪不代表已收到可定价行情。先保留批次、期限及待提交目标，
+                    # 后续poll拿到有效报价再执行；不以历史预热收盘价补造实时参考价。
+                    if (due or self.strategy.last_targets) and not getattr(self, '_waiting_execution_price', False):
+                        print(f'Hybrid到期待报价: instrument={self.bound_instrument}；'
+                              '等待有效实时参考价后继续处理，原到期时间保留', flush=True)
+                        self._waiting_execution_price = True
+                    return
+                self._waiting_execution_price = False
             if (due and min(due) == boundary and self.strategy.last_prediction is not None
                     and self.strategy.last_processed_ns < boundary - 1):
                 # 模型已就绪，但到期分钟的Bar/推理尚未到：等本分钟信号后一次计算净目标。
@@ -462,6 +476,9 @@ def assemble(inputs, lifecycle, *, product: str, release_path: Path, directions_
     # Runner与执行端共享同一个PositionManager，执行回报才能更新策略所依据的仓位。
     runner = HybridLiveRunner(references=references, session_check=check, orders=orders,
         position_manager=execution.positions, instrument_health=health)
+    # 决策闭闸及启动交接分钟仍更新执行参考价；此回调不调用模型、不产生交易目标。
+    feed.register_bar_handler(execution.prices.on_market_event)
+    runner.execution_prices = execution.prices
     runner.calendar, runner.strategy, runner.client = calendar, strategy, execution.client
     runner.continuous_window, runner.model_seed = window, model_seed
     runner.continuous_stop_event = stop_event

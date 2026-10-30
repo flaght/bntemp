@@ -79,7 +79,8 @@ class ContinuousTests(unittest.TestCase):
             '--directions-file',str(self.directions),'--signal-config',str(self.signal),
             '--no-session-overrides']
 
-    def session(self, day='20261028', mode='recording', symbol='rb2701', policy='strict', state=None, **extras):
+    def session(self, day='20261028', mode='recording', symbol='rb2701', policy='strict', state=None,
+                market_config=None, **extras):
         instrument=InstrumentId.from_str(symbol+'.SHFE')
         refs=NS(instrument_id=instrument,trading_day=datetime.strptime(day,'%Y%m%d').date(),
             started_ns=ns('2026-10-28 14:00'),refresh_on_event=False,
@@ -92,12 +93,12 @@ class ContinuousTests(unittest.TestCase):
             session=live.assemble(NS(references=refs,calendar=self.cal,upstream=Upstream('fixture')),
                 NS(driver=driver if mode=='simnow' else None),product='RB',release_path=self.release,
                 directions_file=self.directions,signal_config=self.signal,
-                market_config=live.MarketSourceConfig(),mode=mode,state_file=state or self.path,
+                market_config=market_config or live.MarketSourceConfig(),mode=mode,state_file=state or self.path,
                 execution_policy=ExecutionPolicy(policy,'fills'),bar_directory=self.root/'market',**extras)
         return session,driver,transport
 
-    def old_session(self, policy='strict', flat=False):
-        session,driver,transport=self.session(mode='simnow',policy=policy)
+    def old_session(self, policy='strict', flat=False, market_config=None):
+        session,driver,transport=self.session(mode='simnow',policy=policy,market_config=market_config)
         s=session.strategy
         label='2026-10-28 14:50' if flat else '2026-10-28 14:57'
         stamp=ns(label)+MINUTE-1
