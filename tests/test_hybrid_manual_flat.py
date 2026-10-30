@@ -4,7 +4,7 @@ from copy import deepcopy
 from importlib import import_module
 from io import StringIO
 from types import SimpleNamespace as NS
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 import json
 import unittest
 
@@ -73,6 +73,56 @@ class ManualFlatTests(unittest.TestCase):
         self.assertIsNone(audit['actual_close_prices'])
         self.transport.send_order.assert_not_called()
         self.transport.close.assert_called_once()
+
+    def test_real_transport_login_settlement_activate_then_queries_in_order(self):
+        from bomber.framework.trader.execution.ctp.td_transport import CtpTdApiTransport
+        from tests.run_p4_ctp_td_transport import FakeTdApi
+        apis=[]
+        class Api(FakeTdApi):
+            def __init__(api):
+                super().__init__()
+                apis.append(api)
+            def reqUserLogin(api,data,reqid):
+                api.request_names.append('login')
+                api.onRspUserLogin(dict(BrokerID='9999',UserID='fixture',TradingDay='20261028',MaxOrderRef='17'),{},reqid,True)
+                return 0
+            def reqSettlementInfoConfirm(api,data,reqid):
+                api.request_names.append('settlement')
+                api.onRspSettlementInfoConfirm(dict(BrokerID='9999',InvestorID='fixture'),{},reqid,True)
+                return 0
+            def reqQryInvestorPosition(api,data,reqid):
+                api.request_names.append('positions')
+                api.onRspQryInvestorPosition({}, {}, reqid, True)
+                return 0
+            def reqQryOrder(api,data,reqid):
+                api.request_names.append('orders')
+                api.onRspQryOrder({}, {}, reqid, True)
+                return 0
+        transport=CtpTdApiTransport(client_id=self.client,account_id='fixture',investor_id='fixture',
+            broker_id='9999',front='tcp://fake:1234',password='fake',app_id='fake',auth_code='fake',
+            td_api_base=Api,flow_path=str(self.f.root/'td'),timeout_seconds=.05)
+        # connect真实实现不会自行置_ready；回归遗漏activate时必须在第一次查询处失败。
+        activate=transport.activate
+        def activate_and_mark():
+            self.assertFalse(transport._ready)
+            self.assertEqual(apis[0].request_names[-1],'settlement')
+            activate()
+            apis[0].request_names.append('activate')
+        with patch.object(transport,'activate',side_effect=activate_and_mark),redirect_stdout(StringIO()):
+            updated=maintenance.reconcile(state_file=self.f.path,transport=transport)
+        self.assertEqual(apis[0].request_names,['create','auth','login','settlement','activate','positions','orders'])
+        self.assertTrue(apis[0].exited)
+        self.assertEqual(updated.payload['component_states']['hybrid']['config']['max_contracts'],5)
+        self.assertFalse(transport._ready)
+
+    def test_activation_failure_keeps_original_state_and_still_releases_connection(self):
+        self.transport.activate.side_effect=RuntimeError('activation refused')
+        with self.assertRaisesRegex(RuntimeError,'activation refused'):
+            self.run_reconcile()
+        self.assertEqual(self.f.path.read_bytes(),self.before)
+        self.transport.query_gross_positions.assert_not_called()
+        self.transport.close.assert_called_once()
+        self.assertFalse(list(self.f.root.glob('*.before-manual-flat-*')))
 
     def test_nonzero_gross_even_when_net_is_zero_blocks_all_writes(self):
         self.transport.query_gross_positions.return_value={'rb2701.SHFE':(6,6)}
