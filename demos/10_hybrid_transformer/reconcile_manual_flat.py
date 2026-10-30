@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import time
 
 from bomber.framework.trader.execution.attribution import PositionAttributionLedger
@@ -20,12 +21,43 @@ from bomber.framework.trader.runtime.live.local import strategy_state_lock
 from . import run_live as live
 
 
+def managed_instruments(payload):
+    """只核对本检查点涉及的RB合约；不要求共享账户中的其他策略空仓。"""
+    hybrid = payload['component_states']['hybrid']
+    if hybrid['config']['product'] != 'RB' or hybrid['config']['venue'] != 'SHFE':
+        raise ValueError('不是预期的RB检查点')
+    values = list(hybrid['last_targets'])
+    if hybrid['last_main']:
+        values.append(hybrid['last_main'])
+    values.extend(row['instrument'] for row in hybrid['holdings']['active'])
+    values.extend(row['instrument_id'] for row in payload['ctp_ledgers'][live.CLIENT_ID]['positions'])
+    for key in ('account_positions', 'working_quantities', 'account_revisions'):
+        values.extend(row['key']['instrument_id'] for row in payload['positions'][key])
+    values.extend(row['instrument_id'] for row in payload['positions']['attribution']['owned'])
+    values.extend(row['instrument_id'] for row in payload['portfolio']['known_keys'])
+    values.extend(row['key']['instrument_id'] for rows in payload['portfolio']['contributions'].values()
+                  for row in rows)
+    # 对齐后批次与仓位已清空；保留的终结订单仍能证明原来管理的具体合约。
+    if not values:
+        values.extend(row['instrument_id'] for row in payload['orders'][live.CLIENT_ID])
+    result = set()
+    for value in values:
+        match = re.fullmatch(r'(rb[0-9]+)(?:\.SHFE)?', str(value), re.IGNORECASE)
+        if match is None:
+            raise ValueError(f'检查点包含非RB合约，不能清理其状态: {value}')
+        result.add(match[1].lower() + '.SHFE')
+    if not result:
+        raise ValueError('检查点缺少具体RB合约，不能猜测对齐范围')
+    return frozenset(result)
+
+
 def aligned_payload(payload, *, trading_day):
     """建立观察到空仓后的新运行基线；完整订单/归属计划历史仍保留用于去重及当日额度。"""
     result = deepcopy(payload)
     client = live.CLIENT_ID
     if any(set(payload[key]) != {client} for key in ('orders', 'ctp_ledgers', 'ctp_drivers')):
         raise ValueError('手工平仓对齐仅支持当前单策略、单CTP账户检查点')
+    managed_instruments(payload)
     hybrid = result['component_states']['hybrid']
     config, holdings = hybrid['config'], hybrid['holdings']
     if (hybrid['version'] != 1 or config['product'] != 'RB' or config['venue'] != 'SHFE'
@@ -84,13 +116,15 @@ def _write_new(path, data):
 
 
 def reconcile(*, state_file, transport):
-    """持锁、只读核对柜台空仓、备份，然后原子提交；任何非零总仓或活动订单均拒绝。"""
+    """只读核对本策略RB合约空仓、备份并提交；其他合约的仓位和订单不受影响。"""
     path = Path(state_file).resolve()
     with strategy_state_lock(str(path) + '.continuous-owner'), strategy_state_lock(path), account_lock(transport.account_id):
         store = JsonStateStore(path)
         saved = store.load()
         if saved is None:
             raise FileNotFoundError(path)
+        managed = managed_instruments(saved.payload)
+        managed_keys = {value.casefold() for value in managed}
         driver = saved.payload['ctp_drivers'][live.CLIENT_ID]
         if (driver['account_id'] != transport.account_id or driver['broker_id'] != transport.broker_id
                 or driver['investor_id'] != transport.investor_id or transport.broker_id != '9999'):
@@ -101,13 +135,15 @@ def reconcile(*, state_file, transport):
             transport.activate()
             gross = {str(key): tuple(value) for key, value in transport.query_gross_positions().items()
                      if any(value)}
-            if gross:
-                raise RuntimeError(f'柜台仍有多空总仓，不执行对齐: {gross}')
-            if transport.query_active_orders().orders:
-                raise RuntimeError('柜台仍有活动订单，不执行对齐')
+            managed_gross = {key: value for key, value in gross.items() if key.casefold() in managed_keys}
+            if managed_gross:
+                raise RuntimeError(f'本策略RB合约柜台仍有多空总仓，不执行对齐: {managed_gross}')
+            active = transport.query_active_orders().orders
+            if any(str(order.instrument_id).casefold() in managed_keys for order in active):
+                raise RuntimeError('本策略RB合约柜台仍有活动订单，不执行对齐')
             payload = aligned_payload(saved.payload, trading_day=context.trading_day)
             if payload == saved.payload:
-                print('柜台已核实空仓；本地账本已对齐为5手/每批1手，无需重复迁移')
+                print('本策略RB合约已核实空仓；本地账本已对齐为5手/每批1手，无需重复迁移')
                 return saved
             original = path.read_bytes()
             suffix = f'g{saved.generation}-{time.time_ns()}'
@@ -119,12 +155,17 @@ def reconcile(*, state_file, transport):
                 observed_at_ns=time.time_ns(), trading_day=context.trading_day,
                 previous_generation=saved.generation, original_sha256=hashlib.sha256(original).hexdigest(),
                 backup=str(backup), previous_targets=old['last_targets'], previous_batches=old['holdings']['active'],
-                broker_gross={}, active_orders=0, retained_order_records=sum(map(len, payload['orders'].values())),
+                managed_instruments=sorted(managed), broker_gross={}, active_orders=0,
+                external_gross={key: [str(q) for q in value] for key, value in gross.items()},
+                external_active_orders=len(active),
+                retained_order_records=sum(map(len, payload['orders'].values())),
                 actual_close_prices=None, actual_close_times=None, realized_pnl_reconstructed=False,
                 new_max_contracts=5, new_max_entry_contracts=1)
             _write_new(audit, (json.dumps(evidence, ensure_ascii=False, indent=2) + '\n').encode())
             updated = store.save(payload, expected_generation=saved.generation)
-            print(f'柜台空仓及无活动订单已核实，TD={context.trading_day}')
+            print(f'本策略合约 {sorted(managed)} 空仓及无活动订单已核实，TD={context.trading_day}')
+            if gross or active:
+                print(f'其他合约持仓{len(gross)}项、活动订单{len(active)}笔；不作处理')
             print(f'原检查点备份: {backup}\n外部手工平仓审计: {audit}')
             print(f'账本对齐及5手/每批1手迁移完成，generation={updated.generation}；未发送订单')
             return updated
