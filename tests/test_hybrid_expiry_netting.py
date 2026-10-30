@@ -147,4 +147,127 @@ class ExpiryNettingTests(unittest.TestCase):
         self.assertEqual(other.strategy.holdings.max_entry_contracts,1)
 
 
+class ExpiryPriceTests(unittest.TestCase):
+    """实际CTP规划器/受控客户端/Driver；只替换transport发送，不连接网络。"""
+    market_config = None
+    def setUp(self):
+        fixture = continuous_fixture.ContinuousTests('runTest')
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        self.fixture = fixture
+        fixture.old_session(policy='off', market_config=self.market_config)
+        self.session, self.driver, self.transport = fixture.session(
+            mode='simnow', policy='off', market_config=self.market_config)
+        self.session.manager.restore()
+        self.strategy, self.runner = self.session.strategy, self.session.runner
+        self.runner.hold_restored_target(self.strategy.strategy_id, self.strategy._revision)
+        self.now = ns('2026-10-28 21:05:02')
+        self.runner._clock_ns = lambda: self.now
+        self.runner._session_check = lambda: True
+        self.runner.instrument_health = None
+        self.session.client._wall_clock_ns = lambda: self.now
+        self.session.client._demo_environment_check = lambda: True
+        self.strategy.predictor.workflow.min_raw_bars = live.MODEL_MIN_RAW_BARS
+        self.strategy.predictor.on_bar = Mock(side_effect=AssertionError('到期平仓不应调用模型'))
+        self.transport.send_order = Mock()
+        self.driver.start(lambda _: None)
+        self.addCleanup(self.driver.stop)
+        self.runner.start()
+        self.addCleanup(self.runner.stop)
+        self.session.manager.commit_restore()
+        self.session.client.arm_demo(self.session.client.DEMO_CONFIRMATION)
+
+    def emit_price_bar(self, *, stamp=None, instrument=None):
+        instrument = instrument or self.session.references.instrument_id
+        bar = base.make_bar(instrument_id=instrument, meta=self.session.references.instrument_meta(),
+            ts_event=self.now-1_000_000_000 if stamp is None else stamp, ts_init=self.now,
+            open=100, high=100, low=100, close=100, volume=2)
+        self.session.bar_feed._emit_bar(bar)
+
+    def test_start_without_price_keeps_expired_batch_and_waits_without_submitting(self):
+        active = self.strategy.holdings.active
+        targets = dict(self.strategy.last_targets)
+        saved = self.fixture.path.read_bytes()
+        self.runner.begin_bars()
+        self.runner.expire_due()
+        self.assertTrue(self.runner.accept_bars)
+        self.assertEqual(self.strategy.holdings.active, active)
+        self.assertLess(active[0].expires_at_ns, self.now)
+        self.assertEqual(self.strategy.last_targets, targets)
+        self.assertEqual(self.fixture.path.read_bytes(), saved)
+        self.transport.send_order.assert_not_called()
+        self.strategy.predictor.on_bar.assert_not_called()
+
+    def test_closed_gate_price_is_available_for_first_expiry_order_without_model_warmup(self):
+        self.assertFalse(self.runner.accept_bars)
+        self.emit_price_bar()
+        self.assertIsNotNone(self.session.execution.prices.get(self.session.references.instrument_id))
+        self.assertEqual(self.strategy.bars_used, 1)
+        self.transport.send_order.assert_not_called()
+        self.runner.begin_bars()
+        self.assertFalse(self.strategy.holdings.active)
+        self.assertEqual(self.strategy.last_targets, {'rb2701': Decimal(0)})
+        order = self.transport.send_order.call_args.args[0]
+        self.assertEqual(order['Direction'], '1')
+        self.assertEqual(order['CombOffsetFlag'], '3')
+        self.assertEqual(order['VolumeTotalOriginal'], 1)
+        self.assertEqual(order['LimitPrice'], 99)
+        self.runner.expire_due()
+        self.transport.send_order.assert_called_once()
+        self.strategy.predictor.on_bar.assert_not_called()
+
+    def test_stale_price_waits_then_live_handoff_minute_enables_close(self):
+        active = self.strategy.holdings.active
+        self.emit_price_bar(stamp=self.now-121_000_000_000)
+        self.runner.begin_bars()
+        self.assertEqual(self.strategy.holdings.active, active)
+        self.transport.send_order.assert_not_called()
+        # 仍早于首根可决策分钟；原生Bar只给执行端更新参考价。
+        self.emit_price_bar()
+        self.runner.expire_due()
+        self.assertFalse(self.strategy.holdings.active)
+        self.transport.send_order.assert_called_once()
+        self.strategy.predictor.on_bar.assert_not_called()
+
+    def test_other_instrument_price_cannot_enable_rb_close(self):
+        from tests.run_hybrid_live_offline import InstrumentId
+        active = self.strategy.holdings.active
+        self.emit_price_bar(instrument=InstrumentId.from_str('rb2705.SHFE'))
+        self.runner.begin_bars()
+        self.assertEqual(self.strategy.holdings.active, active)
+        self.transport.send_order.assert_not_called()
+
+    def test_first_native_price_closes_overdue_batch_before_companion_model_bar(self):
+        self.runner.begin_bars()
+        self.now = ns('2026-10-28 21:07:02')
+        self.emit_price_bar(stamp=ns('2026-10-28 21:07')-1)
+        self.assertFalse(self.strategy.holdings.active)
+        self.transport.send_order.assert_called_once()
+        self.strategy.predictor.on_bar.assert_not_called()
+
+    def test_pending_close_from_previous_attempt_also_waits_for_price(self):
+        self.strategy.holdings.expire(self.now)
+        self.strategy.last_targets = {'rb2701': Decimal(0)}
+        self.strategy._targets_pending = True
+        self.runner.begin_bars()
+        self.assertTrue(self.strategy._targets_pending)
+        self.transport.send_order.assert_not_called()
+        self.emit_price_bar()
+        self.runner.expire_due()
+        self.transport.send_order.assert_called_once()
+        self.assertFalse(self.strategy._targets_pending)
+
+    def test_unrelated_planner_errors_are_not_suppressed(self):
+        self.emit_price_bar()
+        with patch.object(self.session.client.planner, 'plan', side_effect=RuntimeError('unexpected planner failure')):
+            with self.assertRaisesRegex(RuntimeError, 'unexpected planner failure'):
+                self.runner.begin_bars()
+        self.transport.send_order.assert_not_called()
+
+
+class DolphinDbExpiryPriceTests(ExpiryPriceTests):
+    market_config = live.MarketSourceConfig(source='dolphindb', table='fixture',
+        timestamp_label='start', volume_mode='per-bar')
+
+
 if __name__=='__main__':unittest.main()
