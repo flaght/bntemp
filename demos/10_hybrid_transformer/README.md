@@ -507,3 +507,31 @@ PYTHONPATH=.:.validation/packages python -B -m tests.run_live_continuous_offline
 读取数量不写入模型恢复身份，但最低原始分钟数会写入。旧检查点若保存300，须先备份并显式
 仅迁移 `component_states.live_session.identity.min_raw_bars` 为260，再由正常恢复流程核验账户和批次；
 不能直接删除检查点或绕过其他身份校验。
+
+
+### 旧配置仍持仓时，先独立恢复到期仓位
+
+旧检查点如果还是总预算10手、每批2手，不能用新的5手/每批1手直接恢复，也不能改写批次数量。
+使用同目录的 `recover_expired.py`：它读取原手数配置和五分钟绝对期限，模型预测器始终返回None，
+只执行到期目标；CTP规划器额外拒绝所有OPEN腿。未到期批次仍保留原期限，已过期批次在行情和执行
+就绪后退出。维护入口不加载模型推理，不要求260根预热，原模型/信号/行情身份仍严格核对。
+
+维护入口即使原政策为off，也会核对管理合约的柜台多空总仓及今昨分桶；不匹配立即停止。
+它复用账户锁、检查点锁和当日报单预算，写入原检查点前先保存 `.before-expired-recovery-g*.bak`。
+平仓成交后，同时确认本地空仓、柜台空仓、无活动订单才成功退出；超时或故障保留原手数配置，
+不能继续手数迁移。停机期间实际成交价格和时间无法回溯到原批次到期时点。
+
+```bash
+python -u -m demos.10_hybrid_transformer.recover_expired \
+  --connect --enable-orders --confirm-simnow \
+  --state-file /ABS/PATH/TO/original_state.json \
+  --release-path /ABS/PATH/TO/RELEASE \
+  --directions-file /ABS/PATH/TO/feature_directions.csv \
+  --signal-config /ABS/PATH/TO/signal_config.json \
+  --market-config /ABS/PATH/TO/market_dolphindb_rb.json \
+  --expected-trading-day 20261030 --expected-source-day 20261029 \
+  --seconds 600 --no-session-overrides
+```
+
+看到“旧批次已到期退出，柜台及本地账本均为空仓”且维护报告status=passed后，才单独执行空仓手数迁移，
+再运行正常Live入口。维护命令本身不修改手数配置，也不启动新策略交易。

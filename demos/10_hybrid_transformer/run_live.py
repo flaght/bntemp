@@ -409,7 +409,7 @@ def assemble(inputs, lifecycle, *, product: str, release_path: Path, directions_
              history_minutes=0, history_config: Path | None = None, history_file: Path | None = None,
              resume=False, execution_policy=None,
              max_notional=Decimal('1000000'), limit_offset_ticks=1, bar_directory: Path | None = None,
-             window=None, stop_event=None, recording_state=None, model_seed=None):
+             window=None, stop_event=None, recording_state=None, model_seed=None, strategy=None):
     """把资料、行情、执行、策略和持久化连接成session，交给生命周期启动。
 
     inputs是prepare_inputs的返回结果；session则还包含Runner、执行客户端、
@@ -452,8 +452,13 @@ def assemble(inputs, lifecycle, *, product: str, release_path: Path, directions_
         check = SessionReadiness(market_channel, LocalExecutionChannel(CLIENT_ID,
             lambda: execution.client.is_started, channel='recording'))
     # 4. 模型/策略在此加载；这里只创建历史服务，实际历史读取发生在begin_bars。
-    strategy = build_strategy(references, calendar, product=product, release_path=release_path,
-        directions_file=directions_file, signal_config=signal_config, max_contracts=max_contracts)
+    if strategy is None:
+        strategy = build_strategy(references, calendar, product=product, release_path=release_path,
+            directions_file=directions_file, signal_config=signal_config, max_contracts=max_contracts)
+    elif (strategy.config.product != product or strategy.config.max_contracts != max_contracts
+            or strategy.config.venue != references.spec.venue
+            or strategy.config.contract_multiplier != references.spec.multiplier):
+        raise ValueError('预构造策略与本次资料或执行预算不一致')
     # Runner与执行端共享同一个PositionManager，执行回报才能更新策略所依据的仓位。
     runner = HybridLiveRunner(references=references, session_check=check, orders=orders,
         position_manager=execution.positions, instrument_health=health)
