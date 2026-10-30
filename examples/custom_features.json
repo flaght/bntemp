@@ -1,0 +1,41 @@
+{
+    "format_version": 1,
+    "datasets": [
+      {
+        "schema": {
+          "dataset_id": "index.minute",
+          "schema_version": 2,
+          "frequency": {
+            "period_ns": 60000000000,
+            "timezone": "Asia/Shanghai"
+          },
+          "fields": [
+            {
+              "name": "close",
+              "kind": "decimal",
+              "minimum": "0",
+              "exclusive_minimum": true
+            }
+          ]
+        },
+        "source": {
+          "backend": "dolphindb-raw",
+          "database": "dfs://min_bar",
+          "table": "index_1min",
+          "key_column": "Code",
+          "partition_date": "date",
+          "event_time": {
+            "column": "minTime",
+            "date_column": "date",
+            "timezone": "Asia/Shanghai",
+            "label": "end"
+          },
+          "availability": "observed",
+          "payload_columns": {
+            "close": "close"
+          }
+        }
+      }
+    ]
+  }
+  
