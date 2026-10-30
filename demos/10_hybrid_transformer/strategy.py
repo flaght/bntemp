@@ -35,6 +35,7 @@ class HybridTransformerConfig:
     contract_multiplier: Decimal # 合约乘数，即每手对应的标的数量
     target_key: str = "" # 提交目标仓位时使用的路由标识 留空时自动生成，例如 P → p_main、RB → rb_main
     record_signals: bool = False # 默认 False；开启后保存在内存中的 signal_records，方便分析，
+    max_entry_contracts: int | None = None # 每批开仓上限；Live显式设为1，研究入口沿用原预算
 
 
     def __post_init__(self) -> None:
@@ -49,6 +50,9 @@ class HybridTransformerConfig:
                 or type(self.rebalance_minutes) is not int
                 or self.rebalance_minutes < 1 or 60 % self.rebalance_minutes):
             raise ValueError("最大手数须为正整数；调仓间隔须为 60 的正约数")
+        if self.max_entry_contracts is not None and (type(self.max_entry_contracts) is not int
+                or not 1 <= self.max_entry_contracts <= self.max_contracts):
+            raise ValueError("每批开仓上限须为不超过总手数上限的正整数")
         multiplier = Decimal(str(self.contract_multiplier))
         if not multiplier.is_finite() or multiplier <= 0:
             raise ValueError("合约乘数须为有限正数，且与成交额单位一致")
@@ -75,7 +79,7 @@ class HybridTransformerStrategy(StrategyTemplate):
             raise ValueError("持仓交易日历与策略品种不一致")
         self.calendar = calendar
         self.holdings = PeriodHoldings(holding_bars=config.hold_bars,
-                                      max_contracts=config.max_contracts, calendar=calendar)
+            max_contracts=config.max_contracts, calendar=calendar, max_entry_contracts=config.max_entry_contracts)
         self._targets_pending = False
         self._checkpoint = None
         self.target_keys = ({str(symbol).lower(): str(key).strip()

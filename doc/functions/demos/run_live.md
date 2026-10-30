@@ -106,7 +106,7 @@ Recording不撮合成交，也不创建TD交易通道。CTP行情仍需要MD配�
 | `--signal-config` | 按品种配置的信号函数、参数和持仓周期JSON |
 | `--expected-trading-day` | 预期会话交易日，YYYYMMDD |
 | `--expected-source-day` | 参考资料来源日，YYYYMMDD |
-| `--max-contracts` | 全部未到期批次的绝对手数总上限，默认10 |
+| `--max-contracts` | 全部未到期批次的绝对手数总上限，默认5，允许1至5；Live每批最多1手 |
 | `--seconds` | 定时模式启动完成后的运行时长，默认600秒；常驻模式忽略 |
 | `--run-forever` | 休市等待，下个窗口自动恢复，支持跨交易日 |
 | `--market-source` | 显式选择CTP或DolphinDB，可覆盖JSON中的来源 |
@@ -132,6 +132,7 @@ Recording不撮合成交，也不创建TD交易通道。CTP行情仍需要MD配�
 | 最低原始分钟数 | 260根 | MODEL_MIN_RAW_BARS |
 | 模型时间标签 | start | MODEL_BAR_TIMESTAMP |
 | 新批次检查间隔 | 1分钟 | REBALANCE_MINUTES |
+| 每批开仓上限 | 1手 | build_strategy中max_entry_contracts=1 |
 | CTP查询超时 | 15秒 | build_runtime默认参数 |
 | 会话报单上限 | 100笔 | build_runtime默认参数 |
 | 名义金额上限 | 1000000 | build_runtime默认参数 |
@@ -142,6 +143,11 @@ Recording不撮合成交，也不创建TD交易通道。CTP行情仍需要MD配�
 
 260根是Live原始分钟门槛，第260根起允许计算预测；因子和模型输入仍需要有效数值。
 历史预热只装入窗口，新的完整实时分钟才驱动预测。原检查点保存300时，需要显式迁移这一身份参数后再恢复。
+
+到期净额合并保留每分钟独立批次：本分钟信号已到则由策略一次处理到期和开仓；
+模型已经就绪但Bar尚未到时，`expire_due()`在本分钟先等待，避免时钟先提交平仓后再开同向仓。
+如果到下一分钟仍缺失该Bar，时钟会处理到期，不会无限续持；冷模型和错误路径仍按原到期规则退出。
+信号0只表示不建立新批次，未到期批次继续保留。
 
 ## 6. `build_runtime()`为什么没有立即启动模型和行情
 

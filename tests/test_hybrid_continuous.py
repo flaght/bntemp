@@ -41,7 +41,7 @@ class Transport:
     client_id=CLIENT
     production_mode=True
     front='tcp://182.254.243.31:30001'
-    def __init__(self, day, quantity=2): self.day,self.quantity,self.revision=day,quantity,0
+    def __init__(self, day, quantity=1): self.day,self.quantity,self.revision=day,quantity,0
     def connect(self,*handlers): return CtpTraderSession('9999','fixture',self.day,7)
     def activate(self): pass
     def close(self): pass
@@ -50,7 +50,7 @@ class Transport:
         return {'rb2701.SHFE':(Decimal(self.quantity),Decimal(0))} if self.quantity else {}
     def query_position_details(self):
         return [dict(InstrumentID='rb2701',ExchangeID='SHFE',Position=self.quantity,
-            PosiDirection='2',PositionDate='2',HedgeFlag='1',PositionCost=2000)] if self.quantity else []
+            PosiDirection='2',PositionDate='2',HedgeFlag='1',PositionCost=1000)] if self.quantity else []
     def query_account(self):
         self.revision+=1
         return AccountStateEvent(CLIENT,'fixture',self.revision,ns('2026-10-28 21:00'),
@@ -104,12 +104,12 @@ class ContinuousTests(unittest.TestCase):
         update=s.holdings.advance('rb2701',1,dt(label),timestamp_ns=stamp)
         s.restore_target_revision(1)
         s.last_processed_ns=stamp
-        s.bars_used=1;s.last_main='rb2701';s.last_targets={'rb2701':Decimal(2)}
+        s.bars_used=1;s.last_main='rb2701';s.last_targets={'rb2701':Decimal(1)}
         if flat:
             # 先在原日到期平掉再换约；不是丢弃未到期批次。
             s.holdings.expire(ns('2026-10-28 14:56'))
             s.last_targets={'rb2701':Decimal(0)}
-        q=Decimal(0 if flat else 2)
+        q=Decimal(0 if flat else 1)
         instrument=session.references.instrument_id
         positions=session.runner.position_manager
         if q:
@@ -215,8 +215,8 @@ class ContinuousTests(unittest.TestCase):
                 self.assertEqual(new.strategy.holdings.snapshot_state(),saved)
                 self.assertEqual(self.path.read_bytes(),before)
                 self.assertEqual(new.ledger.state().trading_day,'20261029')
-                self.assertEqual(new.ledger.snapshot(new.references.instrument_id).long_yesterday,2)
-                self.assertEqual(new.runner.position_manager.position(CLIENT,'rb_main'),2)
+                self.assertEqual(new.ledger.snapshot(new.references.instrument_id).long_yesterday,1)
+                self.assertEqual(new.runner.position_manager.position(CLIENT,'rb_main'),1)
                 driver.start(lambda _:None);driver.reconcile_account_state();driver.reconcile_active_orders()
                 new.manager.commit_restore();driver.stop()
                 self.assertTrue(list(self.root.glob(self.path.name+'.before-rollover-*')))
@@ -228,7 +228,7 @@ class ContinuousTests(unittest.TestCase):
     def test_rollover_failure_keeps_original_file_and_model_changes_are_rejected(self):
         self.old_session();before=self.path.read_bytes()
         new,driver,transport=self.session('20261029',mode='simnow')
-        transport.quantity=1
+        transport.quantity=2
         with self.assertRaisesRegex(RuntimeError,'柜台总仓'):
             new.manager.restore(payload_transform=lambda p:checkpoint.payload_for_day(new,p,
                 driver=driver,transport=transport,day='20261029'))

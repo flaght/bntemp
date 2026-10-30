@@ -186,7 +186,7 @@ class PartialHistoryTests(unittest.TestCase):
                 self.assertEqual(len(session.strategy.predictor.workflow.history),history_count+required)
                 self.assertEqual(session.strategy.bars_used,required)
                 self.assertEqual(len(session.strategy.holdings.active),1)
-                self.assertEqual(dict(session.client.requests[-1].logical_targets),{'rb_main':Decimal(2)})
+                self.assertEqual(dict(session.client.requests[-1].logical_targets),{'rb_main':Decimal(1)})
             finally:session.runner.stop()
 
 
