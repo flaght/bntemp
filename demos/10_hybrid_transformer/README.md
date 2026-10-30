@@ -539,7 +539,7 @@ python -u -m demos.10_hybrid_transformer.recover_expired \
 
 ### 已在交易软件中手工平仓时
 
-手工平仓的回报不一定进入原策略的成交归属账本。因此柜台为空仓时，本地仍可能保留旧6手、
+手工平仓的回报不一定进入原策略的成交归属账本。因此RB合约已在柜台平仓时，本地仍可能保留旧6手、
 3个批次和10手配置。这种情况不要再运行 `recover_expired`，使用独立只读维护入口：
 
 ```bash
@@ -547,7 +547,9 @@ python -m demos.10_hybrid_transformer.reconcile_manual_flat \
   --state-file /ABS/PATH/TO/original_state.json --confirm-manual-flat
 ```
 
-该工具会通过.env中的原SimNow账户核实**全账户多空总仓均为0、无活动订单**，并拒绝账户不符、
+该工具从原检查点确定本策略涉及的具体RB合约，通过.env中的原SimNow账户核实
+**这些合约的多空总仓均为0、无活动订单**。共享账户中其他合约的持仓和订单不阻塞对齐，也不会被撤单或平仓；
+它们仅作为外部状态记录在审计文件中。工具拒绝无法确定RB合约、混入非RB状态、账户不符、
 跨交易日或本地仍有在途订单的状态。核实后保存完整原文件 `.before-manual-flat-*.bak` 和
 `.manual-flat-*.json` 审计，再用CAS原子提交空仓运行基线及5手/每批1手配置。历史终结订单和归属计划
 继续保留用于去重和当日报单计数；不会补造柜台平仓成交，也不重建未知的手工平仓价格、时间或盈亏。

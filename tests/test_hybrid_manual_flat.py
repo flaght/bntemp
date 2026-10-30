@@ -126,16 +126,52 @@ class ManualFlatTests(unittest.TestCase):
 
     def test_nonzero_gross_even_when_net_is_zero_blocks_all_writes(self):
         self.transport.query_gross_positions.return_value={'rb2701.SHFE':(6,6)}
-        with self.assertRaisesRegex(RuntimeError,'柜台仍有多空总仓'):
+        with self.assertRaisesRegex(RuntimeError,'RB合约柜台仍有多空总仓'):
             self.run_reconcile()
         self.assertEqual(self.f.path.read_bytes(),self.before)
         self.assertFalse(list(self.f.root.glob('*.before-manual-flat-*')))
 
     def test_active_orders_block_writes_even_when_broker_is_flat(self):
-        self.transport.query_active_orders.return_value=NS(orders=('active',))
-        with self.assertRaisesRegex(RuntimeError,'柜台仍有活动订单'):
+        self.transport.query_active_orders.return_value=NS(orders=(NS(instrument_id='rb2701.SHFE'),))
+        with self.assertRaisesRegex(RuntimeError,'RB合约柜台仍有活动订单'):
             self.run_reconcile()
         self.assertEqual(self.f.path.read_bytes(),self.before)
+
+    def test_shared_account_other_positions_and_orders_do_not_block_rb_alignment(self):
+        external = {'IF2611.CFFEX': (1, 0), 'sc2611.INE': (1, 0),
+            'MO2611-C-7100.CFFEX': (0, 1), 'MO2611-C-6900.CFFEX': (0, 1), 'IM2611.CFFEX': (0, 2)}
+        self.transport.query_gross_positions.return_value = external.copy()
+        self.transport.query_active_orders.return_value = NS(orders=(NS(instrument_id='IF2611.CFFEX'),))
+        updated = self.run_reconcile()
+        self.assertEqual(updated.payload['component_states']['hybrid']['last_targets'], {})
+        self.assertEqual(updated.payload['orders'], self.saved.payload['orders'])
+        audit = json.loads(next(self.f.root.glob('*.manual-flat-*.json')).read_text())
+        self.assertEqual(audit['managed_instruments'], ['rb2701.SHFE'])
+        self.assertEqual(audit['external_gross'], {key: [str(q) for q in value] for key, value in external.items()})
+        self.assertEqual(audit['external_active_orders'], 1)
+        self.assertEqual(self.transport.query_gross_positions.return_value, external)
+        self.transport.send_order.assert_not_called()
+        self.transport.cancel_order.assert_not_called()
+
+    def test_scope_is_exact_contract_and_broker_symbol_case_does_not_bypass_check(self):
+        self.transport.query_gross_positions.return_value = {'rb2705.SHFE': (0, 2), 'RB2701.SHFE': (0, 1)}
+        with self.assertRaisesRegex(RuntimeError, 'RB2701.SHFE'):
+            self.run_reconcile()
+        self.assertEqual(self.f.path.read_bytes(), self.before)
+        self.transport.query_gross_positions.return_value = {'rb2705.SHFE': (0, 2)}
+        self.run_reconcile()
+        self.transport.send_order.assert_not_called()
+
+    def test_scope_refuses_to_clear_non_rb_state_or_guess_missing_contract(self):
+        invalid = deepcopy(self.saved.payload)
+        invalid['positions']['account_positions'][0]['key']['instrument_id'] = 'IF2611.CFFEX'
+        with self.assertRaisesRegex(ValueError, '非RB合约'):
+            maintenance.aligned_payload(invalid, trading_day='20261028')
+        empty = maintenance.aligned_payload(self.saved.payload, trading_day='20261028')
+        empty['orders'][self.client] = []
+        with self.assertRaisesRegex(ValueError, '缺少具体RB合约'):
+            maintenance.managed_instruments(empty)
+        self.assertEqual(self.f.path.read_bytes(), self.before)
 
     def test_wrong_account_or_day_or_unfinished_local_orders_do_not_change_state(self):
         self.transport.account_id='other-account'
