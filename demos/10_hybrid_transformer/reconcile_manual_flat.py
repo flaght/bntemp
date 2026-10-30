@@ -97,6 +97,8 @@ def reconcile(*, state_file, transport):
             raise ValueError('本次只读连接账户与旧检查点不一致')
         try:
             context = transport.connect(lambda _: None, lambda _: None, lambda _: None)
+            # 与普通Driver.start相同：登录/结算确认后显式激活查询；此工具仍不发送订单。
+            transport.activate()
             gross = {str(key): tuple(value) for key, value in transport.query_gross_positions().items()
                      if any(value)}
             if gross:
