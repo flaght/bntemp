@@ -11,6 +11,89 @@ Live 示例和只读探针默认读取 `DDB_MARKET_*` 连接，逐项兼容旧 `
 `scripts.integration.features.read_only` 查询参考类特征时可加 `--dolphindb-purpose reference`，
 改用 `DDB_REFERENCE_*`；连接示例见[双服务器配置](../../../demos/market_sources/dolphindb.env.example)。
 
+## 从真实指数分钟行情计算MA5并导出
+
+2026-10-30新增的`export-ma`复用本目录教学入口和公共Provider：
+
+```text
+DolphinDB index_1min → index.minute记录 → 收盘价连续5根求均值
+    → 声明生成的不可变Payload → 标准CSV/Parquet + manifest + 文件数据集配置
+```
+
+在远程Linux的`pro`目录、`uv-nautilus`环境中运行（示例区间为此前已核验有数据的日期；
+可替换为库中其他已结束的区间）：
+
+```bash
+python -u -m scripts.integration.features.example export-ma \
+  --connect --key 000852 --window 5 \
+  --start 2026-10-12T14:18:00+08:00 \
+  --end 2026-10-12T14:24:00+08:00 \
+  --output tests/results/index-000852-ma5-20261012.csv
+```
+
+连接自动读取项目`.env`的公共market用途配置，源映射默认来自
+`bomber/framework/dataprep/features/configs/features.json`，实际源为`dfs://min_bar/index_1min`。
+可用`--config`、`--dataset`、`--schema-version`选择其他包含数值close字段的一分钟数据集。
+它只读取数据库，不创建表或写回。输出已存在时换新路径，不覆盖历史文件。
+
+本例公式为`MA5[t] = (close[t-4] + ... + close[t]) / 5`，包含当前已收盘Bar。
+使用Decimal、34位有效数字计算，不提前按交易价格精度舍入。
+缺分钟、午休间隔或跨日清空窗口，每段前四根仅预热，不输出不完整MA5。
+因此它是“连续分钟段内MA5”；若策略需要跨午休延续五根交易Bar，应按真实会话日历
+另外明确窗口口径，不能直接把缺失Bar当作休市。查询不会自动向start之前读取预热。
+若上述区间仍为此前7条连续Bar，则输出应为14:22—14:24三条（未重新连接验证）。
+
+默认导出数据集`research.index.ma5.minute`，Payload为：
+
+```python
+{"close": Decimal("..."), "ma5": Decimal("..."), "window": 5}
+```
+
+三个文件须一起保留：
+
+```text
+index-000852-ma5-20261012.csv
+index-000852-ma5-20261012.csv.manifest.json
+index-000852-ma5-20261012.csv.dataset.json
+```
+
+`.dataset.json`保存完整声明式Schema和相对文件路径，可直接装配文件Provider。
+命令完成后会逐记录读回验证，并打印`file_roundtrip=passed`、预热条数、窗口重置/缺口和最后三条值。
+把输出扩展名改为`.parquet`即可走同一导出接口；改`--window 10`则生成MA10和相应Schema，
+不新增Python文件、Provider或Payload类。
+
+读回例子（查询截止时刻取导出之后，用于校验文件；策略回测须使用自己的模拟时钟）：
+
+```python
+import time
+from bomber.framework.dataprep.features import load_feature_bundle, FeatureRequest
+
+bundle = load_feature_bundle("tests/results/index-000852-ma5-20261012.csv.dataset.json", None)
+with bundle.provider("research.index.ma5.minute") as provider:
+    now = time.time_ns()
+    batch = provider.read(FeatureRequest(
+        "research.index.ma5.minute", 1, ("000852",),
+        start_ns=0, end_ns=now, as_of_ns=now,
+    ))
+    for record in batch.records:
+        print(record.ts_event, record.payload.close, record.payload.ma5)
+```
+
+本例是当前历史快照的研究导出：输入最后更新时间不是首次可用证据，输出的`available_ns`
+取本次输入观测后的实际计算完成时刻，保留源质量标记并生成独立的计算修订，
+报告输入来源、Schema和记录内容指纹，不改成历史分钟结束时间。
+本例选取源记录的当前最新可见修订，不声称导出了完整的历史修订序列。
+文件可以正常导入，但不能以此声称这些MA5在原历史分钟当时就已可见。
+在策略中逐Bar计算MA指标仍可使用指标模块；只有需要独立交付的研究数据才需要此导出。
+
+新增四项离线用例，目标Linux环境执行：
+
+```bash
+python -u -m unittest tests.test_feature_example_ma -v
+```
+
+本机只静态审阅，未运行新用例、脚本、Python或数据库；不重复此前核心已通过组。
+
 ## 1. 从已收盘Bar构建
 
 `example.py`的`build_feature()`使用通用类型；核心代码为：
