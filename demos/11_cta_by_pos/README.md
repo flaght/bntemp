@@ -73,6 +73,8 @@ ctp_data/
 | `--start-day / --end-day` | 必填；只加载请求区间的目标和合约 |
 | `--signal-time` | 09:40，北京时间 |
 | `--bar-timestamp` | end；start 标签由公共层转换为分钟结束时间 |
+| `--execution-timing` | next_market；native 保留原生提交行为 |
+| `--execution-delay-bars` | next_market 默认 1；等待本合约后续有效 Bar 根数，native 为 0 |
 | `--starting-balance` | 15000000 |
 | `--commission-source` | metadata；auto/fixed 的含义与公共费用配置一致 |
 | `--commission-multiplier` 等 | 沿用公共手续费参数 |
@@ -85,11 +87,34 @@ ctp_data/
 
 输出 `orders.csv`、`fills.csv`、`positions.csv`、`account.csv`、`signals.csv`、`summary.json`，以及框架公共输入诊断、手续费报告和可选绩效图。
 
-`signals.csv` 用于核对策略实际提交的日期、信号时间、合约与目标数量。`summary.json` 记录未触发日期与过滤的过期目标。
+`signals.csv` 用于核对策略实际提交的日期、信号时间、合约与目标数量。`summary.json` 记录撮合时序 `execution_timing`、等待根数 `execution_delay_bars`、未触发日期与过滤的过期目标。
+
+策略在 09:40 提交目标。本示例默认 `--execution-timing next_market`，模拟执行层等待订单对应合约时间戳严格晚于信号及提交时钟的行情，完整分钟 Bar 模式按下一根有效 Bar 的收盘盘口撮合。例如 IF 在 09:40 产生目标，最早使用 IF 的 09:41 Bar；其他合约的 09:40 或 09:41 Bar 均不能放行 IF 订单。若 IF 缺少 09:41 Bar，则继续等待 IF 后续 Bar。回放结束仍未等到新行情的意图会取消并释放在途数量。
+
+可在回测命令后增加 `--execution-delay-bars N`，选择等待本合约后续第 N 根有效 Bar 收盘盘口。分钟行情连续时，09:40 信号、N=1 对应 09:41，N=2 对应 09:42；缺 Bar 时按实际到达根数顺延，同时间戳重复事件不累计。每笔订单独立计数。N 大于 1 时仅支持 Bar 回放，且每个合约使用一种 Bar 周期。
+
+```bash
+# 在原回测命令后增加以下参数，等待下一根 Bar（默认）
+--execution-timing next_market --execution-delay-bars 1
+
+# 等待第二根 Bar
+--execution-timing next_market --execution-delay-bars 2
+
+# 保留原有提交行为，不等待
+--execution-timing native --execution-delay-bars 0
+```
+
+通过代码组装时，在 `NautilusSimExecutionBackend` 构造参数中设置 `execution_timing="next_market", execution_delay_bars=2`。默认值与命令行一致：next_market 等待一根，native 不等待。
+
+`--execution-timing native` 保留此前直接提交订单的行为，多合约同时间戳后续事件可能使订单成交。共享 Backend 默认仍为 `native`，已有 01/10 等示例不会被统一改成等待下一根 Bar。撮合时序是执行层设置，策略信号逻辑不参与等待。`next_market` 使用正式历史 Runtime 的逐事件入口，不支持一次性 `Backend.run()`。
 
 ## 与原结果对比
 
 迁移保留每日目标生成规则，交易执行统一使用当前框架的标准行为。原 `bomber_adapter` 的批次协议、跨 Bar 延迟队列、自定义轧差下单、报表费用重算不进入本策略；运行时也不导入或执行原策略源码。
+
+建议先核对信号，再统一执行规则后重跑两套框架。当前原适配器的 `execution.delay_bars=1` 声明等待本合约下一根 Bar close，可与本示例的 `next_market`、`--execution-delay-bars 1` 作为对比起点；仍需核查实际触发时间、成交价格及缺 Bar 行为。原适配器的 `delay_bars=0` 也可能因批次刷新产生延后时间戳，不能仅凭 09:41 成交判断它已经使用下一根 Bar 的价格。原配置和旧成交 CSV 保留原样；本示例新增的执行设置不保证与旧报表逐笔相同。
+
+两边还应统一原始行情、Bar 时间标签、起止时刻、初始资金、手续费和滑点。先关闭随机滑点，按合约、成交时刻、方向汇总比较数量与均价，排除反手拆单和订单ID差异的干扰，再比较费用与权益。
 
 `fills_output.csv` 额外提供与原导出相同的列名，所有值来自框架实际成交和实际手续费，便于你自行比较。也可以使用独立工具：
 

@@ -24,8 +24,10 @@ class UnifiedHistoricalRuntime:
     """以统一积木主链运行一次正式回测。
 
     Market adapter必须先于Runner挂载Feed回调。这样事件N先推进模拟时钟和
-    撮合已有订单，随后才交给StrategyTemplate；事件N产生的新订单最早在
-    事件N+1成交，避免依赖偶然回调顺序造成同Bar前视。
+    撮合已有订单，随后才交给StrategyTemplate。Backend的native模式保持原有
+    提交行为，同一时间戳的后续事件仍可能撮合新订单。next_market模式等待对应
+    合约时间戳严格晚于信号及提交时钟的新行情，Bar回放可配置等待根数，使用
+    第N根有效Bar收盘盘口。同时间戳的重复事件不累计根数。
     """
 
     mode = RuntimeMode.HISTORICAL

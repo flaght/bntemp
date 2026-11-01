@@ -169,6 +169,20 @@ def test_cli_uses_framework_inputs_and_fee_configuration():
     assert args.start_day == date(2026, 5, 6)
     assert args.commission_source == "metadata"
     assert args.data_root == Path("/data/ctp")
+    assert args.execution_timing == "next_market"
+    assert args.execution_delay_bars == 1
+    native = backtest.parse_args(["--start-day", "2026-05-06", "--end-day", "2026-05-07",
+                                 "--execution-timing", "native"])
+    assert (native.execution_timing, native.execution_delay_bars) == ("native", 0)
+    assert backtest.parse_args(["--start-day", "2026-05-06", "--end-day", "2026-05-07",
+                               "--execution-delay-bars", "2"]).execution_delay_bars == 2
+
+
+@pytest.mark.parametrize("options", [("--execution-delay-bars", "0"),
+    ("--execution-delay-bars", "-1"), ("--execution-timing", "native", "--execution-delay-bars", "2")])
+def test_cli_rejects_conflicting_execution_delay(options):
+    with pytest.raises(SystemExit):
+        backtest.parse_args(["--start-day", "2026-05-06", "--end-day", "2026-05-07", *options])
 
 
 def require_bomber_engine():
@@ -199,3 +213,54 @@ def test_standard_framework_replay(tmp_path):
     fills = comparison.read_fills(output / "fills_output.csv")
     assert sum(row[3] if row[2] == "BUY" else -row[3] for row in fills) == Decimal(2)
     assert (output / "commissions.csv").is_file()
+
+
+@pytest.mark.parametrize("missing_ih_next_bar", [False, True])
+@pytest.mark.parametrize("delay_bars", [1, 2])
+def test_multiple_contracts_wait_for_their_own_later_bar(tmp_path, missing_ih_next_bar, delay_bars):
+    """真实主链：IC先触发信号，IF/IH同时间戳的Bar不可成交；价格取新Bar。"""
+    require_bomber_engine()
+    pytest.importorskip("pyarrow")
+    import pandas as pd
+    targets = {"IC2606": 0, "IF2606": -1, "IH2606": -1, "IM2606": 0}
+    path = tmp_path / "positions.csv"
+    path.write_text("timestamp,instrument_id,instrument_type,target_qty\n" + "".join(
+        f"2026-05-06 09:40:00,{symbol},FUTURE,{qty}\n" for symbol, qty in targets.items()))
+    basic = tmp_path / "fut_basic.feather"
+    pd.DataFrame([{"symbol": symbol, "code": symbol[:2], "exchangeCD": "CCFX",
+        "contMultNum": 200 if symbol[:2] in {"IC", "IM"} else 300,
+        "minChgPriceNum": 0.2, "listDate": "2026-01-01", "lastTradeDate": "2026-06-19",
+        "trade_fee_per_contract": 1, "trade_fee_rate": 0} for symbol in targets]).to_feather(basic)
+    bars_dir = tmp_path / "bars"
+    bars_dir.mkdir()
+    for symbol, base in zip(targets, (6000, 4000, 3000, 7000)):
+        rows = []
+        for offset in range(5):
+            if symbol == "IH2606" and offset == 2 and missing_ih_next_bar:
+                continue
+            price = base + offset * 10
+            rows.append({"datetime": pd.Timestamp("2026-05-06 09:39") + pd.Timedelta(minutes=offset),
+                "open": price, "high": price + 5, "low": price - 5,
+                "close": price + 2, "volume": 100})
+        pd.DataFrame(rows).to_feather(bars_dir / f"{symbol}_20260506.feather")
+    output = backtest.run_case(positions_path=path, start_day=date(2026, 5, 6),
+        end_day=date(2026, 5, 6), bars_dir=bars_dir, fut_basic=basic,
+        execution_delay_bars=delay_bars,
+        report_dir=tmp_path / "report", tearsheet=False, require_fills=True, log_level="ERROR")
+    fills = comparison.read_fills(output / "fills_output.csv")
+    assert len(fills) == 2
+    by_instrument = {row[1]: row for row in fills}
+    if_offset = 1 + delay_bars
+    ih_offset = if_offset + int(missing_ih_next_bar)
+    for instrument, offset, base in (("IF2606.CFFEX", if_offset, 4000),
+                                     ("IH2606.CFFEX", ih_offset, 3000)):
+        stamp, _, side, qty, fill_price, _ = by_instrument[instrument]
+        expected = pd.Timestamp("2026-05-06 09:39") + pd.Timedelta(minutes=offset)
+        assert stamp.strftime("%H:%M:%S") == expected.strftime("%H:%M:%S")
+        assert (side, qty, fill_price) == ("SELL", Decimal(1), Decimal(base + offset * 10 + 2))
+    signals = pd.read_csv(output / "signals.csv")
+    assert set(signals.ts_event) == {ns("2026-05-06 09:40:00")}
+    import json
+    summary = json.loads((output / "summary.json").read_text())
+    assert summary["execution_timing"] == "next_market"
+    assert summary["execution_delay_bars"] == delay_bars

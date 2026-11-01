@@ -1,0 +1,635 @@
+{
+  "sources": {
+    "lxg": {
+      "path": "/Users/kerry/work/bomber1/pro/temp/cmp/lxg/fills_output.csv",
+      "sha256": "78aab997fdae16d9a3ef84f26e9a55f4866a264649ee0af846f189b3835de930"
+    },
+    "kd": {
+      "path": "/Users/kerry/work/bomber1/pro/temp/cmp/kd/fills_output.csv",
+      "sha256": "f39dd50e99e2c0263342654e1be808889e6228da245c323903d02528244983f1"
+    }
+  },
+  "full": {
+    "lxg": {
+      "rows": 371,
+      "days": 117,
+      "first": "2026-01-05 09:41:00",
+      "last": "2026-07-03 09:41:00",
+      "quantity": "665.0",
+      "commission": "93374.80000000000006",
+      "weighted_fee_bps": "1.000000000000000000642571657",
+      "times": {
+        "09:41:00": 371
+      },
+      "unique_order_ids": 371,
+      "duplicate_order_ids": []
+    },
+    "kd": {
+      "rows": 488,
+      "days": 121,
+      "first": "2026-01-05 09:40:00",
+      "last": "2026-07-09 09:40:00",
+      "quantity": "682",
+      "commission": "22074.49",
+      "weighted_fee_bps": "0.2299991887587510852409502163",
+      "times": {
+        "09:40:00": 488
+      },
+      "unique_order_ids": 488,
+      "duplicate_order_ids": []
+    }
+  },
+  "common_dates": {
+    "start": "2026-01-05",
+    "end": "2026-07-03"
+  },
+  "common": {
+    "lxg": {
+      "rows": 371,
+      "days": 117,
+      "first": "2026-01-05 09:41:00",
+      "last": "2026-07-03 09:41:00",
+      "quantity": "665.0",
+      "commission": "93374.80000000000006",
+      "weighted_fee_bps": "1.000000000000000000642571657",
+      "times": {
+        "09:41:00": 371
+      },
+      "unique_order_ids": 371,
+      "duplicate_order_ids": []
+    },
+    "kd": {
+      "rows": 476,
+      "days": 117,
+      "first": "2026-01-05 09:40:00",
+      "last": "2026-07-03 09:40:00",
+      "quantity": "665",
+      "commission": "21476.30",
+      "weighted_fee_bps": "0.2299992841806011914816035057",
+      "times": {
+        "09:40:00": 476
+      },
+      "unique_order_ids": 476,
+      "duplicate_order_ids": []
+    },
+    "groups_union": 373,
+    "lxg_groups": 371,
+    "kd_groups": 371,
+    "matched_quantity_groups": 369,
+    "quantity_difference_groups": 4,
+    "price_difference_groups": 291,
+    "same_price_groups": 78,
+    "price_differences_in_ticks": {
+      "8": 5,
+      "3": 8,
+      "-1": 61,
+      "5": 9,
+      "-5": 14,
+      "-4": 18,
+      "1": 42,
+      "4": 13,
+      "-9": 4,
+      "1E+1": 4,
+      "7": 6,
+      "-2": 25,
+      "2": 20,
+      "-3": 19,
+      "-7": 1,
+      "-6": 12,
+      "6": 5,
+      "11": 1,
+      "12": 1,
+      "-1E+1": 2,
+      "-8": 6,
+      "14": 2,
+      "28": 1,
+      "-111": 1,
+      "-49": 2,
+      "-19": 1,
+      "9": 1,
+      "-11": 2,
+      "-12": 1,
+      "-13": 1,
+      "18": 1,
+      "42": 1,
+      "-4E+1": 1
+    },
+    "max_abs_price_difference": "22.2",
+    "mean_abs_price_difference": "0.9010309278350515463917525773",
+    "split_extra_rows": 105,
+    "split_group_count": 105,
+    "position_difference_rows": 2,
+    "position_difference_days": [
+      "2026-05-29"
+    ],
+    "final_positions_equal": true,
+    "matched_quantity_groups_price_difference_fraction": "291/369"
+  },
+  "quantity_differences": [
+    {
+      "date": "2026-05-29",
+      "instrument_id": "IH2606.CFFEX",
+      "side": "SELL",
+      "lxg_qty": "0",
+      "kd_qty": "1",
+      "qty_diff": "1",
+      "lxg_vwap": null,
+      "kd_vwap": "2903.2",
+      "price_diff": null,
+      "lxg_rows": 0,
+      "kd_rows": 1,
+      "lxg_commission": "0",
+      "kd_commission": "20.03",
+      "lxg_lines": "",
+      "kd_lines": "370",
+      "lxg_times": "",
+      "kd_times": "09:40:00"
+    },
+    {
+      "date": "2026-05-29",
+      "instrument_id": "IM2606.CFFEX",
+      "side": "SELL",
+      "lxg_qty": "0",
+      "kd_qty": "1",
+      "qty_diff": "1",
+      "lxg_vwap": null,
+      "kd_vwap": "8515.0",
+      "price_diff": null,
+      "lxg_rows": 0,
+      "kd_rows": 1,
+      "lxg_commission": "0",
+      "kd_commission": "39.17",
+      "lxg_lines": "",
+      "kd_lines": "371",
+      "lxg_times": "",
+      "kd_times": "09:40:00"
+    },
+    {
+      "date": "2026-06-01",
+      "instrument_id": "IH2606.CFFEX",
+      "side": "SELL",
+      "lxg_qty": "1.0",
+      "kd_qty": "0",
+      "qty_diff": "-1.0",
+      "lxg_vwap": "2896.6",
+      "kd_vwap": null,
+      "price_diff": null,
+      "lxg_rows": 1,
+      "kd_rows": 0,
+      "lxg_commission": "86.898",
+      "kd_commission": "0",
+      "lxg_lines": "297",
+      "kd_lines": "",
+      "lxg_times": "09:41:00",
+      "kd_times": ""
+    },
+    {
+      "date": "2026-06-01",
+      "instrument_id": "IM2606.CFFEX",
+      "side": "SELL",
+      "lxg_qty": "1.0",
+      "kd_qty": "0",
+      "qty_diff": "-1.0",
+      "lxg_vwap": "8372.0",
+      "kd_vwap": null,
+      "price_diff": null,
+      "lxg_rows": 1,
+      "kd_rows": 0,
+      "lxg_commission": "167.44",
+      "kd_commission": "0",
+      "lxg_lines": "298",
+      "kd_lines": "",
+      "lxg_times": "09:41:00",
+      "kd_times": ""
+    }
+  ],
+  "position_differences": [
+    {
+      "date": "2026-05-29",
+      "instrument_id": "IH2606.CFFEX",
+      "lxg_qty": "2.0",
+      "kd_qty": "1",
+      "difference": "-1.0"
+    },
+    {
+      "date": "2026-05-29",
+      "instrument_id": "IM2606.CFFEX",
+      "lxg_qty": "1.0",
+      "kd_qty": "0",
+      "difference": "-1.0"
+    }
+  ],
+  "first_comparisons": [
+    {
+      "date": "2026-01-05",
+      "instrument_id": "IF2603.CFFEX",
+      "side": "SELL",
+      "lxg_qty": "1.0",
+      "kd_qty": "1",
+      "qty_diff": "0.0",
+      "lxg_vwap": "4650.2",
+      "kd_vwap": "4651.8",
+      "price_diff": "1.6",
+      "lxg_rows": 1,
+      "kd_rows": 1,
+      "lxg_commission": "139.506",
+      "kd_commission": "32.10",
+      "lxg_lines": "2",
+      "kd_lines": "3",
+      "lxg_times": "09:41:00",
+      "kd_times": "09:40:00"
+    },
+    {
+      "date": "2026-01-05",
+      "instrument_id": "IH2603.CFFEX",
+      "side": "SELL",
+      "lxg_qty": "1.0",
+      "kd_qty": "1",
+      "qty_diff": "0.0",
+      "lxg_vwap": "3058.0",
+      "kd_vwap": "3058.0",
+      "price_diff": "0.0",
+      "lxg_rows": 1,
+      "kd_rows": 1,
+      "lxg_commission": "91.74",
+      "kd_commission": "21.10",
+      "lxg_lines": "3",
+      "kd_lines": "2",
+      "lxg_times": "09:41:00",
+      "kd_times": "09:40:00"
+    },
+    {
+      "date": "2026-01-06",
+      "instrument_id": "IC2603.CFFEX",
+      "side": "BUY",
+      "lxg_qty": "1.0",
+      "kd_qty": "1",
+      "qty_diff": "0.0",
+      "lxg_vwap": "7682.4",
+      "kd_vwap": "7683.0",
+      "price_diff": "0.6",
+      "lxg_rows": 1,
+      "kd_rows": 1,
+      "lxg_commission": "153.648",
+      "kd_commission": "35.34",
+      "lxg_lines": "4",
+      "kd_lines": "5",
+      "lxg_times": "09:41:00",
+      "kd_times": "09:40:00"
+    },
+    {
+      "date": "2026-01-06",
+      "instrument_id": "IF2603.CFFEX",
+      "side": "BUY",
+      "lxg_qty": "2.0",
+      "kd_qty": "2",
+      "qty_diff": "0.0",
+      "lxg_vwap": "4732.8",
+      "kd_vwap": "4732.8",
+      "price_diff": "0.0",
+      "lxg_rows": 1,
+      "kd_rows": 2,
+      "lxg_commission": "283.968",
+      "kd_commission": "65.32",
+      "lxg_lines": "5",
+      "kd_lines": "8,9",
+      "lxg_times": "09:41:00",
+      "kd_times": "09:40:00"
+    },
+    {
+      "date": "2026-01-06",
+      "instrument_id": "IH2603.CFFEX",
+      "side": "BUY",
+      "lxg_qty": "4.0",
+      "kd_qty": "4",
+      "qty_diff": "0.0",
+      "lxg_vwap": "3127.0",
+      "kd_vwap": "3126.8",
+      "price_diff": "-0.2",
+      "lxg_rows": 1,
+      "kd_rows": 2,
+      "lxg_commission": "375.24",
+      "kd_commission": "86.29",
+      "lxg_lines": "6",
+      "kd_lines": "6,7",
+      "lxg_times": "09:41:00",
+      "kd_times": "09:40:00"
+    },
+    {
+      "date": "2026-01-06",
+      "instrument_id": "IM2603.CFFEX",
+      "side": "BUY",
+      "lxg_qty": "2.0",
+      "kd_qty": "2",
+      "qty_diff": "0.0",
+      "lxg_vwap": "7704.0",
+      "kd_vwap": "7705.0",
+      "price_diff": "1.0",
+      "lxg_rows": 1,
+      "kd_rows": 1,
+      "lxg_commission": "308.16",
+      "kd_commission": "70.89",
+      "lxg_lines": "7",
+      "kd_lines": "4",
+      "lxg_times": "09:41:00",
+      "kd_times": "09:40:00"
+    }
+  ],
+  "largest_price_differences": [
+    {
+      "date": "2026-03-19",
+      "instrument_id": "IC2606.CFFEX",
+      "side": "BUY",
+      "lxg_qty": "2.0",
+      "kd_qty": "2",
+      "qty_diff": "0.0",
+      "lxg_vwap": "7763.2",
+      "kd_vwap": "7741.0",
+      "price_diff": "-22.2",
+      "lxg_rows": 1,
+      "kd_rows": 1,
+      "lxg_commission": "310.528",
+      "kd_commission": "71.22",
+      "lxg_lines": "155",
+      "kd_lines": "196",
+      "lxg_times": "09:41:00",
+      "kd_times": "09:40:00"
+    },
+    {
+      "date": "2026-03-20",
+      "instrument_id": "IC2606.CFFEX",
+      "side": "SELL",
+      "lxg_qty": "2.0",
+      "kd_qty": "2",
+      "qty_diff": "0.0",
+      "lxg_vwap": "7754.6",
+      "kd_vwap": "7744.8",
+      "price_diff": "-9.8",
+      "lxg_rows": 1,
+      "kd_rows": 1,
+      "lxg_commission": "310.184",
+      "kd_commission": "71.25",
+      "lxg_lines": "159",
+      "kd_lines": "202",
+      "lxg_times": "09:41:00",
+      "kd_times": "09:40:00"
+    },
+    {
+      "date": "2026-06-26",
+      "instrument_id": "IF2609.CFFEX",
+      "side": "BUY",
+      "lxg_qty": "1.0",
+      "kd_qty": "1",
+      "qty_diff": "0.0",
+      "lxg_vwap": "4862.4",
+      "kd_vwap": "4852.6",
+      "price_diff": "-9.8",
+      "lxg_rows": 1,
+      "kd_rows": 1,
+      "lxg_commission": "145.872",
+      "kd_commission": "33.48",
+      "lxg_lines": "353",
+      "kd_lines": "449",
+      "lxg_times": "09:41:00",
+      "kd_times": "09:40:00"
+    },
+    {
+      "date": "2026-06-25",
+      "instrument_id": "IF2609.CFFEX",
+      "side": "SELL",
+      "lxg_qty": "3.0",
+      "kd_qty": "3",
+      "qty_diff": "0.0",
+      "lxg_vwap": "4857.8",
+      "kd_vwap": "4866.2",
+      "price_diff": "8.4",
+      "lxg_rows": 1,
+      "kd_rows": 2,
+      "lxg_commission": "437.202",
+      "kd_commission": "100.73",
+      "lxg_lines": "350",
+      "kd_lines": "444,445",
+      "lxg_times": "09:41:00",
+      "kd_times": "09:40:00"
+    },
+    {
+      "date": "2026-06-30",
+      "instrument_id": "IF2609.CFFEX",
+      "side": "SELL",
+      "lxg_qty": "1.0",
+      "kd_qty": "1",
+      "qty_diff": "0.0",
+      "lxg_vwap": "4812.0",
+      "kd_vwap": "4804.0",
+      "price_diff": "-8.0",
+      "lxg_rows": 1,
+      "kd_rows": 1,
+      "lxg_commission": "144.36",
+      "kd_commission": "33.15",
+      "lxg_lines": "360",
+      "kd_lines": "459",
+      "lxg_times": "09:41:00",
+      "kd_times": "09:40:00"
+    },
+    {
+      "date": "2026-03-16",
+      "instrument_id": "IC2603.CFFEX",
+      "side": "BUY",
+      "lxg_qty": "1.0",
+      "kd_qty": "1",
+      "qty_diff": "0.0",
+      "lxg_vwap": "8109.4",
+      "kd_vwap": "8115.0",
+      "price_diff": "5.6",
+      "lxg_rows": 1,
+      "kd_rows": 1,
+      "lxg_commission": "162.188",
+      "kd_commission": "37.33",
+      "lxg_lines": "146",
+      "kd_lines": "187",
+      "lxg_times": "09:41:00",
+      "kd_times": "09:40:00"
+    },
+    {
+      "date": "2026-03-30",
+      "instrument_id": "IM2606.CFFEX",
+      "side": "BUY",
+      "lxg_qty": "2.0",
+      "kd_qty": "2",
+      "qty_diff": "0.0",
+      "lxg_vwap": "7462.0",
+      "kd_vwap": "7458.2",
+      "price_diff": "-3.8",
+      "lxg_rows": 1,
+      "kd_rows": 1,
+      "lxg_commission": "298.48",
+      "kd_commission": "68.62",
+      "lxg_lines": "181",
+      "kd_lines": "231",
+      "lxg_times": "09:41:00",
+      "kd_times": "09:40:00"
+    },
+    {
+      "date": "2026-06-24",
+      "instrument_id": "IF2609.CFFEX",
+      "side": "BUY",
+      "lxg_qty": "1.0",
+      "kd_qty": "1",
+      "qty_diff": "0.0",
+      "lxg_vwap": "4833.0",
+      "kd_vwap": "4836.6",
+      "price_diff": "3.6",
+      "lxg_rows": 1,
+      "kd_rows": 1,
+      "lxg_commission": "144.99",
+      "kd_commission": "33.37",
+      "lxg_lines": "346",
+      "kd_lines": "437",
+      "lxg_times": "09:41:00",
+      "kd_times": "09:40:00"
+    }
+  ],
+  "fee_by_product": {
+    "lxg": {
+      "IC": {
+        "rows": 94,
+        "days": 94,
+        "first": "2026-01-06 09:41:00",
+        "last": "2026-07-03 09:41:00",
+        "quantity": "154.0",
+        "commission": "25300.69199999999992",
+        "weighted_fee_bps": "0.9999999999999999968380311495",
+        "times": {
+          "09:41:00": 94
+        },
+        "unique_order_ids": 94,
+        "duplicate_order_ids": []
+      },
+      "IF": {
+        "rows": 91,
+        "days": 90,
+        "first": "2026-01-05 09:41:00",
+        "last": "2026-07-03 09:41:00",
+        "quantity": "147.0",
+        "commission": "20734.79400000000008",
+        "weighted_fee_bps": "1.000000000000000003858249086",
+        "times": {
+          "09:41:00": 91
+        },
+        "unique_order_ids": 91,
+        "duplicate_order_ids": []
+      },
+      "IH": {
+        "rows": 88,
+        "days": 88,
+        "first": "2026-01-05 09:41:00",
+        "last": "2026-07-03 09:41:00",
+        "quantity": "163.0",
+        "commission": "14473.25400000000002",
+        "weighted_fee_bps": "1.000000000000000001381859256",
+        "times": {
+          "09:41:00": 88
+        },
+        "unique_order_ids": 88,
+        "duplicate_order_ids": []
+      },
+      "IM": {
+        "rows": 98,
+        "days": 96,
+        "first": "2026-01-06 09:41:00",
+        "last": "2026-07-03 09:41:00",
+        "quantity": "201.0",
+        "commission": "32866.06000000000004",
+        "weighted_fee_bps": "1.000000000000000001217061005",
+        "times": {
+          "09:41:00": 98
+        },
+        "unique_order_ids": 98,
+        "duplicate_order_ids": []
+      }
+    },
+    "kd": {
+      "IC": {
+        "rows": 113,
+        "days": 94,
+        "first": "2026-01-06 09:40:00",
+        "last": "2026-07-03 09:40:00",
+        "quantity": "154",
+        "commission": "5818.78",
+        "weighted_fee_bps": "0.2299999225267413182122397314",
+        "times": {
+          "09:40:00": 113
+        },
+        "unique_order_ids": 113,
+        "duplicate_order_ids": []
+      },
+      "IF": {
+        "rows": 118,
+        "days": 90,
+        "first": "2026-01-05 09:40:00",
+        "last": "2026-07-03 09:40:00",
+        "quantity": "147",
+        "commission": "4768.97",
+        "weighted_fee_bps": "0.2299992920086293923678530248",
+        "times": {
+          "09:40:00": 118
+        },
+        "unique_order_ids": 118,
+        "duplicate_order_ids": []
+      },
+      "IH": {
+        "rows": 117,
+        "days": 88,
+        "first": "2026-01-05 09:40:00",
+        "last": "2026-07-03 09:40:00",
+        "quantity": "163",
+        "commission": "3328.77",
+        "weighted_fee_bps": "0.2299952491540924018801078848",
+        "times": {
+          "09:40:00": 117
+        },
+        "unique_order_ids": 117,
+        "duplicate_order_ids": []
+      },
+      "IM": {
+        "rows": 128,
+        "days": 96,
+        "first": "2026-01-06 09:40:00",
+        "last": "2026-07-03 09:40:00",
+        "quantity": "201",
+        "commission": "7559.78",
+        "weighted_fee_bps": "0.2300005646739032548095856316",
+        "times": {
+          "09:40:00": 128
+        },
+        "unique_order_ids": 128,
+        "duplicate_order_ids": []
+      }
+    }
+  },
+  "new_only_dates": [
+    "2026-05-29",
+    "2026-07-06",
+    "2026-07-07",
+    "2026-07-08",
+    "2026-07-09"
+  ],
+  "validation": {
+    "kd_fee_formula": "qty*price*multiplier*0.000023 rounded to CNY 0.01 half up",
+    "lxg_fee_formula": "qty*price*multiplier*0.0001",
+    "all_kd_split_groups_are_reversals": true,
+    "split_groups": 107,
+    "common_quantity_totals_reconciled": true,
+    "input_files_unchanged": true,
+    "fee_formula_mismatches": {
+      "lxg": 0,
+      "kd": 0
+    }
+  },
+  "limitations": [
+    "The files show fills, not complete run boundaries or order rejections.",
+    "Comparison by calendar day ignores the observed systematic 60-second execution difference only for diagnostic aggregation.",
+    "Zero initial positions and standard IC/IM=200, IF/IH=300 multipliers are assumed.",
+    "The exact OHLC or quote used for a fill cannot be established without the source bars and runtime settings."
+  ]
+}

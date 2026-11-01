@@ -1,0 +1,13 @@
+{
+  "reference": "/Users/kerry/work/bomber1/pro/temp/cmp/lxg/fills_output.csv",
+  "candidate": "/Users/kerry/work/bomber1/pro/temp/cmp/kd/fills_output.csv",
+  "reference_fills": 371,
+  "candidate_fills": 488,
+  "fill_difference_groups": 752,
+  "daily_position_differences": 14,
+  "fills_equal": false,
+  "daily_positions_equal": false,
+  "passed": false,
+  "scope": "exact timestamp/side traded volume, VWAP, costs; zero initial positions assumed; no PnL comparison",
+  "nonempty": true
+}

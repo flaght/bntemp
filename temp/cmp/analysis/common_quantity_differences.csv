@@ -1,0 +1,5 @@
+date,instrument_id,side,lxg_qty,kd_qty,qty_diff,lxg_vwap,kd_vwap,price_diff,lxg_rows,kd_rows,lxg_commission,kd_commission,lxg_lines,kd_lines,lxg_times,kd_times
+2026-05-29,IH2606.CFFEX,SELL,0,1,1,,2903.2,,0,1,0,20.03,,370,,09:40:00
+2026-05-29,IM2606.CFFEX,SELL,0,1,1,,8515.0,,0,1,0,39.17,,371,,09:40:00
+2026-06-01,IH2606.CFFEX,SELL,1.0,0,-1.0,2896.6,,,1,0,86.898,0,297,,09:41:00,
+2026-06-01,IM2606.CFFEX,SELL,1.0,0,-1.0,8372.0,,,1,0,167.44,0,298,,09:41:00,

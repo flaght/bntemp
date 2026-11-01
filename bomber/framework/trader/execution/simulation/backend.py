@@ -28,10 +28,26 @@ class NautilusSimExecutionBackend:
         config: BacktestEngineConfig | None = None,
         *,
         engine: Any | None = None,
+        execution_timing: str = "native",
+        execution_delay_bars: int | None = None,
     ) -> None:
         if not backend_id.strip():
             raise ValueError("backend_id不能为空")
+        if execution_timing not in {"native", "next_market"}:
+            raise ValueError("execution_timing必须为native或next_market")
+        if execution_delay_bars is None:
+            execution_delay_bars = 0 if execution_timing == "native" else 1
+        if (isinstance(execution_delay_bars, bool) or not isinstance(execution_delay_bars, int)
+                or execution_delay_bars < 0):
+            raise ValueError("execution_delay_bars必须为非负整数")
+        if execution_timing == "native" and execution_delay_bars != 0:
+            raise ValueError("native模式的execution_delay_bars必须为0")
+        if execution_timing == "next_market" and execution_delay_bars < 1:
+            raise ValueError("next_market模式的execution_delay_bars必须至少为1")
         self.backend_id = backend_id
+        # native保持原有提交行为；next_market仅在本合约严格更晚的新行情后放行。
+        self._execution_timing = execution_timing
+        self._execution_delay_bars = execution_delay_bars
         self.engine = (
             engine
             if engine is not None
@@ -46,6 +62,14 @@ class NautilusSimExecutionBackend:
         self._finalized = False
         self._disposed = False
         self._result: Any = None
+
+    @property
+    def execution_timing(self) -> str:
+        return self._execution_timing
+
+    @property
+    def execution_delay_bars(self) -> int:
+        return self._execution_delay_bars
 
     @property
     def is_started(self) -> bool:
@@ -130,6 +154,8 @@ class NautilusSimExecutionBackend:
         """一次性运行已注册的历史行情并返回Nautilus回测结果。"""
 
         self._ensure_runnable()
+        if self.execution_timing == "next_market":
+            raise RuntimeError("next_market需要使用UnifiedHistoricalRuntime逐事件回放")
         self.start()
         self.engine.run()
         self._finalized = True
@@ -146,6 +172,8 @@ class NautilusSimExecutionBackend:
         self._ensure_runnable()
         report_offset = len(self._reports)
         self.start()
+        if self.execution_timing == "next_market":
+            self._gateway.watch_market_event(event)
         self.engine.add_data([event])
         self.engine.run(streaming=True)
         self.engine.clear_data()
@@ -187,6 +215,8 @@ class NautilusSimExecutionBackend:
         if self._disposed:
             raise RuntimeError("已释放的Backend不能结束运行")
         if self._streaming and not self._finalized:
+            # 没有后续本合约行情的意图不可用最后一根旧Bar补成交。
+            self._gateway.cancel_pending_orders(reason="end of historical market data")
             self.engine.end()
             self._finalized = True
             self._result = self.engine.get_result()
@@ -215,7 +245,8 @@ class NautilusSimExecutionBackend:
 
     def _ensure_gateway(self) -> NautilusOrderGateway:
         if self._gateway is None:
-            self._gateway = NautilusOrderGateway(self.backend_id, self._receive_report)
+            self._gateway = NautilusOrderGateway(self.backend_id, self._receive_report,
+                                                delay_bars=self.execution_delay_bars or 1)
             self.engine.add_strategy(self._gateway)
         return self._gateway
 

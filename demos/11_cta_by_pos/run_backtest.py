@@ -77,6 +77,8 @@ def run_case(*, positions_path: Path, start_day: date, end_day: date, bars_dir: 
              margin_init: Decimal = Decimal("0.10"), margin_maint: Decimal = Decimal("0.08"),
              max_quantity: Decimal = Decimal(100), max_notional: Decimal = Decimal("50000000"),
              max_market_age_seconds: int = 120, bar_timestamp: str = "end",
+             execution_timing: str = "next_market",
+             execution_delay_bars: int | None = None,
              log_level: str = "WARNING", report_dir: Path = DEFAULT_REPORT_DIR,
              tearsheet: bool = True, require_fills: bool = False) -> Path:
     import pandas as pd
@@ -121,7 +123,8 @@ def run_case(*, positions_path: Path, start_day: date, end_day: date, bars_dir: 
     )
     bundle = prepare_fixed_contracts(bars_dir, plan, spec=BarReadSpec(timestamp_label=bar_timestamp))
     backend = NautilusSimExecutionBackend("cta-by-pos-sim", BacktestEngineConfig(
-        trader_id=TraderId("CTA-BY-POS-001"), logging=LoggingConfig(log_level=log_level), run_analysis=True))
+        trader_id=TraderId("CTA-BY-POS-001"), logging=LoggingConfig(log_level=log_level), run_analysis=True),
+        execution_timing=execution_timing, execution_delay_bars=execution_delay_bars)
     runtime = None
     try:
         venue = Venue("CFFEX")
@@ -169,7 +172,9 @@ def run_case(*, positions_path: Path, start_day: date, end_day: date, bars_dir: 
                                      if day not in strategy.handled_days],
                 "skipped_expired": strategy.skipped_expired,
                 "instruments": {key: str(item) for key, item in instruments.items()}},
-            "bar_timestamp": bar_timestamp, "bars": result.replay_summary.bars,
+            "bar_timestamp": bar_timestamp, "execution_timing": execution_timing,
+            "execution_delay_bars": backend.execution_delay_bars,
+            "bars": result.replay_summary.bars,
             "orders": len(orders), "fills": len(fills),
             "execution_report_errors": [str(error) for error in client.report_errors],
         }
@@ -207,6 +212,10 @@ def parse_args(argv=None):
     parser.add_argument("--fut-basic", type=Path)
     parser.add_argument("--signal-time", default="09:40")
     parser.add_argument("--bar-timestamp", choices=("start", "end"), default="end")
+    parser.add_argument("--execution-timing", choices=("native", "next_market"), default="next_market",
+                        help="next_market等待本合约更晚的新行情；完整Bar使用新Bar收盘盘口")
+    parser.add_argument("--execution-delay-bars", type=int,
+                        help="等待本合约后续有效Bar根数；next_market默认1，native为0")
     parser.add_argument("--starting-balance", type=Decimal, default=Decimal("15000000"))
     parser.add_argument("--commission-per-contract", type=Decimal, default=Decimal(1))
     parser.add_argument("--margin-init", type=Decimal, default=Decimal("0.10"))
@@ -218,7 +227,14 @@ def parse_args(argv=None):
     parser.add_argument("--report-dir", type=Path, default=DEFAULT_REPORT_DIR)
     parser.add_argument("--no-tearsheet", action="store_true")
     parser.add_argument("--require-fills", action="store_true")
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.execution_delay_bars is None:
+        args.execution_delay_bars = 0 if args.execution_timing == "native" else 1
+    if args.execution_timing == "native" and args.execution_delay_bars != 0:
+        parser.error("native模式的--execution-delay-bars必须为0")
+    if args.execution_timing == "next_market" and args.execution_delay_bars < 1:
+        parser.error("next_market模式的--execution-delay-bars必须至少为1")
+    return args
 
 
 def main(argv=None):
@@ -231,6 +247,8 @@ def main(argv=None):
         commission_config=commission_config_from_args(args), margin_init=args.margin_init,
         margin_maint=args.margin_maint, max_quantity=args.max_quantity, max_notional=args.max_notional,
         max_market_age_seconds=args.max_market_age_seconds, bar_timestamp=args.bar_timestamp,
+        execution_timing=args.execution_timing,
+        execution_delay_bars=args.execution_delay_bars,
         log_level=args.log_level, report_dir=args.report_dir, tearsheet=not args.no_tearsheet,
         require_fills=args.require_fills)
 
