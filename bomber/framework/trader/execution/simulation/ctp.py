@@ -44,6 +44,7 @@ class CtpFuturesBasicProfile:
     commission_contract_multipliers: Mapping[str, Decimal] = field(default_factory=dict)
     delivery_fee_multiplier: Decimal | int | float | str = Decimal(1)
     commission_source: str = "auto"
+    option_commission_per_contract: Decimal | None = None
     fee_model: CtpFuturesFeeModel = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -62,7 +63,9 @@ class CtpFuturesBasicProfile:
             "commission_contract_multipliers", "delivery_fee_multiplier", "commission_source")})
         for name in config.profile_kwargs():
             object.__setattr__(self, name, getattr(config, name))
-        object.__setattr__(self, "fee_model", CtpFuturesFeeModel(commission, config=config))
+        option_kwargs = ({} if self.option_commission_per_contract is None else
+                         {"option_per_contract": self.option_commission_per_contract})
+        object.__setattr__(self, "fee_model", CtpFuturesFeeModel(commission, config=config, **option_kwargs))
 
     def build_backend_config(self) -> Mapping[str, Any]:
         """构造基础CTP模拟Venue配置。"""

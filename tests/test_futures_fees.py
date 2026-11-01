@@ -184,7 +184,8 @@ def sdk_fixture():
                          "Venue": str, "Currency": str},
         "bomber.model.currencies": {"CNY": "CNY"},
         "bomber.model.identifiers": {"InstrumentId": Identity},
-        "bomber.model.instruments": {"FuturesContract": type("FuturesContract", (Entity,), {})},
+        "bomber.model.instruments": {"FuturesContract": type("FuturesContract", (Entity,), {}),
+                                     "OptionContract": type("OptionContract", (Entity,), {})},
         "bomber.model.enums": {"AccountType": NS(MARGIN="MARGIN"), "AssetClass": NS(COMMODITY="COMMODITY"),
             "OmsType": NS(NETTING="NETTING", HEDGING="HEDGING"), "BookType": NS(L1_MBP="L1_MBP")},
         "bomber.core.rust.model": {"OtoTriggerMode": NS(PARTIAL="PARTIAL")},
@@ -228,6 +229,19 @@ class FeeAdapterTests(unittest.TestCase):
         self.assertEqual(ratio.info["tradeCommiNum"], "0.0045")
         self.assertEqual(ratio.info["trade_fee_rate"], "0.000045")
         self.assertEqual(model.records[0]["standard_commission"], Decimal("3.6"))
+
+    def test_option_fee_is_explicit_and_keeps_futures_metadata_fee(self):
+        from bomber.model.instruments import OptionContract
+        profile = self.profile.CtpFuturesBasicProfile(commission_source="metadata",
+            option_commission_per_contract="0.15", commission_multiplier="1.2")
+        option = OptionContract(instrument_id=Identity("MO2606-C-7000.CFFEX"),
+            info={}, multiplier=Scalar(100))
+        future = self.instrument(basic_row(tradeCommiNum="2.5", tradeCommiUnit="元/手"), profile)
+        order = NS(client_order_id="mixed")
+        self.assertEqual(profile.fee_model.get_commission(order, Scalar(2), Scalar(60), option).amount,
+                         Decimal("0.36"))
+        self.assertEqual(profile.fee_model.get_commission(order, Scalar(2), Scalar(4000), future).amount,
+                         Decimal("6.00"))
 
     def test_metadata_required_fixed_override_and_legacy_fallback(self):
         order = NS(client_order_id="O-2")

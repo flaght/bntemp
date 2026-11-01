@@ -173,7 +173,9 @@ class FillEvent:
             None if self.cumulative_filled is None
             else _decimal(self.cumulative_filled, "cumulative_filled")
         )
-        if quantity <= 0 or price <= 0:
+        zero_settlement = (self.metadata.get("execution_origin") == "option_expiry"
+                           and self.position_effect in (FillPositionEffect.CLOSE, "CLOSE"))
+        if quantity <= 0 or price < 0 or (price == 0 and not zero_settlement):
             raise ValueError("成交数量/价格必须为正")
         if commission is not None and commission < 0:
             raise ValueError("手续费不能为负")

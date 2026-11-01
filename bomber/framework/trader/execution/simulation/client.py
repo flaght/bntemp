@@ -166,6 +166,7 @@ class SimulationExecutionClient:
             self._apply_report(report)
 
     def _apply_report(self, report: ExecutionReport) -> None:
+        settlement = report.metadata.get("execution_origin") == "option_expiry"
         self.position_manager.attribution.associate_report(report)
         previous = self._order_states.state(report.client_order_id)
         try:
@@ -181,7 +182,7 @@ class SimulationExecutionClient:
             or previous.filled_quantity != update.state.filled_quantity
         )
         direction = 1 if update.state.side is OrderSide.BUY else -1
-        if update.fill_delta:
+        if update.fill_delta and not settlement:
             signed_fill = direction * update.fill_delta
             self.position_manager.adjust_account_position(
                 self.client_id,
@@ -201,7 +202,12 @@ class SimulationExecutionClient:
                 -remaining,
             )
         try:
-            report = self.position_manager.attribution.apply(report, update, account_id=self.account_id)
+            if settlement:
+                if report.report_type.value != "FILLED":
+                    raise AttributionError("到期结算只接收完整结算成交回报")
+                report = self.position_manager.attribution.apply_settlement(report, update)
+            else:
+                report = self.position_manager.attribution.apply(report, update, account_id=self.account_id)
         except AttributionError as error:
             self._report_errors.append(OrderStateError(str(error)))
             self.position_manager.mark_recovery_required(self.client_id)

@@ -298,6 +298,24 @@ class SimulationMarketTimingTests(unittest.TestCase):
         self.assertEqual(self.backend.reports[0].metadata["strategy_id"], "a")
         self.assertEqual(len(self.engine.gateway.submissions), 1)
 
+    def test_option_expiry_cancel_keeps_other_contract_pending(self):
+        self.event("IC2603.CFFEX", 100)
+        self.order("IF2603.CFFEX")
+        self.order("IH2603.CFFEX")
+        self.engine.gateway.cancel_pending_orders(instrument_id="IF2603.CFFEX", reason="expired")
+        self.event("IH2603.CFFEX", 101)
+        self.assertEqual(len(self.backend.reports), 1)
+        self.assertEqual(str(self.backend.reports[0].instrument_id), "IF2603.CFFEX")
+        self.assertEqual(len(self.engine.gateway.submissions), 1)
+        self.assertEqual(self.engine.gateway.submissions[0][1].instrument_id, "IH2603.CFFEX")
+
+    def test_last_trading_cutoff_uses_current_engine_clock_during_callbacks(self):
+        self.event("IF2603.CFFEX", 100)
+        self.backend._option_last_trade_times["IF2603.CFFEX"] = 150
+        self.engine.gateway.now = 150  # 原生定时器先推进时钟，尚未返回 market_event。
+        with self.assertRaisesRegex(RuntimeError, "past last trading time"):
+            self.order()
+
     def test_native_is_the_backend_default_and_does_not_defer_submission(self):
         backend = self.sdk.backend.NautilusSimExecutionBackend("sim", engine=self.engine)
         backend.process_market_event(Bar("IC2603.CFFEX", 100))

@@ -76,9 +76,13 @@ class BarReadSpec:
     require_integer_volume: bool = True
     require_minute_alignment: bool = True
     field_mapping: tuple[tuple[str, str], ...] = ()
+    ohlc_policy: str = "reject"
+    zero_price_policy: str = "reject"
 
     def __post_init__(self):
-        if self.timestamp_label not in {"start", "end"} or self.interval_seconds < 1:
+        if (self.timestamp_label not in {"start", "end"}
+                or isinstance(self.interval_seconds, bool) or not isinstance(self.interval_seconds, int)
+                or self.interval_seconds < 1):
             raise ValueError("Invalid completed-bar time specification")
         if self.trading_day_policy not in {"exchange", "day_session"}:
             raise ValueError("Unknown trading-day policy")
@@ -86,10 +90,20 @@ class BarReadSpec:
             raise ValueError("Unknown value policy")
         if self.volume_semantics != "incremental":
             raise ValueError("Export cumulative volume to increments with an explicit reset policy first")
+        if self.ohlc_policy not in {"reject", "expand_range"}:
+            raise ValueError("ohlc_policy must be reject or expand_range")
+        if self.zero_price_policy not in {"reject", "drop"}:
+            raise ValueError("zero_price_policy must be reject or drop")
         if len(set(self.required_fields)) != len(self.required_fields):
             raise ValueError("Duplicate required fields")
         if self.value_policy == "execution_strict" and not {"open", "high", "low", "close", "volume"} <= set(self.required_fields):
             raise ValueError("Execution bars require OHLCV")
+
+    @property
+    def bar_spec(self):
+        for seconds, unit in ((86400, "DAY"), (3600, "HOUR"), (60, "MINUTE"), (1, "SECOND")):
+            if self.interval_seconds % seconds == 0:
+                return f"{self.interval_seconds // seconds}-{unit}"
 
 
 @dataclass(frozen=True)
@@ -140,11 +154,11 @@ class BarLoadResult:
 
     @property
     def first_ns(self):
-        return int(self.frame.event_ns.min())
+        return None if self.frame.empty else int(self.frame.event_ns.min())
 
     @property
     def last_ns(self):
-        return int(self.frame.event_ns.max())
+        return None if self.frame.empty else int(self.frame.event_ns.max())
 
 
 @dataclass(frozen=True)

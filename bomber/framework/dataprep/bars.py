@@ -103,6 +103,15 @@ def read_bar_frame(path, spec=None, key=None):
         fail("INVALID_TIMESTAMP", "Availability precedes completed minute", source=path)
     frame["available_datetime"] = pd.to_datetime(frame.available_ns, utc=True).dt.tz_convert(spec.timezone)
     issues = []
+    if spec.zero_price_policy == "drop":
+        prices = [name for name in ("open", "high", "low", "close") if name in spec.required_fields]
+        zeros = frame[prices].apply(pd.to_numeric, errors="coerce").eq(0).any(axis=1) if prices else pd.Series(False, index=frame.index)
+        if zeros.any():
+            issue = InputIssue("ZERO_PRICE_BAR_DROPPED", f"Explicitly dropped {int(zeros.sum())} zero-price bars",
+                "WARNING", str(path), key.symbol, key.trading_day)
+            issues.append(issue)
+            record_issue(issue)
+            frame = frame.loc[~zeros].copy()
     for name in spec.required_fields:
         frame[name] = pd.to_numeric(frame[name], errors="coerce")
         finite = frame[name].map(lambda v: not pd.isna(v) and isfinite(float(v)))
@@ -121,13 +130,24 @@ def read_bar_frame(path, spec=None, key=None):
     if {"open", "high", "low", "close"} <= set(spec.required_fields):
         invalid = frame.high.lt(frame[["open", "low", "close"]].max(axis=1)) | frame.low.gt(frame[["open", "high", "close"]].min(axis=1))
         if invalid.any():
-            fail("INVALID_OHLC", "OHLC relationship invalid", source=path,
-                symbol=key.symbol, trading_day=key.trading_day, row=int(frame.index[invalid][0]) + 1)
+            if spec.ohlc_policy == "reject":
+                fail("INVALID_OHLC", "OHLC relationship invalid", source=path,
+                    symbol=key.symbol, trading_day=key.trading_day, row=int(frame.index[invalid][0]) + 1)
+            before = frame.loc[invalid, ["open", "high", "low", "close"]].head(3).to_dict("records")
+            issue = InputIssue("OHLC_RANGE_EXPANDED",
+                f"Expanded {int(invalid.sum())} bar ranges; original examples={before}",
+                "WARNING", str(path), key.symbol, key.trading_day)
+            issues.append(issue)
+            record_issue(issue)
+            frame["source_high"], frame["source_low"] = frame.high.copy(), frame.low.copy()
+            frame.loc[invalid, "high"] = frame.loc[invalid, ["open", "high", "low", "close"]].max(axis=1)
+            frame.loc[invalid, "low"] = frame.loc[invalid, ["open", "high", "low", "close"]].min(axis=1)
     if spec.value_policy == "research_audited":
         frame["input_quality"] = ""
         for issue in issues:
-            frame.at[issue.row - 1, "input_quality"] = "INVALID_BAR_FIELDS"
-            record_issue(issue)
+            if issue.code == "INVALID_BAR_FIELDS":
+                frame.at[issue.row - 1, "input_quality"] = "INVALID_BAR_FIELDS"
+                record_issue(issue)
     if "volume" in frame:
         frame["zero_volume_bar"] = frame.volume.eq(0)
     frame = frame.sort_values(["available_ns", "event_ns"], kind="stable").reset_index(drop=True)
@@ -144,7 +164,9 @@ def read_bar_frame(path, spec=None, key=None):
         configurations = session.coverage.files.get(str(path), {}).get("specifications", [])
         configuration = {"fields": list(spec.required_fields), "timezone": spec.timezone,
             "timestamp_label": spec.timestamp_label, "value_policy": spec.value_policy,
-            "available_column": spec.available_column, "trading_day_policy": spec.trading_day_policy}
+            "available_column": spec.available_column, "trading_day_policy": spec.trading_day_policy,
+            "interval_seconds": spec.interval_seconds, "bar_spec": spec.bar_spec,
+            "ohlc_policy": spec.ohlc_policy, "zero_price_policy": spec.zero_price_policy}
         if configuration not in configurations:
             configurations.append(configuration)
         details["specifications"] = configurations
@@ -236,8 +258,6 @@ def add_prepared_bar_source(feed, result, instrument_id):
     from bomber.framework.market.replay.parsers.bar import FixedInstrumentBarParser
     if result.spec.value_policy != "execution_strict":
         fail("INVALID_SOURCE_PURPOSE", "Standard execution Bar requires execution_strict OHLCV", source=result.path)
-    if result.spec.interval_seconds != 60:
-        fail("UNSUPPORTED_CAPABILITY", "Existing demo bindings require one-minute bars", source=result.path)
     if result.key.venue and result.key.venue != str(instrument_id.venue):
         fail("IDENTITY_MISMATCH", "Prepared source venue differs from instrument", source=result.path)
     if result.key.symbol != symbol(instrument_id.symbol.value):
@@ -248,7 +268,7 @@ def add_prepared_bar_source(feed, result, instrument_id):
         if not result.frame.exchange.map(lambda value: VENUES.get(str(value).strip().upper(), str(value).strip().upper())).eq(expected).all():
             fail("IDENTITY_MISMATCH", "Prepared rows differ from instrument venue", source=result.path)
     parser = FixedInstrumentBarParser(instrument_id, timestamp="datetime",
-        available_nanoseconds="available_ns", timezone=result.spec.timezone)
+        available_nanoseconds="available_ns", timezone=result.spec.timezone, bar_spec=result.spec.bar_spec)
     feed.add_source(result.path, PreparedFrameReader(result.frame), parser, "bar")
 
 
