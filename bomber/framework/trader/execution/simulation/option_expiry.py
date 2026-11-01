@@ -117,8 +117,10 @@ class OptionCashSettlementModule(SimulationModule):
         cache = self.exchange.cache
         contract = cache.instrument(position.instrument_id)
         side = NativeSide.SELL if position.is_long else NativeSide.BUY
-        token = f"OPTION-SETTLEMENT-{uuid4().hex}"
-        client_id, venue_id = ClientOrderId(token), VenueOrderId(token)
+        # 原生 TradeId 最长 36 字符；保留完整 UUID 随机部分，共 35 字符。
+        token = f"OS-{uuid4().hex}"
+        # 写入缓存、发送受理事件之前先验证所有原生标识。
+        client_id, venue_id, trade_id = ClientOrderId(token), VenueOrderId(token), TradeId(token)
         order = MarketOrder(trader_id=position.trader_id, strategy_id=position.strategy_id,
             instrument_id=position.instrument_id, client_order_id=client_id, order_side=side,
             quantity=position.quantity, init_id=UUID4(), ts_init=now, reduce_only=True,
@@ -139,7 +141,7 @@ class OptionCashSettlementModule(SimulationModule):
         # 最终结算价可以有比市场 tick 更细的精度，不按交易 tick 舍入。
         native_price = Price.from_str(format(item.price, "f"))
         self.exchange.msgbus.send(endpoint="ExecEngine.process", msg=OrderFilled(
-            **common, trade_id=TradeId(token), position_id=position.id, order_side=side,
+            **common, trade_id=trade_id, position_id=position.id, order_side=side,
             order_type=OrderType.MARKET, last_qty=position.quantity, last_px=native_price,
             currency=contract.quote_currency, commission=Money(fee, contract.quote_currency),
             liquidity_side=LiquiditySide.TAKER, event_id=UUID4()))
