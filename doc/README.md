@@ -13,6 +13,7 @@
 | 需要了解什么 | 首选入口 | 阅读说明 |
 | --- | --- | --- |
 | 函数用途、参数和调用示例 | [函数说明索引](functions/README.md) | 按模块分类，逐个函数查询输入、返回值、时间约定和常见错误 |
+| Hybrid Live调整总持仓与每批手数 | [手数调整操作手册](strategies/HYBRID_POSITION_SIZING_GUIDE.md) | 两个独立手数参数、批次期限、空仓自动接续、启动示例及状态位置 |
 | 项目整体结构和实现进度 | [统一策略架构与状态台账](architecture/STRATEGY_ARCHITECTURE.md) | 框架模块、运行链路、实现及验证进度的主要入口 |
 | 本轮Live公共模块进度 | [Live公共能力提取进度](architecture/LIVE_COMMON_PROGRESS.md) | 01—06工作项状态、五策略接入、08常驻范围、离线结果及后续待办 |
 | 系统目标和职责边界 | [系统目标架构](architecture/ARCHITECTURE_FIXED.md) | 区分目标设计与已经实现的能力 |

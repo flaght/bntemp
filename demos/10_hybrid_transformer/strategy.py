@@ -35,7 +35,7 @@ class HybridTransformerConfig:
     contract_multiplier: Decimal # 合约乘数，即每手对应的标的数量
     target_key: str = "" # 提交目标仓位时使用的路由标识 留空时自动生成，例如 P → p_main、RB → rb_main
     record_signals: bool = False # 默认 False；开启后保存在内存中的 signal_records，方便分析，
-    max_entry_contracts: int | None = None # 每批开仓上限；Live显式设为1，研究入口沿用原预算
+    max_entry_contracts: int | None = None # 每个信号的手数预算；Live独立配置，未声明时沿用研究分槽预算
 
 
     def __post_init__(self) -> None:

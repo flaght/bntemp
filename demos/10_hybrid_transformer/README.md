@@ -1,5 +1,8 @@
 # HybridTransformer 主力合约策略层（按品种外部配置）
 
+自行调整总持仓与每批手数，见[手数调整操作手册](../../doc/strategies/HYBRID_POSITION_SIZING_GUIDE.md)。
+Live已支持`--max-contracts`与`--entry-contracts`独立配置；默认仍为5手/每批1手。空仓改参数后直接使用原状态文件启动，无需手工迁移手数配置。
+
 Live 启动、恢复提交、状态锁和Recording停机现共用[公共生命周期](../../doc/functions/trader/LiveSessionLifecycle.md)（2026-10-29）；模型身份、旧批次期限及换约约束保留。
 
 Live 历史、CTP 本地分钟和休市窗口续接现已共用 `runtime.live.history.history_stamps` 选择完整交易分钟。
@@ -14,7 +17,7 @@ Live 历史、CTP 本地分钟和休市窗口续接现已共用 `runtime.live.hi
 - 行情解析直接使用框架的 `FixedInstrumentBarParser`，由底层 `MappedBarParser` 统一校验并先发原生 `BAR`、再发伴生 `CUSTOM_BAR`，Demo 不再维护单独的解析器。显式配置 `value=value_column`、`open_interest=open_interest_column`、`trade_time="source_timestamp"`、`preserve_raw_ohlcv=True`，伴生字段保留原始 OHLCV 精度、`value`、规范名 `open_interest` 和原始 `trade_time`；`available_nanoseconds="available_ns"` 指定可用时刻。默认不配置这些选项时仍只发标准 `BAR`，兼容 EMA。
 - `signal_config.py` 从外部 JSON 按品种读取 `signal_id`、`signal_method`、`signal_params` 和 `hold_bars`；策略和适配器不再固定品种或信号编号。方法名必须由 Mizar 的 `SIGNAL_FUNCTIONS` 注册，函数参数原样传给 Workflow。信号输入仍为原始 `predicted_z`。
 - `strategy.py` 每根有效主力分钟 bar 都预测，`holding.py` 中 `PeriodHoldings(..., calendar=calendar)` 按品种交易日历计算绝对到期时间。每批保存 `opened_at_ns`、`expires_at_ns`；序号只用于核对和槽位轮换，中间信号不会覆盖旧批次。预热返回 `None` 时不新开仓；模型错误或坏行情仍尝试处理已到期批次。
-- `max_contracts` 是全部未到期批次的**绝对手数总上限**，不是每批上限。固定分给 `hold_bars` 个轮换槽位。以 5 周期为例，10 手为 `(2,2,2,2,2)`，11 手为 `(3,2,2,2,2)`，1 手为 `(1,0,0,0,0)`。零预算槽位不交易；总手数少于持仓周期时，部分槽位预算为零，无法每分钟都建立非零整数手批次。预算不因多空净额抵消而重复使用。
+- `max_contracts` 是全部未到期批次的**绝对手数总上限**。Live通过`entry_contracts`独立指定单批预算，先释放到期预算，再按剩余额度决定是否能开完整新批次；额度不足不拆小批、不删除旧批次。未显式声明单批预算的研究入口保留原分槽量化，例如5周期总10手分为`(2,2,2,2,2)`。多空净额抵消不释放逻辑批次预算。
 - 信号在当前槽位预算内按 `round_half_up(abs(signal) × slot_capacity)` 量化。每槽 2 手时，连续信号 0.3 对应多头 1 手，离散信号 -1 对应空头 2 手。连续仓位的取整误差需要独立评估。
 - 账户目标等于全部未到期批次按真实合约分组的净和。多空批次可以净额抵消，但各自的到期义务仍保留；到期时重新计算剩余敞口。相同合约目标不变无需重复提交，但账本必须记录旧批次到期、新批次建立。
 - `rebalance_minutes` 现在仅控制**允许建立新批次的分钟时点**，默认 1；到期处理始终执行，不受此开仓间隔或有无新预测影响。持仓期限由各品种配置中的 `hold_bars` 决定，也可通过 `--hold-bars` 显式覆盖；应与对应发布模型的预测标签周期一致。
@@ -181,10 +184,10 @@ fees = CommissionConfig(
 
 - 模型默认设置：CPU、历史窗口1500根、最低260根、开始时间标签；由本文件的 `MODEL_*` 常量明确声明。
 - 策略开仓间隔默认1分钟，持仓周期和信号函数仍按外部信号文件的品种配置读取。
-- Live总手数上限默认5，允许设置1至5；每批开仓显式限制最多1手（`max_entry_contracts=1`），不随总预算放大。研究入口未声明该限制时仍沿用原槽位量化。
+- Live总手数上限默认5、每信号预算默认1，分别通过`--max-contracts`和`--entry-contracts`设置；两者均为正整数且每批不超过总上限，不再写死总上限最多5手。RB离散信号下2/2配置一次建立2手批次，后续4个交易分钟不再开仓；4/2可以建立两批，各自独立计时。
 - 各分钟信号仍建立独立批次，分别持有5个交易分钟。到期时先把到期仓和本分钟新信号合成净目标：同向同手数不发委托，反向只发净变化，信号0只退出到期仓，不建立反向批次。
 - 模型已经产生过有效预测而到期分钟Bar尚未送达时，独立时钟在当分钟保留到期批次，打印`Hybrid到期等待`，待该分钟信号完成后合并；不会用上一分钟方向续持。如果整根到期分钟缺失，到下一边界仍由时钟退出，迟到旧Bar不得补开。恢复冷模型或模型异常沿用原到期/故障处理。
-- 旧10手/每批2手的检查点与新手数配置不相容；不得直接改写未到期批次。须先在旧配置下处理完原仓位并核对订单，再迁移空仓检查点后恢复。
+- 手数参数变化时，启动恢复会在本地空仓、无在途且管理合约柜台空仓后自动暂存新配置，复用框架恢复备份与提交，不重置订单历史；已有旧仓或批次则保留原检查点并提示先按原参数处理，绝不改写未到期批次。
 - `main()` 将解析结果逐项转换为显式关键字参数传给 `build_runtime()`；不传命令行Namespace。命令行未声明的查询超时、报单上限、名义金额、限价偏移及执行政策沿用函数默认值：15秒、100笔、1000000、1跳、fills/off。需调整时在代码调用中显式传入对应关键字参数。
 - `prepare_inputs()` 默认参考超时15秒、刷新5秒。主力/条款参考库沿用 `DDB_REFERENCE_DATABASE`，通常为 `dfs://bomber_daily`。时段库独立配置，依次采用显式 `trading_hours_database`、`DDB_TRADING_HOURS_DATABASE`、默认 `dfs://bomber_static`；表沿用 `DDB_TRADING_HOURS_TABLE`，默认 `fut_trading_session`。不再把参考库自动当作时段库。
 - 日历默认 `china.sse`，可用 `BOMBER_CALENDAR_ID` 指定；时段表和例外表沿用 `DDB_TRADING_HOURS_TABLE`、`DDB_SESSION_OVERRIDES_TABLE`。没有例外时仍需显式 `--no-session-overrides`。

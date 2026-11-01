@@ -106,6 +106,8 @@ def parse_args(argv=None):
     parser.add_argument('--expected-source-day', help='定时模式必填；常驻模式按前一交易日刷新')
     parser.add_argument('--run-forever', action='store_true', help='按日历常驻：休市等待，跨交易日自动续接；忽略seconds')
     parser.add_argument('--max-contracts', type=int, default=5)
+    parser.add_argument('--entry-contracts', type=int, default=1,
+        help='每个信号的手数预算；离散信号每批开此手数，默认1')
     parser.add_argument('--seconds', type=float, default=600)
     parser.add_argument('--market-source', choices=('ctp', 'dolphindb'))
     parser.add_argument('--market-config', type=Path, help='行情源配置；DolphinDB在JSON中声明表名、时间标签和量额口径')
@@ -139,8 +141,8 @@ def parse_args(argv=None):
             raise ValueError('模型发布目录或方向文件不存在')
         if not args.signal_config.is_file():
             raise ValueError('信号配置文件不存在')
-        if not 1 <= args.max_contracts <= 5:
-            raise ValueError('Live总持仓上限须为1至5手；每批开仓最多1手')
+        if args.max_contracts < 1 or not 1 <= args.entry_contracts <= args.max_contracts:
+            raise ValueError('总手数上限须为正整数，每批手数须为1至总上限')
         if not math.isfinite(args.seconds) or args.seconds <= 0:
             raise ValueError('运行时间须为有限正数')
         # 读取数量可以少于模型门槛；不足部分由实时分钟积累，不改变恢复身份。
@@ -387,14 +389,15 @@ class HybridLiveRunner(SessionRoleLiveRunner):
 
 
 def build_strategy(references, calendar, *, product: str, release_path: Path,
-                   directions_file: Path, signal_config: Path, max_contracts=5):
+                   directions_file: Path, signal_config: Path, max_contracts=5, entry_contracts=1):
     """只构建预测器与策略，返回HybridTransformerStrategy。
 
     selected是信号配置数据；predictor执行特征和模型计算；策略再把信号转换为
     批次与目标仓位。这里不启动行情，也不主动向柜台下单。
     """
-    if type(max_contracts) is not int or not 1 <= max_contracts <= 5:
-        raise ValueError('Hybrid Live总持仓上限须为1至5手')
+    if (type(max_contracts) is not int or max_contracts < 1 or type(entry_contracts) is not int
+            or not 1 <= entry_contracts <= max_contracts):
+        raise ValueError('总手数上限须为正整数，每批手数须为1至总上限')
     # 到装配阶段才导入模型适配器，其构造过程会加载研究工作流和模型资料。
     from .model_adapter import MizarWorkflowAdapter
     selected = load_product_signal(signal_config, product)
@@ -406,20 +409,20 @@ def build_strategy(references, calendar, *, product: str, release_path: Path,
         device=MODEL_DEVICE, history_bars=MODEL_HISTORY_BARS,
         min_raw_bars=MODEL_MIN_RAW_BARS)
     # max_contracts约束全部未到期批次的绝对手数总和；hold_bars来自所选品种配置。
-    # 策略如何分槽、量化信号和生成净目标，继续由strategy.py/holding.py实现。
+    # 每批预算独立于持仓周期；holding.py在原批次到期后按剩余额度决定能否新开。
     config = HybridTransformerConfig(
         product=product, venue=references.spec.venue, signal_id=selected.signal_id,
         max_contracts=max_contracts, hold_bars=selected.hold_bars,
         rebalance_minutes=REBALANCE_MINUTES,
         # 策略目标和ExecutionRoute使用同一个显式键，不依赖配置类自动补全。
         target_key=f"{product.strip().lower()}_main",
-        contract_multiplier=references.spec.multiplier, record_signals=True, max_entry_contracts=1)
+        contract_multiplier=references.spec.multiplier, record_signals=True, max_entry_contracts=entry_contracts)
     return HybridTransformerStrategy(CLIENT_ID, references, predictor, config, calendar=calendar)
 
 
 def assemble(inputs, lifecycle, *, product: str, release_path: Path, directions_file: Path,
              signal_config: Path, market_config: MarketSourceConfig, mode='recording',
-             max_contracts=5, state_file: Path | None = None,
+             max_contracts=5, entry_contracts=1, state_file: Path | None = None,
              history_minutes=0, history_config: Path | None = None, history_file: Path | None = None,
              resume=False, execution_policy=None,
              max_notional=Decimal('1000000'), limit_offset_ticks=1, bar_directory: Path | None = None,
@@ -468,7 +471,8 @@ def assemble(inputs, lifecycle, *, product: str, release_path: Path, directions_
     # 4. 模型/策略在此加载；这里只创建历史服务，实际历史读取发生在begin_bars。
     if strategy is None:
         strategy = build_strategy(references, calendar, product=product, release_path=release_path,
-            directions_file=directions_file, signal_config=signal_config, max_contracts=max_contracts)
+            directions_file=directions_file, signal_config=signal_config, max_contracts=max_contracts,
+            entry_contracts=entry_contracts)
     elif (strategy.config.product != product or strategy.config.max_contracts != max_contracts
             or strategy.config.venue != references.spec.venue
             or strategy.config.contract_multiplier != references.spec.multiplier):
@@ -536,13 +540,31 @@ class HybridSessionLifecycle(CtpResumeLifecycle, CtpSessionLifecycle):
     CtpResumeLifecycle先处理恢复分支；新会话start会继续交给CtpSessionLifecycle。
     """
     def restore_session(self, session, context):
-        saved = session.manager.repository.load() if self.window is not None else None
-        if (saved is None or saved.payload['component_states']['live_session']['identity']['trading_day']
-                == context.trading_day):
+        saved = session.manager.repository.load()
+        if saved is None:
             return super().restore_session(session, context)
-        from .checkpoint import payload_for_day
-        return session.manager.restore(payload_transform=lambda payload: payload_for_day(
-            session, payload, driver=self.driver, transport=self.transport, day=context.trading_day))
+        previous = saved.payload['component_states']['hybrid']['config']
+        current = HybridCheckpoint(session.strategy).config()
+        resize = any(previous.get(key) != current.get(key) for key in ('max_contracts', 'max_entry_contracts'))
+        rollover = (self.window is not None and
+            saved.payload['component_states']['live_session']['identity']['trading_day'] != context.trading_day)
+        if not resize and not rollover:
+            return super().restore_session(session, context)
+        from .checkpoint import payload_for_day, resize_flat_checkpoint
+        def prepare(payload):
+            instruments = {str(session.references.instrument_id).casefold()}
+            instruments.update(row['instrument_id'].casefold() for row in payload['portfolio']['known_keys'])
+            payload = resize_flat_checkpoint(payload, current)
+            if resize:
+                gross = {str(key): tuple(value) for key, value in self.transport.query_gross_positions().items()
+                         if str(key).casefold() in instruments and any(value)}
+                if gross:
+                    raise RuntimeError(f'调整手数时管理合约柜台仍有持仓，保留原检查点: {gross}')
+            if rollover:
+                payload = payload_for_day(session, payload, driver=self.driver,
+                    transport=self.transport, day=context.trading_day)
+            return payload
+        return session.manager.restore(payload_transform=prepare)
 
     def validate_restored_session(self, session, day):
         """联合检查保存的持仓、批次与目标版本，返回恢复流程需要的revision。"""
@@ -603,7 +625,7 @@ class HybridLiveReport(LiveRunReport):
 def build_runtime(
     *, product: str, release_path: Path, directions_file: Path, signal_config: Path,
     expected_trading_day: str | None = None, expected_source_day: str | None = None,
-    mode='recording', max_contracts=5, seconds=600,
+    mode='recording', max_contracts=5, entry_contracts=1, seconds=600,
     market_config: MarketSourceConfig | None = None,
     calendar_id='china.sse', no_session_overrides=False,
     history_minutes=0, history_config: Path | None = None, history_file: Path | None = None,
@@ -629,8 +651,9 @@ def build_runtime(
         from bomber.framework.trader.runtime.live.continuous import LiveWindowContext
         window_context = LiveWindowContext(None, window, stop_event or Event(), expected_source_day,
             resume=resume, max_session_orders=max_session_orders)
-    if type(max_contracts) is not int or not 1 <= max_contracts <= 5:
-        raise ValueError('Hybrid Live总持仓上限须为1至5手')
+    if (type(max_contracts) is not int or max_contracts < 1 or type(entry_contracts) is not int
+            or not 1 <= entry_contracts <= max_contracts):
+        raise ValueError('总手数上限须为正整数，每批手数须为1至总上限')
     if not expected_trading_day or not expected_source_day:
         raise ValueError('单次会话须提供交易日和来源日，常驻会话由窗口确定日期')
     market_config = market_config if market_config is not None else MarketSourceConfig()
@@ -677,6 +700,8 @@ def build_runtime(
         strategy = session.strategy
         return {
             'bars_used': strategy.bars_used, 'last_prediction': strategy.last_prediction,
+            'max_contracts': strategy.config.max_contracts,
+            'entry_contracts': strategy.config.max_entry_contracts,
             'rollover': getattr(session, 'rollover_audit', None),
             'model_window_bars': len(strategy.predictor.workflow.history),
             'model_min_raw_bars': MODEL_MIN_RAW_BARS,
@@ -704,6 +729,7 @@ def build_runtime(
             # bars_used来自交易检查点；model_bars包含本机缓存及新分钟，二者不同。
             model_bars = len(strategy.predictor.workflow.history)
             print(f"Hybrid分钟: bars={count} model_window={model_bars} "
+                  f"max_contracts={strategy.config.max_contracts} entry_contracts={strategy.config.max_entry_contracts} "
                   f"min_raw_bars={MODEL_MIN_RAW_BARS} warmup_remaining={max(0, MODEL_MIN_RAW_BARS-model_bars)} "
                   f"prediction={strategy.last_prediction} "
                   f"targets={strategy.last_targets} active_batches={len(strategy.holdings.active)}", flush=True)
@@ -717,7 +743,8 @@ def build_runtime(
         assemble_session=lambda inputs, context: assemble(inputs, lifecycle,
             product=product, release_path=release_path, directions_file=directions_file,
             signal_config=signal_config, market_config=market_config, mode=mode,
-            max_contracts=max_contracts, state_file=state_file, history_minutes=history_minutes,
+            max_contracts=max_contracts, entry_contracts=entry_contracts,
+            state_file=state_file, history_minutes=history_minutes,
             history_config=history_config, history_file=history_file, resume=resume,
             execution_policy=execution_policy, max_notional=max_notional,
             limit_offset_ticks=limit_offset_ticks, bar_directory=bar_directory, window=window, stop_event=stop_event,
@@ -738,6 +765,7 @@ def main(argv=None):
         signal_config=args.signal_config,
         mode=args.mode,
         max_contracts=args.max_contracts,
+        entry_contracts=args.entry_contracts,
         seconds=args.seconds,
         market_config=args.market_source_config,
         calendar_id=args.calendar_id,

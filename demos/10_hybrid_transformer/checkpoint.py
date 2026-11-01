@@ -89,6 +89,47 @@ class HybridCheckpoint:
             raise ValueError("Hybrid 检查点目标/版本与 TargetStore 不一致")
 
 
+def resize_flat_checkpoint(payload, config):
+    """仅在联合账本空仓、无在途时暂存新手数；沿用框架恢复核验、备份和提交。"""
+    from bomber.framework.trader.execution.order_state import OrderLifecycleStatus
+    hybrid = payload['component_states']['hybrid']
+    old = hybrid['config']
+    sizes = ('max_contracts', 'max_entry_contracts')
+    if all(old.get(key) == config.get(key) for key in sizes):
+        return payload
+    if ({key: value for key, value in old.items() if key not in sizes}
+            != {key: value for key, value in config.items() if key not in sizes}):
+        return payload  # 其他参数仍由原恢复检查明确拒绝。
+    holdings = hybrid['holdings']
+    if any(holdings.get(key) != old.get(key) for key in sizes):
+        raise ValueError('原手数配置与批次账本不一致，保留原检查点')
+    positions = payload['positions']
+    quantities = [row['quantity'] for key in ('account_positions', 'strategy_positions', 'working_quantities')
+                  for row in positions[key]]
+    quantities += [row['quantity'] for row in positions['attribution']['owned']]
+    quantities += list(hybrid['last_targets'].values())
+    quantities += [q for row in payload['targets'] for q in row['targets'].values()]
+    quantities += [row['quantity'] for rows in payload['portfolio']['contributions'].values() for row in rows]
+    quantities += [row[key] for ledger in payload['ctp_ledgers'].values() for row in ledger['positions']
+                   for key in ('long_today', 'long_yesterday', 'short_today', 'short_yesterday')]
+    if (holdings['active'] or hybrid['targets_pending']
+            or any(Decimal(str(q)) != 0 for q in quantities)
+            or any(driver['orders'] for driver in payload['ctp_drivers'].values())
+            or any(not OrderLifecycleStatus(row['status']).is_terminal
+                   for rows in payload['orders'].values() for row in rows)):
+        raise ValueError('手数参数已改变，但本地仍有持仓、批次或在途订单；'
+                         '保留原检查点，请先用原参数处理旧仓或同步实际仓位')
+    result = deepcopy(payload)
+    state = result['component_states']['hybrid']
+    state['config'] = dict(config)
+    for key in sizes:
+        state['holdings'][key] = config.get(key)
+    print(f"Hybrid空仓手数暂存: 总上限{old['max_contracts']}->{config['max_contracts']} "
+          f"每批{old.get('max_entry_contracts')}->{config.get('max_entry_contracts')}；"
+          '保留订单历史，核验通过后提交', flush=True)
+    return result
+
+
 def validate_model_identity(previous, current):
     """只有交易日可向前变化，模型、信号文件和行情口径须保持一致。"""
     old, new = deepcopy(previous), deepcopy(current)

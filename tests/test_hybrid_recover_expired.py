@@ -213,10 +213,10 @@ class OldExpiryRecoveryTests(unittest.TestCase):
         self.assertTrue(lifecycle.confirmed_flat)
         lifecycle.verify(session)
 
-    def test_normal_live_entry_still_rejects_ten_contracts(self):
-        with self.assertRaisesRegex(ValueError, '1至5手'):
+    def test_normal_live_entry_rejects_entry_quantity_above_total(self):
+        with self.assertRaisesRegex(ValueError, '每批手数须为1至总上限'):
             live.build_runtime(product='RB', release_path=self.f.release, directions_file=self.f.directions,
-                signal_config=self.f.signal, max_contracts=10,
+                signal_config=self.f.signal, max_contracts=2, entry_contracts=3,
                 expected_trading_day='20261028', expected_source_day='20261027')
 
 

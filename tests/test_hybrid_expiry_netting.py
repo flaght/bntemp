@@ -1,6 +1,7 @@
 """Live到期前先等同分钟信号，净额合并与5手/每批1手；不联网、不报单。"""
 from datetime import datetime
 from decimal import Decimal
+from types import SimpleNamespace as NS
 from unittest.mock import Mock, patch
 import json
 import unittest
@@ -116,11 +117,17 @@ class ExpiryNettingTests(unittest.TestCase):
         self.runner.expire_due()
         self.assertEqual(self.session.strategy.last_targets,{'rb2701':Decimal(4)})
 
-    def test_live_cli_defaults_to_five_and_rejects_old_ten_hand_flag(self):
+    def test_live_cli_exposes_independent_sizes_and_validates_positive_whole_batches(self):
         parsed=live.parse_args(self.fixture.cli()+['--run-forever'])
         self.assertEqual(parsed.max_contracts,5)
-        with patch('sys.stderr'),self.assertRaises(SystemExit):
-            live.parse_args(self.fixture.cli()+['--run-forever','--max-contracts','10'])
+        self.assertEqual(parsed.entry_contracts,1)
+        parsed=live.parse_args(self.fixture.cli()+['--run-forever','--max-contracts','2','--entry-contracts','2'])
+        self.assertEqual((parsed.max_contracts,parsed.entry_contracts),(2,2))
+        self.assertEqual(live.parse_args(self.fixture.cli()+['--run-forever','--max-contracts','10']).max_contracts,10)
+        for maximum,entry in ((0,1),(2,0),(2,3)):
+            with patch('sys.stderr'),self.assertRaises(SystemExit):
+                live.parse_args(self.fixture.cli()+['--run-forever','--max-contracts',str(maximum),
+                                                   '--entry-contracts',str(entry)])
 
     def test_new_sizing_round_trips_but_old_ten_hand_checkpoint_is_not_silently_rewritten(self):
         self.fill_five_batches()
@@ -145,6 +152,109 @@ class ExpiryNettingTests(unittest.TestCase):
         self.assertEqual(other.strategy.holdings.capacities,(1,1,1))
         self.assertEqual(other.strategy.holdings.max_contracts,5)
         self.assertEqual(other.strategy.holdings.max_entry_contracts,1)
+
+
+class FixedEntryTests(unittest.TestCase):
+    """总预算与每信号手数独立；新批次及到期净额复用真实策略和Runner。"""
+    send = ExpiryNettingTests.send
+
+    def setUp(self):
+        self.fixture=continuous_fixture.ContinuousTests('runTest')
+        self.fixture.setUp()
+        self.addCleanup(self.fixture.doCleanups)
+
+    def start(self, maximum=2, entry=2):
+        self.session,_,_=self.fixture.session(max_contracts=maximum,entry_contracts=entry)
+        self.runner=self.session.runner
+        self.now=ns('2026-10-28 09:01:02')
+        self.runner._clock_ns=lambda:self.now
+        self.runner._session_check=lambda:True
+        self.runner.instrument_health=None
+        self.session.strategy.predictor.on_bar=Mock()
+        self.runner.start()
+        self.addCleanup(self.runner.stop)
+        self.runner.accept_bars=True
+        self.runner.first_complete_bar_ns=0
+
+    def test_any_free_minute_can_open_two_without_zero_budget_slots(self):
+        self.start()
+        self.send('2026-10-28 09:00:00',0)
+        self.send('2026-10-28 09:01:00',0)
+        self.send('2026-10-28 09:02:00',1)
+        self.assertEqual(self.session.strategy.last_targets,{'rb2701':Decimal(2)})
+        self.assertEqual([batch.quantity for batch in self.session.strategy.holdings.active],[2])
+
+    def test_middle_signals_do_not_add_or_extend_and_expiry_same_direction_needs_no_order(self):
+        self.start()
+        self.send('2026-10-28 09:00:00',1)
+        original=self.session.strategy.holdings.active[0]
+        for minute,signal in enumerate((1,-1,0,1),1):
+            self.send(f'2026-10-28 09:0{minute}:00',signal)
+            self.assertEqual(self.session.strategy.holdings.active,(original,))
+        self.assertEqual(len(self.session.client.requests),1)
+        self.assertEqual(original.expires_at_ns,ns('2026-10-28 09:06'))
+        self.now=ns('2026-10-28 09:06')+200_000_000
+        self.runner.expire_due()
+        self.assertEqual(self.session.strategy.holdings.active,(original,))
+        self.send('2026-10-28 09:05:00',1)
+        renewed=self.session.strategy.holdings.active[0]
+        self.assertNotEqual(original.batch_id,renewed.batch_id)
+        self.assertEqual(renewed.quantity,2)
+        self.assertEqual(renewed.expires_at_ns,ns('2026-10-28 09:11'))
+        self.assertEqual(len(self.session.client.requests),1)
+
+    def test_expiry_zero_flattens_and_reverse_publishes_one_combined_target(self):
+        for signal,expected in ((0,0),(-1,-2)):
+            with self.subTest(signal=signal):
+                self.start()
+                self.send('2026-10-28 09:00:00',1)
+                self.send('2026-10-28 09:05:00',signal)
+                self.assertEqual(self.session.strategy.last_targets,{'rb2701':Decimal(expected)})
+                self.assertEqual(len(self.session.client.requests),2)
+                self.assertEqual(len(self.session.strategy.holdings.active),int(bool(signal)))
+                self.runner.stop()
+
+    def test_next_minute_adds_separate_batch_only_when_budget_allows(self):
+        self.start(maximum=4)
+        self.send('2026-10-28 09:00:00',1)
+        first=self.session.strategy.holdings.active[0]
+        self.send('2026-10-28 09:01:00',1)
+        self.assertEqual(self.session.strategy.holdings.active[0],first)
+        self.assertEqual([batch.expires_at_ns for batch in self.session.strategy.holdings.active],
+                         [ns('2026-10-28 09:06'),ns('2026-10-28 09:07')])
+        self.send('2026-10-28 09:02:00',-1)
+        self.assertEqual(self.session.strategy.last_targets,{'rb2701':Decimal(4)})
+        self.assertEqual(len(self.session.client.requests),2)
+
+    def test_one_free_contract_does_not_split_a_two_contract_signal(self):
+        self.start(maximum=5)
+        for minute in range(3):
+            self.send(f'2026-10-28 09:0{minute}:00',1)
+        self.assertEqual(self.session.strategy.last_targets,{'rb2701':Decimal(4)})
+        self.assertEqual([batch.quantity for batch in self.session.strategy.holdings.active],[2,2])
+
+    def test_two_contract_checkpoint_round_trips_and_keeps_original_deadline(self):
+        self.start()
+        self.send('2026-10-28 09:00:00',1)
+        saved=live.HybridCheckpoint(self.session.strategy).snapshot_state()
+        other,_,_=self.fixture.session(max_contracts=2,entry_contracts=2)
+        live.HybridCheckpoint(other.strategy).restore_state(saved)
+        self.assertEqual(live.HybridCheckpoint(other.strategy).snapshot_state(),saved)
+        self.assertEqual(other.strategy.config.max_entry_contracts,2)
+
+    def test_runtime_forwards_both_explicit_sizing_arguments(self):
+        base_session,_,_=self.fixture.session()
+        runtime=live.build_runtime(product='RB',release_path=self.fixture.release,
+            directions_file=self.fixture.directions,signal_config=self.fixture.signal,
+            expected_trading_day='20261028',expected_source_day='20261027',
+            max_contracts=2,entry_contracts=2,report_dir=self.fixture.root/'reports',
+            market_config=live.MarketSourceConfig(source='dolphindb',table='fixture',
+                timestamp_label='start',volume_mode='per-bar'),
+            no_session_overrides=True)
+        with patch.object(continuous_fixture.adapter,'MizarWorkflowAdapter',continuous_fixture.Predictor):
+            session=runtime.assemble_session(NS(references=base_session.references,calendar=self.fixture.cal,
+                upstream=continuous_fixture.Upstream('runtime-fixture')),None)
+        self.assertEqual((session.strategy.config.max_contracts,session.strategy.config.max_entry_contracts),(2,2))
 
 
 class ExpiryPriceTests(unittest.TestCase):

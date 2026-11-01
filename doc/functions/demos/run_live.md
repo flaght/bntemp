@@ -106,7 +106,8 @@ Recording不撮合成交，也不创建TD交易通道。CTP行情仍需要MD配�
 | `--signal-config` | 按品种配置的信号函数、参数和持仓周期JSON |
 | `--expected-trading-day` | 预期会话交易日，YYYYMMDD |
 | `--expected-source-day` | 参考资料来源日，YYYYMMDD |
-| `--max-contracts` | 全部未到期批次的绝对手数总上限，默认5，允许1至5；Live每批最多1手 |
+| `--max-contracts` | 全部未到期批次的绝对手数总上限，默认5，须为正整数 |
+| `--entry-contracts` | 每个信号的手数预算，默认1，须为1至总上限；RB离散信号为固定每批手数 |
 | `--seconds` | 定时模式启动完成后的运行时长，默认600秒；常驻模式忽略 |
 | `--run-forever` | 休市等待，下个窗口自动恢复，支持跨交易日 |
 | `--market-source` | 显式选择CTP或DolphinDB，可覆盖JSON中的来源 |
@@ -132,7 +133,7 @@ Recording不撮合成交，也不创建TD交易通道。CTP行情仍需要MD配�
 | 最低原始分钟数 | 260根 | MODEL_MIN_RAW_BARS |
 | 模型时间标签 | start | MODEL_BAR_TIMESTAMP |
 | 新批次检查间隔 | 1分钟 | REBALANCE_MINUTES |
-| 每批开仓上限 | 1手 | build_strategy中max_entry_contracts=1 |
+| 每批开仓预算 | 1手 | --entry-contracts，显式传入build_runtime/assemble/build_strategy |
 | CTP查询超时 | 15秒 | build_runtime默认参数 |
 | 会话报单上限 | 100笔 | build_runtime默认参数 |
 | 名义金额上限 | 1000000 | build_runtime默认参数 |
@@ -148,6 +149,11 @@ Recording不撮合成交，也不创建TD交易通道。CTP行情仍需要MD配�
 模型已经就绪但Bar尚未到时，`expire_due()`在本分钟先等待，避免时钟先提交平仓后再开同向仓。
 如果到下一分钟仍缺失该Bar，时钟会处理到期，不会无限续持；冷模型和错误路径仍按原到期规则退出。
 信号0只表示不建立新批次，未到期批次继续保留。
+
+手数预算与持仓周期独立。每根开仓分钟在到期批次退出后计算剩余总额度，不够完整批次就不新开。
+2/2配置下，一批2手建立后，中途同向信号不会延长其期限；只有到期同向信号才更替为新的5分钟批次。
+空仓改变手数时恢复流程自动核对管理合约并更新配置、保留订单历史；有仓或在途时保持原检查点。
+完整操作见[手数调整操作手册](../../strategies/HYBRID_POSITION_SIZING_GUIDE.md)。
 
 ## 6. `build_runtime()`为什么没有立即启动模型和行情
 

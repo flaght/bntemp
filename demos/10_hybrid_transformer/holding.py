@@ -43,7 +43,7 @@ class HoldingUpdate:
 
 ## 信号结合资金换算成手数
 def signal_to_contracts(signal: float, max_contracts: int) -> Decimal:
-    """按当前槽位的整数手预算量化；零预算槽位不建立仓位。"""
+    """按单批整数手预算量化；零预算不建立仓位。"""
     value = float(signal)
     if not isfinite(value) or abs(value) > 1.0:
         raise ValueError("信号必须是 [-1, 1] 内的有限值")
@@ -67,10 +67,11 @@ def completed_minute_ns(timestamp_ns: int) -> int:
 
 
 class PeriodHoldings:
-    """按日历交易分钟轮换预算；到期由绝对事件时间决定。
+    """按剩余总额度建立批次；各批次的到期由绝对交易分钟时间决定。
 
     bar_index/opened_bar/expires_bar 仅用于核对交易分钟位置。断线漏收时按
     日历补计经过的分钟，不创建历史开仓；批次 ID 使用建立时的结束时间戳。
+    显式max_entry_contracts独立于持仓周期；未声明时保留研究入口的原分槽预算。
     """
     def __init__(self, holding_bars: int, max_contracts: int, *, calendar,
                  max_entry_contracts: int | None = None) -> None:
@@ -88,7 +89,7 @@ class PeriodHoldings:
         base, extra = divmod(max_contracts, holding_bars)
         budgets = tuple(base + int(slot < extra) for slot in range(holding_bars))
         self.capacities = (budgets if max_entry_contracts is None else
-                           tuple(min(budget, max_entry_contracts) for budget in budgets))
+                           (max_entry_contracts,) * holding_bars)
         self.bar_index = -1
         self.last_bar_ns = -1
         self.last_check_ns = -1
@@ -108,14 +109,18 @@ class PeriodHoldings:
                  len(self.calendar.missing_minutes(self.last_bar_ns - 1, stamp)))
         index = self.bar_index + steps
         slot = index % self.holding_bars
-        capacity = self.capacities[slot]
-        quantity = Decimal(0) if signal is None else signal_to_contracts(signal, capacity)
-        # 时钟已前进的情况下，迟到历史 bar 只能用于模型预热，不能补下历史开仓。
-        if stamp < self.last_check_ns:
-            quantity = Decimal(0)
         check_ns = max(stamp, self.last_check_ns)
         expired = tuple(batch for batch in self.active if batch.expires_at_ns <= check_ns)
         active = tuple(batch for batch in self.active if batch.expires_at_ns > check_ns)
+        capacity = self.capacities[slot]
+        quantity = Decimal(0) if signal is None else signal_to_contracts(signal, capacity)
+        if self.max_entry_contracts is not None:
+            used = sum((abs(batch.quantity) for batch in active), Decimal(0))
+            if abs(quantity) > Decimal(self.max_contracts) - used:
+                quantity = Decimal(0)  # 不够整批就不开；不提前减掉未到期批次。
+        # 时钟已前进的情况下，迟到历史 bar 只能用于模型预热，不能补下历史开仓。
+        if stamp < self.last_check_ns:
+            quantity = Decimal(0)
         opened = None
         if quantity:
             expires_ns = self.calendar.next_minutes(stamp - 1, self.holding_bars)[-1] + 1
