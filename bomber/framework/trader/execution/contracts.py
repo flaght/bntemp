@@ -175,7 +175,10 @@ class ExecutionReport:
         )
         if filled < 0:
             raise ValueError("filled_quantity 不能为负数")
-        if fill_price is not None and fill_price <= 0:
+        zero_settlement = (self.metadata.get("execution_origin") == "option_expiry"
+                           and position_effect is PositionEffect.CLOSE)
+        if fill_price is not None and (not fill_price.is_finite() or fill_price < 0
+                                      or (fill_price == 0 and not zero_settlement)):
             raise ValueError("fill_price 必须大于零")
         if order_quantity is not None and order_quantity <= 0:
             raise ValueError("order_quantity 必须大于零")

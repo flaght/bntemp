@@ -6,19 +6,23 @@ from dataclasses import asdict
 from bomber.backtest.models import FeeModel
 from bomber.model import Money
 from bomber.model.currencies import CNY
-from bomber.model.instruments import FuturesContract
+from bomber.model.instruments import FuturesContract, OptionContract
 from bomber.framework.fees import CommissionConfig, FuturesFee, fee_decimal
 
 
 class CtpFuturesFeeModel(FeeModel):
-    def __init__(self, commission_per_contract=1, *, config=None):
+    def __init__(self, commission_per_contract=1, *, config=None, option_per_contract=None):
         self.config = config or CommissionConfig()
         self.fallback = FuturesFee(per_contract=fee_decimal(
             commission_per_contract, "commission_per_contract"))
         self.records = []
+        self.option_fee = (None if option_per_contract is None else FuturesFee(
+            per_contract=fee_decimal(option_per_contract, "option_per_contract")))
 
     def validate_instrument(self, instrument):
         """配置阶段可调用；资料不完整时在开始撮合前失败。"""
+        if isinstance(instrument, OptionContract) and self.option_fee is not None:
+            return self.option_fee, "configured_option_per_contract"
         info = instrument.info or {}
         fee = None if self.config.commission_source == "fixed" else FuturesFee.from_mapping(info)
         source = "fut_basic" if fee is not None else "configured_per_contract"

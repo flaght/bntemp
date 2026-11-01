@@ -337,6 +337,33 @@ class PositionAttributionLedger:
                     | ({"target_revision": leg["target_revision"]} if "target_revision" in leg else {})
                     for leg in order["legs"]), "attributed_fills": tuple(fills)})
 
+    def apply_settlement(self, report, update):
+        """权威结算了结账户残仓及其归属；没有普通委托的预留/在途量。"""
+        with self.positions._lock:
+            client, instrument = report.backend_id, report.instrument_id
+            actual = self.positions.account_position(client, instrument)
+            delta = update.fill_delta * (1 if update.state.side is OrderSide.BUY else -1)
+            if (report.metadata.get("execution_origin") != "option_expiry"
+                    or delta != -actual or self.positions.working_quantity(client, instrument)):
+                raise AttributionError("结算必须恰好了结全部实际残仓，且不得存在在途委托")
+            owned = {key: quantity for key, quantity in self._owned.items()
+                     if key[:2] == (client, str(instrument)) and quantity}
+            if owned and (sum(owned.values(), Decimal(0)) != actual
+                          or any(quantity * actual < 0 for quantity in owned.values())):
+                raise AttributionError("结算归属须与实际净仓一致，不支持虚拟对锁归属")
+            rows = []
+            for key, quantity in owned.items():
+                self._adjust(key, -quantity)
+                rows.append(dict(strategy_id=key[2], target_key=key[3],
+                                 quantity=str(abs(quantity)), cumulative_filled=str(abs(quantity))))
+            self.positions.adjust_account_position(client, instrument, delta)
+            return replace(report, metadata={**report.metadata,
+                "strategy_id": rows[0]["strategy_id"] if rows else client,
+                "allocation_owners": tuple({"strategy_id": row["strategy_id"],
+                                              "target_key": row["target_key"]} for row in rows),
+                "attributed_fills": tuple(rows),
+                "attribution_status": "ASSIGNED" if rows else "UNASSIGNED"})
+
     @staticmethod
     def validate_checkpoints(state, checkpoints):
         """已关联订单必须和订单状态机同代；不把冲突检查点带入重启。"""

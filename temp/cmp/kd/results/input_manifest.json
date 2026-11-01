@@ -1,0 +1,4371 @@
+{
+  "schema_version": "inputs-v1",
+  "files": {
+    "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/demos/11_cta_by_pos/positions.csv": {
+      "size": 17213,
+      "mtime_ns": 1793499929419762964
+    },
+    "/workspace/data/temp_bomber1/ctp/role/fut_basic.feather": {
+      "size": 427266,
+      "mtime_ns": 1793101953645396418
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260105/IC2603_20260105.feather": {
+      "size": 24090,
+      "mtime_ns": 1783863050975557620
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260106/IC2603_20260106.feather": {
+      "size": 24210,
+      "mtime_ns": 1783863084700170122
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260107/IC2603_20260107.feather": {
+      "size": 24026,
+      "mtime_ns": 1783863100464452276
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260108/IC2603_20260108.feather": {
+      "size": 24090,
+      "mtime_ns": 1783863142285188713
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260109/IC2603_20260109.feather": {
+      "size": 24330,
+      "mtime_ns": 1783863237370803903
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260112/IC2603_20260112.feather": {
+      "size": 24426,
+      "mtime_ns": 1783863292679710029
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260113/IC2603_20260113.feather": {
+      "size": 24338,
+      "mtime_ns": 1783863316864099365
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260114/IC2603_20260114.feather": {
+      "size": 24754,
+      "mtime_ns": 1783863359484776091
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260115/IC2603_20260115.feather": {
+      "size": 24298,
+      "mtime_ns": 1783863393921314664
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260116/IC2603_20260116.feather": {
+      "size": 24482,
+      "mtime_ns": 1783863505303012138
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260119/IC2603_20260119.feather": {
+      "size": 24522,
+      "mtime_ns": 1783863538503506418
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260120/IC2603_20260120.feather": {
+      "size": 24618,
+      "mtime_ns": 1783863564023883094
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260121/IC2603_20260121.feather": {
+      "size": 24522,
+      "mtime_ns": 1783863654265194369
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260122/IC2603_20260122.feather": {
+      "size": 24458,
+      "mtime_ns": 1783863698381824845
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260123/IC2603_20260123.feather": {
+      "size": 24626,
+      "mtime_ns": 1783863726578224536
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260126/IC2603_20260126.feather": {
+      "size": 24658,
+      "mtime_ns": 1783863758738677513
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260127/IC2603_20260127.feather": {
+      "size": 24754,
+      "mtime_ns": 1783863806075338994
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260128/IC2603_20260128.feather": {
+      "size": 24650,
+      "mtime_ns": 1783863849571941724
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260129/IC2603_20260129.feather": {
+      "size": 24722,
+      "mtime_ns": 1783863886220446078
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260130/IC2603_20260130.feather": {
+      "size": 24730,
+      "mtime_ns": 1783863910992785309
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260202/IC2603_20260202.feather": {
+      "size": 24530,
+      "mtime_ns": 1783863982909763076
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260203/IC2603_20260203.feather": {
+      "size": 24426,
+      "mtime_ns": 1783864048650648603
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260204/IC2603_20260204.feather": {
+      "size": 24498,
+      "mtime_ns": 1783864101603356803
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260205/IC2603_20260205.feather": {
+      "size": 24346,
+      "mtime_ns": 1783864152060027850
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260206/IC2603_20260206.feather": {
+      "size": 24514,
+      "mtime_ns": 1783864174704327907
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260209/IC2603_20260209.feather": {
+      "size": 24386,
+      "mtime_ns": 1783864209628789439
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260210/IC2603_20260210.feather": {
+      "size": 24346,
+      "mtime_ns": 1783864245629263703
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260211/IC2603_20260211.feather": {
+      "size": 24354,
+      "mtime_ns": 1783864285125782403
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260212/IC2603_20260212.feather": {
+      "size": 24514,
+      "mtime_ns": 1783864327558337915
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260213/IC2603_20260213.feather": {
+      "size": 24522,
+      "mtime_ns": 1783864345154567780
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260224/IC2603_20260224.feather": {
+      "size": 24458,
+      "mtime_ns": 1783864379655017676
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260225/IC2603_20260225.feather": {
+      "size": 24578,
+      "mtime_ns": 1783864413623459660
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260226/IC2603_20260226.feather": {
+      "size": 24450,
+      "mtime_ns": 1783864445679875935
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260227/IC2603_20260227.feather": {
+      "size": 24570,
+      "mtime_ns": 1783864457016022960
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260302/IC2603_20260302.feather": {
+      "size": 24658,
+      "mtime_ns": 1783864549185215092
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260303/IC2603_20260303.feather": {
+      "size": 24810,
+      "mtime_ns": 1783864568885469205
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260304/IC2603_20260304.feather": {
+      "size": 24618,
+      "mtime_ns": 1783864587077703665
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260305/IC2603_20260305.feather": {
+      "size": 24674,
+      "mtime_ns": 1783864613078038437
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260306/IC2603_20260306.feather": {
+      "size": 24490,
+      "mtime_ns": 1783864626082205738
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260309/IC2603_20260309.feather": {
+      "size": 24570,
+      "mtime_ns": 1783864659234631862
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260310/IC2603_20260310.feather": {
+      "size": 24482,
+      "mtime_ns": 1783864732071566245
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260311/IC2603_20260311.feather": {
+      "size": 24426,
+      "mtime_ns": 1783864771924076525
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260312/IC2603_20260312.feather": {
+      "size": 24634,
+      "mtime_ns": 1783864787040269912
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260313/IC2603_20260313.feather": {
+      "size": 24610,
+      "mtime_ns": 1783864823536736473
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260316/IC2603_20260316.feather": {
+      "size": 24226,
+      "mtime_ns": 1783864843388990059
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260317/IC2603_20260317.feather": {
+      "size": 24282,
+      "mtime_ns": 1783864878326390146
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260318/IC2603_20260318.feather": {
+      "size": 24098,
+      "mtime_ns": 1783864907911943792
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260319/IC2603_20260319.feather": {
+      "size": 24242,
+      "mtime_ns": 1783864943868596864
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260320/IC2603_20260320.feather": {
+      "size": 24106,
+      "mtime_ns": 1783864983941470916
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260105/IC2606_20260105.feather": {
+      "size": 23946,
+      "mtime_ns": 1783863053691607410
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260106/IC2606_20260106.feather": {
+      "size": 24042,
+      "mtime_ns": 1783863074699989785
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260107/IC2606_20260107.feather": {
+      "size": 23802,
+      "mtime_ns": 1783863096996390425
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260108/IC2606_20260108.feather": {
+      "size": 24002,
+      "mtime_ns": 1783863137461104630
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260109/IC2606_20260109.feather": {
+      "size": 24122,
+      "mtime_ns": 1783863218302486097
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260112/IC2606_20260112.feather": {
+      "size": 24226,
+      "mtime_ns": 1783863301515852744
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260113/IC2606_20260113.feather": {
+      "size": 24106,
+      "mtime_ns": 1783863326172248160
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260114/IC2606_20260114.feather": {
+      "size": 24402,
+      "mtime_ns": 1783863375241023388
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260115/IC2606_20260115.feather": {
+      "size": 24042,
+      "mtime_ns": 1783863448062147783
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260116/IC2606_20260116.feather": {
+      "size": 24034,
+      "mtime_ns": 1783863494754854048
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260119/IC2606_20260119.feather": {
+      "size": 23882,
+      "mtime_ns": 1783863542331563096
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260120/IC2606_20260120.feather": {
+      "size": 24146,
+      "mtime_ns": 1783863568059942417
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260121/IC2606_20260121.feather": {
+      "size": 24330,
+      "mtime_ns": 1783863646113077146
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260122/IC2606_20260122.feather": {
+      "size": 24170,
+      "mtime_ns": 1783863686269652386
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260123/IC2606_20260123.feather": {
+      "size": 24442,
+      "mtime_ns": 1783863738990399718
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260126/IC2606_20260126.feather": {
+      "size": 24570,
+      "mtime_ns": 1783863761074710300
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260127/IC2606_20260127.feather": {
+      "size": 24618,
+      "mtime_ns": 1783863815215466038
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260128/IC2606_20260128.feather": {
+      "size": 24546,
+      "mtime_ns": 1783863827135631408
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260129/IC2606_20260129.feather": {
+      "size": 24586,
+      "mtime_ns": 1783863874616286711
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260130/IC2606_20260130.feather": {
+      "size": 24730,
+      "mtime_ns": 1783863940165183152
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260202/IC2606_20260202.feather": {
+      "size": 24354,
+      "mtime_ns": 1783863963549500840
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260203/IC2606_20260203.feather": {
+      "size": 24194,
+      "mtime_ns": 1783864014782193317
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260204/IC2606_20260204.feather": {
+      "size": 24226,
+      "mtime_ns": 1783864105891413970
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260205/IC2606_20260205.feather": {
+      "size": 24266,
+      "mtime_ns": 1783864148627982315
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260206/IC2606_20260206.feather": {
+      "size": 24186,
+      "mtime_ns": 1783864192784567025
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260209/IC2606_20260209.feather": {
+      "size": 24202,
+      "mtime_ns": 1783864223984978741
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260210/IC2606_20260210.feather": {
+      "size": 24138,
+      "mtime_ns": 1783864246965281275
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260211/IC2606_20260211.feather": {
+      "size": 24218,
+      "mtime_ns": 1783864285221783662
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260212/IC2606_20260212.feather": {
+      "size": 24242,
+      "mtime_ns": 1783864313254150842
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260213/IC2606_20260213.feather": {
+      "size": 24442,
+      "mtime_ns": 1783864361038775043
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260224/IC2606_20260224.feather": {
+      "size": 24314,
+      "mtime_ns": 1783864376866981357
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260225/IC2606_20260225.feather": {
+      "size": 24522,
+      "mtime_ns": 1783864400887294051
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260226/IC2606_20260226.feather": {
+      "size": 24290,
+      "mtime_ns": 1783864421703564659
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260227/IC2606_20260227.feather": {
+      "size": 24458,
+      "mtime_ns": 1783864497928552822
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260302/IC2606_20260302.feather": {
+      "size": 24618,
+      "mtime_ns": 1783864547397192018
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260303/IC2606_20260303.feather": {
+      "size": 24626,
+      "mtime_ns": 1783864556881314392
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260304/IC2606_20260304.feather": {
+      "size": 24274,
+      "mtime_ns": 1783864585785687020
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260305/IC2606_20260305.feather": {
+      "size": 24202,
+      "mtime_ns": 1783864605273937993
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260306/IC2606_20260306.feather": {
+      "size": 24026,
+      "mtime_ns": 1783864635842331247
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260309/IC2606_20260309.feather": {
+      "size": 24362,
+      "mtime_ns": 1783864661298658374
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260310/IC2606_20260310.feather": {
+      "size": 24338,
+      "mtime_ns": 1783864700735164540
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260311/IC2606_20260311.feather": {
+      "size": 24338,
+      "mtime_ns": 1783864750379800747
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260312/IC2606_20260312.feather": {
+      "size": 24218,
+      "mtime_ns": 1783864796024384808
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260313/IC2606_20260313.feather": {
+      "size": 24098,
+      "mtime_ns": 1783864817624660927
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260316/IC2606_20260316.feather": {
+      "size": 24274,
+      "mtime_ns": 1783864863596005894
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260317/IC2606_20260317.feather": {
+      "size": 24306,
+      "mtime_ns": 1783864893584869118
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260318/IC2606_20260318.feather": {
+      "size": 24210,
+      "mtime_ns": 1783864906328476343
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260319/IC2606_20260319.feather": {
+      "size": 24354,
+      "mtime_ns": 1783864944176505572
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260320/IC2606_20260320.feather": {
+      "size": 24346,
+      "mtime_ns": 1783864986192888743
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260323/IC2606_20260323.feather": {
+      "size": 24402,
+      "mtime_ns": 1783865015121777410
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260324/IC2606_20260324.feather": {
+      "size": 24266,
+      "mtime_ns": 1783865052217577660
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260325/IC2606_20260325.feather": {
+      "size": 24210,
+      "mtime_ns": 1783865065506866629
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260326/IC2606_20260326.feather": {
+      "size": 24234,
+      "mtime_ns": 1783865097464786229
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260327/IC2606_20260327.feather": {
+      "size": 24274,
+      "mtime_ns": 1783865142817104540
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260330/IC2606_20260330.feather": {
+      "size": 24266,
+      "mtime_ns": 1783865155863077634
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260331/IC2606_20260331.feather": {
+      "size": 24234,
+      "mtime_ns": 1783865196173268373
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260401/IC2606_20260401.feather": {
+      "size": 24114,
+      "mtime_ns": 1783865237331962635
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260402/IC2606_20260402.feather": {
+      "size": 24258,
+      "mtime_ns": 1783865250338402076
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260403/IC2606_20260403.feather": {
+      "size": 24138,
+      "mtime_ns": 1783865288170143960
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260407/IC2606_20260407.feather": {
+      "size": 24186,
+      "mtime_ns": 1783865315999252786
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260408/IC2606_20260408.feather": {
+      "size": 24322,
+      "mtime_ns": 1783865351671808652
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260409/IC2606_20260409.feather": {
+      "size": 24082,
+      "mtime_ns": 1783865364514633851
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260410/IC2606_20260410.feather": {
+      "size": 24242,
+      "mtime_ns": 1783865389072474694
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260413/IC2606_20260413.feather": {
+      "size": 23954,
+      "mtime_ns": 1783865421157811582
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260414/IC2606_20260414.feather": {
+      "size": 24114,
+      "mtime_ns": 1783865467578235604
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260415/IC2606_20260415.feather": {
+      "size": 24138,
+      "mtime_ns": 1783865494496292701
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260416/IC2606_20260416.feather": {
+      "size": 24138,
+      "mtime_ns": 1783865532173712561
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260417/IC2606_20260417.feather": {
+      "size": 24074,
+      "mtime_ns": 1783865593281821829
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260420/IC2606_20260420.feather": {
+      "size": 24258,
+      "mtime_ns": 1783865621792111910
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260421/IC2606_20260421.feather": {
+      "size": 24066,
+      "mtime_ns": 1783865658933969382
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260422/IC2606_20260422.feather": {
+      "size": 24378,
+      "mtime_ns": 1783865671129284855
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260423/IC2606_20260423.feather": {
+      "size": 24330,
+      "mtime_ns": 1783865733697900355
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260424/IC2606_20260424.feather": {
+      "size": 24210,
+      "mtime_ns": 1783865822125412778
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260427/IC2606_20260427.feather": {
+      "size": 24154,
+      "mtime_ns": 1783865908519530546
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260428/IC2606_20260428.feather": {
+      "size": 24186,
+      "mtime_ns": 1783865954288264462
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260429/IC2606_20260429.feather": {
+      "size": 24482,
+      "mtime_ns": 1783865999808800113
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260430/IC2606_20260430.feather": {
+      "size": 24386,
+      "mtime_ns": 1783866033297080154
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260506/IC2606_20260506.feather": {
+      "size": 24538,
+      "mtime_ns": 1783866059773237702
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260507/IC2606_20260507.feather": {
+      "size": 24458,
+      "mtime_ns": 1783866086969344072
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260508/IC2606_20260508.feather": {
+      "size": 24466,
+      "mtime_ns": 1783866128373404537
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260511/IC2606_20260511.feather": {
+      "size": 24594,
+      "mtime_ns": 1783866141269399655
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260512/IC2606_20260512.feather": {
+      "size": 24466,
+      "mtime_ns": 1783866157473378268
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260513/IC2606_20260513.feather": {
+      "size": 24658,
+      "mtime_ns": 1783866202469233993
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260514/IC2606_20260514.feather": {
+      "size": 24794,
+      "mtime_ns": 1783866225993111550
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260515/IC2606_20260515.feather": {
+      "size": 24762,
+      "mtime_ns": 1783866235373054163
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260518/IC2606_20260518.feather": {
+      "size": 24586,
+      "mtime_ns": 1783866269568805429
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260519/IC2606_20260519.feather": {
+      "size": 24738,
+      "mtime_ns": 1783866288868638750
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260520/IC2606_20260520.feather": {
+      "size": 24562,
+      "mtime_ns": 1783866311172423627
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260521/IC2606_20260521.feather": {
+      "size": 24842,
+      "mtime_ns": 1783866332372197688
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260522/IC2606_20260522.feather": {
+      "size": 24594,
+      "mtime_ns": 1783866353075957681
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260525/IC2606_20260525.feather": {
+      "size": 24554,
+      "mtime_ns": 1783866356179920095
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260526/IC2606_20260526.feather": {
+      "size": 24642,
+      "mtime_ns": 1783866404175288216
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260527/IC2606_20260527.feather": {
+      "size": 24730,
+      "mtime_ns": 1783866427170953290
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260528/IC2606_20260528.feather": {
+      "size": 24722,
+      "mtime_ns": 1783866442570717979
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260529/IC2606_20260529.feather": {
+      "size": 24698,
+      "mtime_ns": 1783866476078176855
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260601/IC2606_20260601.feather": {
+      "size": 24682,
+      "mtime_ns": 1783866502673720295
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260602/IC2606_20260602.feather": {
+      "size": 24626,
+      "mtime_ns": 1783866521481383704
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260603/IC2606_20260603.feather": {
+      "size": 24586,
+      "mtime_ns": 1783866554276770929
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260604/IC2606_20260604.feather": {
+      "size": 24522,
+      "mtime_ns": 1783866573468397781
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260605/IC2606_20260605.feather": {
+      "size": 24754,
+      "mtime_ns": 1783866600071863643
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260608/IC2606_20260608.feather": {
+      "size": 24354,
+      "mtime_ns": 1783866637771074904
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260609/IC2606_20260609.feather": {
+      "size": 24242,
+      "mtime_ns": 1783866650770794700
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260610/IC2606_20260610.feather": {
+      "size": 24218,
+      "mtime_ns": 1783866674870264618
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260611/IC2606_20260611.feather": {
+      "size": 24218,
+      "mtime_ns": 1783866702973629756
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260612/IC2606_20260612.feather": {
+      "size": 24338,
+      "mtime_ns": 1783866741168739712
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260615/IC2606_20260615.feather": {
+      "size": 24538,
+      "mtime_ns": 1783866761568252218
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260616/IC2606_20260616.feather": {
+      "size": 24458,
+      "mtime_ns": 1783866792775491032
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260617/IC2606_20260617.feather": {
+      "size": 24530,
+      "mtime_ns": 1783866819170833379
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260618/IC2606_20260618.feather": {
+      "size": 24634,
+      "mtime_ns": 1783866829570570933
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260622/IC2606_20260622.feather": {
+      "size": 24602,
+      "mtime_ns": 1783866859469806361
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260119/IC2609_20260119.feather": {
+      "size": 23578,
+      "mtime_ns": 1783863522891274603
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260120/IC2609_20260120.feather": {
+      "size": 23954,
+      "mtime_ns": 1783863561991853202
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260121/IC2609_20260121.feather": {
+      "size": 23626,
+      "mtime_ns": 1783863647817101668
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260122/IC2609_20260122.feather": {
+      "size": 23658,
+      "mtime_ns": 1783863675221494661
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260123/IC2609_20260123.feather": {
+      "size": 24234,
+      "mtime_ns": 1783863739970413530
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260126/IC2609_20260126.feather": {
+      "size": 24538,
+      "mtime_ns": 1783863762438729438
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260127/IC2609_20260127.feather": {
+      "size": 24474,
+      "mtime_ns": 1783863814503456149
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260128/IC2609_20260128.feather": {
+      "size": 24266,
+      "mtime_ns": 1783863831663694133
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260129/IC2609_20260129.feather": {
+      "size": 24490,
+      "mtime_ns": 1783863867252185420
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260130/IC2609_20260130.feather": {
+      "size": 24266,
+      "mtime_ns": 1783863907320735106
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260202/IC2609_20260202.feather": {
+      "size": 24170,
+      "mtime_ns": 1783863985025791695
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260203/IC2609_20260203.feather": {
+      "size": 24050,
+      "mtime_ns": 1783864006942087650
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260204/IC2609_20260204.feather": {
+      "size": 24002,
+      "mtime_ns": 1783864109035455868
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260205/IC2609_20260205.feather": {
+      "size": 24066,
+      "mtime_ns": 1783864155640075333
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260206/IC2609_20260206.feather": {
+      "size": 23986,
+      "mtime_ns": 1783864171200281518
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260209/IC2609_20260209.feather": {
+      "size": 23322,
+      "mtime_ns": 1783864209152783158
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260210/IC2609_20260210.feather": {
+      "size": 23234,
+      "mtime_ns": 1783864257369418055
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260211/IC2609_20260211.feather": {
+      "size": 23170,
+      "mtime_ns": 1783864291833870340
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260212/IC2609_20260212.feather": {
+      "size": 24042,
+      "mtime_ns": 1783864319454231951
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260213/IC2609_20260213.feather": {
+      "size": 23866,
+      "mtime_ns": 1783864361802785006
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260224/IC2609_20260224.feather": {
+      "size": 23818,
+      "mtime_ns": 1783864375694966088
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260225/IC2609_20260225.feather": {
+      "size": 24266,
+      "mtime_ns": 1783864412319442709
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260226/IC2609_20260226.feather": {
+      "size": 24170,
+      "mtime_ns": 1783864424347599007
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260227/IC2609_20260227.feather": {
+      "size": 24194,
+      "mtime_ns": 1783864455912008645
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260302/IC2609_20260302.feather": {
+      "size": 24418,
+      "mtime_ns": 1783864517328803683
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260303/IC2609_20260303.feather": {
+      "size": 24314,
+      "mtime_ns": 1783864555497296537
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260304/IC2609_20260304.feather": {
+      "size": 23946,
+      "mtime_ns": 1783864591717763436
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260305/IC2609_20260305.feather": {
+      "size": 24002,
+      "mtime_ns": 1783864602997908692
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260306/IC2609_20260306.feather": {
+      "size": 23794,
+      "mtime_ns": 1783864626610212529
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260309/IC2609_20260309.feather": {
+      "size": 24018,
+      "mtime_ns": 1783864648598495210
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260310/IC2609_20260310.feather": {
+      "size": 23906,
+      "mtime_ns": 1783864692143054322
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260311/IC2609_20260311.feather": {
+      "size": 23818,
+      "mtime_ns": 1783864766540007623
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260312/IC2609_20260312.feather": {
+      "size": 23954,
+      "mtime_ns": 1783864802800471446
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260313/IC2609_20260313.feather": {
+      "size": 24026,
+      "mtime_ns": 1783864830684827796
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260316/IC2609_20260316.feather": {
+      "size": 24026,
+      "mtime_ns": 1783864854507617558
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260317/IC2609_20260317.feather": {
+      "size": 24082,
+      "mtime_ns": 1783864875299520624
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260318/IC2609_20260318.feather": {
+      "size": 23962,
+      "mtime_ns": 1783864920975659453
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260319/IC2609_20260319.feather": {
+      "size": 24114,
+      "mtime_ns": 1783864936282876649
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260320/IC2609_20260320.feather": {
+      "size": 24074,
+      "mtime_ns": 1783864961783438627
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260323/IC2609_20260323.feather": {
+      "size": 24138,
+      "mtime_ns": 1783865020888437994
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260324/IC2609_20260324.feather": {
+      "size": 23978,
+      "mtime_ns": 1783865048014458862
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260325/IC2609_20260325.feather": {
+      "size": 23938,
+      "mtime_ns": 1783865085211047425
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260326/IC2609_20260326.feather": {
+      "size": 23922,
+      "mtime_ns": 1783865094361350959
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260327/IC2609_20260327.feather": {
+      "size": 24026,
+      "mtime_ns": 1783865139185682483
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260330/IC2609_20260330.feather": {
+      "size": 23890,
+      "mtime_ns": 1783865167745296329
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260331/IC2609_20260331.feather": {
+      "size": 24130,
+      "mtime_ns": 1783865197645068353
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260401/IC2609_20260401.feather": {
+      "size": 23842,
+      "mtime_ns": 1783865226569294460
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260402/IC2609_20260402.feather": {
+      "size": 24018,
+      "mtime_ns": 1783865266668514698
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260403/IC2609_20260403.feather": {
+      "size": 23818,
+      "mtime_ns": 1783865281314886265
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260407/IC2609_20260407.feather": {
+      "size": 23762,
+      "mtime_ns": 1783865308624000603
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260408/IC2609_20260408.feather": {
+      "size": 24010,
+      "mtime_ns": 1783865330725797268
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260409/IC2609_20260409.feather": {
+      "size": 23786,
+      "mtime_ns": 1783865372749897369
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260410/IC2609_20260410.feather": {
+      "size": 24034,
+      "mtime_ns": 1783865399747569716
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260413/IC2609_20260413.feather": {
+      "size": 23778,
+      "mtime_ns": 1783865430121096942
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260414/IC2609_20260414.feather": {
+      "size": 23906,
+      "mtime_ns": 1783865459966801495
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260415/IC2609_20260415.feather": {
+      "size": 23914,
+      "mtime_ns": 1783865496832128192
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260416/IC2609_20260416.feather": {
+      "size": 23890,
+      "mtime_ns": 1783865517694686081
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260417/IC2609_20260417.feather": {
+      "size": 23890,
+      "mtime_ns": 1783865585738284688
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260420/IC2609_20260420.feather": {
+      "size": 24002,
+      "mtime_ns": 1783865628515717253
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260421/IC2609_20260421.feather": {
+      "size": 23842,
+      "mtime_ns": 1783865636199270038
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260422/IC2609_20260422.feather": {
+      "size": 23914,
+      "mtime_ns": 1783865682772639380
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260423/IC2609_20260423.feather": {
+      "size": 24010,
+      "mtime_ns": 1783865786131203633
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260424/IC2609_20260424.feather": {
+      "size": 24034,
+      "mtime_ns": 1783865854151854615
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260427/IC2609_20260427.feather": {
+      "size": 23746,
+      "mtime_ns": 1783865912679605818
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260428/IC2609_20260428.feather": {
+      "size": 23986,
+      "mtime_ns": 1783865935447987078
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260429/IC2609_20260429.feather": {
+      "size": 23962,
+      "mtime_ns": 1783866007108869117
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260430/IC2609_20260430.feather": {
+      "size": 23658,
+      "mtime_ns": 1783866053569205666
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260506/IC2609_20260506.feather": {
+      "size": 24290,
+      "mtime_ns": 1783866066117267437
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260507/IC2609_20260507.feather": {
+      "size": 24290,
+      "mtime_ns": 1783866081289326352
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260508/IC2609_20260508.feather": {
+      "size": 24258,
+      "mtime_ns": 1783866108069389715
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260511/IC2609_20260511.feather": {
+      "size": 24442,
+      "mtime_ns": 1783866140985399886
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260512/IC2609_20260512.feather": {
+      "size": 24290,
+      "mtime_ns": 1783866162085369148
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260513/IC2609_20260513.feather": {
+      "size": 24562,
+      "mtime_ns": 1783866188173292955
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260514/IC2609_20260514.feather": {
+      "size": 24530,
+      "mtime_ns": 1783866216373165373
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260515/IC2609_20260515.feather": {
+      "size": 24698,
+      "mtime_ns": 1783866236677045808
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260518/IC2609_20260518.feather": {
+      "size": 24418,
+      "mtime_ns": 1783866253196932124
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260519/IC2609_20260519.feather": {
+      "size": 24650,
+      "mtime_ns": 1783866277668737722
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260520/IC2609_20260520.feather": {
+      "size": 24338,
+      "mtime_ns": 1783866300872525908
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260521/IC2609_20260521.feather": {
+      "size": 24778,
+      "mtime_ns": 1783866317384359547
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260522/IC2609_20260522.feather": {
+      "size": 24498,
+      "mtime_ns": 1783866337268142630
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260525/IC2609_20260525.feather": {
+      "size": 24442,
+      "mtime_ns": 1783866377679648635
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260526/IC2609_20260526.feather": {
+      "size": 24602,
+      "mtime_ns": 1783866395483409520
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260527/IC2609_20260527.feather": {
+      "size": 24682,
+      "mtime_ns": 1783866424974986135
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260528/IC2609_20260528.feather": {
+      "size": 24522,
+      "mtime_ns": 1783866453670543069
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260529/IC2609_20260529.feather": {
+      "size": 24346,
+      "mtime_ns": 1783866470974261784
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260601/IC2609_20260601.feather": {
+      "size": 24162,
+      "mtime_ns": 1783866504177693791
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260602/IC2609_20260602.feather": {
+      "size": 24274,
+      "mtime_ns": 1783866536377109363
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260603/IC2609_20260603.feather": {
+      "size": 24346,
+      "mtime_ns": 1783866549276866410
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260604/IC2609_20260604.feather": {
+      "size": 24034,
+      "mtime_ns": 1783866572280421182
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260605/IC2609_20260605.feather": {
+      "size": 24258,
+      "mtime_ns": 1783866609071678662
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260608/IC2609_20260608.feather": {
+      "size": 24314,
+      "mtime_ns": 1783866624475357193
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260609/IC2609_20260609.feather": {
+      "size": 24066,
+      "mtime_ns": 1783866659674600440
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260610/IC2609_20260610.feather": {
+      "size": 24162,
+      "mtime_ns": 1783866675582248751
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260611/IC2609_20260611.feather": {
+      "size": 24162,
+      "mtime_ns": 1783866719093257841
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260612/IC2609_20260612.feather": {
+      "size": 24186,
+      "mtime_ns": 1783866738872794063
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260615/IC2609_20260615.feather": {
+      "size": 24202,
+      "mtime_ns": 1783866753576444174
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260616/IC2609_20260616.feather": {
+      "size": 24474,
+      "mtime_ns": 1783866796475399593
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260617/IC2609_20260617.feather": {
+      "size": 24626,
+      "mtime_ns": 1783866816178908538
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260618/IC2609_20260618.feather": {
+      "size": 24618,
+      "mtime_ns": 1783866846282145395
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260622/IC2609_20260622.feather": {
+      "size": 24722,
+      "mtime_ns": 1783866856269888883
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260623/IC2609_20260623.feather": {
+      "size": 24818,
+      "mtime_ns": 1783866879673281615
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260624/IC2609_20260624.feather": {
+      "size": 24682,
+      "mtime_ns": 1783866900776726827
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260625/IC2609_20260625.feather": {
+      "size": 24658,
+      "mtime_ns": 1783866933171862557
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260626/IC2609_20260626.feather": {
+      "size": 24714,
+      "mtime_ns": 1783866958379179993
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260629/IC2609_20260629.feather": {
+      "size": 24706,
+      "mtime_ns": 1783866988674348664
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260630/IC2609_20260630.feather": {
+      "size": 24738,
+      "mtime_ns": 1783867014769623459
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260701/IC2609_20260701.feather": {
+      "size": 24738,
+      "mtime_ns": 1784787158168976468
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260702/IC2609_20260702.feather": {
+      "size": 24610,
+      "mtime_ns": 1784787177172868049
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260703/IC2609_20260703.feather": {
+      "size": 24722,
+      "mtime_ns": 1784787214284658001
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260706/IC2609_20260706.feather": {
+      "size": 24730,
+      "mtime_ns": 1784787230272568166
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260707/IC2609_20260707.feather": {
+      "size": 24698,
+      "mtime_ns": 1784787254672431784
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260708/IC2609_20260708.feather": {
+      "size": 24706,
+      "mtime_ns": 1784787282768275775
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260709/IC2609_20260709.feather": {
+      "size": 24770,
+      "mtime_ns": 1784787311672116374
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260105/IF2603_20260105.feather": {
+      "size": 23962,
+      "mtime_ns": 1783863053227598910
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260106/IF2603_20260106.feather": {
+      "size": 23962,
+      "mtime_ns": 1783863079780081529
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260107/IF2603_20260107.feather": {
+      "size": 23858,
+      "mtime_ns": 1783863097720403346
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260108/IF2603_20260108.feather": {
+      "size": 23874,
+      "mtime_ns": 1783863142285188713
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260109/IF2603_20260109.feather": {
+      "size": 23994,
+      "mtime_ns": 1783863255083096564
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260112/IF2603_20260112.feather": {
+      "size": 24050,
+      "mtime_ns": 1783863270759353606
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260113/IF2603_20260113.feather": {
+      "size": 24130,
+      "mtime_ns": 1783863345528555772
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260114/IF2603_20260114.feather": {
+      "size": 24170,
+      "mtime_ns": 1783863352292662705
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260115/IF2603_20260115.feather": {
+      "size": 23770,
+      "mtime_ns": 1783863439806021760
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260116/IF2603_20260116.feather": {
+      "size": 24050,
+      "mtime_ns": 1783863478394607808
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260119/IF2603_20260119.feather": {
+      "size": 23890,
+      "mtime_ns": 1783863540539536571
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260120/IF2603_20260120.feather": {
+      "size": 23930,
+      "mtime_ns": 1783863581776143523
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260121/IF2603_20260121.feather": {
+      "size": 23922,
+      "mtime_ns": 1783863629464837025
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260122/IF2603_20260122.feather": {
+      "size": 23898,
+      "mtime_ns": 1783863697465811819
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260123/IF2603_20260123.feather": {
+      "size": 23842,
+      "mtime_ns": 1783863723938187217
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260126/IF2603_20260126.feather": {
+      "size": 24002,
+      "mtime_ns": 1783863778834959077
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260127/IF2603_20260127.feather": {
+      "size": 23946,
+      "mtime_ns": 1783863812563429197
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260128/IF2603_20260128.feather": {
+      "size": 23834,
+      "mtime_ns": 1783863831687694465
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260129/IF2603_20260129.feather": {
+      "size": 23986,
+      "mtime_ns": 1783863872508257728
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260130/IF2603_20260130.feather": {
+      "size": 24082,
+      "mtime_ns": 1783863909596766226
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260202/IF2603_20260202.feather": {
+      "size": 24146,
+      "mtime_ns": 1783863980929736287
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260203/IF2603_20260203.feather": {
+      "size": 24098,
+      "mtime_ns": 1783864029266388257
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260204/IF2603_20260204.feather": {
+      "size": 23914,
+      "mtime_ns": 1783864112767505584
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260205/IF2603_20260205.feather": {
+      "size": 24042,
+      "mtime_ns": 1783864149867998769
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260206/IF2603_20260206.feather": {
+      "size": 23994,
+      "mtime_ns": 1783864196800620084
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260209/IF2603_20260209.feather": {
+      "size": 23690,
+      "mtime_ns": 1783864223496972309
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260210/IF2603_20260210.feather": {
+      "size": 23490,
+      "mtime_ns": 1783864262073479860
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260211/IF2603_20260211.feather": {
+      "size": 23410,
+      "mtime_ns": 1783864276433668390
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260212/IF2603_20260212.feather": {
+      "size": 23498,
+      "mtime_ns": 1783864328854354854
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260213/IF2603_20260213.feather": {
+      "size": 24018,
+      "mtime_ns": 1783864338918486349
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260224/IF2603_20260224.feather": {
+      "size": 23746,
+      "mtime_ns": 1783864379247012361
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260225/IF2603_20260225.feather": {
+      "size": 23970,
+      "mtime_ns": 1783864404211337286
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260226/IF2603_20260226.feather": {
+      "size": 23666,
+      "mtime_ns": 1783864439619797300
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260227/IF2603_20260227.feather": {
+      "size": 23770,
+      "mtime_ns": 1783864453287974619
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260302/IF2603_20260302.feather": {
+      "size": 24082,
+      "mtime_ns": 1783864534117020573
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260303/IF2603_20260303.feather": {
+      "size": 24154,
+      "mtime_ns": 1783864557001315940
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260304/IF2603_20260304.feather": {
+      "size": 24090,
+      "mtime_ns": 1783864576661569446
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260305/IF2603_20260305.feather": {
+      "size": 23954,
+      "mtime_ns": 1783864619770124543
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260306/IF2603_20260306.feather": {
+      "size": 23890,
+      "mtime_ns": 1783864643474429357
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260309/IF2603_20260309.feather": {
+      "size": 24242,
+      "mtime_ns": 1783864656186592707
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260310/IF2603_20260310.feather": {
+      "size": 23770,
+      "mtime_ns": 1783864695263094349
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260311/IF2603_20260311.feather": {
+      "size": 23682,
+      "mtime_ns": 1783864769980051648
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260312/IF2603_20260312.feather": {
+      "size": 23994,
+      "mtime_ns": 1783864787320273493
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260313/IF2603_20260313.feather": {
+      "size": 23778,
+      "mtime_ns": 1783864821756713728
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260316/IF2603_20260316.feather": {
+      "size": 23970,
+      "mtime_ns": 1783864848565056155
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260317/IF2603_20260317.feather": {
+      "size": 24026,
+      "mtime_ns": 1783864879298029770
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260318/IF2603_20260318.feather": {
+      "size": 23930,
+      "mtime_ns": 1783864898919006794
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260319/IF2603_20260319.feather": {
+      "size": 24034,
+      "mtime_ns": 1783864931044485410
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260320/IF2603_20260320.feather": {
+      "size": 23778,
+      "mtime_ns": 1783864972860400463
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260105/IF2606_20260105.feather": {
+      "size": 23530,
+      "mtime_ns": 1783863055171634508
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260106/IF2606_20260106.feather": {
+      "size": 23714,
+      "mtime_ns": 1783863067019850559
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260107/IF2606_20260107.feather": {
+      "size": 23570,
+      "mtime_ns": 1783863111416646805
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260108/IF2606_20260108.feather": {
+      "size": 23594,
+      "mtime_ns": 1783863186665952263
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260109/IF2606_20260109.feather": {
+      "size": 23682,
+      "mtime_ns": 1783863203078230248
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260112/IF2606_20260112.feather": {
+      "size": 23834,
+      "mtime_ns": 1783863267071293298
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260113/IF2606_20260113.feather": {
+      "size": 23954,
+      "mtime_ns": 1783863315968085011
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260114/IF2606_20260114.feather": {
+      "size": 23954,
+      "mtime_ns": 1783863352512666178
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260115/IF2606_20260115.feather": {
+      "size": 23698,
+      "mtime_ns": 1783863421813745869
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260116/IF2606_20260116.feather": {
+      "size": 23834,
+      "mtime_ns": 1783863504330997592
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260119/IF2606_20260119.feather": {
+      "size": 23586,
+      "mtime_ns": 1783863528287354846
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260120/IF2606_20260120.feather": {
+      "size": 23698,
+      "mtime_ns": 1783863556995779634
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260121/IF2606_20260121.feather": {
+      "size": 23578,
+      "mtime_ns": 1783863612124585855
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260122/IF2606_20260122.feather": {
+      "size": 23546,
+      "mtime_ns": 1783863693129750121
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260123/IF2606_20260123.feather": {
+      "size": 23530,
+      "mtime_ns": 1783863743846468132
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260126/IF2606_20260126.feather": {
+      "size": 23754,
+      "mtime_ns": 1783863779178963887
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260127/IF2606_20260127.feather": {
+      "size": 23714,
+      "mtime_ns": 1783863791091130254
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260128/IF2606_20260128.feather": {
+      "size": 23450,
+      "mtime_ns": 1783863850027948018
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260129/IF2606_20260129.feather": {
+      "size": 23666,
+      "mtime_ns": 1783863876424311562
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260130/IF2606_20260130.feather": {
+      "size": 23922,
+      "mtime_ns": 1783863942265211726
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260202/IF2606_20260202.feather": {
+      "size": 24106,
+      "mtime_ns": 1783863980353728494
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260203/IF2606_20260203.feather": {
+      "size": 24002,
+      "mtime_ns": 1783864019934262698
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260204/IF2606_20260204.feather": {
+      "size": 23626,
+      "mtime_ns": 1783864102043362671
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260205/IF2606_20260205.feather": {
+      "size": 23818,
+      "mtime_ns": 1783864150748010445
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260206/IF2606_20260206.feather": {
+      "size": 23802,
+      "mtime_ns": 1783864190976543131
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260209/IF2606_20260209.feather": {
+      "size": 23490,
+      "mtime_ns": 1783864229897056629
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260210/IF2606_20260210.feather": {
+      "size": 23130,
+      "mtime_ns": 1783864252809358120
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260211/IF2606_20260211.feather": {
+      "size": 23122,
+      "mtime_ns": 1783864279525708957
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260212/IF2606_20260212.feather": {
+      "size": 23138,
+      "mtime_ns": 1783864316282190459
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260213/IF2606_20260213.feather": {
+      "size": 23930,
+      "mtime_ns": 1783864368070866730
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260224/IF2606_20260224.feather": {
+      "size": 23426,
+      "mtime_ns": 1783864377426988653
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260225/IF2606_20260225.feather": {
+      "size": 23874,
+      "mtime_ns": 1783864400407287807
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260226/IF2606_20260226.feather": {
+      "size": 23570,
+      "mtime_ns": 1783864422807579002
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260227/IF2606_20260227.feather": {
+      "size": 23602,
+      "mtime_ns": 1783864453331975190
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260302/IF2606_20260302.feather": {
+      "size": 23962,
+      "mtime_ns": 1783864542325126551
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260303/IF2606_20260303.feather": {
+      "size": 24042,
+      "mtime_ns": 1783864563177395600
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260304/IF2606_20260304.feather": {
+      "size": 23938,
+      "mtime_ns": 1783864586281693410
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260305/IF2606_20260305.feather": {
+      "size": 23818,
+      "mtime_ns": 1783864607177962501
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260306/IF2606_20260306.feather": {
+      "size": 23650,
+      "mtime_ns": 1783864628538237326
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260309/IF2606_20260309.feather": {
+      "size": 24122,
+      "mtime_ns": 1783864665982718532
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260310/IF2606_20260310.feather": {
+      "size": 23546,
+      "mtime_ns": 1783864728275517605
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260311/IF2606_20260311.feather": {
+      "size": 23578,
+      "mtime_ns": 1783864763159964362
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260312/IF2606_20260312.feather": {
+      "size": 23818,
+      "mtime_ns": 1783864791276324089
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260313/IF2606_20260313.feather": {
+      "size": 23834,
+      "mtime_ns": 1783864821420709434
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260316/IF2606_20260316.feather": {
+      "size": 23866,
+      "mtime_ns": 1783864851208957073
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260317/IF2606_20260317.feather": {
+      "size": 24082,
+      "mtime_ns": 1783864880997402291
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260318/IF2606_20260318.feather": {
+      "size": 23874,
+      "mtime_ns": 1783864920891686425
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260319/IF2606_20260319.feather": {
+      "size": 24106,
+      "mtime_ns": 1783864952182164507
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260320/IF2606_20260320.feather": {
+      "size": 23938,
+      "mtime_ns": 1783864975795614004
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260323/IF2606_20260323.feather": {
+      "size": 24298,
+      "mtime_ns": 1783865022692024202
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260324/IF2606_20260324.feather": {
+      "size": 24034,
+      "mtime_ns": 1783865042971531745
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260325/IF2606_20260325.feather": {
+      "size": 23802,
+      "mtime_ns": 1783865085934911459
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260326/IF2606_20260326.feather": {
+      "size": 23962,
+      "mtime_ns": 1783865099248464031
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260327/IF2606_20260327.feather": {
+      "size": 24018,
+      "mtime_ns": 1783865144516836137
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260330/IF2606_20260330.feather": {
+      "size": 23882,
+      "mtime_ns": 1783865177583866055
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260331/IF2606_20260331.feather": {
+      "size": 24050,
+      "mtime_ns": 1783865192829725815
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260401/IF2606_20260401.feather": {
+      "size": 23794,
+      "mtime_ns": 1783865231944624567
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260402/IF2606_20260402.feather": {
+      "size": 23890,
+      "mtime_ns": 1783865259661315036
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260403/IF2606_20260403.feather": {
+      "size": 23954,
+      "mtime_ns": 1783865295833328640
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260407/IF2606_20260407.feather": {
+      "size": 23778,
+      "mtime_ns": 1783865306464222042
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260408/IF2606_20260408.feather": {
+      "size": 24050,
+      "mtime_ns": 1783865327702092138
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260409/IF2606_20260409.feather": {
+      "size": 23586,
+      "mtime_ns": 1783865359567082573
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260410/IF2606_20260410.feather": {
+      "size": 23954,
+      "mtime_ns": 1783865402939302879
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260413/IF2606_20260413.feather": {
+      "size": 23754,
+      "mtime_ns": 1783865430773045441
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260414/IF2606_20260414.feather": {
+      "size": 23930,
+      "mtime_ns": 1783865453683274470
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260415/IF2606_20260415.feather": {
+      "size": 23874,
+      "mtime_ns": 1783865500479872555
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260416/IF2606_20260416.feather": {
+      "size": 23802,
+      "mtime_ns": 1783865510735161840
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260417/IF2606_20260417.feather": {
+      "size": 23642,
+      "mtime_ns": 1783865584206379241
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260420/IF2606_20260420.feather": {
+      "size": 23866,
+      "mtime_ns": 1783865631971515610
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260421/IF2606_20260421.feather": {
+      "size": 23818,
+      "mtime_ns": 1783865660641872986
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260422/IF2606_20260422.feather": {
+      "size": 23874,
+      "mtime_ns": 1783865695983916075
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260423/IF2606_20260423.feather": {
+      "size": 24058,
+      "mtime_ns": 1783865761920434829
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260424/IF2606_20260424.feather": {
+      "size": 23986,
+      "mtime_ns": 1783865847384181327
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260427/IF2606_20260427.feather": {
+      "size": 23810,
+      "mtime_ns": 1783865877278907796
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260428/IF2606_20260428.feather": {
+      "size": 23874,
+      "mtime_ns": 1783865932551941418
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260429/IF2606_20260429.feather": {
+      "size": 24026,
+      "mtime_ns": 1783865987892677664
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260430/IF2606_20260430.feather": {
+      "size": 23698,
+      "mtime_ns": 1783866037649109827
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260506/IF2606_20260506.feather": {
+      "size": 23930,
+      "mtime_ns": 1783866071481290211
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260507/IF2606_20260507.feather": {
+      "size": 23738,
+      "mtime_ns": 1783866085073338419
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260508/IF2606_20260508.feather": {
+      "size": 23762,
+      "mtime_ns": 1783866132089404257
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260511/IF2606_20260511.feather": {
+      "size": 24082,
+      "mtime_ns": 1783866137869402003
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260512/IF2606_20260512.feather": {
+      "size": 23770,
+      "mtime_ns": 1783866161977369379
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260513/IF2606_20260513.feather": {
+      "size": 24002,
+      "mtime_ns": 1783866195669263523
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260514/IF2606_20260514.feather": {
+      "size": 24138,
+      "mtime_ns": 1783866222277132945
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260515/IF2606_20260515.feather": {
+      "size": 24170,
+      "mtime_ns": 1783866246872977350
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260518/IF2606_20260518.feather": {
+      "size": 24034,
+      "mtime_ns": 1783866269568805429
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260519/IF2606_20260519.feather": {
+      "size": 24042,
+      "mtime_ns": 1783866290988619328
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260520/IF2606_20260520.feather": {
+      "size": 23890,
+      "mtime_ns": 1783866305972475889
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260521/IF2606_20260521.feather": {
+      "size": 24234,
+      "mtime_ns": 1783866320076331231
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260522/IF2606_20260522.feather": {
+      "size": 23994,
+      "mtime_ns": 1783866340080110530
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260525/IF2606_20260525.feather": {
+      "size": 23954,
+      "mtime_ns": 1783866367771776127
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260526/IF2606_20260526.feather": {
+      "size": 24074,
+      "mtime_ns": 1783866401375327614
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260527/IF2606_20260527.feather": {
+      "size": 24162,
+      "mtime_ns": 1783866431074894460
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260528/IF2606_20260528.feather": {
+      "size": 24162,
+      "mtime_ns": 1783866457674478905
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260529/IF2606_20260529.feather": {
+      "size": 24146,
+      "mtime_ns": 1783866475874180266
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260601/IF2606_20260601.feather": {
+      "size": 24146,
+      "mtime_ns": 1783866503277709660
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260602/IF2606_20260602.feather": {
+      "size": 24170,
+      "mtime_ns": 1783866518573436469
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260603/IF2606_20260603.feather": {
+      "size": 24074,
+      "mtime_ns": 1783866546276923349
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260604/IF2606_20260604.feather": {
+      "size": 23986,
+      "mtime_ns": 1783866571480436916
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260605/IF2606_20260605.feather": {
+      "size": 24274,
+      "mtime_ns": 1783866601075843114
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260608/IF2606_20260608.feather": {
+      "size": 24162,
+      "mtime_ns": 1783866640987005970
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260609/IF2606_20260609.feather": {
+      "size": 24058,
+      "mtime_ns": 1783866662370541252
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260610/IF2606_20260610.feather": {
+      "size": 24002,
+      "mtime_ns": 1783866689873927863
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260611/IF2606_20260611.feather": {
+      "size": 24002,
+      "mtime_ns": 1783866705569570234
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260612/IF2606_20260612.feather": {
+      "size": 24002,
+      "mtime_ns": 1783866746088622892
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260615/IF2606_20260615.feather": {
+      "size": 23946,
+      "mtime_ns": 1783866771104021568
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260616/IF2606_20260616.feather": {
+      "size": 23778,
+      "mtime_ns": 1783866791479523001
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260617/IF2606_20260617.feather": {
+      "size": 23850,
+      "mtime_ns": 1783866815178933624
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260618/IF2606_20260618.feather": {
+      "size": 23930,
+      "mtime_ns": 1783866836170403433
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260622/IF2606_20260622.feather": {
+      "size": 23842,
+      "mtime_ns": 1783866857369860534
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260119/IF2609_20260119.feather": {
+      "size": 23090,
+      "mtime_ns": 1783863539595522593
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260120/IF2609_20260120.feather": {
+      "size": 23050,
+      "mtime_ns": 1783863562039853908
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260121/IF2609_20260121.feather": {
+      "size": 23002,
+      "mtime_ns": 1783863644429052902
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260122/IF2609_20260122.feather": {
+      "size": 23058,
+      "mtime_ns": 1783863669849417823
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260123/IF2609_20260123.feather": {
+      "size": 23050,
+      "mtime_ns": 1783863718830114948
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260126/IF2609_20260126.feather": {
+      "size": 23506,
+      "mtime_ns": 1783863776642928418
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260127/IF2609_20260127.feather": {
+      "size": 23410,
+      "mtime_ns": 1783863795447190997
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260128/IF2609_20260128.feather": {
+      "size": 23170,
+      "mtime_ns": 1783863846527899693
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260129/IF2609_20260129.feather": {
+      "size": 23434,
+      "mtime_ns": 1783863858440064048
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260130/IF2609_20260130.feather": {
+      "size": 23690,
+      "mtime_ns": 1783863901432654549
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260202/IF2609_20260202.feather": {
+      "size": 23954,
+      "mtime_ns": 1783863986617813222
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260203/IF2609_20260203.feather": {
+      "size": 23666,
+      "mtime_ns": 1783864000650002769
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260204/IF2609_20260204.feather": {
+      "size": 23386,
+      "mtime_ns": 1783864107663437586
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260205/IF2609_20260205.feather": {
+      "size": 23450,
+      "mtime_ns": 1783864147107962143
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260206/IF2609_20260206.feather": {
+      "size": 23474,
+      "mtime_ns": 1783864172604300107
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260209/IF2609_20260209.feather": {
+      "size": 23098,
+      "mtime_ns": 1783864233689106567
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260210/IF2609_20260210.feather": {
+      "size": 22410,
+      "mtime_ns": 1783864250101322516
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260211/IF2609_20260211.feather": {
+      "size": 22546,
+      "mtime_ns": 1783864292285876263
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260212/IF2609_20260212.feather": {
+      "size": 22442,
+      "mtime_ns": 1783864320662247750
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260213/IF2609_20260213.feather": {
+      "size": 23578,
+      "mtime_ns": 1783864339786497685
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260224/IF2609_20260224.feather": {
+      "size": 23026,
+      "mtime_ns": 1783864378819006786
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260225/IF2609_20260225.feather": {
+      "size": 23578,
+      "mtime_ns": 1783864408979399288
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260226/IF2609_20260226.feather": {
+      "size": 23234,
+      "mtime_ns": 1783864425355612101
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260227/IF2609_20260227.feather": {
+      "size": 23250,
+      "mtime_ns": 1783864451159947021
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260302/IF2609_20260302.feather": {
+      "size": 23698,
+      "mtime_ns": 1783864537573065200
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260303/IF2609_20260303.feather": {
+      "size": 23882,
+      "mtime_ns": 1783864558133330542
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260304/IF2609_20260304.feather": {
+      "size": 23746,
+      "mtime_ns": 1783864579061600377
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260305/IF2609_20260305.feather": {
+      "size": 23434,
+      "mtime_ns": 1783864607173962449
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260306/IF2609_20260306.feather": {
+      "size": 23426,
+      "mtime_ns": 1783864642870421594
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260309/IF2609_20260309.feather": {
+      "size": 23850,
+      "mtime_ns": 1783864656326594505
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260310/IF2609_20260310.feather": {
+      "size": 23306,
+      "mtime_ns": 1783864730535546564
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260311/IF2609_20260311.feather": {
+      "size": 23234,
+      "mtime_ns": 1783864746155746655
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260312/IF2609_20260312.feather": {
+      "size": 23498,
+      "mtime_ns": 1783864791508327056
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260313/IF2609_20260313.feather": {
+      "size": 23578,
+      "mtime_ns": 1783864813880613079
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260316/IF2609_20260316.feather": {
+      "size": 23778,
+      "mtime_ns": 1783864856402854917
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260317/IF2609_20260317.feather": {
+      "size": 23882,
+      "mtime_ns": 1783864893201004408
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260318/IF2609_20260318.feather": {
+      "size": 23586,
+      "mtime_ns": 1783864907268159991
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260319/IF2609_20260319.feather": {
+      "size": 23810,
+      "mtime_ns": 1783864942612970254
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260320/IF2609_20260320.feather": {
+      "size": 23786,
+      "mtime_ns": 1783864979158722206
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260323/IF2609_20260323.feather": {
+      "size": 24058,
+      "mtime_ns": 1783864997969912386
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260324/IF2609_20260324.feather": {
+      "size": 23674,
+      "mtime_ns": 1783865054777046712
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260325/IF2609_20260325.feather": {
+      "size": 23458,
+      "mtime_ns": 1783865084823120398
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260326/IF2609_20260326.feather": {
+      "size": 23674,
+      "mtime_ns": 1783865101919984692
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260327/IF2609_20260327.feather": {
+      "size": 23642,
+      "mtime_ns": 1783865136098178679
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260330/IF2609_20260330.feather": {
+      "size": 23450,
+      "mtime_ns": 1783865155271167974
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260331/IF2609_20260331.feather": {
+      "size": 23602,
+      "mtime_ns": 1783865188722293564
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260401/IF2609_20260401.feather": {
+      "size": 23466,
+      "mtime_ns": 1783865239571690157
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260402/IF2609_20260402.feather": {
+      "size": 23578,
+      "mtime_ns": 1783865249162541009
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260403/IF2609_20260403.feather": {
+      "size": 23426,
+      "mtime_ns": 1783865280522972822
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260407/IF2609_20260407.feather": {
+      "size": 23322,
+      "mtime_ns": 1783865308492014105
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260408/IF2609_20260408.feather": {
+      "size": 23650,
+      "mtime_ns": 1783865331101760733
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260409/IF2609_20260409.feather": {
+      "size": 23162,
+      "mtime_ns": 1783865367158396002
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260410/IF2609_20260410.feather": {
+      "size": 23714,
+      "mtime_ns": 1783865405111122287
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260413/IF2609_20260413.feather": {
+      "size": 23218,
+      "mtime_ns": 1783865440912252437
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260414/IF2609_20260414.feather": {
+      "size": 23578,
+      "mtime_ns": 1783865451823415482
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260415/IF2609_20260415.feather": {
+      "size": 23490,
+      "mtime_ns": 1783865493908334199
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260416/IF2609_20260416.feather": {
+      "size": 23402,
+      "mtime_ns": 1783865512495041043
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260417/IF2609_20260417.feather": {
+      "size": 23354,
+      "mtime_ns": 1783865541925068813
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260420/IF2609_20260420.feather": {
+      "size": 23442,
+      "mtime_ns": 1783865617324375914
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260421/IF2609_20260421.feather": {
+      "size": 23386,
+      "mtime_ns": 1783865661829806034
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260422/IF2609_20260422.feather": {
+      "size": 23554,
+      "mtime_ns": 1783865668001459576
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260423/IF2609_20260423.feather": {
+      "size": 23778,
+      "mtime_ns": 1783865733837892998
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260424/IF2609_20260424.feather": {
+      "size": 23626,
+      "mtime_ns": 1783865858399650220
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260427/IF2609_20260427.feather": {
+      "size": 23346,
+      "mtime_ns": 1783865914179632530
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260428/IF2609_20260428.feather": {
+      "size": 23354,
+      "mtime_ns": 1783865971140484442
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260429/IF2609_20260429.feather": {
+      "size": 23650,
+      "mtime_ns": 1783866014520934578
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260430/IF2609_20260430.feather": {
+      "size": 23338,
+      "mtime_ns": 1783866033349080517
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260506/IF2609_20260506.feather": {
+      "size": 23610,
+      "mtime_ns": 1783866067001271342
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260507/IF2609_20260507.feather": {
+      "size": 23426,
+      "mtime_ns": 1783866081981328642
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260508/IF2609_20260508.feather": {
+      "size": 23506,
+      "mtime_ns": 1783866115469398356
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260511/IF2609_20260511.feather": {
+      "size": 23954,
+      "mtime_ns": 1783866154973382662
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260512/IF2609_20260512.feather": {
+      "size": 23482,
+      "mtime_ns": 1783866161177371047
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260513/IF2609_20260513.feather": {
+      "size": 23818,
+      "mtime_ns": 1783866201369238951
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260514/IF2609_20260514.feather": {
+      "size": 23914,
+      "mtime_ns": 1783866213573180071
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260515/IF2609_20260515.feather": {
+      "size": 24114,
+      "mtime_ns": 1783866241369014991
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260518/IF2609_20260518.feather": {
+      "size": 23706,
+      "mtime_ns": 1783866252880934435
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260519/IF2609_20260519.feather": {
+      "size": 23890,
+      "mtime_ns": 1783866279376723027
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260520/IF2609_20260520.feather": {
+      "size": 23778,
+      "mtime_ns": 1783866293396596995
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260521/IF2609_20260521.feather": {
+      "size": 24090,
+      "mtime_ns": 1783866332268198847
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260522/IF2609_20260522.feather": {
+      "size": 23754,
+      "mtime_ns": 1783866337580139084
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260525/IF2609_20260525.feather": {
+      "size": 23730,
+      "mtime_ns": 1783866370583740354
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260526/IF2609_20260526.feather": {
+      "size": 23842,
+      "mtime_ns": 1783866393907431200
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260527/IF2609_20260527.feather": {
+      "size": 23962,
+      "mtime_ns": 1783866415671123287
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260528/IF2609_20260528.feather": {
+      "size": 23962,
+      "mtime_ns": 1783866453474546194
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260529/IF2609_20260529.feather": {
+      "size": 24042,
+      "mtime_ns": 1783866471474253500
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260601/IF2609_20260601.feather": {
+      "size": 23890,
+      "mtime_ns": 1783866504969679807
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260602/IF2609_20260602.feather": {
+      "size": 24058,
+      "mtime_ns": 1783866529277240966
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260603/IF2609_20260603.feather": {
+      "size": 23922,
+      "mtime_ns": 1783866562772607033
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260604/IF2609_20260604.feather": {
+      "size": 23746,
+      "mtime_ns": 1783866582976209098
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260605/IF2609_20260605.feather": {
+      "size": 24050,
+      "mtime_ns": 1783866600971845241
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260608/IF2609_20260608.feather": {
+      "size": 24042,
+      "mtime_ns": 1783866620671437142
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260609/IF2609_20260609.feather": {
+      "size": 23914,
+      "mtime_ns": 1783866648774837987
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260610/IF2609_20260610.feather": {
+      "size": 23890,
+      "mtime_ns": 1783866678274188662
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260611/IF2609_20260611.feather": {
+      "size": 23970,
+      "mtime_ns": 1783866717577293050
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260612/IF2609_20260612.feather": {
+      "size": 23906,
+      "mtime_ns": 1783866729673010772
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260615/IF2609_20260615.feather": {
+      "size": 23890,
+      "mtime_ns": 1783866752472470593
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260616/IF2609_20260616.feather": {
+      "size": 23714,
+      "mtime_ns": 1783866791271528129
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260617/IF2609_20260617.feather": {
+      "size": 23866,
+      "mtime_ns": 1783866819374828248
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260618/IF2609_20260618.feather": {
+      "size": 24058,
+      "mtime_ns": 1783866843070227543
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260622/IF2609_20260622.feather": {
+      "size": 24162,
+      "mtime_ns": 1783866851674007118
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260623/IF2609_20260623.feather": {
+      "size": 24258,
+      "mtime_ns": 1783866888385053401
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260624/IF2609_20260624.feather": {
+      "size": 23914,
+      "mtime_ns": 1783866914272368593
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260625/IF2609_20260625.feather": {
+      "size": 24138,
+      "mtime_ns": 1783866939679687158
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260626/IF2609_20260626.feather": {
+      "size": 24162,
+      "mtime_ns": 1783866957075215511
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260629/IF2609_20260629.feather": {
+      "size": 24130,
+      "mtime_ns": 1783866991482271027
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260630/IF2609_20260630.feather": {
+      "size": 24018,
+      "mtime_ns": 1783867002877954954
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260701/IF2609_20260701.feather": {
+      "size": 24162,
+      "mtime_ns": 1784787149477026259
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260702/IF2609_20260702.feather": {
+      "size": 24050,
+      "mtime_ns": 1784787182272839053
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260703/IF2609_20260703.feather": {
+      "size": 24090,
+      "mtime_ns": 1784787205180709328
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260706/IF2609_20260706.feather": {
+      "size": 24058,
+      "mtime_ns": 1784787237780526109
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260707/IF2609_20260707.feather": {
+      "size": 24066,
+      "mtime_ns": 1784787254768431249
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260708/IF2609_20260708.feather": {
+      "size": 24050,
+      "mtime_ns": 1784787282672276307
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260709/IF2609_20260709.feather": {
+      "size": 24170,
+      "mtime_ns": 1784787304672154879
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260105/IH2603_20260105.feather": {
+      "size": 23938,
+      "mtime_ns": 1783863057675680298
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260106/IH2603_20260106.feather": {
+      "size": 24002,
+      "mtime_ns": 1783863074247981608
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260107/IH2603_20260107.feather": {
+      "size": 23738,
+      "mtime_ns": 1783863094892352840
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260108/IH2603_20260108.feather": {
+      "size": 23818,
+      "mtime_ns": 1783863187833972123
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260109/IH2603_20260109.feather": {
+      "size": 23794,
+      "mtime_ns": 1783863251555038460
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260112/IH2603_20260112.feather": {
+      "size": 23826,
+      "mtime_ns": 1783863297563788981
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260113/IH2603_20260113.feather": {
+      "size": 24018,
+      "mtime_ns": 1783863326172248160
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260114/IH2603_20260114.feather": {
+      "size": 24090,
+      "mtime_ns": 1783863356420727825
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260115/IH2603_20260115.feather": {
+      "size": 23794,
+      "mtime_ns": 1783863432965917079
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260116/IH2603_20260116.feather": {
+      "size": 23970,
+      "mtime_ns": 1783863477710597484
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260119/IH2603_20260119.feather": {
+      "size": 23866,
+      "mtime_ns": 1783863519243220279
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260120/IH2603_20260120.feather": {
+      "size": 23834,
+      "mtime_ns": 1783863554943749388
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260121/IH2603_20260121.feather": {
+      "size": 23826,
+      "mtime_ns": 1783863624612766856
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260122/IH2603_20260122.feather": {
+      "size": 23818,
+      "mtime_ns": 1783863707101948718
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260123/IH2603_20260123.feather": {
+      "size": 23802,
+      "mtime_ns": 1783863738538393346
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260126/IH2603_20260126.feather": {
+      "size": 23946,
+      "mtime_ns": 1783863783187019906
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260127/IH2603_20260127.feather": {
+      "size": 23970,
+      "mtime_ns": 1783863816203479758
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260128/IH2603_20260128.feather": {
+      "size": 23778,
+      "mtime_ns": 1783863824767598584
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260129/IH2603_20260129.feather": {
+      "size": 24074,
+      "mtime_ns": 1783863864792151555
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260130/IH2603_20260130.feather": {
+      "size": 23978,
+      "mtime_ns": 1783863950177319302
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260202/IH2603_20260202.feather": {
+      "size": 24146,
+      "mtime_ns": 1783863980281727519
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260203/IH2603_20260203.feather": {
+      "size": 23930,
+      "mtime_ns": 1783864022894302540
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260204/IH2603_20260204.feather": {
+      "size": 23882,
+      "mtime_ns": 1783864084239125036
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260205/IH2603_20260205.feather": {
+      "size": 23930,
+      "mtime_ns": 1783864146611955560
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260206/IH2603_20260206.feather": {
+      "size": 23722,
+      "mtime_ns": 1783864187060491364
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260209/IH2603_20260209.feather": {
+      "size": 23586,
+      "mtime_ns": 1783864236001137006
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260210/IH2603_20260210.feather": {
+      "size": 23322,
+      "mtime_ns": 1783864256001400077
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260211/IH2603_20260211.feather": {
+      "size": 23402,
+      "mtime_ns": 1783864283033754969
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260212/IH2603_20260212.feather": {
+      "size": 23226,
+      "mtime_ns": 1783864320574246599
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260213/IH2603_20260213.feather": {
+      "size": 23922,
+      "mtime_ns": 1783864363402805871
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260224/IH2603_20260224.feather": {
+      "size": 23386,
+      "mtime_ns": 1783864383827072012
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260225/IH2603_20260225.feather": {
+      "size": 23970,
+      "mtime_ns": 1783864394687213384
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260226/IH2603_20260226.feather": {
+      "size": 23650,
+      "mtime_ns": 1783864433771721390
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260227/IH2603_20260227.feather": {
+      "size": 23738,
+      "mtime_ns": 1783864455107998220
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260302/IH2603_20260302.feather": {
+      "size": 23978,
+      "mtime_ns": 1783864541513116068
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260303/IH2603_20260303.feather": {
+      "size": 24058,
+      "mtime_ns": 1783864572289513090
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260304/IH2603_20260304.feather": {
+      "size": 23970,
+      "mtime_ns": 1783864589373733243
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260305/IH2603_20260305.feather": {
+      "size": 23714,
+      "mtime_ns": 1783864620278131078
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260306/IH2603_20260306.feather": {
+      "size": 23682,
+      "mtime_ns": 1783864634390312578
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260309/IH2603_20260309.feather": {
+      "size": 23946,
+      "mtime_ns": 1783864664782703121
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260310/IH2603_20260310.feather": {
+      "size": 23522,
+      "mtime_ns": 1783864696691112668
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260311/IH2603_20260311.feather": {
+      "size": 23306,
+      "mtime_ns": 1783864775452121668
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260312/IH2603_20260312.feather": {
+      "size": 23770,
+      "mtime_ns": 1783864788552289251
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260313/IH2603_20260313.feather": {
+      "size": 23626,
+      "mtime_ns": 1783864820808701614
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260316/IH2603_20260316.feather": {
+      "size": 23802,
+      "mtime_ns": 1783864839460939895
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260317/IH2603_20260317.feather": {
+      "size": 23850,
+      "mtime_ns": 1783864889070472127
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260318/IH2603_20260318.feather": {
+      "size": 23666,
+      "mtime_ns": 1783864916493108093
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260319/IH2603_20260319.feather": {
+      "size": 23722,
+      "mtime_ns": 1783864936178908274
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260320/IH2603_20260320.feather": {
+      "size": 23514,
+      "mtime_ns": 1783864984889225321
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260105/IH2606_20260105.feather": {
+      "size": 23130,
+      "mtime_ns": 1783863047859500394
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260106/IH2606_20260106.feather": {
+      "size": 23218,
+      "mtime_ns": 1783863085564185653
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260107/IH2606_20260107.feather": {
+      "size": 22930,
+      "mtime_ns": 1783863107528577885
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260108/IH2606_20260108.feather": {
+      "size": 23194,
+      "mtime_ns": 1783863157157446569
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260109/IH2606_20260109.feather": {
+      "size": 23226,
+      "mtime_ns": 1783863250671023887
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260112/IH2606_20260112.feather": {
+      "size": 23234,
+      "mtime_ns": 1783863277439462589
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260113/IH2606_20260113.feather": {
+      "size": 23546,
+      "mtime_ns": 1783863309615983099
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260114/IH2606_20260114.feather": {
+      "size": 23714,
+      "mtime_ns": 1783863357028737408
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260115/IH2606_20260115.feather": {
+      "size": 22978,
+      "mtime_ns": 1783863406629511668
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260116/IH2606_20260116.feather": {
+      "size": 23650,
+      "mtime_ns": 1783863491670807728
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260119/IH2606_20260119.feather": {
+      "size": 23090,
+      "mtime_ns": 1783863534039440243
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260120/IH2606_20260120.feather": {
+      "size": 23154,
+      "mtime_ns": 1783863579792114479
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260121/IH2606_20260121.feather": {
+      "size": 23266,
+      "mtime_ns": 1783863625148774611
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260122/IH2606_20260122.feather": {
+      "size": 23130,
+      "mtime_ns": 1783863665421354415
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260123/IH2606_20260123.feather": {
+      "size": 23274,
+      "mtime_ns": 1783863723654183200
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260126/IH2606_20260126.feather": {
+      "size": 23514,
+      "mtime_ns": 1783863778298951581
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260127/IH2606_20260127.feather": {
+      "size": 23426,
+      "mtime_ns": 1783863804631318903
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260128/IH2606_20260128.feather": {
+      "size": 23090,
+      "mtime_ns": 1783863830563678900
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260129/IH2606_20260129.feather": {
+      "size": 23578,
+      "mtime_ns": 1783863873824275824
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260130/IH2606_20260130.feather": {
+      "size": 23530,
+      "mtime_ns": 1783863903292680005
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260202/IH2606_20260202.feather": {
+      "size": 23778,
+      "mtime_ns": 1783863978549704078
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260203/IH2606_20260203.feather": {
+      "size": 23474,
+      "mtime_ns": 1783864035430471112
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260204/IH2606_20260204.feather": {
+      "size": 23226,
+      "mtime_ns": 1783864101739358617
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260205/IH2606_20260205.feather": {
+      "size": 23282,
+      "mtime_ns": 1783864122495635085
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260206/IH2606_20260206.feather": {
+      "size": 23274,
+      "mtime_ns": 1783864171164281041
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260209/IH2606_20260209.feather": {
+      "size": 22874,
+      "mtime_ns": 1783864207580762415
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260210/IH2606_20260210.feather": {
+      "size": 22274,
+      "mtime_ns": 1783864261105467143
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260211/IH2606_20260211.feather": {
+      "size": 22482,
+      "mtime_ns": 1783864293433891308
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260212/IH2606_20260212.feather": {
+      "size": 22754,
+      "mtime_ns": 1783864306994068911
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260213/IH2606_20260213.feather": {
+      "size": 23466,
+      "mtime_ns": 1783864358126737062
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260224/IH2606_20260224.feather": {
+      "size": 22770,
+      "mtime_ns": 1783864383279064876
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260225/IH2606_20260225.feather": {
+      "size": 23682,
+      "mtime_ns": 1783864394839215362
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260226/IH2606_20260226.feather": {
+      "size": 23010,
+      "mtime_ns": 1783864435991750210
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260227/IH2606_20260227.feather": {
+      "size": 23210,
+      "mtime_ns": 1783864496592535538
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260302/IH2606_20260302.feather": {
+      "size": 23594,
+      "mtime_ns": 1783864521800861475
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260303/IH2606_20260303.feather": {
+      "size": 23842,
+      "mtime_ns": 1783864559173343957
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260304/IH2606_20260304.feather": {
+      "size": 23778,
+      "mtime_ns": 1783864588705724638
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260305/IH2606_20260305.feather": {
+      "size": 23506,
+      "mtime_ns": 1783864602085896950
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260306/IH2606_20260306.feather": {
+      "size": 23346,
+      "mtime_ns": 1783864630578263561
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260309/IH2606_20260309.feather": {
+      "size": 23706,
+      "mtime_ns": 1783864658746625593
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260310/IH2606_20260310.feather": {
+      "size": 23258,
+      "mtime_ns": 1783864735871614929
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260311/IH2606_20260311.feather": {
+      "size": 23090,
+      "mtime_ns": 1783864773868101401
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260312/IH2606_20260312.feather": {
+      "size": 23570,
+      "mtime_ns": 1783864785436249394
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260313/IH2606_20260313.feather": {
+      "size": 23378,
+      "mtime_ns": 1783864813876613027
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260316/IH2606_20260316.feather": {
+      "size": 23842,
+      "mtime_ns": 1783864840008946893
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260317/IH2606_20260317.feather": {
+      "size": 23866,
+      "mtime_ns": 1783864886995217503
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260318/IH2606_20260318.feather": {
+      "size": 23754,
+      "mtime_ns": 1783864902957619470
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260319/IH2606_20260319.feather": {
+      "size": 23906,
+      "mtime_ns": 1783864950326701526
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260320/IH2606_20260320.feather": {
+      "size": 23850,
+      "mtime_ns": 1783864958792278465
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260323/IH2606_20260323.feather": {
+      "size": 24122,
+      "mtime_ns": 1783864994850689566
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260324/IH2606_20260324.feather": {
+      "size": 23914,
+      "mtime_ns": 1783865042807566959
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260325/IH2606_20260325.feather": {
+      "size": 23634,
+      "mtime_ns": 1783865070445887355
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260326/IH2606_20260326.feather": {
+      "size": 23810,
+      "mtime_ns": 1783865108130885169
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260327/IH2606_20260327.feather": {
+      "size": 23778,
+      "mtime_ns": 1783865147516365655
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260330/IH2606_20260330.feather": {
+      "size": 23738,
+      "mtime_ns": 1783865181115362177
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260331/IH2606_20260331.feather": {
+      "size": 23866,
+      "mtime_ns": 1783865211103275850
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260401/IH2606_20260401.feather": {
+      "size": 23610,
+      "mtime_ns": 1783865227857133089
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260402/IH2606_20260402.feather": {
+      "size": 23730,
+      "mtime_ns": 1783865255265824333
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260403/IH2606_20260403.feather": {
+      "size": 23610,
+      "mtime_ns": 1783865301400745634
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260407/IH2606_20260407.feather": {
+      "size": 23634,
+      "mtime_ns": 1783865321082744782
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260408/IH2606_20260408.feather": {
+      "size": 23898,
+      "mtime_ns": 1783865349815981137
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260409/IH2606_20260409.feather": {
+      "size": 23498,
+      "mtime_ns": 1783865360814968935
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260410/IH2606_20260410.feather": {
+      "size": 23674,
+      "mtime_ns": 1783865395991885868
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260413/IH2606_20260413.feather": {
+      "size": 23450,
+      "mtime_ns": 1783865433176856072
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260414/IH2606_20260414.feather": {
+      "size": 23610,
+      "mtime_ns": 1783865447675731682
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260415/IH2606_20260415.feather": {
+      "size": 23506,
+      "mtime_ns": 1783865480977257393
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260416/IH2606_20260416.feather": {
+      "size": 23666,
+      "mtime_ns": 1783865523626284648
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260417/IH2606_20260417.feather": {
+      "size": 23506,
+      "mtime_ns": 1783865591117954132
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260420/IH2606_20260420.feather": {
+      "size": 23650,
+      "mtime_ns": 1783865632171503970
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260421/IH2606_20260421.feather": {
+      "size": 23546,
+      "mtime_ns": 1783865654782204472
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260422/IH2606_20260422.feather": {
+      "size": 23418,
+      "mtime_ns": 1783865673209168984
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260423/IH2606_20260423.feather": {
+      "size": 23938,
+      "mtime_ns": 1783865741525490424
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260424/IH2606_20260424.feather": {
+      "size": 23938,
+      "mtime_ns": 1783865842888399096
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260427/IH2606_20260427.feather": {
+      "size": 23586,
+      "mtime_ns": 1783865887619125338
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260428/IH2606_20260428.feather": {
+      "size": 23642,
+      "mtime_ns": 1783865957044302236
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260429/IH2606_20260429.feather": {
+      "size": 23802,
+      "mtime_ns": 1783865986308660453
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260430/IH2606_20260430.feather": {
+      "size": 23578,
+      "mtime_ns": 1783866030509060345
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260506/IH2606_20260506.feather": {
+      "size": 23818,
+      "mtime_ns": 1783866069685282824
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260507/IH2606_20260507.feather": {
+      "size": 23506,
+      "mtime_ns": 1783866095373366017
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260508/IH2606_20260508.feather": {
+      "size": 23642,
+      "mtime_ns": 1783866112877395759
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260511/IH2606_20260511.feather": {
+      "size": 23962,
+      "mtime_ns": 1783866139369401057
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260512/IH2606_20260512.feather": {
+      "size": 23618,
+      "mtime_ns": 1783866173369341261
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260513/IH2606_20260513.feather": {
+      "size": 23794,
+      "mtime_ns": 1783866183069311096
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260514/IH2606_20260514.feather": {
+      "size": 23906,
+      "mtime_ns": 1783866225369115191
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260515/IH2606_20260515.feather": {
+      "size": 24106,
+      "mtime_ns": 1783866229973087786
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260518/IH2606_20260518.feather": {
+      "size": 23786,
+      "mtime_ns": 1783866254772920528
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260519/IH2606_20260519.feather": {
+      "size": 23874,
+      "mtime_ns": 1783866287168654167
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260520/IH2606_20260520.feather": {
+      "size": 23746,
+      "mtime_ns": 1783866310576429678
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260521/IH2606_20260521.feather": {
+      "size": 24098,
+      "mtime_ns": 1783866332472196573
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260522/IH2606_20260522.feather": {
+      "size": 23754,
+      "mtime_ns": 1783866352887959943
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260525/IH2606_20260525.feather": {
+      "size": 23906,
+      "mtime_ns": 1783866378271640891
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260526/IH2606_20260526.feather": {
+      "size": 23754,
+      "mtime_ns": 1783866395995402461
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260527/IH2606_20260527.feather": {
+      "size": 24074,
+      "mtime_ns": 1783866434678839649
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260528/IH2606_20260528.feather": {
+      "size": 23786,
+      "mtime_ns": 1783866459578448196
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260529/IH2606_20260529.feather": {
+      "size": 23986,
+      "mtime_ns": 1783866485574016511
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260601/IH2606_20260601.feather": {
+      "size": 23818,
+      "mtime_ns": 1783866499569774767
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260602/IH2606_20260602.feather": {
+      "size": 23946,
+      "mtime_ns": 1783866527769268721
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260603/IH2606_20260603.feather": {
+      "size": 23938,
+      "mtime_ns": 1783866549576860701
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260604/IH2606_20260604.feather": {
+      "size": 23818,
+      "mtime_ns": 1783866572672413464
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260605/IH2606_20260605.feather": {
+      "size": 23914,
+      "mtime_ns": 1783866611879620516
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260608/IH2606_20260608.feather": {
+      "size": 24042,
+      "mtime_ns": 1783866639075046985
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260609/IH2606_20260609.feather": {
+      "size": 23802,
+      "mtime_ns": 1783866653874727194
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260610/IH2606_20260610.feather": {
+      "size": 23786,
+      "mtime_ns": 1783866673170302452
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260611/IH2606_20260611.feather": {
+      "size": 23762,
+      "mtime_ns": 1783866700077695980
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260612/IH2606_20260612.feather": {
+      "size": 23850,
+      "mtime_ns": 1783866743780677752
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260615/IH2606_20260615.feather": {
+      "size": 23754,
+      "mtime_ns": 1783866752276475281
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260616/IH2606_20260616.feather": {
+      "size": 23746,
+      "mtime_ns": 1783866780375795652
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260617/IH2606_20260617.feather": {
+      "size": 23738,
+      "mtime_ns": 1783866807675121311
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260618/IH2606_20260618.feather": {
+      "size": 23754,
+      "mtime_ns": 1783866841774260638
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260622/IH2606_20260622.feather": {
+      "size": 23714,
+      "mtime_ns": 1783866853277965893
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260119/IH2609_20260119.feather": {
+      "size": 22138,
+      "mtime_ns": 1783863516967186356
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260120/IH2609_20260120.feather": {
+      "size": 22186,
+      "mtime_ns": 1783863554915748975
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260121/IH2609_20260121.feather": {
+      "size": 22666,
+      "mtime_ns": 1783863628632824999
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260122/IH2609_20260122.feather": {
+      "size": 22514,
+      "mtime_ns": 1783863664433340258
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260123/IH2609_20260123.feather": {
+      "size": 22826,
+      "mtime_ns": 1783863739930412966
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260126/IH2609_20260126.feather": {
+      "size": 22802,
+      "mtime_ns": 1783863781867001461
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260127/IH2609_20260127.feather": {
+      "size": 22818,
+      "mtime_ns": 1783863807627360581
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260128/IH2609_20260128.feather": {
+      "size": 22466,
+      "mtime_ns": 1783863829371662389
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260129/IH2609_20260129.feather": {
+      "size": 23034,
+      "mtime_ns": 1783863865356159321
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260130/IH2609_20260130.feather": {
+      "size": 22978,
+      "mtime_ns": 1783863898052608271
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260202/IH2609_20260202.feather": {
+      "size": 23490,
+      "mtime_ns": 1783863959833450425
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260203/IH2609_20260203.feather": {
+      "size": 23098,
+      "mtime_ns": 1783863999781991054
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260204/IH2609_20260204.feather": {
+      "size": 22738,
+      "mtime_ns": 1783864072750971454
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260205/IH2609_20260205.feather": {
+      "size": 22874,
+      "mtime_ns": 1783864148767984173
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260206/IH2609_20260206.feather": {
+      "size": 22810,
+      "mtime_ns": 1783864188312507917
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260209/IH2609_20260209.feather": {
+      "size": 22114,
+      "mtime_ns": 1783864233321101721
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260210/IH2609_20260210.feather": {
+      "size": 21714,
+      "mtime_ns": 1783864241169205025
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260211/IH2609_20260211.feather": {
+      "size": 21722,
+      "mtime_ns": 1783864273569630806
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260212/IH2609_20260212.feather": {
+      "size": 22202,
+      "mtime_ns": 1783864322838276206
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260213/IH2609_20260213.feather": {
+      "size": 23018,
+      "mtime_ns": 1783864355682705180
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260224/IH2609_20260224.feather": {
+      "size": 22506,
+      "mtime_ns": 1783864385635095554
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260225/IH2609_20260225.feather": {
+      "size": 23170,
+      "mtime_ns": 1783864405423353048
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260226/IH2609_20260226.feather": {
+      "size": 22418,
+      "mtime_ns": 1783864439547796366
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260227/IH2609_20260227.feather": {
+      "size": 22890,
+      "mtime_ns": 1783864483268363089
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260302/IH2609_20260302.feather": {
+      "size": 23170,
+      "mtime_ns": 1783864540453102384
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260303/IH2609_20260303.feather": {
+      "size": 23298,
+      "mtime_ns": 1783864560513361242
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260304/IH2609_20260304.feather": {
+      "size": 23490,
+      "mtime_ns": 1783864586197692328
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260305/IH2609_20260305.feather": {
+      "size": 23074,
+      "mtime_ns": 1783864610574006211
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260306/IH2609_20260306.feather": {
+      "size": 22938,
+      "mtime_ns": 1783864631882280329
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260309/IH2609_20260309.feather": {
+      "size": 23130,
+      "mtime_ns": 1783864654242567731
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260310/IH2609_20260310.feather": {
+      "size": 22442,
+      "mtime_ns": 1783864730203542310
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260311/IH2609_20260311.feather": {
+      "size": 22290,
+      "mtime_ns": 1783864740907679440
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260312/IH2609_20260312.feather": {
+      "size": 22962,
+      "mtime_ns": 1783864798252413296
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260313/IH2609_20260313.feather": {
+      "size": 22610,
+      "mtime_ns": 1783864825396760238
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260316/IH2609_20260316.feather": {
+      "size": 23114,
+      "mtime_ns": 1783864842684981069
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260317/IH2609_20260317.feather": {
+      "size": 23378,
+      "mtime_ns": 1783864882316917856
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260318/IH2609_20260318.feather": {
+      "size": 22986,
+      "mtime_ns": 1783864912970262064
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260319/IH2609_20260319.feather": {
+      "size": 23258,
+      "mtime_ns": 1783864947375562550
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260320/IH2609_20260320.feather": {
+      "size": 23242,
+      "mtime_ns": 1783864973980099498
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260323/IH2609_20260323.feather": {
+      "size": 23810,
+      "mtime_ns": 1783865007263643319
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260324/IH2609_20260324.feather": {
+      "size": 23410,
+      "mtime_ns": 1783865025727333128
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260325/IH2609_20260325.feather": {
+      "size": 23034,
+      "mtime_ns": 1783865083839305857
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260326/IH2609_20260326.feather": {
+      "size": 23202,
+      "mtime_ns": 1783865105231395932
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260327/IH2609_20260327.feather": {
+      "size": 23042,
+      "mtime_ns": 1783865139185682483
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260330/IH2609_20260330.feather": {
+      "size": 23130,
+      "mtime_ns": 1783865153543432514
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260331/IH2609_20260331.feather": {
+      "size": 23122,
+      "mtime_ns": 1783865206911827114
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260401/IH2609_20260401.feather": {
+      "size": 22906,
+      "mtime_ns": 1783865232668535102
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260402/IH2609_20260402.feather": {
+      "size": 23010,
+      "mtime_ns": 1783865266580524664
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260403/IH2609_20260403.feather": {
+      "size": 22858,
+      "mtime_ns": 1783865296253284398
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260407/IH2609_20260407.feather": {
+      "size": 22802,
+      "mtime_ns": 1783865304408433866
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260408/IH2609_20260408.feather": {
+      "size": 23498,
+      "mtime_ns": 1783865326670193234
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260409/IH2609_20260409.feather": {
+      "size": 22442,
+      "mtime_ns": 1783865367654351545
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260410/IH2609_20260410.feather": {
+      "size": 23298,
+      "mtime_ns": 1783865409070795017
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260413/IH2609_20260413.feather": {
+      "size": 22906,
+      "mtime_ns": 1783865415850240580
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260414/IH2609_20260414.feather": {
+      "size": 22770,
+      "mtime_ns": 1783865459162861719
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260415/IH2609_20260415.feather": {
+      "size": 22746,
+      "mtime_ns": 1783865481941187884
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260416/IH2609_20260416.feather": {
+      "size": 22914,
+      "mtime_ns": 1783865522958329660
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260417/IH2609_20260417.feather": {
+      "size": 22962,
+      "mtime_ns": 1783865584178380971
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260420/IH2609_20260420.feather": {
+      "size": 23114,
+      "mtime_ns": 1783865612792645157
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260421/IH2609_20260421.feather": {
+      "size": 22818,
+      "mtime_ns": 1783865651522389804
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260422/IH2609_20260422.feather": {
+      "size": 22770,
+      "mtime_ns": 1783865669029402091
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260423/IH2609_20260423.feather": {
+      "size": 23362,
+      "mtime_ns": 1783865759492559578
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260424/IH2609_20260424.feather": {
+      "size": 23394,
+      "mtime_ns": 1783865804002308877
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260427/IH2609_20260427.feather": {
+      "size": 23114,
+      "mtime_ns": 1783865912491602453
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260428/IH2609_20260428.feather": {
+      "size": 22882,
+      "mtime_ns": 1783865951640227506
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260429/IH2609_20260429.feather": {
+      "size": 23210,
+      "mtime_ns": 1783866001996821275
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260430/IH2609_20260430.feather": {
+      "size": 23170,
+      "mtime_ns": 1783866052125197791
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260506/IH2609_20260506.feather": {
+      "size": 23282,
+      "mtime_ns": 1783866066529269257
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260507/IH2609_20260507.feather": {
+      "size": 22938,
+      "mtime_ns": 1783866098569373046
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260508/IH2609_20260508.feather": {
+      "size": 23146,
+      "mtime_ns": 1783866121677402730
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260511/IH2609_20260511.feather": {
+      "size": 23562,
+      "mtime_ns": 1783866154269383822
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260512/IH2609_20260512.feather": {
+      "size": 23058,
+      "mtime_ns": 1783866159973373493
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260513/IH2609_20260513.feather": {
+      "size": 23450,
+      "mtime_ns": 1783866186589298747
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260514/IH2609_20260514.feather": {
+      "size": 23498,
+      "mtime_ns": 1783866226485108653
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260515/IH2609_20260515.feather": {
+      "size": 23858,
+      "mtime_ns": 1783866247472973146
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260518/IH2609_20260518.feather": {
+      "size": 23450,
+      "mtime_ns": 1783866267872819192
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260519/IH2609_20260519.feather": {
+      "size": 23498,
+      "mtime_ns": 1783866278272732543
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260520/IH2609_20260520.feather": {
+      "size": 23306,
+      "mtime_ns": 1783866300572528808
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260521/IH2609_20260521.feather": {
+      "size": 23762,
+      "mtime_ns": 1783866333684183039
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260522/IH2609_20260522.feather": {
+      "size": 23386,
+      "mtime_ns": 1783866342380084010
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260525/IH2609_20260525.feather": {
+      "size": 23514,
+      "mtime_ns": 1783866368179770959
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260526/IH2609_20260526.feather": {
+      "size": 23546,
+      "mtime_ns": 1783866391339466309
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260527/IH2609_20260527.feather": {
+      "size": 23722,
+      "mtime_ns": 1783866416371113081
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260528/IH2609_20260528.feather": {
+      "size": 23610,
+      "mtime_ns": 1783866453678542941
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260529/IH2609_20260529.feather": {
+      "size": 23706,
+      "mtime_ns": 1783866472074243555
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260601/IH2609_20260601.feather": {
+      "size": 23506,
+      "mtime_ns": 1783866512373548089
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260602/IH2609_20260602.feather": {
+      "size": 23586,
+      "mtime_ns": 1783866537669085254
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260603/IH2609_20260603.feather": {
+      "size": 23562,
+      "mtime_ns": 1783866546676915772
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260604/IH2609_20260604.feather": {
+      "size": 23610,
+      "mtime_ns": 1783866570076464491
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260605/IH2609_20260605.feather": {
+      "size": 23722,
+      "mtime_ns": 1783866608075699238
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260608/IH2609_20260608.feather": {
+      "size": 23826,
+      "mtime_ns": 1783866637871072765
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260609/IH2609_20260609.feather": {
+      "size": 23402,
+      "mtime_ns": 1783866649274827153
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260610/IH2609_20260610.feather": {
+      "size": 23594,
+      "mtime_ns": 1783866672370320232
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260611/IH2609_20260611.feather": {
+      "size": 23474,
+      "mtime_ns": 1783866704669590886
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260612/IH2609_20260612.feather": {
+      "size": 23834,
+      "mtime_ns": 1783866733176928438
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260615/IH2609_20260615.feather": {
+      "size": 23850,
+      "mtime_ns": 1783866754572420319
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260616/IH2609_20260616.feather": {
+      "size": 23706,
+      "mtime_ns": 1783866793679468713
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260617/IH2609_20260617.feather": {
+      "size": 23650,
+      "mtime_ns": 1783866821070785571
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260618/IH2609_20260618.feather": {
+      "size": 23834,
+      "mtime_ns": 1783866846494139967
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260622/IH2609_20260622.feather": {
+      "size": 24146,
+      "mtime_ns": 1783866853873950565
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260623/IH2609_20260623.feather": {
+      "size": 24154,
+      "mtime_ns": 1783866876469365253
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260624/IH2609_20260624.feather": {
+      "size": 23682,
+      "mtime_ns": 1783866898168795747
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260625/IH2609_20260625.feather": {
+      "size": 24002,
+      "mtime_ns": 1783866924776087973
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260626/IH2609_20260626.feather": {
+      "size": 24050,
+      "mtime_ns": 1783866957779196338
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260629/IH2609_20260629.feather": {
+      "size": 24082,
+      "mtime_ns": 1783866979474602346
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260630/IH2609_20260630.feather": {
+      "size": 23794,
+      "mtime_ns": 1783867004369913456
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260701/IH2609_20260701.feather": {
+      "size": 24082,
+      "mtime_ns": 1784787145873046942
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260702/IH2609_20260702.feather": {
+      "size": 24034,
+      "mtime_ns": 1784787179372855535
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260703/IH2609_20260703.feather": {
+      "size": 23842,
+      "mtime_ns": 1784787194572769297
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260706/IH2609_20260706.feather": {
+      "size": 23866,
+      "mtime_ns": 1784787239380517157
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260707/IH2609_20260707.feather": {
+      "size": 23938,
+      "mtime_ns": 1784787250072457430
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260708/IH2609_20260708.feather": {
+      "size": 23986,
+      "mtime_ns": 1784787272768331180
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260709/IH2609_20260709.feather": {
+      "size": 24154,
+      "mtime_ns": 1784787302368167567
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260105/IM2603_20260105.feather": {
+      "size": 24130,
+      "mtime_ns": 1783863053307600376
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260106/IM2603_20260106.feather": {
+      "size": 24178,
+      "mtime_ns": 1783863079776081457
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260107/IM2603_20260107.feather": {
+      "size": 24034,
+      "mtime_ns": 1783863120776812105
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260108/IM2603_20260108.feather": {
+      "size": 24138,
+      "mtime_ns": 1783863163005547409
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260109/IM2603_20260109.feather": {
+      "size": 24306,
+      "mtime_ns": 1783863229122666789
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260112/IM2603_20260112.feather": {
+      "size": 24634,
+      "mtime_ns": 1783863284583578787
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260113/IM2603_20260113.feather": {
+      "size": 24498,
+      "mtime_ns": 1783863319576142777
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260114/IM2603_20260114.feather": {
+      "size": 24746,
+      "mtime_ns": 1783863373064989324
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260115/IM2603_20260115.feather": {
+      "size": 24210,
+      "mtime_ns": 1783863432105903899
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260116/IM2603_20260116.feather": {
+      "size": 24362,
+      "mtime_ns": 1783863481878660355
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260119/IM2603_20260119.feather": {
+      "size": 24458,
+      "mtime_ns": 1783863522467268291
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260120/IM2603_20260120.feather": {
+      "size": 24362,
+      "mtime_ns": 1783863560999838603
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260121/IM2603_20260121.feather": {
+      "size": 24546,
+      "mtime_ns": 1783863636860943823
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260122/IM2603_20260122.feather": {
+      "size": 24394,
+      "mtime_ns": 1783863669449412098
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260123/IM2603_20260123.feather": {
+      "size": 24682,
+      "mtime_ns": 1783863723378179297
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260126/IM2603_20260126.feather": {
+      "size": 24722,
+      "mtime_ns": 1783863768250810924
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260127/IM2603_20260127.feather": {
+      "size": 24682,
+      "mtime_ns": 1783863796515205882
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260128/IM2603_20260128.feather": {
+      "size": 24570,
+      "mtime_ns": 1783863826475622260
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260129/IM2603_20260129.feather": {
+      "size": 24722,
+      "mtime_ns": 1783863885860441139
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260130/IM2603_20260130.feather": {
+      "size": 24666,
+      "mtime_ns": 1783863947869287933
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260202/IM2603_20260202.feather": {
+      "size": 24426,
+      "mtime_ns": 1783863985201794076
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260203/IM2603_20260203.feather": {
+      "size": 24402,
+      "mtime_ns": 1783864041526552992
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260204/IM2603_20260204.feather": {
+      "size": 24250,
+      "mtime_ns": 1783864102423367737
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260205/IM2603_20260205.feather": {
+      "size": 24282,
+      "mtime_ns": 1783864153364045148
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260206/IM2603_20260206.feather": {
+      "size": 24330,
+      "mtime_ns": 1783864198300639897
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260209/IM2603_20260209.feather": {
+      "size": 24450,
+      "mtime_ns": 1783864225945004567
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260210/IM2603_20260210.feather": {
+      "size": 24434,
+      "mtime_ns": 1783864250245324410
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260211/IM2603_20260211.feather": {
+      "size": 24490,
+      "mtime_ns": 1783864273309627393
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260212/IM2603_20260212.feather": {
+      "size": 24610,
+      "mtime_ns": 1783864315870185069
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260213/IM2603_20260213.feather": {
+      "size": 24514,
+      "mtime_ns": 1783864350766641034
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260224/IM2603_20260224.feather": {
+      "size": 24682,
+      "mtime_ns": 1783864380187024605
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260225/IM2603_20260225.feather": {
+      "size": 24546,
+      "mtime_ns": 1783864411903437302
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260226/IM2603_20260226.feather": {
+      "size": 24474,
+      "mtime_ns": 1783864443235844225
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260227/IM2603_20260227.feather": {
+      "size": 24546,
+      "mtime_ns": 1783864460112063098
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260302/IM2603_20260302.feather": {
+      "size": 24706,
+      "mtime_ns": 1783864520000838215
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260303/IM2603_20260303.feather": {
+      "size": 24722,
+      "mtime_ns": 1783864572073510306
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260304/IM2603_20260304.feather": {
+      "size": 24354,
+      "mtime_ns": 1783864583741660685
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260305/IM2603_20260305.feather": {
+      "size": 24210,
+      "mtime_ns": 1783864605701943502
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260306/IM2603_20260306.feather": {
+      "size": 24450,
+      "mtime_ns": 1783864635598328110
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260309/IM2603_20260309.feather": {
+      "size": 24490,
+      "mtime_ns": 1783864650902524817
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260310/IM2603_20260310.feather": {
+      "size": 24530,
+      "mtime_ns": 1783864703075194552
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260311/IM2603_20260311.feather": {
+      "size": 24466,
+      "mtime_ns": 1783864746439750292
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260312/IM2603_20260312.feather": {
+      "size": 24578,
+      "mtime_ns": 1783864786836267302
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260313/IM2603_20260313.feather": {
+      "size": 24658,
+      "mtime_ns": 1783864815116628874
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260316/IM2603_20260316.feather": {
+      "size": 24282,
+      "mtime_ns": 1783864848757058607
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260317/IM2603_20260317.feather": {
+      "size": 24314,
+      "mtime_ns": 1783864885043923325
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260318/IM2603_20260318.feather": {
+      "size": 24186,
+      "mtime_ns": 1783864911990585481
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260319/IM2603_20260319.feather": {
+      "size": 24266,
+      "mtime_ns": 1783864936178908274
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260320/IM2603_20260320.feather": {
+      "size": 24138,
+      "mtime_ns": 1783864986088915503
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260105/IM2606_20260105.feather": {
+      "size": 23938,
+      "mtime_ns": 1783863051671570386
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260106/IM2606_20260106.feather": {
+      "size": 23850,
+      "mtime_ns": 1783863084180160771
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260107/IM2606_20260107.feather": {
+      "size": 23762,
+      "mtime_ns": 1783863125128888670
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260108/IM2606_20260108.feather": {
+      "size": 23922,
+      "mtime_ns": 1783863133825041108
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260109/IM2606_20260109.feather": {
+      "size": 24162,
+      "mtime_ns": 1783863251903044196
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260112/IM2606_20260112.feather": {
+      "size": 24250,
+      "mtime_ns": 1783863302671871376
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260113/IM2606_20260113.feather": {
+      "size": 24226,
+      "mtime_ns": 1783863317884115699
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260114/IM2606_20260114.feather": {
+      "size": 24402,
+      "mtime_ns": 1783863362952830653
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260115/IM2606_20260115.feather": {
+      "size": 24098,
+      "mtime_ns": 1783863396873360509
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260116/IM2606_20260116.feather": {
+      "size": 24018,
+      "mtime_ns": 1783863485926721334
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260119/IM2606_20260119.feather": {
+      "size": 23970,
+      "mtime_ns": 1783863531211398276
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260120/IM2606_20260120.feather": {
+      "size": 24146,
+      "mtime_ns": 1783863556895778160
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260121/IM2606_20260121.feather": {
+      "size": 24018,
+      "mtime_ns": 1783863618028671499
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260122/IM2606_20260122.feather": {
+      "size": 23730,
+      "mtime_ns": 1783863694677772155
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260123/IM2606_20260123.feather": {
+      "size": 24506,
+      "mtime_ns": 1783863726186218996
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260126/IM2606_20260126.feather": {
+      "size": 24290,
+      "mtime_ns": 1783863778218950462
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260127/IM2606_20260127.feather": {
+      "size": 24402,
+      "mtime_ns": 1783863814031449593
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260128/IM2606_20260128.feather": {
+      "size": 24370,
+      "mtime_ns": 1783863823827585550
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260129/IM2606_20260129.feather": {
+      "size": 24554,
+      "mtime_ns": 1783863883308406113
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260130/IM2606_20260130.feather": {
+      "size": 24250,
+      "mtime_ns": 1783863912420804824
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260202/IM2606_20260202.feather": {
+      "size": 24250,
+      "mtime_ns": 1783863969485581319
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260203/IM2606_20260203.feather": {
+      "size": 24146,
+      "mtime_ns": 1783864033742448429
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260204/IM2606_20260204.feather": {
+      "size": 24066,
+      "mtime_ns": 1783864059150789376
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260205/IM2606_20260205.feather": {
+      "size": 24146,
+      "mtime_ns": 1783864149095988525
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260206/IM2606_20260206.feather": {
+      "size": 24122,
+      "mtime_ns": 1783864171420284431
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260209/IM2606_20260209.feather": {
+      "size": 23802,
+      "mtime_ns": 1783864236809147643
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260210/IM2606_20260210.feather": {
+      "size": 23682,
+      "mtime_ns": 1783864267005544636
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260211/IM2606_20260211.feather": {
+      "size": 23674,
+      "mtime_ns": 1783864285577788330
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260212/IM2606_20260212.feather": {
+      "size": 23970,
+      "mtime_ns": 1783864305370047650
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260213/IM2606_20260213.feather": {
+      "size": 23986,
+      "mtime_ns": 1783864367694861828
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260224/IM2606_20260224.feather": {
+      "size": 24098,
+      "mtime_ns": 1783864379963021688
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260225/IM2606_20260225.feather": {
+      "size": 24346,
+      "mtime_ns": 1783864408255389874
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260226/IM2606_20260226.feather": {
+      "size": 24234,
+      "mtime_ns": 1783864439271792783
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260227/IM2606_20260227.feather": {
+      "size": 24466,
+      "mtime_ns": 1783864454187986290
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260302/IM2606_20260302.feather": {
+      "size": 24682,
+      "mtime_ns": 1783864514940772817
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260303/IM2606_20260303.feather": {
+      "size": 24378,
+      "mtime_ns": 1783864568485464047
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260304/IM2606_20260304.feather": {
+      "size": 24242,
+      "mtime_ns": 1783864580657620944
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260305/IM2606_20260305.feather": {
+      "size": 24122,
+      "mtime_ns": 1783864614270053776
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260306/IM2606_20260306.feather": {
+      "size": 23970,
+      "mtime_ns": 1783864632870293033
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260309/IM2606_20260309.feather": {
+      "size": 24386,
+      "mtime_ns": 1783864656798600569
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260310/IM2606_20260310.feather": {
+      "size": 24018,
+      "mtime_ns": 1783864726539495359
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260311/IM2606_20260311.feather": {
+      "size": 24002,
+      "mtime_ns": 1783864775780125865
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260312/IM2606_20260312.feather": {
+      "size": 24146,
+      "mtime_ns": 1783864784628239060
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260313/IM2606_20260313.feather": {
+      "size": 24186,
+      "mtime_ns": 1783864814480620747
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260316/IM2606_20260316.feather": {
+      "size": 24218,
+      "mtime_ns": 1783864861324897744
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260317/IM2606_20260317.feather": {
+      "size": 24290,
+      "mtime_ns": 1783864878230425775
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260318/IM2606_20260318.feather": {
+      "size": 24258,
+      "mtime_ns": 1783864904409125678
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260319/IM2606_20260319.feather": {
+      "size": 24362,
+      "mtime_ns": 1783864944568389550
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260320/IM2606_20260320.feather": {
+      "size": 24370,
+      "mtime_ns": 1783864971880664681
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260323/IM2606_20260323.feather": {
+      "size": 24450,
+      "mtime_ns": 1783864998625750075
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260324/IM2606_20260324.feather": {
+      "size": 24386,
+      "mtime_ns": 1783865048246409983
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260325/IM2606_20260325.feather": {
+      "size": 24218,
+      "mtime_ns": 1783865087206673380
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260326/IM2606_20260326.feather": {
+      "size": 24266,
+      "mtime_ns": 1783865094773275680
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260327/IM2606_20260327.feather": {
+      "size": 24346,
+      "mtime_ns": 1783865147680340045
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260330/IM2606_20260330.feather": {
+      "size": 24330,
+      "mtime_ns": 1783865164237815902
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260331/IM2606_20260331.feather": {
+      "size": 24306,
+      "mtime_ns": 1783865191385924665
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260401/IM2606_20260401.feather": {
+      "size": 24114,
+      "mtime_ns": 1783865220766028385
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260402/IM2606_20260402.feather": {
+      "size": 24274,
+      "mtime_ns": 1783865252914099152
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260403/IM2606_20260403.feather": {
+      "size": 24186,
+      "mtime_ns": 1783865298741023189
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260407/IM2606_20260407.feather": {
+      "size": 24202,
+      "mtime_ns": 1783865321638689602
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260408/IM2606_20260408.feather": {
+      "size": 24306,
+      "mtime_ns": 1783865334373444234
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260409/IM2606_20260409.feather": {
+      "size": 24042,
+      "mtime_ns": 1783865362890780589
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260410/IM2606_20260410.feather": {
+      "size": 24170,
+      "mtime_ns": 1783865391940229651
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260413/IM2606_20260413.feather": {
+      "size": 23914,
+      "mtime_ns": 1783865436048630950
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260414/IM2606_20260414.feather": {
+      "size": 24170,
+      "mtime_ns": 1783865473397807973
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260415/IM2606_20260415.feather": {
+      "size": 24090,
+      "mtime_ns": 1783865492864407996
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260416/IM2606_20260416.feather": {
+      "size": 24274,
+      "mtime_ns": 1783865513234990348
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260417/IM2606_20260417.feather": {
+      "size": 24210,
+      "mtime_ns": 1783865552440384899
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260420/IM2606_20260420.feather": {
+      "size": 24298,
+      "mtime_ns": 1783865624807934499
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260421/IM2606_20260421.feather": {
+      "size": 24122,
+      "mtime_ns": 1783865655842144353
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260422/IM2606_20260422.feather": {
+      "size": 24650,
+      "mtime_ns": 1783865694144016247
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260423/IM2606_20260423.feather": {
+      "size": 24570,
+      "mtime_ns": 1783865734889837753
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260424/IM2606_20260424.feather": {
+      "size": 24290,
+      "mtime_ns": 1783865837500660865
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260427/IM2606_20260427.feather": {
+      "size": 24418,
+      "mtime_ns": 1783865897363319925
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260428/IM2606_20260428.feather": {
+      "size": 24266,
+      "mtime_ns": 1783865972388499695
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260429/IM2606_20260429.feather": {
+      "size": 24498,
+      "mtime_ns": 1783866015292941136
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260430/IM2606_20260430.feather": {
+      "size": 24450,
+      "mtime_ns": 1783866055189214319
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260506/IM2606_20260506.feather": {
+      "size": 24522,
+      "mtime_ns": 1783866066505269151
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260507/IM2606_20260507.feather": {
+      "size": 24610,
+      "mtime_ns": 1783866096969369624
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260508/IM2606_20260508.feather": {
+      "size": 24594,
+      "mtime_ns": 1783866130773404460
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260511/IM2606_20260511.feather": {
+      "size": 24706,
+      "mtime_ns": 1783866144277396955
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260512/IM2606_20260512.feather": {
+      "size": 24538,
+      "mtime_ns": 1783866179901321572
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260513/IM2606_20260513.feather": {
+      "size": 24746,
+      "mtime_ns": 1783866185589302328
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260514/IM2606_20260514.feather": {
+      "size": 24722,
+      "mtime_ns": 1783866226525108417
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260515/IM2606_20260515.feather": {
+      "size": 24810,
+      "mtime_ns": 1783866240977017616
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260518/IM2606_20260518.feather": {
+      "size": 24658,
+      "mtime_ns": 1783866255272916822
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260519/IM2606_20260519.feather": {
+      "size": 24842,
+      "mtime_ns": 1783866290976619438
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260520/IM2606_20260520.feather": {
+      "size": 24602,
+      "mtime_ns": 1783866305868476919
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260521/IM2606_20260521.feather": {
+      "size": 24818,
+      "mtime_ns": 1783866324868279999
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260522/IM2606_20260522.feather": {
+      "size": 24738,
+      "mtime_ns": 1783866353671950493
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260525/IM2606_20260525.feather": {
+      "size": 24658,
+      "mtime_ns": 1783866376871659185
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260526/IM2606_20260526.feather": {
+      "size": 24706,
+      "mtime_ns": 1783866393371438547
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260527/IM2606_20260527.feather": {
+      "size": 24738,
+      "mtime_ns": 1783866420979045441
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260528/IM2606_20260528.feather": {
+      "size": 24730,
+      "mtime_ns": 1783866460286436747
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260529/IM2606_20260529.feather": {
+      "size": 24706,
+      "mtime_ns": 1783866471378255091
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260601/IM2606_20260601.feather": {
+      "size": 24738,
+      "mtime_ns": 1783866503169711563
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260602/IM2606_20260602.feather": {
+      "size": 24674,
+      "mtime_ns": 1783866519777414654
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260603/IM2606_20260603.feather": {
+      "size": 24634,
+      "mtime_ns": 1783866544868949983
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260604/IM2606_20260604.feather": {
+      "size": 24530,
+      "mtime_ns": 1783866578976288782
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260605/IM2606_20260605.feather": {
+      "size": 24746,
+      "mtime_ns": 1783866613271591614
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260608/IM2606_20260608.feather": {
+      "size": 24498,
+      "mtime_ns": 1783866639379040467
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260609/IM2606_20260609.feather": {
+      "size": 24314,
+      "mtime_ns": 1783866667794421659
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260610/IM2606_20260610.feather": {
+      "size": 24298,
+      "mtime_ns": 1783866674674268982
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260611/IM2606_20260611.feather": {
+      "size": 24218,
+      "mtime_ns": 1783866708973491973
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260612/IM2606_20260612.feather": {
+      "size": 24602,
+      "mtime_ns": 1783866734472897920
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260615/IM2606_20260615.feather": {
+      "size": 24442,
+      "mtime_ns": 1783866752268475472
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260616/IM2606_20260616.feather": {
+      "size": 24498,
+      "mtime_ns": 1783866787571619217
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260617/IM2606_20260617.feather": {
+      "size": 24530,
+      "mtime_ns": 1783866812271006475
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260618/IM2606_20260618.feather": {
+      "size": 24530,
+      "mtime_ns": 1783866842578240108
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260622/IM2606_20260622.feather": {
+      "size": 24682,
+      "mtime_ns": 1783866859473806257
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260119/IM2609_20260119.feather": {
+      "size": 23602,
+      "mtime_ns": 1783863525959320243
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260120/IM2609_20260120.feather": {
+      "size": 23930,
+      "mtime_ns": 1783863554915748975
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260121/IM2609_20260121.feather": {
+      "size": 23738,
+      "mtime_ns": 1783863614772624283
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260122/IM2609_20260122.feather": {
+      "size": 23490,
+      "mtime_ns": 1783863704645913852
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260123/IM2609_20260123.feather": {
+      "size": 24010,
+      "mtime_ns": 1783863740422419899
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260126/IM2609_20260126.feather": {
+      "size": 24114,
+      "mtime_ns": 1783863773326882015
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260127/IM2609_20260127.feather": {
+      "size": 24178,
+      "mtime_ns": 1783863813603443647
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260128/IM2609_20260128.feather": {
+      "size": 23850,
+      "mtime_ns": 1783863824983601578
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260129/IM2609_20260129.feather": {
+      "size": 24058,
+      "mtime_ns": 1783863867380187181
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260130/IM2609_20260130.feather": {
+      "size": 24130,
+      "mtime_ns": 1783863906804728049
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260202/IM2609_20260202.feather": {
+      "size": 24202,
+      "mtime_ns": 1783863978949709493
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260203/IM2609_20260203.feather": {
+      "size": 24042,
+      "mtime_ns": 1783864041886557825
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260204/IM2609_20260204.feather": {
+      "size": 23898,
+      "mtime_ns": 1783864100319339680
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260205/IM2609_20260205.feather": {
+      "size": 24034,
+      "mtime_ns": 1783864122775638810
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260206/IM2609_20260206.feather": {
+      "size": 24074,
+      "mtime_ns": 1783864193784580238
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260209/IM2609_20260209.feather": {
+      "size": 23650,
+      "mtime_ns": 1783864237173152434
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260210/IM2609_20260210.feather": {
+      "size": 23282,
+      "mtime_ns": 1783864261657474395
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260211/IM2609_20260211.feather": {
+      "size": 23402,
+      "mtime_ns": 1783864295629920082
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260212/IM2609_20260212.feather": {
+      "size": 23786,
+      "mtime_ns": 1783864307594076766
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260213/IM2609_20260213.feather": {
+      "size": 23898,
+      "mtime_ns": 1783864357270725896
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260224/IM2609_20260224.feather": {
+      "size": 23810,
+      "mtime_ns": 1783864387003113366
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260225/IM2609_20260225.feather": {
+      "size": 23714,
+      "mtime_ns": 1783864414035465015
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260226/IM2609_20260226.feather": {
+      "size": 23682,
+      "mtime_ns": 1783864431607693293
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260227/IM2609_20260227.feather": {
+      "size": 23746,
+      "mtime_ns": 1783864494060502775
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260302/IM2609_20260302.feather": {
+      "size": 24042,
+      "mtime_ns": 1783864533801016491
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260303/IM2609_20260303.feather": {
+      "size": 24258,
+      "mtime_ns": 1783864572317513451
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260304/IM2609_20260304.feather": {
+      "size": 23986,
+      "mtime_ns": 1783864579121601150
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260305/IM2609_20260305.feather": {
+      "size": 23922,
+      "mtime_ns": 1783864600789880264
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260306/IM2609_20260306.feather": {
+      "size": 23690,
+      "mtime_ns": 1783864630238259188
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260309/IM2609_20260309.feather": {
+      "size": 24186,
+      "mtime_ns": 1783864657874614391
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260310/IM2609_20260310.feather": {
+      "size": 23866,
+      "mtime_ns": 1783864724531469626
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260311/IM2609_20260311.feather": {
+      "size": 23754,
+      "mtime_ns": 1783864747787767555
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260312/IM2609_20260312.feather": {
+      "size": 23922,
+      "mtime_ns": 1783864782084206517
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260313/IM2609_20260313.feather": {
+      "size": 23898,
+      "mtime_ns": 1783864813872612976
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260316/IM2609_20260316.feather": {
+      "size": 24130,
+      "mtime_ns": 1783864861264921377
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260317/IM2609_20260317.feather": {
+      "size": 24098,
+      "mtime_ns": 1783864891329666820
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260318/IM2609_20260318.feather": {
+      "size": 23946,
+      "mtime_ns": 1783864901434140649
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260319/IM2609_20260319.feather": {
+      "size": 24138,
+      "mtime_ns": 1783864951274426819
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260320/IM2609_20260320.feather": {
+      "size": 24154,
+      "mtime_ns": 1783864986072919620
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260323/IM2609_20260323.feather": {
+      "size": 24290,
+      "mtime_ns": 1783865022196137722
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260324/IM2609_20260324.feather": {
+      "size": 24066,
+      "mtime_ns": 1783865032653781099
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260325/IM2609_20260325.feather": {
+      "size": 23962,
+      "mtime_ns": 1783865068310308928
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260326/IM2609_20260326.feather": {
+      "size": 24058,
+      "mtime_ns": 1783865100952157880
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260327/IM2609_20260327.feather": {
+      "size": 24010,
+      "mtime_ns": 1783865146028598453
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260330/IM2609_20260330.feather": {
+      "size": 24026,
+      "mtime_ns": 1783865180791408204
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260331/IM2609_20260331.feather": {
+      "size": 24178,
+      "mtime_ns": 1783865191341930734
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260401/IM2609_20260401.feather": {
+      "size": 23882,
+      "mtime_ns": 1783865240371593222
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260402/IM2609_20260402.feather": {
+      "size": 24098,
+      "mtime_ns": 1783865257133607211
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260403/IM2609_20260403.feather": {
+      "size": 23986,
+      "mtime_ns": 1783865301412744386
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260407/IM2609_20260407.feather": {
+      "size": 23914,
+      "mtime_ns": 1783865310359823442
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260408/IM2609_20260408.feather": {
+      "size": 24058,
+      "mtime_ns": 1783865334921391435
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260409/IM2609_20260409.feather": {
+      "size": 23802,
+      "mtime_ns": 1783865359139121600
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260410/IM2609_20260410.feather": {
+      "size": 23970,
+      "mtime_ns": 1783865408506841487
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260413/IM2609_20260413.feather": {
+      "size": 23586,
+      "mtime_ns": 1783865420373874678
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260414/IM2609_20260414.feather": {
+      "size": 23842,
+      "mtime_ns": 1783865471713931262
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260415/IM2609_20260415.feather": {
+      "size": 23874,
+      "mtime_ns": 1783865490780555687
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260416/IM2609_20260416.feather": {
+      "size": 23986,
+      "mtime_ns": 1783865517690686353
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260417/IM2609_20260417.feather": {
+      "size": 24050,
+      "mtime_ns": 1783865591705918150
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260420/IM2609_20260420.feather": {
+      "size": 23946,
+      "mtime_ns": 1783865625987865255
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260421/IM2609_20260421.feather": {
+      "size": 23858,
+      "mtime_ns": 1783865642754891591
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260422/IM2609_20260422.feather": {
+      "size": 23890,
+      "mtime_ns": 1783865674685086914
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260423/IM2609_20260423.feather": {
+      "size": 24082,
+      "mtime_ns": 1783865761564453108
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260424/IM2609_20260424.feather": {
+      "size": 24058,
+      "mtime_ns": 1783865842880399485
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260427/IM2609_20260427.feather": {
+      "size": 23738,
+      "mtime_ns": 1783865874938861219
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260428/IM2609_20260428.feather": {
+      "size": 24018,
+      "mtime_ns": 1783865945916145374
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260429/IM2609_20260429.feather": {
+      "size": 24026,
+      "mtime_ns": 1783865986368661108
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260430/IM2609_20260430.feather": {
+      "size": 23818,
+      "mtime_ns": 1783866046853167653
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260506/IM2609_20260506.feather": {
+      "size": 24426,
+      "mtime_ns": 1783866075881307304
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260507/IM2609_20260507.feather": {
+      "size": 24386,
+      "mtime_ns": 1783866093777362238
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260508/IM2609_20260508.feather": {
+      "size": 24274,
+      "mtime_ns": 1783866126869404396
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260511/IM2609_20260511.feather": {
+      "size": 24482,
+      "mtime_ns": 1783866152773386193
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260512/IM2609_20260512.feather": {
+      "size": 24250,
+      "mtime_ns": 1783866179693322235
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260513/IM2609_20260513.feather": {
+      "size": 24650,
+      "mtime_ns": 1783866190481284242
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260514/IM2609_20260514.feather": {
+      "size": 24634,
+      "mtime_ns": 1783866209877198800
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260515/IM2609_20260515.feather": {
+      "size": 24698,
+      "mtime_ns": 1783866242173009594
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260518/IM2609_20260518.feather": {
+      "size": 24570,
+      "mtime_ns": 1783866266572829637
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260519/IM2609_20260519.feather": {
+      "size": 24730,
+      "mtime_ns": 1783866276488747789
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260520/IM2609_20260520.feather": {
+      "size": 24482,
+      "mtime_ns": 1783866303268502558
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260521/IM2609_20260521.feather": {
+      "size": 24778,
+      "mtime_ns": 1783866317672356534
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260522/IM2609_20260522.feather": {
+      "size": 24578,
+      "mtime_ns": 1783866339672115206
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260525/IM2609_20260525.feather": {
+      "size": 24458,
+      "mtime_ns": 1783866359783875941
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260526/IM2609_20260526.feather": {
+      "size": 24634,
+      "mtime_ns": 1783866408571225746
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260527/IM2609_20260527.feather": {
+      "size": 24658,
+      "mtime_ns": 1783866421075044023
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260528/IM2609_20260528.feather": {
+      "size": 24506,
+      "mtime_ns": 1783866443074710135
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260529/IM2609_20260529.feather": {
+      "size": 24354,
+      "mtime_ns": 1783866468882296339
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260601/IM2609_20260601.feather": {
+      "size": 24282,
+      "mtime_ns": 1783866508773612349
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260602/IM2609_20260602.feather": {
+      "size": 24258,
+      "mtime_ns": 1783866524585327094
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260603/IM2609_20260603.feather": {
+      "size": 24442,
+      "mtime_ns": 1783866564216578971
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260604/IM2609_20260604.feather": {
+      "size": 23954,
+      "mtime_ns": 1783866588176104854
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260605/IM2609_20260605.feather": {
+      "size": 24298,
+      "mtime_ns": 1783866607075719871
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260608/IM2609_20260608.feather": {
+      "size": 24282,
+      "mtime_ns": 1783866641079003994
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260609/IM2609_20260609.feather": {
+      "size": 24074,
+      "mtime_ns": 1783866652470757755
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260610/IM2609_20260610.feather": {
+      "size": 24250,
+      "mtime_ns": 1783866682178101227
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260611/IM2609_20260611.feather": {
+      "size": 24138,
+      "mtime_ns": 1783866699569707576
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260612/IM2609_20260612.feather": {
+      "size": 24274,
+      "mtime_ns": 1783866729569013212
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260615/IM2609_20260615.feather": {
+      "size": 24290,
+      "mtime_ns": 1783866755168406037
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260616/IM2609_20260616.feather": {
+      "size": 24514,
+      "mtime_ns": 1783866787575619118
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260617/IM2609_20260617.feather": {
+      "size": 24642,
+      "mtime_ns": 1783866820774793022
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260618/IM2609_20260618.feather": {
+      "size": 24530,
+      "mtime_ns": 1783866830178555534
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260622/IM2609_20260622.feather": {
+      "size": 24746,
+      "mtime_ns": 1783866853873950565
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260623/IM2609_20260623.feather": {
+      "size": 24666,
+      "mtime_ns": 1783866872277474445
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260624/IM2609_20260624.feather": {
+      "size": 24634,
+      "mtime_ns": 1783866894272898516
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260625/IM2609_20260625.feather": {
+      "size": 24698,
+      "mtime_ns": 1783866940679660156
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260626/IM2609_20260626.feather": {
+      "size": 24762,
+      "mtime_ns": 1783866967226938416
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260629/IM2609_20260629.feather": {
+      "size": 24754,
+      "mtime_ns": 1783866992286248780
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260630/IM2609_20260630.feather": {
+      "size": 24666,
+      "mtime_ns": 1783867016081586784
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260701/IM2609_20260701.feather": {
+      "size": 24682,
+      "mtime_ns": 1784787144477054960
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260702/IM2609_20260702.feather": {
+      "size": 24706,
+      "mtime_ns": 1784787187476809511
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260703/IM2609_20260703.feather": {
+      "size": 24602,
+      "mtime_ns": 1784787200368736509
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260706/IM2609_20260706.feather": {
+      "size": 24682,
+      "mtime_ns": 1784787234276545727
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260707/IM2609_20260707.feather": {
+      "size": 24418,
+      "mtime_ns": 1784787261768392280
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260708/IM2609_20260708.feather": {
+      "size": 24274,
+      "mtime_ns": 1784787285376261348
+    },
+    "/workspace/data/temp_bomber1/ctp/kline/fut/20260709/IM2609_20260709.feather": {
+      "size": 24386,
+      "mtime_ns": 1784787312976109208
+    }
+  },
+  "paths": [],
+  "counters": {
+    "directory_scans": 1,
+    "feather_reads": 1089
+  },
+  "evidence": "file_size_and_mtime_not_content_hash"
+}

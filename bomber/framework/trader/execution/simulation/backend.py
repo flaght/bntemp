@@ -62,6 +62,10 @@ class NautilusSimExecutionBackend:
         self._finalized = False
         self._disposed = False
         self._result: Any = None
+        self._option_expiry_modules = []
+        self._option_last_trade_times = {}
+        self._settlement_end_ns = None
+        self._last_market_ns = 0
 
     @property
     def execution_timing(self) -> str:
@@ -109,18 +113,33 @@ class NautilusSimExecutionBackend:
         (destination / "commission_config.json").write_text(
             json.dumps(configs, ensure_ascii=False, indent=2, default=str) + "\n", encoding="utf-8")
 
-    def add_profile(self, profile: VenueSimulationProfilePort) -> None:
+    def add_profile(self, profile: VenueSimulationProfilePort, *, option_settlements=None,
+                    option_last_trade_times=None, settlement_end_ns=None) -> None:
         """注册交易场所Profile，并立即创建对应模拟Venue。"""
 
         self._ensure_configurable()
         venue_key = str(profile.venue)
         if venue_key in self._profiles:
             raise ValueError(f"模拟Venue已注册: {venue_key}")
-        self.engine.add_venue(**dict(profile.build_backend_config()))
+        config = dict(profile.build_backend_config())
+        if option_last_trade_times is not None:
+            from .option_expiry import OptionCashSettlementModule
+            module = OptionCashSettlementModule(self.backend_id, option_last_trade_times,
+                option_settlements or {}, self._receive_report,
+                lambda instrument_id: self._ensure_gateway().cancel_pending_orders(
+                    instrument_id=instrument_id, reason="option reached last trading time"))
+            config["modules"] = [*(config.get("modules") or []), module]
+            self._option_expiry_modules.append(module)
+            self._option_last_trade_times.update(option_last_trade_times)
+            self._settlement_end_ns = settlement_end_ns
+        self.engine.add_venue(**config)
         self._profiles[venue_key] = profile
 
     def add_instrument(self, instrument: Any) -> None:
         self._ensure_configurable()
+        if (getattr(instrument, "info", None) or {}).get("expiry_policy") == "CASH_SETTLEMENT":
+            if str(instrument.id) not in self._option_last_trade_times:
+                raise ValueError("CASH_SETTLEMENT option requires a registered settlement lifecycle")
         profile = self._profiles.get(str(instrument.id).rsplit(".", 1)[-1])
         validator = getattr(getattr(profile, "fee_model", None), "validate_instrument", None)
         if validator is not None:
@@ -170,6 +189,9 @@ class NautilusSimExecutionBackend:
         """
 
         self._ensure_runnable()
+        event_ns = int(getattr(event, "ts_init", event.ts_event))
+        if event_ns < self._last_market_ns:
+            raise ValueError("Historical market time cannot move backwards")
         report_offset = len(self._reports)
         self.start()
         if self.execution_timing == "next_market":
@@ -178,6 +200,7 @@ class NautilusSimExecutionBackend:
         self.engine.run(streaming=True)
         self.engine.clear_data()
         self._streaming = True
+        self._last_market_ns = event_ns
         return tuple(self._reports[report_offset:])
 
     def submit_order(self, order: OrderIntent) -> None:
@@ -186,6 +209,11 @@ class NautilusSimExecutionBackend:
             raise ValueError(
                 f"订单Backend不匹配: {order.backend_id} != {self.backend_id}",
             )
+        cutoff = self._option_last_trade_times.get(str(order.instrument_id))
+        clock_ns = self._gateway.clock.timestamp_ns() if self._gateway is not None else 0
+        if cutoff is not None and max(clock_ns, self._last_market_ns,
+                                     int(order.metadata.get("request_ts", 0))) >= cutoff:
+            raise RuntimeError(f"Option is past last trading time: {order.instrument_id}")
         gateway = self._ensure_gateway()
         gateway.enqueue(order)
 
@@ -215,6 +243,14 @@ class NautilusSimExecutionBackend:
         if self._disposed:
             raise RuntimeError("已释放的Backend不能结束运行")
         if self._streaming and not self._finalized:
+            if self._settlement_end_ns is not None and self._settlement_end_ns > self._last_market_ns:
+                from .option_expiry import settlement_clock
+                from bomber.model.identifiers import ClientId
+                self.engine.add_data([settlement_clock(self._settlement_end_ns)],
+                                     client_id=ClientId("OPTION-SETTLEMENT-CLOCK"))
+                self.engine.run(streaming=True)
+                self.engine.clear_data()
+                self._last_market_ns = self._settlement_end_ns
             # 没有后续本合约行情的意图不可用最后一根旧Bar补成交。
             self._gateway.cancel_pending_orders(reason="end of historical market data")
             self.engine.end()
@@ -222,6 +258,10 @@ class NautilusSimExecutionBackend:
             self._result = self.engine.get_result()
             self._started = False
         return self._result
+
+    @property
+    def option_settlement_records(self):
+        return tuple(record for module in self._option_expiry_modules for record in module.records)
 
     def stop(self) -> None:
         """结束流式运行并释放引擎；重复调用安全。"""

@@ -38,10 +38,13 @@ def make_profile_future(profile, *, symbol, product, tick, multiplier, listed,
     return contract, meta, multiplier
 
 
-def make_option(info, margin_init, margin_maint, index_code, *, kind="C", profile_id="OPTION_VEGA_BASIC"):
+def make_option(info, margin_init, margin_maint, index_code, *, kind="C", profile_id="OPTION_VEGA_BASIC",
+                expiry_policy="PRE_EXPIRY_FLAT"):
     """构造真实期权合约；默认认购，认沽调用方须显式传 kind='P'。"""
     if kind not in ("C", "P"):
         raise ValueError("Option kind must be C or P")
+    if expiry_policy not in {"PRE_EXPIRY_FLAT", "CASH_SETTLEMENT"}:
+        raise ValueError("Unknown option expiry policy")
     from bomber.model import Price, Quantity, Symbol
     from bomber.model.currencies import CNY
     from bomber.model.enums import AssetClass, OptionKind
@@ -55,9 +58,11 @@ def make_option(info, margin_init, margin_maint, index_code, *, kind="C", profil
         lot_size=Quantity.from_int(1), underlying=index_code,
         option_kind=OptionKind.CALL if kind == "C" else OptionKind.PUT,
         strike_price=Price.from_str(f"{info.strike:.{places}f}"),
-        activation_ns=day_ns(info.list_day), expiration_ns=day_ns(info.last_day, "15:00"),
+        activation_ns=day_ns(info.list_day),
+        expiration_ns=(2**63 - 1 if expiry_policy == "CASH_SETTLEMENT" else day_ns(info.last_day, "15:00")),
         margin_init=margin_init, margin_maint=margin_maint, ts_event=0, ts_init=0, exchange="CFFEX",
-        info={"profile": profile_id, "expiry_policy": "PRE_EXPIRY_FLAT"})
+        info={"profile": profile_id, "expiry_policy": expiry_policy,
+              "last_trade_ns": day_ns(info.last_day, "15:00")})
 
 
 def make_future(symbol, row, margin_init, margin_maint):

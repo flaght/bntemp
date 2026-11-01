@@ -121,14 +121,16 @@ class NautilusOrderGateway(Strategy):
             if native_order is not None and native_order.is_open:
                 self.cancel_order(native_order)
 
-    def cancel_pending_orders(self, *, strategy_id: str | None = None, reason: str) -> None:
+    def cancel_pending_orders(self, *, strategy_id: str | None = None, reason: str,
+                               instrument_id=None) -> None:
+        matches = lambda intent: ((strategy_id is None or intent.strategy_id == strategy_id)
+                                  and (instrument_id is None or intent.instrument_id == instrument_id))
         selected = [item for item in self._pending
-                    if strategy_id is None or item.intent.strategy_id == strategy_id]
-        self._pending = [item for item in self._pending
-                         if strategy_id is not None and item.intent.strategy_id != strategy_id]
+                    if matches(item.intent)]
+        self._pending = [item for item in self._pending if not matches(item.intent)]
         queued, self._queued = self._queued, []
         for intent, after_ts in queued:
-            if strategy_id is not None and intent.strategy_id != strategy_id:
+            if not matches(intent):
                 self._queued.append((intent, after_ts))
                 continue
             order = self._make_order(intent)

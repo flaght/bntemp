@@ -1,0 +1,152 @@
+{
+  "reference_net_mtm": {
+    "final_equity": 16387945.199999994,
+    "net_profit": 1387945.1999999937,
+    "total_return": 0.0925296799999995,
+    "MDD": -0.03510257275977491,
+    "MDD_day": "2026-03-06",
+    "annual_vol_252_calendar": 0.07976453181496901,
+    "Sharpe_zero_rf_252_calendar": 1.5931460636309462
+  },
+  "candidate_net_same_reference_marks": {
+    "final_equity": 16492178.559999999,
+    "net_profit": 1492178.5599999987,
+    "total_return": 0.09947857066666654,
+    "MDD": -0.03141067812435461,
+    "MDD_day": "2026-03-06",
+    "annual_vol_252_calendar": 0.07650509944049337,
+    "Sharpe_zero_rf_252_calendar": 1.773871838627284
+  },
+  "scope": {
+    "start": "2026-01-05",
+    "end": "2026-07-03",
+    "initial_capital": 15000000,
+    "valuation": "Reference NAV anchors the original marking; position differences use original snapshot prices, carried forward on missing days. Candidate curve is a common-valuation comparison, not its actual market-source NAV.",
+    "fees": "Actual exported fees; effective 1bp on both sides",
+    "returns": "Calendar daily, first day included against capital, sample std, annualization 252, zero risk-free rate"
+  },
+  "common_period_counts": {
+    "kd": {
+      "rows": 476,
+      "qty": 665.0,
+      "fees": 93381.44
+    },
+    "lxg": {
+      "rows": 371,
+      "qty": 665.0,
+      "fees": 93374.8
+    }
+  },
+  "positions_different_days": {
+    "2026-05-29": {
+      "IM2606.CFFEX": {
+        "delta_qty": -1.0,
+        "shared_mark": 8524.4,
+        "mark_observed_day": "2026-05-28"
+      },
+      "IH2606.CFFEX": {
+        "delta_qty": -1.0,
+        "shared_mark": 2890.4,
+        "mark_observed_day": "2026-05-28"
+      }
+    },
+    "2026-05-30": {
+      "IM2606.CFFEX": {
+        "delta_qty": -1.0,
+        "shared_mark": 8524.4,
+        "mark_observed_day": "2026-05-28"
+      },
+      "IH2606.CFFEX": {
+        "delta_qty": -1.0,
+        "shared_mark": 2890.4,
+        "mark_observed_day": "2026-05-28"
+      }
+    },
+    "2026-05-31": {
+      "IM2606.CFFEX": {
+        "delta_qty": -1.0,
+        "shared_mark": 8524.4,
+        "mark_observed_day": "2026-05-28"
+      },
+      "IH2606.CFFEX": {
+        "delta_qty": -1.0,
+        "shared_mark": 2890.4,
+        "mark_observed_day": "2026-05-28"
+      }
+    }
+  },
+  "carried_forward_marks_for_different_positions": [
+    {
+      "day": "2026-05-29",
+      "instrument": "IM2606.CFFEX",
+      "mark_observed_day": "2026-05-28"
+    },
+    {
+      "day": "2026-05-29",
+      "instrument": "IH2606.CFFEX",
+      "mark_observed_day": "2026-05-28"
+    },
+    {
+      "day": "2026-05-30",
+      "instrument": "IM2606.CFFEX",
+      "mark_observed_day": "2026-05-28"
+    },
+    {
+      "day": "2026-05-30",
+      "instrument": "IH2606.CFFEX",
+      "mark_observed_day": "2026-05-28"
+    },
+    {
+      "day": "2026-05-31",
+      "instrument": "IM2606.CFFEX",
+      "mark_observed_day": "2026-05-28"
+    },
+    {
+      "day": "2026-05-31",
+      "instrument": "IH2606.CFFEX",
+      "mark_observed_day": "2026-05-28"
+    }
+  ],
+  "net_profit_difference_breakdown": {
+    "aligned_trade_price_cashflow_effect": 72920.00000000763,
+    "two_trades_different_date_cashflow_effect": 31319.9999999961,
+    "total_execution_cashflow_effect": 104240.00000000373,
+    "fee_difference": 6.639999999984866,
+    "net_mtm_difference": 104233.36000000499
+  },
+  "current_cash": {
+    "Jul3": 16471878.56,
+    "Jul9": 16523318.61,
+    "extra_cash_profit_after_Jul3": 51440.04999999888
+  },
+  "original_internal_difference": {
+    "metrics_profit": 1464360,
+    "net_value_csv_profit": 1481319.9999999944,
+    "difference": 16959.999999994412
+  },
+  "input_sha256": {
+    "/Users/kerry/work/bomber1/pro/temp/cmp/kd/results/fills_output.csv": "d5629fe77e05a904b216e980c74be2430db255b50fd17793f9cc5c191cd51815",
+    "/Users/kerry/work/bomber1/pro/temp/cmp/lxg/results/fills_output.csv": "78aab997fdae16d9a3ef84f26e9a55f4866a264649ee0af846f189b3835de930",
+    "/Users/kerry/work/bomber1/pro/temp/cmp/lxg/results/net_value.csv": "992dd30494e75875e0fecd0da3b77871f1b448b9b39cf332737143b257bece0a",
+    "/Users/kerry/work/bomber1/pro/temp/cmp/lxg/results/positions_output.csv": "70cbd0ef45e3b22c0921e59eeef7e43332eba453638573d6a6d747206993d510",
+    "/Users/kerry/work/bomber1/pro/temp/cmp/kd/results/account.csv": "a53e33b41ed70a4d8d067056952d3006fd84877cbce0d84025ce9e40b8df3128",
+    "/Users/kerry/work/bomber1/pro/temp/cmp/kd/results/summary.json": "35459afa708f384597726f0878e0e8050547c6f23071d38e2ce84d919899869b",
+    "/Users/kerry/work/bomber1/pro/temp/cmp/lxg/results/trades.csv": "215aba68305b05ee8bf8b2e08c5a52fb68da2c7784ffb4ed551fd01f6f795ac9"
+  },
+  "common_realized_profit": {
+    "candidate_gross": 1565260.0,
+    "reference_gross": 1464360.0,
+    "candidate_net": 1471878.56,
+    "reference_net": 1370985.2,
+    "net_difference": 100893.36
+  },
+  "raw_report_cash_MDD": {
+    "candidate": -0.023699549655972763,
+    "reference_NAV_MDD": -0.03388631069398318
+  },
+  "validation_notes": {
+    "candidate_cash_reconciled_from_fills": "FIFO/weighted-average realized profit minus fees matches daily account balance within 0.00334 CNY; final exact to cent.",
+    "reference_NAV_reconstruction": "Using original position-snapshot prices, 179 of 180 calendar dates reconcile within 0.00001 CNY. Last day snapshots end at09:41 while NAV uses a later mark; net positions agree on that date, so shared-valuation equity difference is independent of the unknown absolute marks.",
+    "missing_May29": "Original fills, position snapshots and risk_metrics have no May29 records, and its NAV carries May28. Shared-valuation comparison carries May28 marks over May29-31."
+  }
+}
