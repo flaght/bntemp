@@ -1,11 +1,13 @@
 """真实网关/Backend的时序回归；SDK宿主替身只记录提交，不模拟原生撮合。"""
 
 from contextlib import contextmanager
+import gc
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 import sys
 from types import ModuleType, SimpleNamespace as NS
 import unittest
+import weakref
 from unittest.mock import patch
 
 
@@ -326,6 +328,42 @@ class SimulationMarketTimingTests(unittest.TestCase):
         self.assertEqual(len(self.engine.gateway.submissions), 1)
         self.assertEqual(self.engine.gateway.submissions[0][0], 100)
         self.assertEqual(self.engine.gateway.subscriptions, [])
+
+    def test_sequential_backends_keep_process_logger_alive_after_engine_disposal(self):
+        class Guard:
+            pass
+
+        class SingleInitEngine:
+            """复现 Rust 全局日志仅能注册一次、最后一个守卫释放后关闭的约束。"""
+            guard_ref = None
+            initializations = 0
+
+            def __init__(self, config):
+                if self.guard_ref is not None and self.guard_ref() is not None:
+                    self.guard = None  # 复用已初始化日志的引擎不拥有新守卫。
+                else:
+                    if type(self).initializations:
+                        raise RuntimeError("attempted to set a logger after it was already initialized")
+                    self.guard = Guard()
+                    type(self).guard_ref = weakref.ref(self.guard)
+                    type(self).initializations += 1
+
+            def get_log_guard(self):
+                return self.guard
+
+            def dispose(self):
+                self.guard = None
+
+        with patch.object(self.sdk.backend, "BacktestEngine", SingleInitEngine):
+            for number in range(3):
+                backend = self.sdk.backend.NautilusSimExecutionBackend(f"sequential-{number}")
+                engine_ref = weakref.ref(backend.engine)
+                backend.stop()
+                del backend
+                gc.collect()
+                self.assertIsNone(engine_ref())  # 只保留守卫，不延长引擎生命周期。
+                self.assertIsNotNone(SingleInitEngine.guard_ref())
+        self.assertEqual(SingleInitEngine.initializations, 1)
 
     def test_invalid_timing_is_rejected(self):
         with self.assertRaises(ValueError):

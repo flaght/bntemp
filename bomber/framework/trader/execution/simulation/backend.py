@@ -13,6 +13,11 @@ from bomber.framework.trader.execution.ports import VenueSimulationProfilePort
 from bomber.framework.trader.execution.simulation.gateway import NautilusOrderGateway
 
 
+# Rust 全局日志器不能在关闭后重新注册。保留首个引擎提供的公开日志守卫，
+# 让连续回测复用进程日志；不保留引擎，日志线程随进程结束统一关闭。
+_PROCESS_LOG_GUARD: Any = None
+
+
 class NautilusSimExecutionBackend:
     """统一拥有BacktestEngine及其配置、行情推进和释放过程。
 
@@ -53,6 +58,11 @@ class NautilusSimExecutionBackend:
             if engine is not None
             else BacktestEngine(config=config or BacktestEngineConfig())
         )
+        global _PROCESS_LOG_GUARD
+        if _PROCESS_LOG_GUARD is None:
+            get_log_guard = getattr(self.engine, "get_log_guard", None)
+            if get_log_guard is not None:
+                _PROCESS_LOG_GUARD = get_log_guard()
         self._profiles: dict[str, VenueSimulationProfilePort] = {}
         self._report_handlers: list[Callable[[ExecutionReport], None]] = []
         self._reports: list[ExecutionReport] = []

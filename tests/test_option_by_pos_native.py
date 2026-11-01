@@ -1,5 +1,6 @@
 """原生验收：真实 Feather → M1/M5 回放 → 到期现金结算及账户对账。"""
 from decimal import Decimal
+import gc
 import importlib
 import json
 from pathlib import Path
@@ -58,6 +59,8 @@ class NativeOptionByPosTests(unittest.TestCase):
                     "--option-commission-per-contract", "0", "--commission-per-contract", "0",
                     "--report-dir", str(root / "reports"), "--log-level", "ERROR", "--require-fills"])
                 output = module.run_case(args)
+                # 提前回收已释放的引擎，验证下一组不会重新注册全局日志器。
+                gc.collect()
                 summary = json.loads((output / "summary.json").read_text())
                 self.assertEqual(summary["report_errors"], [])
                 self.assertEqual(summary["untriggered_slots"], [])
