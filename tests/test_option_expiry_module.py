@@ -20,6 +20,14 @@ class Event:
     def __init__(self, **fields): self.__dict__.update(fields)
 
 
+class BoundedTradeId(Identity):
+    """复现原生 TradeId 的 36 字符上限，避免宽松替身漏掉约束。"""
+    def __new__(cls, value):
+        if not 1 <= len(value) <= 36:
+            raise ValueError("TradeId length must be in [1, 36]")
+        return super().__new__(cls, value)
+
+
 class NativeOrder(Event):
     """原生 Order 的 account_id 只读，只能经事件设置。"""
     @property
@@ -42,7 +50,7 @@ class ExpiryModuleTests(unittest.TestCase):
                 OrderSide=NS(BUY="BUY", SELL="SELL"), OrderType=NS(MARKET="MARKET")),
             "bomber.model.events": package("events", OrderAccepted=Event, OrderFilled=Event, OrderSubmitted=Event),
             "bomber.model.identifiers": package("identifiers", ClientOrderId=Identity,
-                InstrumentId=Identity, TradeId=Identity, VenueOrderId=Identity),
+                InstrumentId=Identity, TradeId=BoundedTradeId, VenueOrderId=Identity),
             "bomber.model.objects": package("objects", Price=NS(from_str=Decimal), Money=lambda fee, currency: fee),
             "bomber.model.orders": package("orders", MarketOrder=NativeOrder),
         }
@@ -101,6 +109,27 @@ class ExpiryModuleTests(unittest.TestCase):
         obj.process(160)
         self.assertEqual(self.native_events[-1].last_px, Decimal("120.13"))
         self.assertEqual(self.native_events[-1].last_qty, 2)
+
+    def test_settlement_identifiers_fit_native_trade_id_and_match_report(self):
+        obj = self.create()
+        obj.process(160)
+        fill = self.native_events[-1]
+        token = str(fill.trade_id)
+        self.assertLessEqual(len(token), 36)
+        self.assertEqual(token, str(fill.client_order_id))
+        self.assertEqual(token, str(fill.venue_order_id))
+        self.assertEqual(token, self.reports[0].metadata["trade_id"])
+        self.assertEqual(token, obj.records[0]["client_order_id"])
+
+    def test_invalid_native_trade_id_fails_before_cache_or_execution_mutation(self):
+        obj = self.create()
+        with patch.object(self.module, "TradeId", side_effect=ValueError("invalid native trade ID")):
+            with self.assertRaisesRegex(ValueError, "invalid native trade ID"):
+                obj.process(160)
+        self.assertEqual(self.orders, [])
+        self.assertEqual(self.native_events, [])
+        self.assertEqual(self.reports, [])
+        self.assertFalse(self.position.is_closed)
 
     def test_missing_terminal_value_cannot_silently_clear_remaining_position(self):
         obj = self.create(missing=True)
