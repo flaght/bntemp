@@ -98,10 +98,8 @@ def run_case(args):
         start_day=args.start_day, end_day=args.end_day, available_time=args.settlement_available_time,
         fee_per_contract=args.exercise_fee_per_contract) if args.option_settlements else {})
     qualified_settlements = {item.instrument_id: item for item in settlements.values()}
-    expiring = {key for key, info in options.items() if args.start_day <= info.last_trade <= args.end_day}
-    if expiring - set(settlements):
-        raise ValueError("请通过 --option-settlements 提供到期合约最终结算价，缺少: "
-                         + str(sorted(expiring - set(settlements))[:10]))
+    # 是否需要终值由到期时的实际残仓决定。目标归零不代表一定成交，
+    # 因此交给生命周期模块在最后一根 Bar 撮合、余单撤销之后检查。
     period_end_ns = day_ns(args.end_day + timedelta(days=1)) - 1
     if any(item.available_ns > period_end_ns for item in settlements.values()):
         raise ValueError("结算可用时刻超过回测结束；请延长 --end-day")
@@ -200,6 +198,7 @@ def run_case(args):
         summary = dict(positions_path=str(positions_path), start_day=str(args.start_day), end_day=str(args.end_day),
             futures_dir=str(paths.fut_dir), options_dir=str(paths.opt_dir), opt_basic=str(paths.opt_basic),
             option_settlements=str(args.option_settlements) if args.option_settlements else None,
+            settlement_prices_loaded=len(settlements),
             execution_timing=args.execution_timing, execution_delay_bars=backend.execution_delay_bars,
             intervals={key: spec.bar_spec for key, spec in specs.items()}, bars_by_instrument=loaded_rows,
             fills=len(fills), settlements=len(backend.option_settlement_records),
@@ -231,8 +230,10 @@ def parse_args(argv=None):
     parser.add_argument("--positions", type=Path, default=DEFAULT_POSITIONS)
     parser.add_argument("--start-day", type=date.fromisoformat, required=True)
     parser.add_argument("--end-day", type=date.fromisoformat, required=True)
-    for name in ("data-root", "fut-dir", "opt-dir", "fut-basic", "opt-basic", "option-settlements"):
+    for name in ("data-root", "fut-dir", "opt-dir", "fut-basic", "opt-basic"):
         parser.add_argument("--" + name, type=Path)
+    parser.add_argument("--option-settlements", type=Path,
+        help="标准最终结算文件，或含 code,trade_date,settlPrice 的 YYYY-MM-DD.feather 日行情目录")
     parser.add_argument("--settlement-available-time", default="16:00")
     parser.add_argument("--exercise-fee-per-contract", type=Decimal, default=Decimal(0))
     parser.add_argument("--starting-balance", type=Decimal, default=Decimal("40000000"))

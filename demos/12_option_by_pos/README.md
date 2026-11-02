@@ -57,7 +57,17 @@ python demos/12_option_by_pos/run_backtest.py \
 
 ## 到期现金结算
 
-`opt_basic` 提供上市日、最后交易日、行权价等条款，**不包含最终结算价**。跨越期权到期日时，还需提供 `--option-settlements`。加载的到期合约必须有对应的最终结算记录；缺失会在启动前报错。
+`opt_basic` 提供上市日、最后交易日、行权价等条款，**不包含最终结算价**。到期仍有实际残仓的合约需通过 `--option-settlements` 指定终值文件或原始日行情目录；到期前已平仓（包括最后一根 Bar 成功平仓）的合约无需结算文件。判断依据是实际成交后的仓位，而不是目标文件中的 `0`。缺少必需终值时，在到期检查处报出合约和残仓手数并停止，不生成本次回测的正常结果。
+
+你提供的日行情可以直接按目录接入，无需先生成另一份结算文件。在原回测命令中增加：
+
+```bash
+  --option-settlements /workspace/data/temp_bomber1/ctp/daily/opt
+```
+
+目录内文件按 `YYYY-MM-DD.feather` 命名，字段使用 `code,trade_date,settlPrice`。加载器按 `opt_basic.lastTradeDate` 只读取请求区间所需的到期日文件，并筛选本次策略合约；文件中的其他品种、普通交易日价格、`closePrice` 均不作为到期终值。`exchangeCD` 存在时校验为 `CCFX/CFFEX`，零成交量记录和零结算价保留，不乘合约乘数。文件交易日期必须与文件名一致，冲突重复终值及非有限、负结算价会报错。
+
+目录缺少某个到期日文件或合约时写入输入诊断，是否必须补齐仍由实际到期残仓决定。日数据不进入分钟 `on_bar`，结算触发时间继续使用 `available_at` 或下述默认可用时刻。
 
 标准文件支持 CSV、Parquet 或 Feather，字段如下：
 
@@ -70,6 +80,8 @@ python demos/12_option_by_pos/run_backtest.py \
 | `fee_per_contract` | 可选，每手结算费用，覆盖命令行默认值 |
 
 兼容旧 `opt_eod.parquet` 的 `tradeID,lastTradingDate,settlePrice` 字段；存在 `TradeDate` 时，只使用与最后交易日相同的记录。普通交易日的日结算价不能充当到期终值。
+
+如果从期权日行情重新整理，准备合约、交易日期、官方结算价三类字段，与 `opt_basic` 的 `symbol,lastTradeDate` 关联，仅保留交易日期等于最后交易日的记录，再输出标准三列 `symbol,last_trade_date,settlement_price`。只有日 OHLC、缺少结算价字段的数据不足以构造这个文件。`settlement_price` 为期权自身的到期每点终值，不是标的指数交割结算价，也不是乘过合约乘数的每手现金金额；零终值必须保留。
 
 ```bash
 python demos/12_option_by_pos/run_backtest.py \
@@ -115,6 +127,6 @@ python -m unittest tests.test_option_by_pos_framework tests.test_option_expiry_m
 python -m unittest tests.test_option_by_pos_native -v
 ```
 
-原生验收构造真实 Feather，验证 M1/M5 分别成交、最后一根 Bar 撮合、到期后无市场数据仍结算、终值 `0` 和 `120.13`、原生账户现金、已实现盈亏及两层仓位归零。无编译扩展时明确跳过，不能视为原生撮合验收通过。
+原生验收构造真实 Feather，验证 M1/M5 分别成交、最后一根 Bar 撮合、到期后无市场数据仍结算、标准结算文件、原始日行情目录、终值 `0` 和 `120.13`、提前平仓无需终值文件、原生账户现金、已实现盈亏及两层仓位归零。无编译扩展时明确跳过，不能视为原生撮合验收通过。
 
 同一进程连续回测时，framework 保留首个引擎的日志守卫，复用进程级 Rust 日志器。后续回测沿用首次初始化的日志配置；引擎照常释放，日志线程在进程退出时关闭。验收每组之后强制回收对象，覆盖这项生命周期约束。
