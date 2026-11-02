@@ -103,7 +103,12 @@ class OptionCashSettlementModule(SimulationModule):
             item = self.settlements.get(code)
             if item is None:
                 if positions:
-                    raise RuntimeError(f"Missing final settlement for held option {code}")
+                    remaining = ", ".join(
+                        f"{'LONG' if position.is_long else 'SHORT'} {position.quantity}"
+                        for position in positions)
+                    raise RuntimeError(f"Missing final settlement for held option {code}: "
+                        f"到期仍有残仓 [{remaining}]；请通过 --option-settlements 提供该合约的最终结算价。"
+                        "opt_basic 只提供条款，不包含最终结算价。")
                 self.settled.add(code)
                 continue
             if now < item.available_ns:

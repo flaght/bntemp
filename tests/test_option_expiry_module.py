@@ -133,14 +133,16 @@ class ExpiryModuleTests(unittest.TestCase):
 
     def test_missing_terminal_value_cannot_silently_clear_remaining_position(self):
         obj = self.create(missing=True)
-        with self.assertRaisesRegex(RuntimeError, "Missing final settlement"):
+        with self.assertRaisesRegex(RuntimeError, f"{self.code}:.*SHORT 2.*--option-settlements"):
             obj.process(151)
         self.assertFalse(self.position.is_closed)
         self.assertEqual(self.reports, [])
 
-    def test_flat_expiry_produces_no_synthetic_trade(self):
-        self.position.is_closed = True
+    def test_close_on_final_bar_needs_no_settlement_file(self):
         obj = self.create(missing=True)
+        obj.process(150)  # 最后一根 Bar 撮合前仍有仓位，尚不要求最终结算价。
+        self.position.is_closed = True  # 最后一根 Bar 已按普通成交平仓。
+        obj.process(151)
         obj.process(160)
         self.assertIn(self.code, obj.settled)
         self.assertEqual(self.reports, [])
