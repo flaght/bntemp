@@ -568,25 +568,34 @@ class HybridSessionLifecycle(CtpResumeLifecycle, CtpSessionLifecycle):
                 payload = aligned_payload(payload, trading_day=old_day, target_config=current)
             else:
                 payload = resize_flat_checkpoint(payload, current)
-            if resize or self.confirm_manual_flat:
-                gross = {str(key): tuple(value) for key, value in self.transport.query_gross_positions().items()
-                         if str(key).casefold() in instruments and any(value)}
-                if gross:
-                    raise RuntimeError(f'管理合约柜台仍有持仓，保留原检查点: {gross}')
-            if self.confirm_manual_flat:
-                if any(order.instrument_id.casefold() in instruments
-                       for order in self.transport.query_active_orders().orders):
-                    raise RuntimeError('管理合约柜台仍有活动订单，保留原检查点')
-                session.manual_flat_sync = dict(previous_trading_day=old_day,
-                    observed_trading_day=context.trading_day, instruments=sorted(instruments),
-                    previous_targets=original['last_targets'], previous_batches=len(original['holdings']['active']),
-                    broker_gross={}, active_orders=0, actual_close_prices=None)
-                print('Hybrid手工平仓对齐暂存: 柜台已核实空仓；清理旧批次、本地仓位和目标，'
-                      '保留订单历史，核验通过后备份并提交', flush=True)
-            if rollover:
-                payload = payload_for_day(session, payload, driver=self.driver,
-                    transport=self.transport, day=context.trading_day)
-            return payload
+            query_needed = resize or self.confirm_manual_flat
+            try:
+                if query_needed:
+                    # 预检连接已关闭；查询阶段只读登录，结束后关闭，才能装载Driver恢复状态。
+                    self.driver.start(lambda report: None)
+                    if self.driver.trading_day != context.trading_day:
+                        raise RuntimeError('恢复只读核验的CTP交易日与本次会话不一致')
+                    gross = {str(key): tuple(value) for key, value in self.transport.query_gross_positions().items()
+                             if str(key).casefold() in instruments and any(value)}
+                    if gross:
+                        raise RuntimeError(f'管理合约柜台仍有持仓，保留原检查点: {gross}')
+                if self.confirm_manual_flat:
+                    if any(order.instrument_id.casefold() in instruments
+                           for order in self.transport.query_active_orders().orders):
+                        raise RuntimeError('管理合约柜台仍有活动订单，保留原检查点')
+                    session.manual_flat_sync = dict(previous_trading_day=old_day,
+                        observed_trading_day=context.trading_day, instruments=sorted(instruments),
+                        previous_targets=original['last_targets'], previous_batches=len(original['holdings']['active']),
+                        broker_gross={}, active_orders=0, actual_close_prices=None)
+                    print('Hybrid手工平仓对齐暂存: 柜台已核实空仓；清理旧批次、本地仓位和目标，'
+                          '保留订单历史，核验通过后备份并提交', flush=True)
+                if rollover:
+                    payload = payload_for_day(session, payload, driver=self.driver,
+                        transport=self.transport, day=context.trading_day)
+                return payload
+            finally:
+                if query_needed:
+                    self.driver.stop()
         return session.manager.restore(payload_transform=prepare)
 
     def validate_restored_session(self, session, day):
