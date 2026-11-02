@@ -1,0 +1,126 @@
+{
+  "report": "/Users/kerry/work/bomber1/pro/temp/cmp/opt_by_pos/comparison_20261102_d14a7231/comparison_report.html",
+  "actual": {
+    "new_fills": {
+      "FUTURE": {
+        "rows": 493,
+        "quantity": 1024,
+        "commission": 38852.57
+      },
+      "OPTION": {
+        "rows": 468,
+        "quantity": 2192,
+        "commission": 175.35
+      }
+    },
+    "old_fills_common": {
+      "FUTURE": {
+        "rows": 498,
+        "quantity": 1295.0,
+        "commission": 644132.112
+      },
+      "OPTION": {
+        "rows": 466,
+        "quantity": 2192.0,
+        "commission": 328.8
+      }
+    },
+    "old_fills_full": {
+      "FUTURE": {
+        "rows": 503,
+        "quantity": 1306.0,
+        "commission": 649603.32
+      },
+      "OPTION": {
+        "rows": 469,
+        "quantity": 2206.0,
+        "commission": 330.9
+      }
+    },
+    "new_fill_rows": 961,
+    "old_fill_rows_common": 964,
+    "old_fill_rows_full": 972,
+    "old_fills_after_cutoff": 8,
+    "new_cash_ending": 35047156.2,
+    "new_cash_change": -4952843.799999997,
+    "new_cash_is_not_net_asset_value": true,
+    "old_metrics_reported_profit": 2315774.19,
+    "old_metrics_profit_matches_cash_before_fees": true,
+    "old_net_value_common": 42078052.71000003,
+    "old_net_value_last": 42188972.51000003,
+    "old_last_net_value_date": "2026-07-17",
+    "old_metrics_profit_minus_last_curve_profit": 126801.67999997223,
+    "new_fees_in_fills": 39027.92,
+    "new_actual_fees_in_commissions": 42573.439999999995,
+    "hidden_expiry_commission": 3545.5200000000004,
+    "expired_future_framework_quantity": 271.0,
+    "expired_future_native_quantity": 181.0,
+    "hidden_expiry_quantity": 90.0,
+    "initialized_expiry_orders": 5,
+    "settlement_count": 61,
+    "old_report_errors_absent": true,
+    "new_report_errors": [],
+    "old_risk_first_day": "2025-07-21",
+    "old_risk_last_day": "2026-07-10",
+    "old_risk_rows": 236,
+    "old_risk_zero_exposure_rows": 112
+  },
+  "attribution": {
+    "is_native_rerun": false,
+    "assumptions": [
+      "共同截止日为2026-07-09，排除旧版2026-07-10新增8笔成交及2026-07-17结算尾部",
+      "将新版缺少的5笔期货到期平仓按旧版实际价格及手数补入，移除原生隐藏部分成交的影响",
+      "旧版到期日的期权平仓价格按新版导出的官方终值替换，可将旧版费前净值复算至分",
+      "每日买卖量对齐后日终持仓一致，使用旧版净值的日终估值项",
+      "新版补入平仓按现有0.23bp手续费计算，旧版费用采用成交文件列示值"
+    ],
+    "matching_day_instrument_side_groups": 716,
+    "all_group_quantities_equal": true,
+    "gross_price_effect": -60332.70999998954,
+    "ordinary_future_price_effect": -83639.99999998952,
+    "ordinary_option_price_effect": 23307.289999999975,
+    "may29_three_future_trade_effect": -61039.99999999978,
+    "other_trade_effect": 707.2900000102381,
+    "old_terminal_price_adjustment": -11091.89000000049,
+    "old_fees_common": 644460.912,
+    "new_fees_with_added_closes": 49556.770000000004,
+    "old_option_fees_common": 328.8,
+    "new_option_fees_common": 175.34999999999997,
+    "fee_advantage": 594904.142,
+    "net_difference": 534571.4320000105,
+    "scenarios": {
+      "old_reported_gross_nav": {
+        "ending_equity": 42078052.71000003,
+        "profit": 2078052.7100000307,
+        "total_return": 0.051951317750000836,
+        "maximum_drawdown": -0.013630846300599964
+      },
+      "scenario_new_gross_nav": {
+        "ending_equity": 42017720.000000045,
+        "profit": 2017720.0000000447,
+        "total_return": 0.050443000000001126,
+        "maximum_drawdown": -0.013411888918398729
+      },
+      "old_nav_after_listed_fees": {
+        "ending_equity": 41433591.79800003,
+        "profit": 1433591.7980000302,
+        "total_return": 0.03583979495000067,
+        "maximum_drawdown": -0.01589742775410885
+      },
+      "scenario_new_net_nav": {
+        "ending_equity": 41968163.23000004,
+        "profit": 1968163.2300000414,
+        "total_return": 0.049204080750000934,
+        "maximum_drawdown": -0.013465028308702887
+      }
+    }
+  },
+  "reconciliation": {
+    "old_nav_reconstructed": 42078052.70999992,
+    "old_nav_residual": -1.1175870895385742e-07,
+    "new_cash_reconstructed": 35047156.2091021,
+    "new_cash_residual": 0.009102098643779755,
+    "old_metrics_cash_reconstructed": 42315774.19747092,
+    "native_position_pnl_and_cash_difference_explained_by_open_option_premium": 1179780.0
+  }
+}

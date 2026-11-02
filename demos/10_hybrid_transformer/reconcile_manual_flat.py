@@ -1,4 +1,4 @@
-"""SimNow手工平仓后的账本对齐及5手/每批1手迁移；不发送订单。"""
+"""SimNow手工平仓后的本地账本对齐；不发送订单，Live传入本次目标配置。"""
 from __future__ import annotations
 
 import argparse
@@ -51,7 +51,7 @@ def managed_instruments(payload):
     return frozenset(result)
 
 
-def aligned_payload(payload, *, trading_day):
+def aligned_payload(payload, *, trading_day, target_config=None):
     """建立观察到空仓后的新运行基线；完整订单/归属计划历史仍保留用于去重及当日额度。"""
     result = deepcopy(payload)
     client = live.CLIENT_ID
@@ -63,7 +63,10 @@ def aligned_payload(payload, *, trading_day):
     if (hybrid['version'] != 1 or config['product'] != 'RB' or config['venue'] != 'SHFE'
             or config['target_key'] != 'rb_main' or config['target_keys'] is not None
             or config['hold_bars'] != 5 or holdings['holding_bars'] != 5
-            or (config['max_contracts'], config.get('max_entry_contracts')) not in ((10, None), (5, None), (5, 1))
+            or type(config['max_contracts']) is not int or config['max_contracts'] < 1
+            or config.get('max_entry_contracts') is not None and (
+                type(config['max_entry_contracts']) is not int
+                or not 1 <= config['max_entry_contracts'] <= config['max_contracts'])
             or holdings['max_contracts'] != config['max_contracts']
             or holdings.get('max_entry_contracts') != config.get('max_entry_contracts')):
         raise ValueError('不是预期的RB单合约五分钟检查点，不能执行手工平仓对齐')
@@ -78,7 +81,7 @@ def aligned_payload(payload, *, trading_day):
     PositionAttributionLedger.validate_checkpoints(payload['positions']['attribution'], machines)
     if payload['ctp_drivers'][client]['orders']:
         raise ValueError('旧检查点仍有CTP在途订单关联，不能丢弃')
-    if hybrid['targets_pending'] or any(Decimal(row['quantity']) != 0
+    if (hybrid['targets_pending'] and target_config is None) or any(Decimal(row['quantity']) != 0
             for row in payload['positions']['working_quantities']):
         raise ValueError('旧检查点有待提交目标或工作量，不能直接对齐')
     positions = payload['positions']
@@ -91,6 +94,16 @@ def aligned_payload(payload, *, trading_day):
             or set(payload['portfolio']['contributions']) - {client}
             or set(payload['portfolio']['strategy_revisions']) - {client}):
         raise ValueError('检查点存在其他策略归属，不能清理其状态')
+    target = (dict(target_config) if target_config is not None else
+              {**config, 'max_contracts': 5, 'max_entry_contracts': 1})
+    sizes = ('max_contracts', 'max_entry_contracts')
+    if ({key: value for key, value in config.items() if key not in sizes}
+            != {key: value for key, value in target.items() if key not in sizes}):
+        raise ValueError('手工空仓对齐不能改变模型信号、周期、乘数或执行路由')
+    if (type(target['max_contracts']) is not int or target['max_contracts'] < 1
+            or type(target.get('max_entry_contracts')) is not int
+            or not 1 <= target['max_entry_contracts'] <= target['max_contracts']):
+        raise ValueError('目标总手数及每批手数无效')
     # 这里是明确的“外部手工平仓已核实”基线调整，不向订单历史补造任何成交。
     # 旧持仓/批次/成本等原始事实在提交前的完整备份及审计文件中保留。
     result['positions'] = _encode_positions(PositionManager().state())
@@ -99,8 +112,9 @@ def aligned_payload(payload, *, trading_day):
     result['portfolio'] = _encode_portfolio(PortfolioCoordinator().state())
     result['targets'] = []
     result['ctp_ledgers'][client]['positions'] = []
-    config.update(max_contracts=5, max_entry_contracts=1)
-    holdings.update(max_contracts=5, max_entry_contracts=1,
+    config.clear()
+    config.update(target)
+    holdings.update(max_contracts=target['max_contracts'], max_entry_contracts=target['max_entry_contracts'],
                     bar_index=-1, last_bar_ns=-1, last_check_ns=-1, active=[])
     hybrid.update(revision=0, last_processed_ns=-1, bars_used=0, last_main=None, last_targets={},
                   targets_pending=False, order_updates_received=0, fills_received=0)

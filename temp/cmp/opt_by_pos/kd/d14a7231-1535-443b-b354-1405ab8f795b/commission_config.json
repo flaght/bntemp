@@ -1,0 +1,10 @@
+{
+  "CFFEX": {
+    "commission_multiplier": "1",
+    "commission_product_multipliers": {},
+    "commission_contract_multipliers": {},
+    "delivery_fee_multiplier": "1",
+    "commission_source": "metadata",
+    "commission_per_contract": "1"
+  }
+}

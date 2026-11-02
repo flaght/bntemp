@@ -115,6 +115,8 @@ python demos/12_option_by_pos/run_backtest.py \
 
 ## 验收
 
+新版与旧版成交时间不一致时，先按 [时间链路诊断](TIMING_DIAGNOSTICS.md) 记录回调、订单创建、等待与成交时间；附有独立追踪脚本和条件断点示例。
+
 独立 Python 回归（需 pandas、pyarrow）：
 
 ```bash

@@ -119,6 +119,7 @@ Recording不撮合成交，也不创建TD交易通道。CTP行情仍需要MD配�
 | `--resume` | 按原状态文件恢复同交易日会话 |
 | `--enable-orders` | SimNow显式交易开关 |
 | `--confirm-simnow` | SimNow确认开关 |
+| `--confirm-manual-flat` | 仅柜台已手工平仓且无活动委托时使用；首次会话复核后清理本地残留并按本次手数恢复，保留原备份和订单历史 |
 | `--report-dir` | 停机报告输出的父目录 |
 | `--no-session-overrides` | 明确声明本次规则范围内没有时段例外 |
 
