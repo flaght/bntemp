@@ -1,0 +1,22 @@
+{
+  "/Users/kerry/work/bomber1/pro/temp/cmp/opt_by_pos/kd/d14a7231-1535-443b-b354-1405ab8f795b/account.csv": "b888bd777cbcc363e4ebb823bb454f8dc2643d3cdd1108cf776ee6422289fb94",
+  "/Users/kerry/work/bomber1/pro/temp/cmp/opt_by_pos/kd/d14a7231-1535-443b-b354-1405ab8f795b/commission_config.json": "92d433c1aa5670f6359f7f98271867f82cdb1d1854c7ac72f1516331ff9db510",
+  "/Users/kerry/work/bomber1/pro/temp/cmp/opt_by_pos/kd/d14a7231-1535-443b-b354-1405ab8f795b/commissions.csv": "201b64c3f40f21a6ba9f99e6b80ec3b9b6fb222646d64235b08ca47197b3dcba",
+  "/Users/kerry/work/bomber1/pro/temp/cmp/opt_by_pos/kd/d14a7231-1535-443b-b354-1405ab8f795b/fills.csv": "bdd36d7212302383a4aa7b94ed50fe2c7efd6c04477d2fd89ce73969b27419e1",
+  "/Users/kerry/work/bomber1/pro/temp/cmp/opt_by_pos/kd/d14a7231-1535-443b-b354-1405ab8f795b/fills_output.csv": "36cd618aba8de5ba28e467ba05d64f6fb01de3869a27b4b0e8491e6b15b2238f",
+  "/Users/kerry/work/bomber1/pro/temp/cmp/opt_by_pos/kd/d14a7231-1535-443b-b354-1405ab8f795b/input_coverage.json": "4c11dc3e2a326fcddc9ea4894f1234a5e2d0dcd060001402cabb3d40bf53a628",
+  "/Users/kerry/work/bomber1/pro/temp/cmp/opt_by_pos/kd/d14a7231-1535-443b-b354-1405ab8f795b/input_issues.json": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+  "/Users/kerry/work/bomber1/pro/temp/cmp/opt_by_pos/kd/d14a7231-1535-443b-b354-1405ab8f795b/input_manifest.json": "fdd9e2505590a709546ffe849b31be62322f3ff1e2c239c04cac8807e3d6153a",
+  "/Users/kerry/work/bomber1/pro/temp/cmp/opt_by_pos/kd/d14a7231-1535-443b-b354-1405ab8f795b/orders.csv": "96b0072a23b9d4d45473b89fd4918bbb3db7e3e806f8c5f60e9dda1176e92611",
+  "/Users/kerry/work/bomber1/pro/temp/cmp/opt_by_pos/kd/d14a7231-1535-443b-b354-1405ab8f795b/positions.csv": "15b7ed34dab9481817e2b87df4a496fbf5571735aadcad2d747754b8d496f79a",
+  "/Users/kerry/work/bomber1/pro/temp/cmp/opt_by_pos/kd/d14a7231-1535-443b-b354-1405ab8f795b/settlements.csv": "36de895817766e35bb5fe98595bff98b3c0fa48e4e8a7653b214968bcb544f3e",
+  "/Users/kerry/work/bomber1/pro/temp/cmp/opt_by_pos/kd/d14a7231-1535-443b-b354-1405ab8f795b/signals.csv": "6f1bc2b74afb75bcffb3b0218aca05881ecc154582a365bb746e2d1082fb7fac",
+  "/Users/kerry/work/bomber1/pro/temp/cmp/opt_by_pos/kd/d14a7231-1535-443b-b354-1405ab8f795b/summary.json": "1f80097463df190c18d3967f08ae3ddb4fcbdaf26304336da67d96bdc66b736b",
+  "/Users/kerry/work/bomber1/pro/temp/cmp/opt_by_pos/lxg/output_20261102_145127/fills_output.csv": "59b24c7926d1bf68d3ea18ad9c558612e028fbb6c773fd1df0b1fee36de6ec43",
+  "/Users/kerry/work/bomber1/pro/temp/cmp/opt_by_pos/lxg/output_20261102_145127/metrics.txt": "fc216458f1cc355870cc015e6824af03ae730a5e95b666c98eabc4717edbbc72",
+  "/Users/kerry/work/bomber1/pro/temp/cmp/opt_by_pos/lxg/output_20261102_145127/net_value.csv": "c04d3df178429d7ca0803326fc000df8fed37a50db94e25e831318a812f58344",
+  "/Users/kerry/work/bomber1/pro/temp/cmp/opt_by_pos/lxg/output_20261102_145127/positions_output.csv": "f4ddb957109c24fce59d6e7690c16ab7152073129d761d01e0406a0b82f986d6",
+  "/Users/kerry/work/bomber1/pro/temp/cmp/opt_by_pos/lxg/output_20261102_145127/risk_metrics.csv": "9da3add86aa6e44a801cf6a24312da196571f051a77f99feebc7f7d1986458d4",
+  "/Users/kerry/work/bomber1/pro/temp/cmp/opt_by_pos/lxg/output_20261102_145127/trades.csv": "fddb147e287a4344e99ae9d5b5efb6b04a02445cadfd6854962fa921967440d4",
+  "/Users/kerry/work/bomber1/pro/temp/cmp/opt_by_pos/lxg/output_20261102_145127/yearly_metrics.csv": "f46cc170cf748171ffa19085853e9f800eb215f344a416753a42a8f9f449a0df"
+}

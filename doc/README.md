@@ -1,5 +1,7 @@
 # Bomber 项目文档导航
 
+2026-11-02框架源码说明更新：[Framework总览](../bomber/framework/README.md)与[整体产品功能](architecture/PRODUCT_OVERVIEW.md)。说明当前积木化装配、行情／执行／运行正交边界、多策略和独立仓位、特征／历史、回测撮合时序、费用、期权现金结算及LXGBN内嵌SDK；本次未重新执行验收，不改变最小核条款。
+
 2026-10-29 Live公共能力提取：[当前进度台账](architecture/LIVE_COMMON_PROGRESS.md)。01生命周期、02历史协调、04检查点接入已实现并通过本地离线回归；03完成01／10首批迁移，08已有公共常驻链路、高层接入待统一；05模块式预检保持优先级5、尚未实现。台账包含309／82／91项验证结果及待验收边界。
 
 这里按主题组织系统设计、数据契约、策略方案、外部接口、架构审查与交接记录。同一主题的原稿、修订稿和历史记录放在一起，版本与验收状态在索引中说明。先根据下面的阅读入口选择主文档，再进入对应专项。
@@ -14,7 +16,9 @@
 | --- | --- | --- |
 | 函数用途、参数和调用示例 | [函数说明索引](functions/README.md) | 按模块分类，逐个函数查询输入、返回值、时间约定和常见错误 |
 | Hybrid Live调整总持仓与每批手数 | [手数调整操作手册](strategies/HYBRID_POSITION_SIZING_GUIDE.md) | 两个独立手数参数、批次期限、空仓自动接续、启动示例及状态位置 |
-| 项目整体结构和实现进度 | [统一策略架构与状态台账](architecture/STRATEGY_ARCHITECTURE.md) | 框架模块、运行链路、实现及验证进度的主要入口 |
+| 当前框架结构、积木化装配与适配边界 | [Framework源码总览](../bomber/framework/README.md) | 按2026-11-02当前代码定位模块、接口、运行组合及扩展位置 |
+| 整体产品功能 | [功能介绍](architecture/PRODUCT_OVERVIEW.md) | 面向使用者介绍整体能力、灵活装配与现有适配边界 |
+| 历史设计及实现进度 | [统一策略架构与状态台账](architecture/STRATEGY_ARCHITECTURE.md) | 按日期追溯设计与验证；当前源码结构优先查Framework总览 |
 | 本轮Live公共模块进度 | [Live公共能力提取进度](architecture/LIVE_COMMON_PROGRESS.md) | 01—06工作项状态、五策略接入、08常驻范围、离线结果及后续待办 |
 | 系统目标和职责边界 | [系统目标架构](architecture/ARCHITECTURE_FIXED.md) | 区分目标设计与已经实现的能力 |
 | 当前架构缺口 | [GAP 评估快照](audits/ARCHITECTURE_GAP_REVIEW_2026-10-09.md) → [完整跟踪清单](audits/ARCHITECTURE_GAPS_2026-10-09.md) | 前者便于掌握评估时状态，后者保留逐项验收标准及过程 |
@@ -83,7 +87,7 @@
 
 | 文档 | 用途和状态 |
 | --- | --- |
-| [ARCHITECTURE_GAP_REVIEW](audits/ARCHITECTURE_GAP_REVIEW_2026-10-09.md) | 2026-10-09 的评估快照，明确区分当前实现、已验版本和未完成验收 |
+| [ARCHITECTURE_GAP_REVIEW](audits/ARCHITECTURE_GAP_REVIEW_2026-10-09.md) | 文件名保留首次审计日期，状态按正文更新日期及后续专项判断；区分实现、已验版本和未完成验收 |
 | [ARCHITECTURE_GAPS](audits/ARCHITECTURE_GAPS_2026-10-09.md) | 完整问题清单、验收标准及关闭记录，包含历史状态 |
 | [PRODUCT_SPECIALIZATION_AUDIT](audits/PRODUCT_SPECIALIZATION_AUDIT_2026-10-09.md) | CU/IM 等品种专用实现及公共层场景固定的源码审查，为会话通用化提供依据 |
 

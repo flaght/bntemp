@@ -120,6 +120,8 @@ def parse_args(argv=None):
     parser.add_argument('--resume', action='store_true')
     parser.add_argument('--enable-orders', action='store_true')
     parser.add_argument('--confirm-simnow', action='store_true')
+    parser.add_argument('--confirm-manual-flat', action='store_true',
+        help='本次首次启动前已手工平仓；复核柜台空仓后同步原本地账本')
     parser.add_argument('--report-dir', type=Path, default=Path(__file__).parent/'results'/'live')
     parser.add_argument('--no-session-overrides', action='store_true')
     parser.set_defaults(calendar_id=os.getenv('BOMBER_CALENDAR_ID') or 'china.sse')
@@ -160,9 +162,11 @@ def parse_args(argv=None):
             # 新会话不能覆盖现有状态文件；恢复必须明确指定原文件与--resume。
             if not (args.enable_orders and args.confirm_simnow and args.state_file):
                 raise ValueError('SimNow须 --enable-orders --confirm-simnow --state-file')
+            if args.confirm_manual_flat and not args.state_file.is_file():
+                raise ValueError('手工空仓对齐须提供已有的原state-file')
             if not args.run_forever and args.resume != args.state_file.is_file():
                 raise ValueError('新会话须新状态文件；恢复须原文件并加--resume')
-        elif args.enable_orders or args.confirm_simnow or args.state_file or args.resume:
+        elif args.enable_orders or args.confirm_simnow or args.state_file or args.resume or args.confirm_manual_flat:
             raise ValueError('Recording不接受交易授权、交易状态文件或恢复参数')
         # 此处只校验日历输入的声明；实际读取时段/例外资料发生在prepare_inputs。
         validate_session_inputs(SessionInputs(
@@ -539,6 +543,8 @@ class HybridSessionLifecycle(CtpResumeLifecycle, CtpSessionLifecycle):
 
     CtpResumeLifecycle先处理恢复分支；新会话start会继续交给CtpSessionLifecycle。
     """
+    confirm_manual_flat = False
+
     def restore_session(self, session, context):
         saved = session.manager.repository.load()
         if saved is None:
@@ -548,18 +554,35 @@ class HybridSessionLifecycle(CtpResumeLifecycle, CtpSessionLifecycle):
         resize = any(previous.get(key) != current.get(key) for key in ('max_contracts', 'max_entry_contracts'))
         rollover = (self.window is not None and
             saved.payload['component_states']['live_session']['identity']['trading_day'] != context.trading_day)
-        if not resize and not rollover:
+        if not resize and not rollover and not self.confirm_manual_flat:
             return super().restore_session(session, context)
         from .checkpoint import payload_for_day, resize_flat_checkpoint
         def prepare(payload):
             instruments = {str(session.references.instrument_id).casefold()}
             instruments.update(row['instrument_id'].casefold() for row in payload['portfolio']['known_keys'])
-            payload = resize_flat_checkpoint(payload, current)
-            if resize:
+            if self.confirm_manual_flat:
+                from .reconcile_manual_flat import aligned_payload, managed_instruments
+                instruments.update(key.casefold() for key in managed_instruments(payload))
+                old_day = payload['component_states']['live_session']['identity']['trading_day']
+                original = payload['component_states']['hybrid']
+                payload = aligned_payload(payload, trading_day=old_day, target_config=current)
+            else:
+                payload = resize_flat_checkpoint(payload, current)
+            if resize or self.confirm_manual_flat:
                 gross = {str(key): tuple(value) for key, value in self.transport.query_gross_positions().items()
                          if str(key).casefold() in instruments and any(value)}
                 if gross:
-                    raise RuntimeError(f'调整手数时管理合约柜台仍有持仓，保留原检查点: {gross}')
+                    raise RuntimeError(f'管理合约柜台仍有持仓，保留原检查点: {gross}')
+            if self.confirm_manual_flat:
+                if any(order.instrument_id.casefold() in instruments
+                       for order in self.transport.query_active_orders().orders):
+                    raise RuntimeError('管理合约柜台仍有活动订单，保留原检查点')
+                session.manual_flat_sync = dict(previous_trading_day=old_day,
+                    observed_trading_day=context.trading_day, instruments=sorted(instruments),
+                    previous_targets=original['last_targets'], previous_batches=len(original['holdings']['active']),
+                    broker_gross={}, active_orders=0, actual_close_prices=None)
+                print('Hybrid手工平仓对齐暂存: 柜台已核实空仓；清理旧批次、本地仓位和目标，'
+                      '保留订单历史，核验通过后备份并提交', flush=True)
             if rollover:
                 payload = payload_for_day(session, payload, driver=self.driver,
                     transport=self.transport, day=context.trading_day)
@@ -629,7 +652,7 @@ def build_runtime(
     market_config: MarketSourceConfig | None = None,
     calendar_id='china.sse', no_session_overrides=False,
     history_minutes=0, history_config: Path | None = None, history_file: Path | None = None,
-    state_file: Path | None = None, resume=False, report_dir: Path | None = None,
+    state_file: Path | None = None, resume=False, confirm_manual_flat=False, report_dir: Path | None = None,
     query_timeout=15, max_session_orders=100, max_notional=Decimal('1000000'),
     limit_offset_ticks=1, execution_policy=None, bar_directory: Path | None = None,
     window=None, stop_event=None, recording_state=None, model_seed=None, window_context=None,
@@ -644,6 +667,8 @@ def build_runtime(
         expected_source_day = window_context.source_day
         resume = window_context.resume
         window, stop_event = window_context.window, window_context.stop_event
+        if confirm_manual_flat and window_context.state:
+            confirm_manual_flat = False  # 常驻后续窗口不再执行本次人工对齐。
         if window_context.max_session_orders is not None:
             max_session_orders = window_context.max_session_orders
     elif window is not None:
@@ -660,6 +685,8 @@ def build_runtime(
     execution_policy = execution_policy or ExecutionPolicy('off', 'fills')
     if mode not in {'recording', 'simnow'}:
         raise ValueError('mode 仅支持 recording 或 simnow')
+    if confirm_manual_flat and (mode != 'simnow' or state_file is None or not Path(state_file).is_file()):
+        raise ValueError('手工空仓对齐仅用于SimNow已有的原state-file')
     if market_config.source not in {'ctp', 'dolphindb'}:
         raise ValueError('Hybrid实时行情仅支持 ctp 或 dolphindb')
     if mode == 'recording' and resume:
@@ -692,6 +719,7 @@ def build_runtime(
             resume=resume, state_file=state_file, account_reconciliation=execution_policy.account_reconciliation)
 
     lifecycle.window, lifecycle.stop_event = window, stop_event
+    lifecycle.confirm_manual_flat = confirm_manual_flat
 
     def describe(session):
         # session在准备/装配失败时可能还不存在，报告也要能说明这种失败。
@@ -703,6 +731,7 @@ def build_runtime(
             'max_contracts': strategy.config.max_contracts,
             'entry_contracts': strategy.config.max_entry_contracts,
             'rollover': getattr(session, 'rollover_audit', None),
+            'manual_flat_sync': getattr(session, 'manual_flat_sync', None),
             'model_window_bars': len(strategy.predictor.workflow.history),
             'model_min_raw_bars': MODEL_MIN_RAW_BARS,
             'warmup_remaining_bars': max(0, MODEL_MIN_RAW_BARS - len(strategy.predictor.workflow.history)),
@@ -774,6 +803,7 @@ def main(argv=None):
         history_config=args.history_config,
         history_file=args.history_file,
         state_file=args.state_file,
+        confirm_manual_flat=args.confirm_manual_flat,
         report_dir=args.report_dir,
     )
     if args.run_forever:

@@ -1,10 +1,14 @@
-# DataHub 参考资料
+# DataHub 参考资料与特征查询
 
-2026-10-12 PF2026101201新增通用特征入口 `DataHub(features=FeatureHub(registry)).feature_snapshot(...)`：强类型Schema、可见修订、EXACT/WINDOW/ASOF、频率/日历槽及一次性等待帧；文件/DolphinDB/MongoDB经公共Provider发布缓存。旧参考接口保持。源码已交付、远程验收待执行，详见[特征协议与使用说明](../dataprep/features/README.md)和[GAP08交接](../../../doc/HANDOFF/gaps/HANDOFF_GAP08_2026-10-12.md)。既有“通用特征Provider待实现”应结合本次源码状态阅读，不能解读为整项已关闭。
+2026-11-02按当前源码核对。框架整体、积木化装配及各层职责见[Framework总览](../README.md)；以下历史验证记录按各自版本阅读，不用早期“待实现”描述替代当前代码。
 
-DataHub 定义不可变参考资料，并按事件时间查询可见版本。文件读取由 dataprep 完成；真实行情回放属于 market，原生合约、订单及持仓属于 trader。
+DataHub定义不可变参考资料与特征记录，按业务时间、可见时间及版本提供查询；包括期货／期权基础条款、合约角色与研究价、外部目标计划及通用特征。文件／数据库读取和字段标准化由dataprep的Provider完成；真实Tick／Bar进入market，合约执行、订单和仓位属于trader。
 
-2026-10-09数据源边界：回测／研究执行消费从DolphinDB导出的本地资料，导出／准备任务可连接数据库。在线启动及运行中的参考／特征与辅助窗口经dataprep／DataHub从库获取；历史行情Tick／Bar预热读本地。已有参考源用途约束、来源／时效检查和保留可用时间／修订的导出包及纯本地as-of读取，GAP-03专项与所选回归、真实参考读取及导出一致性已远程通过并关闭；通用DolphinDB特征Provider仍归GAP-08。来源选择不进入策略业务代码，见 [GAP-03交接](../../../doc/HANDOFF/gaps/HANDOFF_GAP03_2026-10-09.md)。
+当前已有`DataHub(features=FeatureHub(registry)).feature_snapshot(...)`、强类型Schema、可见修订、EXACT／WINDOW／ASOF及等待帧；标准文件、DolphinDB／原表映射和MongoDB特征适配由[公共Provider](../dataprep/features/README.md)接入。普通特征直接查询DataHub，只有需要真实OHLCV输入时才投影成Bar。特征Provider、参考Provider及历史行情Provider分别按自己的实现判断，不能把MongoDB特征适配等同于MongoDB参考／历史适配均已完成。
+
+**来源按用途选择。** 回测／研究执行使用标准本地资料和特征导出包；导出准备任务可以读库。Live参考与特征通过Provider读取已声明来源，Live历史预热／盘中回补可经[HistoryService](../dataprep/history/README.md)读取DolphinDB，并按明确的阶段、覆盖及文件优先政策处理；不再沿用早期“Live历史行情只能本地”的限制。数据源选择不进入策略业务算法，不静默切换来源，也不伪造未知历史发布时间。具体政策见[来源工厂](../dataprep/sources/README.md)与[历史启动规则](../../../doc/HANDOFF/history/HANDOFF_HISTORY_STARTUP_POLICY_2026-10-09.md)。
+
+08回测与默认DFS Live已共用指数特征声明和可见时间契约，接入在应用装配中完成；通用接口已有不表示所有业务与来源组合均已实际验收。
 
 ## 基础条款
 

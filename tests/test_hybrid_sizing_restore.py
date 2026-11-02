@@ -3,7 +3,7 @@ from contextlib import redirect_stdout
 from copy import deepcopy
 from io import StringIO
 from types import SimpleNamespace as NS
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 import json
 import unittest
 
@@ -133,6 +133,156 @@ class SizingRestoreTests(unittest.TestCase):
         self.assertEqual(self.session.ledger.state().trading_day,'20261029')
         self.assertEqual(self.session.client.order_state_machine.checkpoints()[0].state.status.value,'FILLED')
         self.assertEqual(self.f.path.read_bytes(),self.before)
+
+    def seed_nonflat(self):
+        saved=self.store.load()
+        self.store.save(self.old.saved.payload,expected_generation=saved.generation)
+        self.before=self.f.path.read_bytes()
+        self.lifecycle.confirm_manual_flat=True
+
+    def test_confirmed_manual_flat_syncs_and_resizes_in_one_restore_with_backup(self):
+        self.seed_nonflat()
+        self.restore()
+        self.assertEqual(self.f.path.read_bytes(),self.before)
+        self.assertFalse(self.session.strategy.holdings.active)
+        self.assertEqual(self.session.strategy.last_targets,{})
+        self.assertEqual(self.session.ledger.snapshot(self.session.references.instrument_id).short_total,0)
+        self.assertEqual(self.session.manual_flat_sync['previous_targets'],{'rb2701':'-6'})
+        self.assertEqual(self.session.manual_flat_sync['previous_batches'],3)
+        self.assertIsNone(self.session.manual_flat_sync['actual_close_prices'])
+        self.driver.start(lambda _:None)
+        self.addCleanup(self.driver.stop)
+        self.driver.reconcile_account_state()
+        self.driver.reconcile_active_orders()
+        self.session.manager.commit_restore()
+        updated=self.store.load()
+        self.assertEqual(updated.payload['orders'],self.old.saved.payload['orders'])
+        self.assertEqual(orders_for_day(updated.payload,'20261028'),1)
+        config=updated.payload['component_states']['hybrid']['config']
+        self.assertEqual((config['max_contracts'],config['max_entry_contracts']),(2,2))
+        backup=next(self.f.root.glob('*.before-rollover-*.json'))
+        self.assertEqual(backup.read_bytes(),self.before)
+
+    def test_manual_flat_can_clear_old_day_records_before_normal_rollover(self):
+        self.seed_nonflat()
+        self.session,self.driver,self.transport=self.f.session('20261029',mode='simnow',policy='off',
+            max_contracts=2,entry_contracts=2)
+        self.transport.quantity=0
+        self.lifecycle.driver,self.lifecycle.transport=self.driver,self.transport
+        self.lifecycle.window=NS()
+        with redirect_stdout(StringIO()):
+            self.lifecycle.restore_session(self.session,NS(trading_day='20261029'))
+        self.assertFalse(self.session.strategy.holdings.active)
+        self.assertEqual(self.session.strategy.last_targets,{})
+        self.assertEqual(self.session.ledger.state().trading_day,'20261029')
+        self.assertEqual(self.session.manual_flat_sync['previous_trading_day'],'20261028')
+        self.assertEqual(self.session.manual_flat_sync['observed_trading_day'],'20261029')
+        self.assertEqual(self.f.path.read_bytes(),self.before)
+
+    def test_manual_flat_also_handles_existing_two_by_two_state_without_resizing(self):
+        self.seed_nonflat()
+        saved=self.store.load()
+        payload=deepcopy(saved.payload)
+        hybrid=payload['component_states']['hybrid']
+        hybrid['config'].update(max_contracts=2,max_entry_contracts=2)
+        hybrid['holdings'].update(max_contracts=2,max_entry_contracts=2)
+        hybrid['holdings']['active']=hybrid['holdings']['active'][:1]
+        hybrid['last_targets']={'rb2701':'-2'}
+        for key in ('strategy_positions','account_positions'):
+            for row in payload['positions'][key]:
+                row['quantity']='-2'
+        payload['positions']['attribution']['owned'][0]['quantity']='-2'
+        plan=payload['positions']['attribution']['orders']['old-filled-plan']
+        plan['quantity']='2'
+        plan['legs'][0].update(quantity='2',filled='2')
+        payload['ctp_ledgers'][live.CLIENT_ID]['positions'][0]['short_today']='2'
+        payload['targets'][0]['targets']['rb_main']='-2'
+        payload['portfolio']['contributions'][live.CLIENT_ID][0]['quantity']='-2'
+        payload['orders'][live.CLIENT_ID][0].update(order_quantity='2',filled_quantity='2')
+        self.store.save(payload,expected_generation=saved.generation)
+        original=self.f.path.read_bytes()
+        self.restore()
+        self.assertFalse(self.session.strategy.holdings.active)
+        self.assertEqual(self.session.manual_flat_sync['previous_targets'],{'rb2701':'-2'})
+        self.assertEqual(self.session.strategy.config.max_entry_contracts,2)
+        self.assertEqual(self.f.path.read_bytes(),original)
+
+    def test_manual_confirmation_still_requires_real_flat_and_no_active_order(self):
+        self.seed_nonflat()
+        self.transport.quantity=1
+        with self.assertRaisesRegex(RuntimeError,'柜台仍有持仓'):
+            self.restore()
+        self.assertEqual(self.f.path.read_bytes(),self.before)
+        self.transport.quantity=0
+        self.transport.query_active_orders=Mock(return_value=NS(orders=(NS(instrument_id='RB2701.SHFE'),)))
+        with self.assertRaisesRegex(RuntimeError,'柜台仍有活动订单'):
+            self.restore()
+        self.assertEqual(self.f.path.read_bytes(),self.before)
+        self.assertFalse(list(self.f.root.glob('*.before-rollover-*')))
+
+    def test_manual_confirmation_does_not_invent_terminal_order_updates(self):
+        self.seed_nonflat()
+        saved=self.store.load()
+        payload=deepcopy(saved.payload)
+        payload['orders'][live.CLIENT_ID][0].update(status='ACCEPTED',filled_quantity='0',remaining_quantity='6')
+        self.store.save(payload,expected_generation=saved.generation)
+        before=self.f.path.read_bytes()
+        with self.assertRaisesRegex(ValueError,'仍有未结束订单'):
+            self.restore()
+        self.assertEqual(self.f.path.read_bytes(),before)
+
+    def test_pending_unsent_target_can_be_discarded_after_confirmed_broker_flat(self):
+        self.seed_nonflat()
+        saved=self.store.load()
+        payload=deepcopy(saved.payload)
+        payload['component_states']['hybrid']['targets_pending']=True
+        self.store.save(payload,expected_generation=saved.generation)
+        self.restore()
+        self.assertFalse(self.session.strategy._targets_pending)
+        self.assertFalse(self.session.strategy.holdings.active)
+        self.assertEqual(self.session.client.order_state_machine.checkpoints()[0].state.status.value,'FILLED')
+
+    def test_manual_flat_keeps_other_contract_positions_and_model_identity_checks(self):
+        self.seed_nonflat()
+        external={'IF2611.CFFEX':(1,0),'sc2611.INE':(1,0)}
+        self.transport.query_gross_positions=Mock(return_value=external.copy())
+        self.restore()
+        self.assertEqual(self.transport.query_gross_positions.return_value,external)
+        self.assertFalse(self.session.strategy.holdings.active)
+        saved=self.store.load()
+        payload=deepcopy(saved.payload)
+        payload['component_states']['live_session']['identity']['min_raw_bars']=300
+        self.store.save(payload,expected_generation=saved.generation)
+        before=self.f.path.read_bytes()
+        with self.assertRaisesRegex(ValueError,'min_raw_bars'):
+            self.restore()
+        self.assertEqual(self.f.path.read_bytes(),before)
+
+    def test_confirmation_is_only_used_for_first_continuous_window(self):
+        from datetime import date
+        from threading import Event
+        from bomber.framework.trader.runtime.live.continuous import LiveWindowContext
+        window=self.f.cal.windows(date(2026,10,28))[0]
+        market=live.MarketSourceConfig(source='dolphindb',table='fixture',timestamp_label='start',volume_mode='per-bar')
+        for carried,expected in (({},True),({'model':{}},False)):
+            context=LiveWindowContext(self.f.cal,window,Event(),'20261027',resume=True,state=carried)
+            with patch.object(live,'build_simnow_transport',return_value=Mock()), \
+                    patch.object(live,'HybridSessionLifecycle',return_value=NS()):
+                runtime=live.build_runtime(product='RB',release_path=self.f.release,directions_file=self.f.directions,
+                    signal_config=self.f.signal,mode='simnow',max_contracts=2,entry_contracts=2,
+                    market_config=market,state_file=self.f.path,confirm_manual_flat=True,
+                    report_dir=self.f.root/'reports',window_context=context)
+            self.assertIs(runtime.controller.confirm_manual_flat,expected)
+
+    def test_manual_confirmation_cli_requires_original_state_and_simnow(self):
+        command=self.f.cli()+['--run-forever','--mode','simnow','--enable-orders','--confirm-simnow',
+            '--state-file',str(self.f.path),'--confirm-manual-flat','--max-contracts','2','--entry-contracts','2']
+        self.assertTrue(live.parse_args(command).confirm_manual_flat)
+        command[command.index(str(self.f.path))]=str(self.f.root/'missing.json')
+        with patch('sys.stderr'),self.assertRaises(SystemExit):
+            live.parse_args(command)
+        with patch('sys.stderr'),self.assertRaises(SystemExit):
+            live.parse_args(self.f.cli()+['--run-forever','--confirm-manual-flat'])
 
 
 if __name__=='__main__':
