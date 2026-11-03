@@ -1,0 +1,24 @@
+{
+  "database": "dfs://ctp",
+  "table": "bar_1min_dce",
+  "columns": {
+    "instrument_id": "Code",
+    "open": "open",
+    "high": "high",
+    "low": "low",
+    "close": "close",
+    "volume": "volume",
+    "value": "turnover",
+    "open_interest": "open_interest"
+  },
+  "date_column": "date",
+  "time_column": "minTime",
+  "date_basis": "trading",
+  "source_timezone": "Asia/Shanghai",
+  "time_unit": "ns",
+  "time_label": "start",
+  "instrument_format": "symbol",
+  "venue": "DCE",
+  "volume_mode": "cumulative",
+  "time_column_kind": "timestamp"
+}

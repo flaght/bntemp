@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import json
 import time
 
-from .config import read_config
+from .config import read_config, strategy_report_dir
 
 
 def session_reference_is_current(session):
@@ -112,7 +112,7 @@ def _run(args, config, stop_event):
         metadata["effective_history_minutes"] = config["strategy_history_minutes"][args.strategy_id]
     if "ctp_instrument_max_age_seconds" in config:
         metadata["ctp_instrument_max_age_seconds"] = config["ctp_instrument_max_age_seconds"]
-    report = LiveRunReport(config["report_dir"], prefix=row["strategy_id"], metadata=metadata)
+    report = LiveRunReport(strategy_report_dir(row, config), prefix=row["strategy_id"], metadata=metadata)
     report.begin()
     session, failure, shutdown_failure, status = None, None, None, "failed"
     stop_reason = None
@@ -162,7 +162,7 @@ def _run(args, config, stop_event):
                     from .rollover import validate_strategy_identity
                     validate_strategy_identity(persisted.payload["identity"], identity)
                 from importlib import import_module
-                import_module("demos.10_hybrid_transformer.shared").configure_report(session, config["report_dir"])
+                import_module("demos.10_hybrid_transformer.shared").configure_report(session, strategy_report_dir(row, config))
             if hasattr(session, "session_identity") and credentials.get("reference") != session.session_identity:
                 raise ValueError("策略行情/模型/条款身份与账户服务声明不一致")
             if persisted and persisted.payload["revision"] > state["source_revision"]:

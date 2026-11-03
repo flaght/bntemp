@@ -116,7 +116,7 @@ def read_config(path):
         argv = list(row["argv"])
         path_arguments = {"--history-file", "--history-config"}
         if row["kind"] == "hybrid_transformer":
-            path_arguments.update({"--release-path", "--directions-file", "--signal-config", "--market-config"})
+            path_arguments.update({"--release-path", "--directions-file", "--signal-config", "--market-config", "--report-dir"})
         for index, arg in enumerate(argv):
             key, separator, value = arg.partition("=")
             if key not in path_arguments:
@@ -150,3 +150,14 @@ def validate_budget_increase(original, updated):
             str(original["account"]["max_gross_notional"])):
         raise ValueError("预算迁移仅允许上调账户max_gross_notional，其他配置须保持一致")
     return dict(updated["account"])
+
+
+def strategy_report_dir(row, config):
+    """每策略显式报告目录优先，省略时沿用账户报告父目录。"""
+    argv = row["argv"]
+    selected = config["report_dir"]
+    for index, arg in enumerate(argv):
+        key, separator, value = arg.partition("=")
+        if key == "--report-dir":
+            selected = value if separator else argv[index + 1]
+    return selected

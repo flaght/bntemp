@@ -41,7 +41,9 @@
         "--history-minutes",
         "260",
         "--history-config",
-        "../../prod/01_hybrid_transformer/history_rb.json"
+        "../../prod/01_hybrid_transformer/history_rb.json",
+        "--report-dir",
+        "../../prod/01_hybrid_transformer/results/live"
       ]
     },
     {
@@ -56,16 +58,22 @@
         "--directions-file",
         "/workspace/worker/pj/Chrono/genuis/mizar/records/ricso2/pc/rulex/159001/nxt1_ret_5h/cohort_pro.csv",
         "--signal-config",
-        "signal_config.example.json",
+        "signal_p.json",
         "--max-contracts",
         "2",
         "--entry-contracts",
         "2",
         "--no-session-overrides",
         "--market-source",
-        "ctp",
+        "dolphindb",
         "--history-minutes",
-        "0"
+        "260",
+        "--market-config",
+        "market_dolphindb_p.json",
+        "--report-dir",
+        "../../prod/01_hybrid_transformer/results/live/P",
+        "--history-config",
+        "history_p.json"
       ]
     }
   ]
