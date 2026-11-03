@@ -574,3 +574,10 @@ python -u -m demos.10_hybrid_transformer.recover_expired \
 
 该选项只作用于本进程首个有效会话，常驻后续窗口不会再次清理新仓位。成功后，以后的启动命令去掉它。
 详细步骤见[手数调整操作手册](../../doc/strategies/HYBRID_POSITION_SIZING_GUIDE.md)。
+
+
+## RB/P同账户：同进程与多进程布局
+
+共享入口`run_shared.py`复用现有账户服务与Unix IPC，使用同一份`shared_rb_p.example.json`，通过`--process-layout same-process`或`separate-processes`切换。模型、独立五分钟批次、信号与仓位限制不变。
+
+完整参数、原RB检查点接入及布局切换步骤见[共享执行指南](../../doc/strategies/HYBRID_SHARED_EXECUTION_GUIDE.md)。

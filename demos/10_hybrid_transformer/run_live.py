@@ -85,7 +85,7 @@ def load_market_config(path: Path | None = None, *, source: str | None = None):
     return config
 
 
-def parse_args(argv=None):
+def parse_args(argv=None, *, shared_execution=False):
     """读取命令行并进行本地检查，返回值只由main逐项读取。
 
     这里检查路径、日期和选项组合，不创建策略，也不加载模型权重。
@@ -157,6 +157,8 @@ def parse_args(argv=None):
         # 显式启用恢复历史时仍只使用数据库，不以旧文件补造断线期间的分钟。
         if (args.resume or args.run_forever and args.mode == 'simnow') and args.history_minutes and not args.history_config:
             raise ValueError('启用恢复历史时须提供数据库history-config；实时预热使用history-minutes=0')
+        if shared_execution and (args.mode != 'simnow' or args.confirm_manual_flat or args.run_forever):
+            raise ValueError('共享Hybrid由共享宿主管理授权、恢复和常驻，不接受单策略手工清仓选项')
         if args.mode == 'simnow':
             # 新会话不能覆盖现有状态文件；恢复必须明确指定原文件与--resume。
             if not (args.enable_orders and args.confirm_simnow and args.state_file):
@@ -221,7 +223,7 @@ def prepare_inputs(context, lifecycle, *, product: str, expected_source_day: str
     references = CachedRoleReferences(SourceRoleReferences(source, product=product,
         trading_day=context.trading_day, started_ns=time.time_ns(),
         factor_date_basis='source', factor_availability=live_factor_policy('source', 'observed-on-read'),
-        refresh_seconds=refresh_seconds, allowed_venues=('SHFE', 'INE'),
+        refresh_seconds=refresh_seconds, allowed_venues=('SHFE', 'INE', 'DCE'),
         required_currency='CNY', freshness=ReferenceFreshnessPolicy(
             expected_source_day=datetime.strptime(expected_source_day, '%Y%m%d').date())))
     context.references = references
@@ -292,6 +294,11 @@ class HybridLiveRunner(SessionRoleLiveRunner):
             self.first_complete_bar_ns = max(self.first_complete_bar_ns, self.history_last_ns + MINUTE)
             self.expire_due()
 
+    def poll_live_inputs(self):
+        # 同进程宿主和IPC worker使用同一个轮询契约，批次到期不依赖新Bar。
+        if getattr(self, 'shared_execution', False):
+            self._shared_poll()
+
     def pause_requested(self):
         """启动/历史读取期间越过收盘或收到停止信号时，不开放交易回调。"""
         window = getattr(self, 'continuous_window', None)
@@ -347,8 +354,11 @@ class HybridLiveRunner(SessionRoleLiveRunner):
             # 目标已变化时请求撤销旧策略单；撤单与成交结果仍由执行回报确认。
             self.client.cancel_strategy(intent.strategy_id)
         # 执行风控使用当前提交时间，原信号分钟留在metadata中供追踪。
-        intent = replace(intent, ts_event=self._clock_ns(), metadata={
-            **intent.metadata, 'signal_bar_ns': intent.ts_event})
+        metadata = {**intent.metadata, 'signal_bar_ns': intent.ts_event}
+        if getattr(self, 'shared_execution', False):
+            # 与账户目标同代保存批次，覆盖账户先保存、worker尚未来得及保存的恢复窗口。
+            metadata['hybrid_signal_state'] = self.shared_signal.snapshot_state()
+        intent = replace(intent, ts_event=self._clock_ns(), metadata=metadata)
         return super()._submit_locked(intent)
 
     def expire_due(self):
@@ -392,7 +402,8 @@ class HybridLiveRunner(SessionRoleLiveRunner):
 
 
 def build_strategy(references, calendar, *, product: str, release_path: Path,
-                   directions_file: Path, signal_config: Path, max_contracts=5, entry_contracts=1):
+                   directions_file: Path, signal_config: Path, max_contracts=5, entry_contracts=1,
+                   strategy_id=CLIENT_ID):
     """只构建预测器与策略，返回HybridTransformerStrategy。
 
     selected是信号配置数据；predictor执行特征和模型计算；策略再把信号转换为
@@ -420,7 +431,7 @@ def build_strategy(references, calendar, *, product: str, release_path: Path,
         # 策略目标和ExecutionRoute使用同一个显式键，不依赖配置类自动补全。
         target_key=f"{product.strip().lower()}_main",
         contract_multiplier=references.spec.multiplier, record_signals=True, max_entry_contracts=entry_contracts)
-    return HybridTransformerStrategy(CLIENT_ID, references, predictor, config, calendar=calendar)
+    return HybridTransformerStrategy(strategy_id, references, predictor, config, calendar=calendar)
 
 
 def assemble(inputs, lifecycle, *, product: str, release_path: Path, directions_file: Path,
@@ -429,7 +440,7 @@ def assemble(inputs, lifecycle, *, product: str, release_path: Path, directions_
              history_minutes=0, history_config: Path | None = None, history_file: Path | None = None,
              resume=False, execution_policy=None,
              max_notional=Decimal('1000000'), limit_offset_ticks=1, bar_directory: Path | None = None,
-             window=None, stop_event=None, recording_state=None, model_seed=None, strategy=None):
+             window=None, stop_event=None, recording_state=None, model_seed=None, strategy=None, shared_service=None, strategy_id=CLIENT_ID):
     """把资料、行情、执行、策略和持久化连接成session，交给生命周期启动。
 
     inputs是prepare_inputs的返回结果；session则还包含Runner、执行客户端、
@@ -455,7 +466,19 @@ def assemble(inputs, lifecycle, *, product: str, release_path: Path, directions_
         feed.archive = archive  # Feed连接/断开负责打开与关闭存档。
     orders = mode == 'simnow'
     # 3. 装配执行端。Recording记录目标；SimNow使用TD通道并处理真实柜台回报。
-    if orders:
+    limits = RiskLimits(max_order_quantity=2*max_contracts, max_abs_position=max_contracts,
+        max_order_notional=max_notional, max_abs_position_notional=max_notional,
+        max_market_age_ns=120_000_000_000, contract_multiplier=references.spec.multiplier)
+    if shared_service is not None:
+        if not orders or not strategy_id:
+            raise ValueError('共享Hybrid须声明独立策略ID并使用SimNow')
+        from bomber.framework.trader.execution.shared import SharedRiskBudget
+        port = shared_service.strategy_client(strategy_id, routes={f'{product.lower()}_main': instrument},
+            budget=SharedRiskBudget(max_contracts, max_notional), instrument_limits={instrument: limits})
+        execution = ExecutionComponents(port, shared_service.position_manager, shared_service.prices)
+        check = SessionReadiness(market_channel, CtpExecutionChannel(lifecycle.driver,
+            references.trading_day.strftime('%Y%m%d'), require_orders=True))
+    elif orders:
         check = SessionReadiness(market_channel, CtpExecutionChannel(lifecycle.driver,
             references.trading_day.strftime('%Y%m%d'), require_orders=True))
         # 从-5手调至+5手可能需要10手增量；每批开仓仍限1手，执行端按今昨仓规划开平。
@@ -475,7 +498,7 @@ def assemble(inputs, lifecycle, *, product: str, release_path: Path, directions_
     if strategy is None:
         strategy = build_strategy(references, calendar, product=product, release_path=release_path,
             directions_file=directions_file, signal_config=signal_config, max_contracts=max_contracts,
-            entry_contracts=entry_contracts)
+            entry_contracts=entry_contracts, strategy_id=strategy_id)
     elif (strategy.config.product != product or strategy.config.max_contracts != max_contracts
             or strategy.config.venue != references.spec.venue
             or strategy.config.contract_multiplier != references.spec.multiplier):
@@ -513,7 +536,7 @@ def assemble(inputs, lifecycle, *, product: str, release_path: Path, directions_
     components = {'hybrid': HybridCheckpoint(strategy), 'session_rules': SessionRulesCheckpoint(calendar),
         'live_session': SessionIdentityCheckpoint(runner.model_identity)}
     manager = attach_ctp_persistence(execution, runner, state_file=state_file,
-        state_components=components) if orders else None
+        state_components=components) if orders and shared_service is None else None
     runner.manager = manager
     if manager is not None:
         # 传入函数本身，尚未执行save()；后续批次/目标/时钟变化会触发保存。
@@ -530,6 +553,9 @@ def assemble(inputs, lifecycle, *, product: str, release_path: Path, directions_
     if mode == 'recording':
         session.window_components["recording"] = RecordingWindowState(session)
     session.flush_completed_bars = True
+    if shared_service is not None:
+        from .shared import bind_shared_session
+        bind_shared_session(session, shared_service)
     if recording_state is not None:
         from .checkpoint import restore_recording
         restore_recording(session, recording_state)
@@ -548,6 +574,8 @@ class HybridSessionLifecycle(CtpResumeLifecycle, CtpSessionLifecycle):
         saved = session.manager.repository.load()
         if saved is None:
             return super().restore_session(session, context)
+        if 'shared_account' in saved.payload['component_states']:
+            raise ValueError('此文件已是共享账户格式，请使用run_shared入口并保留原状态文件')
         previous = saved.payload['component_states']['hybrid']['config']
         current = HybridCheckpoint(session.strategy).config()
         resize = any(previous.get(key) != current.get(key) for key in ('max_contracts', 'max_entry_contracts'))

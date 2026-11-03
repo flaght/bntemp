@@ -207,15 +207,21 @@ class CtpSharedAccountLifecycle:
         if resume:
             saved = self.manager.repository.load()
             transform = payload_transform
-            if transform is None and saved and ("vega_signal" in saved.payload["component_states"] or
-                    saved.payload["component_states"]["session_identity"]["identity"].get("trading_day", self.expected_day) != self.expected_day):
-                if self.rollover_transform is None:
-                    raise RuntimeError("此共享会话未配置跨日恢复")
-                transform = lambda payload: self.rollover_transform(self, payload)
+            if transform is None and saved:
+                components = saved.payload["component_states"]
+                # 框架只识别自己的共享账户格式和日期；旧业务格式交给注入的应用转换器。
+                identity = components.get("session_identity", {}).get("identity", {})
+                requires_transform = ("shared_account" not in components
+                    or identity.get("trading_day", self.expected_day) != self.expected_day)
+                if requires_transform:
+                    if self.rollover_transform is None:
+                        raise RuntimeError("此共享会话未配置旧格式转换或跨日恢复")
+                    transform = lambda payload: self.rollover_transform(self, payload)
             if self.preserve_external:
                 previous_transform = transform
                 def owned_transform(payload):
-                    old_identity = payload["component_states"]["session_identity"]["identity"]
+                    # 已有共享格式只迁移通用归属政策；旧业务格式由应用回调自行处理。
+                    old_identity = payload["component_states"].get("session_identity", {}).get("identity", {})
                     new_identity = self.manager.state_components["session_identity"].identity
                     if "strategies" in old_identity and old_identity.get("existing_position_policy") is None:
                         # 仅迁移持仓政策，其他身份/预算/算法/路由仍由原恢复严格比较。

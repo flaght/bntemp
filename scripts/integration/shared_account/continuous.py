@@ -25,11 +25,12 @@ def config_for_day(config, day):
 
 class ProcessWindowRuntime:
     """调度server/worker原入口；先正常停止worker，再停止唯一TD服务。"""
-    def __init__(self, config, window, stop_event, remaining, *, popen=None, clock=None):
+    def __init__(self, config, window, stop_event, remaining, *, popen=None, clock=None, resume=True):
         self.config, self.window, self.stop, self.remaining = config, window, stop_event, remaining
         self.popen = popen or subprocess.Popen
         self.clock = clock or (lambda: datetime.now(window.end.tzinfo))
         self.workers, self.server = [], None
+        self.resume = resume
 
     def stop_process(self, process):
         if process.poll() is None:
@@ -50,10 +51,12 @@ class ProcessWindowRuntime:
         directory = Path(self.config['report_dir']) / ('continuous-window-' + uuid.uuid4().hex)
         directory.mkdir(parents=True, mode=0o700)
         config_file = directory/'config.json'
-        socket = Path('/tmp') / ('bomber-vega-' + uuid.uuid4().hex + '.sock')
+        socket = Path('/tmp') / ('bomber-shared-' + uuid.uuid4().hex + '.sock')
         credentials = directory/'credentials'
         config_file.write_text(json.dumps(self.config, ensure_ascii=False, indent=2)+'\n')
-        common = ['--config', str(config_file), '--connect', '--enable-orders', '--confirm-simnow', '--resume']
+        common = ['--config', str(config_file), '--connect', '--enable-orders', '--confirm-simnow']
+        if self.resume:
+            common.append('--resume')
         errors = []
         try:
             self.server = self.popen([sys.executable, '-u', '-m', 'scripts.integration.shared_account.server',

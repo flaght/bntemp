@@ -66,7 +66,7 @@ def build_host(config, *, resume, diagnostics=None, read_only=False, strategy_pr
     from bomber.framework.trader.runtime.live.shared import SharedAccountLiveHost, SharedStrategySession
     from bomber.framework.trader.runtime.live.contracts import LiveRunContext
     from bomber.framework.trader.runtime.live.recovery import InstrumentPositionScope
-    from .factories import strategy_arguments, instrument_specs, assemble_strategy_session, reference_identity
+    from .factories import strategy_arguments, instrument_specs, assemble_strategy_session, reference_identity, prepare_strategy_inputs, shared_strategy_identity
     from bomber.framework.market.sources import source_config
 
     resources = ExitStack()
@@ -113,7 +113,7 @@ def build_host(config, *, resume, diagnostics=None, read_only=False, strategy_pr
             context = LiveRunContext(driver.trading_day, resources)
             lifecycle = SimpleNamespace(transport=transport, md_front=md_front)
             # 每个MD拥有独立flow目录；同策略类型也可以多实例。
-            inputs = entry.prepare_inputs(args, context, lifecycle)
+            inputs = prepare_strategy_inputs(row, entry, args, context, lifecycle)
             if row["kind"] != "option_vega":
                 prepared_references[row["strategy_id"]] = inputs.references.spec
             upstream = getattr(inputs, "upstream", getattr(inputs, "ctp_upstream", None))
@@ -157,17 +157,23 @@ def build_host(config, *, resume, diagnostics=None, read_only=False, strategy_pr
         service = SharedAccountExecutionService(execution.client, prices=execution.prices,
             instrument_limits=limits, budget=budget, instrument_scope=position_scope,
             execution_mode=config.get("execution_mode", "netted"))
+        if any(row["kind"] == "hybrid_transformer" for row in config["strategies"]):
+            # 两种布局均保留同一个事件journal，切换时无需改账本格式。
+            from bomber.framework.trader.execution.ipc import ExecutionEventJournal
+            service.event_journal = ExecutionEventJournal([row["strategy_id"] for row in config["strategies"]])
         sessions = []
         for row, entry, args, inputs in prepared:
             session = assemble_strategy_session(entry, args, inputs, service=service,
                 driver=driver, strategy_id=row["strategy_id"],
-                prepared_reference=prepared_references.get(row["strategy_id"]))
+                prepared_reference=prepared_references.get(row["strategy_id"]), execution_only=strategy_processes)
             session.client.ready_check = session.runner.session_ready
             sessions.append(SharedStrategySession(session, Path(row["state_file"]),
-                identity={"strategy_id": row["strategy_id"], "kind": row["kind"], "argv": row["argv"],
-                    "trading_day": config["trading_day"], "environment": config["environment"],
-                    "routes": session.client.configuration(),
-                    "reference": reference_identity(session)}))
+                identity=shared_strategy_identity(row, config, session)))
+        if not strategy_processes:
+            for row, item in zip(config["strategies"], sessions):
+                if row["kind"] == "hybrid_transformer":
+                    from importlib import import_module
+                    import_module("demos.10_hybrid_transformer.shared").configure_report(item.session, config["report_dir"])
         identity = {"trading_day": config["trading_day"], "environment": config["environment"],
             "replay_md_trading_day": config.get("replay_md_trading_day"), "account": account_config,
             "strategies": {item.strategy_id: item.identity for item in sessions}}
@@ -180,6 +186,8 @@ def build_host(config, *, resume, diagnostics=None, read_only=False, strategy_pr
             state_file=config["account_state_file"], identity=identity, resources=resources,
             expected_day=config["trading_day"], position_scope=position_scope, rollover_transform=payload_for_day,
             preserve_external=preserve_external)
+        account.hybrid_sessions = {item.strategy_id: item.session for item in sessions
+                                   if hasattr(item.session.runner, "shared_signal")}
         account.option_sessions = {item.strategy_id: item.session for item in sessions
                                    if hasattr(item.session, "signal_checkpoint")}
         ready_seconds = max([30] + [args.ready_timeout for row, entry, args, inputs in prepared
