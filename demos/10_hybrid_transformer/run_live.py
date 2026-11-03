@@ -21,7 +21,6 @@ from pathlib import Path
 import time
 from types import SimpleNamespace
 
-import pandas as pd
 from dotenv import load_dotenv
 from bomber.framework.calendars import SessionRulesCheckpoint
 from bomber.framework.dataprep.history import FuturesMinuteArchive
@@ -49,7 +48,7 @@ from bomber.framework.trader.runtime.live.contracts import SessionReadiness
 from bomber.framework.trader.runtime.live.local import LocalExecutionChannel, RecordingExecutionLifecycle
 from bomber.framework.trader.runtime.live.recovery import SessionIdentityCheckpoint, StrategyPositionBinding
 from bomber.framework.trader.runtime.live.runtime import ManagedLiveRuntime
-from bomber.framework.trader.runtime.reports import LiveRunReport
+from bomber.framework.trader.runtime.reports import TradingDayLiveReport
 
 from .checkpoint import HybridCheckpoint
 from .history import build_history, warm_history, warm_recording
@@ -639,15 +638,18 @@ class HybridRecordingLifecycle(RecordingExecutionLifecycle, CtpMarketSessionLife
         return result
 
 
-class HybridLiveReport(LiveRunReport):
-    """停机时补充Hybrid分析文件，再由父类写summary.json和events.txt。"""
-    def write(self, *, status, fields, session, events):
+class HybridLiveReport(TradingDayLiveReport):
+    """交易日内实时追加信号、批次和回报；结束时保存最新策略快照。"""
+    def record(self, session, events):
+        self.record_events(events)
         if session is not None:
-            pd.DataFrame(session.strategy.signal_records).to_csv(
-                self.path/'signals.csv', index=False, encoding='utf-8')
-            pd.DataFrame(session.strategy.batch_records).to_csv(
-                self.path/'batches.csv', index=False, encoding='utf-8')
-            # 此文件只是策略组件快照；完整恢复仍应使用统一state-file。
+            self.record_csv('signals.csv', session.strategy.signal_records)
+            self.record_csv('batches.csv', session.strategy.batch_records)
+
+    def write(self, *, status, fields, session, events):
+        self.record(session, events)
+        if session is not None:
+            # 最新只读快照；完整恢复仍应使用统一state-file。
             (self.path/'strategy_state.json').write_text(json.dumps(
                 HybridCheckpoint(session.strategy).snapshot_state(), ensure_ascii=False, indent=2) + '\n',
                 encoding='utf-8')
@@ -754,11 +756,14 @@ def build_runtime(
             'recorded_bars': session.runner.bar_archive.recorded_bars if session.runner.bar_archive is not None else 0,
         }
 
-    report = HybridLiveReport(report_dir, prefix='hybrid-'+mode,
+    report = HybridLiveReport(report_dir, prefix=f'hybrid-{mode}-{product}',
+        trading_day=expected_trading_day,
         metadata={'mode': mode, 'product': product, 'market_config': market_config.identity,
             'execution_policy': execution_policy.snapshot_state()}, describe=describe)
 
     def progress(session):
+        # 每轮采集，而非只在bar变化时采集：成交可能晚于产生信号的那一轮。
+        report.record(session, lifecycle.events(session))
         # 控制循环比一分钟更频繁；只在有效bar计数变化时打印一次模型进度。
         strategy = session.strategy
         count = strategy.bars_used

@@ -120,7 +120,7 @@ Recording不撮合成交，也不创建TD交易通道。CTP行情仍需要MD配�
 | `--enable-orders` | SimNow显式交易开关 |
 | `--confirm-simnow` | SimNow确认开关 |
 | `--confirm-manual-flat` | 仅柜台已手工平仓且无活动委托时使用；首次会话复核后清理本地残留并按本次手数恢复，保留原备份和订单历史 |
-| `--report-dir` | 停机报告输出的父目录 |
+| `--report-dir` | 按交易日归档的Live报告父目录 |
 | `--no-session-overrides` | 明确声明本次规则范围内没有时段例外 |
 
 交易日和资料来源日用途不同。夜盘的交易日可能不同于当前自然日，资料来源日也不能简单从交易日减一天推断。
@@ -369,11 +369,18 @@ Recording不创建恢复管理器。组装最后返回的session把Runner、策�
 
 | 文件 | 用途 |
 | --- | --- |
-| summary.json | 会话模式、来源、预测/目标状态、执行和清理摘要 |
-| events.txt | 对应执行模式提供的目标或执行事件 |
-| signals.csv | 策略处理过程中的预测和目标记录 |
+| summary.json | 最近一次会话的模式、来源、预测/目标状态及执行和清理摘要，非全天累计 |
+| sessions.jsonl | 每次会话结束追加摘要，保留当日所有时段与重启记录 |
+| events.txt | 运行中追加目标或执行回报，同日各时段共用 |
+| signals.csv | 运行中追加预测和目标记录，携带交易日和会话编号 |
 | batches.csv | 批次建立、到期等记录 |
 | strategy_state.json | 供查看的策略组件快照 |
+
+Live目录使用`<report-dir>/hybrid-<mode>-<product>-<YYYYMMDD>/`，日期是交易日。
+同一交易日的夜盘、日盘与重启追加至同一目录；下一交易日自动分目录。
+`signals.csv`、`batches.csv`和`events.txt`每轮采集新记录；收尾补齐最后一轮。
+`sessions.jsonl`逐次追加会话摘要，`summary.json`与`strategy_state.json`保存最新状态。
+旧纳秒目录不会自动迁移；原状态文件和恢复机制不变。
 
 恢复应使用统一 `state-file`，不能只拿报告目录中的strategy_state.json恢复，因为后者不包含完整订单、执行账本和其他检查点。
 
