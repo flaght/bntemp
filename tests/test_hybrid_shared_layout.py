@@ -360,7 +360,7 @@ class HybridSharedLayoutTests(unittest.TestCase):
                     '--release-path',str(self.release),'--directions-file',str(self.directions),
                     '--signal-config',str(self.signals),'--market-source','dolphindb',
                     '--market-config',str(self.root/'market.json'),'--max-contracts','2','--entry-contracts','2',
-                    '--no-session-overrides']) for product in ('RB','P')]}
+                    '--no-session-overrides','--report-dir',str(self.root/(product+'-reports'))]) for product in ('RB','P')]}
         (self.root/'market.json').write_text(json.dumps(dict(source='dolphindb',table='fixture',
             timestamp_label='start',volume_mode='per-bar')))
         def prepare(context,lifecycle,*,product,**kwargs):
@@ -390,8 +390,8 @@ class HybridSharedLayoutTests(unittest.TestCase):
         native_signal=active.signal_checkpoint.hybrid.snapshot_state()
         host.stop()
         self.assertTrue(Path(config['account_state_file']).is_file())
-        self.assertTrue((self.root/'reports/hybrid-simnow-RB-20261013').is_dir())
-        self.assertTrue((self.root/'reports/hybrid-simnow-P-20261013').is_dir())
+        self.assertTrue((self.root/'RB-reports/hybrid-simnow-RB-20261013').is_dir())
+        self.assertTrue((self.root/'P-reports/hybrid-simnow-P-20261013').is_dir())
         from copy import deepcopy
         from bomber.framework.trader.persistence import JsonStateStore
         store=JsonStateStore(config['account_state_file']);saved=store.load()
@@ -582,7 +582,7 @@ class HybridLayoutConfigTests(unittest.TestCase):
         self.assertNotIn('process_layout',parsed)
         self.assertEqual(args.entry_contracts,2)
 
-    def test_example_config_includes_rb_history_and_p_real_time_warmup(self):
+    def test_example_config_has_independent_dolphindb_market_and_history_for_rb_and_p(self):
         from scripts.integration.shared_account.config import read_config
         path=Path(__file__).resolve().parents[1]/'demos/10_hybrid_transformer/shared_rb_p.example.json'
         config=read_config(path)
@@ -590,7 +590,24 @@ class HybridLayoutConfigTests(unittest.TestCase):
         rb,p=config['strategies']
         self.assertEqual(rb['argv'][rb['argv'].index('--history-minutes')+1],'260')
         self.assertTrue(Path(rb['argv'][rb['argv'].index('--history-config')+1]).is_absolute())
-        self.assertEqual(p['argv'][p['argv'].index('--history-minutes')+1],'0')
+        self.assertEqual(p['argv'][p['argv'].index('--history-minutes')+1],'260')
+        self.assertEqual(p['argv'][p['argv'].index('--market-source')+1],'dolphindb')
+        market_path=Path(p['argv'][p['argv'].index('--market-config')+1])
+        history_path=Path(p['argv'][p['argv'].index('--history-config')+1])
+        market=json.loads(market_path.read_text())
+        history=json.loads(history_path.read_text())
+        self.assertEqual(market['table'],'market_bar_state_v2_dce')
+        self.assertEqual(market['volume_mode'],'per-bar')
+        self.assertEqual((history['database'],history['table'],history['venue']),
+            ('dfs://ctp','bar_1min_dce','DCE'))
+        self.assertEqual(history['volume_mode'],'cumulative')
+        rb_market=json.loads((path.parent/'market_dolphindb_rb.json').read_text())
+        rb_history=json.loads((path.parent/'history_rb.json').read_text())
+        self.assertEqual({**rb_market,'table':'market_bar_state_v2_dce'},market)
+        self.assertEqual({**rb_history,'table':'bar_1min_dce','venue':'DCE'},history)
+        product_signal=import_module('demos.10_hybrid_transformer.signal_config').load_product_signal(
+            p['argv'][p['argv'].index('--signal-config')+1],'P')
+        self.assertEqual((product_signal.signal_method,product_signal.signal_params['threshold']),('linear_signal',.05))
         self.assertEqual(rb['strategy_id'],config['account']['client_id'])
 
     def test_native_entry_explains_shared_account_format_without_touching_state(self):
@@ -598,6 +615,23 @@ class HybridLayoutConfigTests(unittest.TestCase):
         session=NS(manager=NS(repository=NS(load=lambda:NS(payload={'component_states':{'shared_account':{}}}))))
         with self.assertRaisesRegex(ValueError,'run_shared'):
             lifecycle.restore_session(session,NS(trading_day='20261013'))
+
+    def test_each_product_report_dir_is_resolved_and_shared_by_host_and_worker(self):
+        from copy import deepcopy
+        from scripts.integration.shared_account.config import read_config, strategy_report_dir
+        for flags in (['--report-dir','p_reports'],['--report-dir=p_reports']):
+            raw=deepcopy(self.config)
+            raw['strategies'][0]['argv']+=flags
+            rb=deepcopy(raw['strategies'][0]);rb['strategy_id']='hybrid-rb';rb['state_file']='rb.json'
+            rb['argv']=list(self.config['strategies'][0]['argv'])
+            raw['strategies'].append(rb)
+            self.path.write_text(json.dumps(raw))
+            parsed=read_config(self.path)
+            self.assertEqual(strategy_report_dir(parsed['strategies'][0],parsed),str((self.root/'p_reports').resolve()))
+            self.assertEqual(strategy_report_dir(parsed['strategies'][1],parsed),parsed['report_dir'])
+        raw=deepcopy(self.config);raw['strategies'][0]['argv']+=['--report-dir']
+        self.path.write_text(json.dumps(raw))
+        with self.assertRaisesRegex(ValueError,'缺少文件路径'):read_config(self.path)
 
     def test_offline_cli_exercises_both_layout_options_without_connections(self):
         for layout in ('same-process','separate-processes'):

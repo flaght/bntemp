@@ -8,7 +8,7 @@ import time
 import os
 from types import SimpleNamespace
 
-from .config import read_config, validate_budget_increase, ctp_instrument_max_age_seconds
+from .config import read_config, validate_budget_increase, ctp_instrument_max_age_seconds, strategy_report_dir
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
@@ -173,7 +173,7 @@ def build_host(config, *, resume, diagnostics=None, read_only=False, strategy_pr
             for row, item in zip(config["strategies"], sessions):
                 if row["kind"] == "hybrid_transformer":
                     from importlib import import_module
-                    import_module("demos.10_hybrid_transformer.shared").configure_report(item.session, config["report_dir"])
+                    import_module("demos.10_hybrid_transformer.shared").configure_report(item.session, strategy_report_dir(row, config))
         identity = {"trading_day": config["trading_day"], "environment": config["environment"],
             "replay_md_trading_day": config.get("replay_md_trading_day"), "account": account_config,
             "strategies": {item.strategy_id: item.identity for item in sessions}}

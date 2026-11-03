@@ -8,9 +8,27 @@
 
 - 账户：`client_id=hybrid-transformer-live`，预算4手、200万元名义金额，每个交易日最多100笔。预算需要按实际需求核对。
 - RB：策略ID保留 `hybrid-transformer-live`，离散信号，每批上限2手、总上限2手，DolphinDB行情及260根历史预热。沿用原 `prod/01_hybrid_transformer` 配置，模型指纹不会因为增加P而改写。
-- P：策略ID `hybrid-p-live`，`pc/10001`模型、159001方向文件、1101连续信号，每批上限2手、总上限2手。示例使用CTP行情，历史读取为0，从实时分钟/本机CTP录制恢复模型窗口；达到260根后才产生预测。已有DCE历史/订阅表时可在该行argv配置，不能套用RB的SHFE表。
+- P：策略ID `hybrid-p-live`，`pc/10001`模型、159001方向文件、1101连续信号，每批上限2手、总上限2手。示例使用DolphinDB DCE行情及260根历史预热。P的信号、行情和历史分别由`signal_p.json`、`market_dolphindb_p.json`、`history_p.json`声明。
 - 两种布局均固定 `execution_mode=independent`，不会因为变成同进程而改用跨策略净额抵消。
 - 每个批次独立持有5个交易分钟；连续信号按每批预算量化为整数手，到期与同一时点的新信号合并为净目标。
+
+## 每个品种的独立配置
+
+各策略的`argv`分别声明`--release-path`、`--directions-file`、`--signal-config`、`--market-config`、`--history-config`与`--report-dir`，不会自动沿用另一个品种。`state_file`写在策略条目上，不放进argv；账户委托、成交和仓位归属共用顶层`account_state_file`。
+
+| 字段 | RB | P（当前示例） |
+| --- | --- | --- |
+| 模型发布 | `1release/rbb/10002` | `1release/pc/10001` |
+| 特征方向 | `rbb/rulex/113001/nxt1_ret_5h/cohort_pro.csv` | `pc/rulex/159001/nxt1_ret_5h/cohort_pro.csv` |
+| 信号配置 | 原`prod/01_hybrid_transformer/signal_config.json` | `demos/10_hybrid_transformer/signal_p.json` |
+| 行情配置 | 原`market_dolphindb_rb.json` | `market_dolphindb_p.json`，DCE来源 |
+| 历史配置 | 原`history_rb.json`，读取260根 | `history_p.json`，读取260根 |
+| 策略状态 | `shared_RB_signal.json` | `shared_P_signal.json` |
+| 报告父目录 | `prod/01_hybrid_transformer/results/live` | `prod/01_hybrid_transformer/results/live/P` |
+
+P按已确认的RB同源规则配置：实时流表`market_bar_state_v2_dce`，历史库`dfs://ctp`、表`bar_1min_dce`，交易所`DCE`。实时流保持`volume_mode=per-bar`，历史表保持`volume_mode=cumulative`，成交额/成交量由历史读取层差分；`open_interest`为持仓量快照，不作差分。字段映射、分钟开始标签、交易日date与timestamp类型的minTime均沿用RB。
+
+两个品种均先尝试加载260根历史，不足的部分继续等待完整实时分钟。市场连接和历史读取使用`DDB_MARKET_*`，主力/条款等参考资料继续使用`DDB_REFERENCE_*`。RB已有检查点对应的信号文件保持原样，不直接追加P条目，以免改变模型/信号指纹。
 
 ## 同进程启动
 
@@ -54,7 +72,7 @@
 
 ## 报告
 
-沿用按交易日目录：`<report-dir>/hybrid-simnow-RB-20261103/`、`hybrid-simnow-P-20261103/`。各策略的夜盘、日盘、同日重启继续追加信号、批次与执行事件。进程布局切换不另分策略目录；summary是最新会话，sessions.jsonl保留各次摘要。
+按各自`--report-dir`归档：示例为`results/live/hybrid-simnow-RB-20261103/`及`results/live/P/hybrid-simnow-P-20261103/`。未声明策略报告目录时沿用顶层`report_dir`；顶层仍保存账户/调度报告。各策略的夜盘、日盘、同日重启继续追加信号、批次与执行事件。进程布局切换不另分策略目录；summary是最新会话，sessions.jsonl保留各次摘要。
 
 旧纳秒目录不会自动迁移。交易恢复仍使用账户文件及各策略信号文件，不使用报告快照。
 
