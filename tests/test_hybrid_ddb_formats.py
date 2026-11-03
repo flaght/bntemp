@@ -60,7 +60,7 @@ class TimestampHistoryTests(unittest.TestCase):
                 '2026-10-16 21:00','2026-10-16 21:01')
 
     def test_new_history_sample_has_timestamp_and_confirmed_cumulative_amounts(self):
-        path=Path(__file__).resolve().parents[1]/'demos/10_hybrid_transformer/history_rb.json'
+        path=Path(__file__).resolve().parents[1]/'demos/10_hybrid_transformer/config/history_rb.json'
         data=json.loads(path.read_text())
         self.assertEqual((data['database'],data['table']),('dfs://ctp','bar_1min_shfe'))
         self.assertEqual(data['time_column_kind'],'timestamp')

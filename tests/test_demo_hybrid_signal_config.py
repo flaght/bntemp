@@ -61,7 +61,7 @@ class ProductConfigTests(unittest.TestCase):
 
     def test_example_file_is_explicitly_selectable(self):
         config = configuration.load_product_signal(
-            ROOT / 'demos/10_hybrid_transformer/signal_config.example.json', 'P')
+            ROOT / 'demos/10_hybrid_transformer/config/signal_p.json', 'P')
         self.assertEqual((config.signal_id, config.signal_method, config.hold_bars),
                          ('1101', 'linear_signal', 5))
 

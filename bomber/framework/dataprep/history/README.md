@@ -65,4 +65,4 @@ Provider按请求区间的实际会话确定交易日，再读取这些交易日
 OpenInterest不差分。交易日首分钟的前值为0；盘中首行只作基准。零量且非零额、量额倒退、
 请求范围内的前值缺失和同键冲突明确失败。盘中首行不能提供完整目标分钟时，由HistoryService覆盖检查拒绝。
 午休不重置累计值，跨午夜不重置，切换交易日才重置。声明行数上限包含读取的基准数据。
-Hybrid示例为demos/10_hybrid_transformer/history_rb.json；累计模式依据用户截图推断，真实RB源待确认。
+Hybrid示例为demos/10_hybrid_transformer/config/history_rb.json；累计模式依据用户截图推断，真实RB源待确认。

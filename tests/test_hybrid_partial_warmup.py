@@ -36,7 +36,7 @@ class PartialHistoryTests(unittest.TestCase):
 
     def service(self):
         with patch.dict('os.environ',SPLIT,clear=True):
-            return self.history.build_history(history_config=ROOT/'demos/10_hybrid_transformer/history_rb.json',
+            return self.history.build_history(history_config=ROOT/'demos/10_hybrid_transformer/config/history_rb.json',
                 calendar=self.calendar)
 
     def runner(self, service):
@@ -149,8 +149,8 @@ class PartialHistoryTests(unittest.TestCase):
                     patch.object(live,'MODEL_MIN_RAW_BARS',minimum):
                 session=live.assemble(NS(references=refs,calendar=self.calendar,upstream=fixture.Upstream('fixture')),
                     NS(driver=None),product='RB',release_path=root/'release',directions_file=root/'directions.csv',
-                    signal_config=signal,market_config=live.load_market_config(ROOT/'demos/10_hybrid_transformer/market_dolphindb_rb.json'),
-                    history_minutes=260 if history_count==260 else 300,history_config=ROOT/'demos/10_hybrid_transformer/history_rb.json')
+                    signal_config=signal,market_config=live.load_market_config(ROOT/'demos/10_hybrid_transformer/config/market_dolphindb_rb.json'),
+                    history_minutes=260 if history_count==260 else 300,history_config=ROOT/'demos/10_hybrid_transformer/config/history_rb.json')
             now=[self.end+2_000_000_000]
             session.runner._clock_ns=lambda:now[0]
             session.runner._session_check=lambda:True
