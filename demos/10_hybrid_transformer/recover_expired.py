@@ -176,7 +176,8 @@ def build_runtime(*, state_file, release_path, directions_file, signal_config, m
         session.bar_feed.register_bar_handler(session.execution.prices.on_market_event)
         return session
 
-    report = live.HybridLiveReport(report_dir or state_file.parent, prefix='hybrid-recover-expired',
+    report = live.HybridLiveReport(report_dir or state_file.parent, prefix=f'hybrid-simnow-{config.product}',
+        trading_day=expected_trading_day,
         metadata={'mode': 'recover-expired-only', 'new_entries': False}, describe=lambda session: {} if session is None else {
             'last_targets': session.strategy.last_targets,
             'active_batches': session.strategy.holdings.snapshot_state()['active'],
@@ -184,7 +185,8 @@ def build_runtime(*, state_file, release_path, directions_file, signal_config, m
     return live.ManagedLiveRuntime(live.CLIENT_ID, controller=lifecycle,
         prepare_inputs=lambda context: live.prepare_inputs(context, lifecycle, product=config.product,
             expected_source_day=expected_source_day, market_config=market_config,
-            no_session_overrides=no_session_overrides), assemble_session=assemble, report=report, seconds=seconds)
+            no_session_overrides=no_session_overrides), assemble_session=assemble, report=report, seconds=seconds,
+        progress=lambda session: report.record(session, lifecycle.events(session)))
 
 
 def main(argv=None):
