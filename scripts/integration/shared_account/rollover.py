@@ -28,6 +28,9 @@ def validate_strategy_identity(old, new):
 
 
 def payload_for_day(account, payload):
+    if "hybrid" in payload["component_states"]:
+        from importlib import import_module
+        return import_module("demos.10_hybrid_transformer.shared").import_native_payload(account, payload)
     if "vega_signal" in payload["component_states"]:
         return import_option_payload(account, payload)
     old = payload["component_states"]["session_identity"]["identity"]

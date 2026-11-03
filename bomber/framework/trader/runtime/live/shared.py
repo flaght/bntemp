@@ -33,6 +33,7 @@ class SharedStrategySession:
     stop_requested_at_ns: int | None = None
     stopped_at_ns: int | None = None
     saved_signal: object = None
+    saved_cursor: int | None = None
 
     @property
     def strategy_id(self):
@@ -62,7 +63,7 @@ class SharedStrategySession:
             restore = getattr(self.session, "restore_signal", None)
             if callable(restore):
                 if "signal" not in state:
-                    raise ValueError("08共享检查点缺少选约去重状态")
+                    raise ValueError("共享策略检查点缺少业务状态")
                 restore(state["signal"])
                 self.saved_signal = state["signal"]
             if state["identity"] != self.identity:
@@ -70,6 +71,20 @@ class SharedStrategySession:
         self.session.strategy.restore_target_revision(account_revision)
         if persisted is None and bootstrap is not None:
             self.session.restore_signal(bootstrap)
+        port = self.session.client
+        journal = getattr(service, "event_journal", None)
+        if journal is not None and hasattr(port, "_events"):
+            cursor = getattr(self.session, "restored_signal_cursor", None)
+            if cursor is None:
+                cursor = persisted.payload.get("cursor", journal.ack[self.strategy_id]) if persisted else journal.ack[self.strategy_id]
+            if type(cursor) is not int or not 0 <= cursor <= len(journal.events[self.strategy_id]):
+                raise ValueError("策略回报游标领先账户journal，保留文件并要求核对")
+            port._consume_journal = True
+            port._journal_cursor = cursor
+            self.saved_cursor = persisted.payload.get("cursor") if persisted else None
+        bind = getattr(self.session, "bind_signal_checkpoint", None)
+        if callable(bind):
+            bind(lambda: self.save(service))
         # 指标按各原Runner重新预热。旧账户目标处于暂停状态，不重放历史交易。
 
     def save(self, service):
@@ -77,15 +92,26 @@ class SharedStrategySession:
         revision = source["revision"] if source else 0
         checkpoint = getattr(self.session, "signal_checkpoint", None)
         signal = checkpoint.snapshot_state() if checkpoint is not None else None
-        if self.saved_revision == revision and self.failure is None and signal == self.saved_signal:
+        journal = getattr(service, "event_journal", None)
+        cursor = (getattr(self.session.client, "_journal_cursor", journal.ack[self.strategy_id])
+                  if journal is not None and getattr(self.session.client, "_consume_journal", False) else None)
+        if (self.saved_revision == revision and self.failure is None and signal == self.saved_signal
+                and self.saved_cursor == cursor):
             return
         persisted = JsonStateStore(self.state_file).save({"version": 1, "identity": self.identity,
             "revision": revision,
             "signal_recovery": "rewarm", "failure": self.failure,
-            **({"signal": signal} if signal is not None else {})}, expected_generation=self.generation)
+            **({"signal": signal} if signal is not None else {}),
+            **({"cursor": cursor, "fills_received": getattr(self.session.strategy, "fills_received", 0)}
+               if cursor is not None else {})}, expected_generation=self.generation)
         self.generation = persisted.generation
         self.saved_revision = revision
         self.saved_signal = signal
+        self.saved_cursor = cursor
+        if cursor is not None:
+            journal.acknowledge(self.strategy_id, cursor)
+            if getattr(service.client, "is_armed", False):
+                service._save()
 
 
 class SharedAccountLiveHost:
@@ -183,6 +209,9 @@ class SharedAccountLiveHost:
                     raise RuntimeError(f"策略停机撤单或回报未完成，保留绑定及账户锁: {strategy_id}")
                 time.sleep(0.05)
             item.save(self.service)
+        finish = getattr(item.session, "finish_report", None)
+        if callable(finish):
+            finish()
         runner.stop()
         item.active = False
         item.stopped_at_ns = time.time_ns()

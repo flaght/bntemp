@@ -141,6 +141,8 @@ class AccountExecutionProtocol:
             "trading_day": self.trading_day, "configuration": port.configuration(),
             "reconciled": port.is_reconciled and getattr(service.client, "is_armed", True),
             "source_revision": source["revision"] if source else 0,
+            # 仅透传当前来源的扩展数据；协议不解释任何策略业务字段。
+            "source_metadata": deepcopy(source.get("metadata", {})) if source else {},
             "positions": {key: str(service.position_manager.position(sid, key)) for key in port.routes},
             "working": {key: str(service.position_manager.attribution.working_quantity(
                 service.client_id, instrument, sid, key)) for key, instrument in port.routes.items()},

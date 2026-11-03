@@ -703,7 +703,13 @@ class SharedStrategyExecutionClient:
     def _enqueue(self, event):
         with self._lock:
             if self.service.event_journal is not None:
-                self.service.event_journal.append(self.strategy_id, event)
+                journal = self.service.event_journal
+                before = len(journal.events[self.strategy_id])
+                journal.append(self.strategy_id, event)
+                if (getattr(self, "_consume_journal", False) and isinstance(event, FillEvent)
+                        and len(journal.events[self.strategy_id]) > before):
+                    self._fills_enqueued += 1
+                    self._last_fill_enqueued = event.event_id
                 return  # 跨进程事件由持久化日志及确认游标消费，不进入无人绑定队列。
             if self._events_closed:
                 self.service._failed = True
@@ -719,6 +725,35 @@ class SharedStrategyExecutionClient:
     def drain_events(self):
         if not self._started:
             return 0
+        if getattr(self, "_consume_journal", False):
+            # 同进程也消费同一事件journal，游标由策略检查点落盘后确认。
+            # server端口不启用此分支，仍由IPC worker自己的游标消费。
+            from .ipc import decode_event
+            count = 0
+            journal = self.service.event_journal
+            cursor = getattr(self, "_journal_cursor", journal.ack[self.strategy_id])
+            while True:
+                rows = journal.read(self.strategy_id, cursor)
+                if not rows:
+                    return count
+                for row in rows:
+                    event = decode_event(row)
+                    if not self._handlers:
+                        raise RuntimeError("策略回报没有处理器，不能静默消费")
+                    try:
+                        for handler in tuple(self._handlers):
+                            handler(event)
+                    except Exception:
+                        self.service._failed = True
+                        self.service.client.disarm("strategy_callback_failed")
+                        self.service._save()
+                        raise
+                    cursor = row["sequence"]
+                    self._journal_cursor = cursor
+                    if isinstance(event, FillEvent):
+                        self._fills_delivered += 1
+                        self._last_fill_delivered = event.event_id
+                    count += 1
         count = 0
         while True:
             with self._lock:

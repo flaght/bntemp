@@ -94,8 +94,11 @@ def read_config(path):
         stop_after = row.get("stop_after_seconds")
         if stop_after is not None and (not math.isfinite(float(stop_after)) or not 0 < float(stop_after) < seconds):
             raise ValueError("策略独立停止时间须在会话时长以内")
-        if row["kind"] not in {"main_ema", "cross_section", "calendar_spread", "option_vega"}:
-            raise ValueError("策略工厂支持main_ema、cross_section、calendar_spread和option_vega")
+        if row["kind"] not in {"main_ema", "cross_section", "calendar_spread", "option_vega", "hybrid_transformer"}:
+            raise ValueError("策略工厂支持main_ema、cross_section、calendar_spread、option_vega和hybrid_transformer")
+        if row["kind"] == "hybrid_transformer" and (
+                row["strategy_id"] in history_minutes or "history_missing_policy" in config):
+            raise ValueError("Hybrid历史根数在本策略argv配置，缺失分钟沿用allow政策")
         if row["strategy_id"] in history_minutes and row["kind"] == "option_vega":
             raise ValueError("自定义历史预热数量仅支持01/03/04")
         if "history_missing_policy" in config and row["kind"] == "option_vega":
@@ -107,13 +110,16 @@ def read_config(path):
         if any(arg.split("=", 1)[0] in PROTECTED for arg in row["argv"]):
             raise ValueError("策略参数不能覆盖宿主执行、日期、授权或恢复政策")
         history_args = {"--history-minutes", "--history-file", "--history-config"}
-        if row["kind"] not in {"main_ema", "calendar_spread", "cross_section"} and any(
+        if row["kind"] not in {"main_ema", "calendar_spread", "cross_section", "hybrid_transformer"} and any(
                 arg.split("=", 1)[0] in history_args for arg in row["argv"]):
-            raise ValueError("共享历史预热仅支持01/03/04")
+            raise ValueError("共享历史预热仅支持01/03/04及Hybrid")
         argv = list(row["argv"])
+        path_arguments = {"--history-file", "--history-config"}
+        if row["kind"] == "hybrid_transformer":
+            path_arguments.update({"--release-path", "--directions-file", "--signal-config", "--market-config"})
         for index, arg in enumerate(argv):
             key, separator, value = arg.partition("=")
-            if key not in {"--history-file", "--history-config"}:
+            if key not in path_arguments:
                 continue
             if not separator:
                 if index + 1 >= len(argv) or argv[index + 1].startswith("--"):

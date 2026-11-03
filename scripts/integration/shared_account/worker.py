@@ -93,7 +93,7 @@ def _run(args, config, stop_event):
     from bomber.framework.trader.execution.contracts import MarketDataUnavailable, OrderBudgetExhausted
     from dotenv import load_dotenv
     from .run import PROJECT_ROOT
-    from .factories import strategy_arguments, assemble_strategy_session
+    from .factories import strategy_arguments, assemble_strategy_session, prepare_strategy_inputs, shared_strategy_identity
     from bomber.framework.trader.execution.ipc import UnixExecutionConnection
     from bomber.framework.trader.execution.ipc_client import RemoteAccountService, RemoteTraderSession
     from bomber.framework.trader.persistence import JsonStateStore
@@ -126,7 +126,7 @@ def _run(args, config, stop_event):
             bootstrap = credentials.get("bootstrap_signal")
             if bool(persisted) != args.resume and not (args.resume and persisted is None and bootstrap is not None):
                 raise ValueError("策略进程恢复标志、身份或状态文件不一致")
-            if persisted and persisted.payload["identity"] != identity:
+            if persisted and row["kind"] != "hybrid_transformer" and persisted.payload["identity"] != identity:
                 from .rollover import validate_strategy_identity
                 validate_strategy_identity(persisted.payload["identity"], identity)
             if credentials["strategy_id"] != args.strategy_id:
@@ -148,7 +148,7 @@ def _run(args, config, stop_event):
                 production_mode=os.getenv("CTP_PRODUCTION_MODE", "true").lower() in {"1", "true", "yes", "on"}))
             from datetime import datetime
             context = LiveRunContext(resources=resources, trading_day=datetime.strptime(config["trading_day"], "%Y%m%d").date())
-            inputs = entry.prepare_inputs(strategy_args, context, lifecycle)
+            inputs = prepare_strategy_inputs(row, entry, strategy_args, context, lifecycle)
             upstream = getattr(inputs, "upstream", getattr(inputs, "ctp_upstream", None))
             if getattr(upstream, "config", None) is not None and source_config(strategy_args).source == "ctp":
                 upstream.config = replace(upstream.config,
@@ -156,8 +156,15 @@ def _run(args, config, stop_event):
             session = assemble_strategy_session(entry, strategy_args, inputs,
                 service=service, driver=driver, strategy_id=args.strategy_id)
             port = session.client
+            if row["kind"] == "hybrid_transformer":
+                identity = shared_strategy_identity(row, config, session)
+                if persisted and persisted.payload["identity"] != identity:
+                    from .rollover import validate_strategy_identity
+                    validate_strategy_identity(persisted.payload["identity"], identity)
+                from importlib import import_module
+                import_module("demos.10_hybrid_transformer.shared").configure_report(session, config["report_dir"])
             if hasattr(session, "session_identity") and credentials.get("reference") != session.session_identity:
-                raise ValueError("08行情/特征/条款身份与账户服务声明不一致")
+                raise ValueError("策略行情/模型/条款身份与账户服务声明不一致")
             if persisted and persisted.payload["revision"] > state["source_revision"]:
                 raise ValueError("策略信号版本领先账户服务")
             if not persisted and state["source_revision"] and bootstrap is None:
@@ -167,8 +174,11 @@ def _run(args, config, stop_event):
                 session.restore_signal(persisted.payload["signal"])
             elif bootstrap is not None:
                 session.restore_signal(bootstrap)
-            session.strategy.fills_received = persisted.payload.get("fills_received", 0) if persisted else 0
-            port.set_cursor(persisted.payload.get("cursor", 0) if persisted else 0)
+            if row["kind"] != "hybrid_transformer":
+                session.strategy.fills_received = persisted.payload.get("fills_received", 0) if persisted else 0
+            restored_cursor = getattr(session, "restored_signal_cursor", None)
+            port.set_cursor(restored_cursor if restored_cursor is not None else
+                (persisted.payload.get("cursor", state["ack"]) if persisted else state["ack"]))
             generation = persisted.generation if persisted else 0
             def save(cursor=None):
                 nonlocal generation
@@ -179,6 +189,9 @@ def _run(args, config, stop_event):
                        if hasattr(session, "signal_checkpoint") else {})}, expected_generation=generation)
                 generation = saved.generation
             port.completed = save
+            bind = getattr(session, "bind_signal_checkpoint", None)
+            if callable(bind):
+                bind(save)
             port.ready_check = session.runner.session_ready
             session.runner.start()
             ready_seconds = strategy_args.ready_timeout if row["kind"] == "option_vega" else 30
@@ -241,6 +254,9 @@ def _run(args, config, stop_event):
                         session.client.begin_stop()  # 撤单、同步归属及回调完成后才解绑。
                         if save is not None:
                             save()
+                    finish = getattr(session, "finish_report", None)
+                    if callable(finish):
+                        finish()
                     session.runner.stop()
             except Exception as error:
                 shutdown_failure, status = str(error), "failed"
