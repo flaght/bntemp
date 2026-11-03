@@ -198,6 +198,36 @@ class HybridSharedLayoutTests(unittest.TestCase):
         self.assertEqual(p.strategy.holdings.active[0].quantity,1)
         self.assertEqual(self.service._sources['hybrid-rb']['metadata']['hybrid_signal_state']['hybrid']['revision'],2)
 
+    def test_fresh_strategy_keeps_existing_same_contract_long_as_external_and_closes_only_own_short(self):
+        self.account,self.service,self.transport=self.make_account(preserve_external=True)
+        self.transport.gross={str(self.rb):(2,0),'sc2611.INE':(1,0)}
+        rb,p=self.session('RB'),self.session('P')
+        self.start(rb,p)
+        self.assertEqual(self.service.position_manager.position('hybrid-rb','rb_main'),0)
+        self.assertEqual(self.service.position_manager.position('hybrid-p','p_main'),0)
+        self.assertEqual(self.service.position_manager.account_position('account',self.rb),0)
+        self.assertEqual(self.account.external_gross[str(self.rb)],(2,0))
+        self.assertEqual(self.account.external_gross['sc2611.INE'],(1,0))
+        self.assertFalse(rb.strategy.holdings.active)
+        self.assertFalse(self.transport.sent)
+        self.bar(rb,'2026-10-13 09:01',-1)
+        opening=self.transport.sent[-1]
+        self.assertEqual((opening['Direction'],opening['CombOffsetFlag'],opening['VolumeTotalOriginal']),('1','0',2))
+        self.transport.fill(opening['OrderRef']);rb.client.drain_events()
+        self.assertEqual(self.transport.gross[str(self.rb)],(2,2))
+        self.assertEqual(self.service.position_manager.position('hybrid-rb','rb_main'),-2)
+        self.account._validate_account()
+        self.bar(rb,'2026-10-13 09:06',0)
+        closing=self.transport.sent[-1]
+        self.assertEqual((closing['Direction'],closing['CombOffsetFlag'],closing['VolumeTotalOriginal']),('0','3',2))
+        self.transport.fill(closing['OrderRef']);rb.client.drain_events()
+        self.assertEqual(self.transport.gross[str(self.rb)],(2,0))
+        self.assertEqual(self.transport.gross['sc2611.INE'],(1,0))
+        self.assertEqual(self.service.position_manager.position('hybrid-rb','rb_main'),0)
+        self.assertFalse(rb.strategy.holdings.active)
+        self.account._validate_account()
+        self.assertEqual(len(self.transport.sent),2)
+
     def test_ipc_runner_uses_same_batch_logic_and_continuous_size(self):
         # server只装配执行声明；算法在另一个Remote端口实例运行。
         server_rb,server_p=self.session('RB'),self.session('P')
@@ -616,7 +646,7 @@ class HybridLayoutConfigTests(unittest.TestCase):
         directory=root/'demos/10_hybrid_transformer/config'
         config=read_config(directory/'shared_rb_p.json')
         self.assertEqual(Path(config['account_state_file']),root/'demos/10_hybrid_transformer/results/live/state/account_rb_p.json')
-        self.assertEqual(config['existing_position_policy'],'require_flat')
+        self.assertEqual(config['existing_position_policy'],'preserve_external')
         self.assertEqual(Path(config['report_dir']),root/'demos/10_hybrid_transformer/results/live')
         for row,product in zip(config['strategies'],('RB','P')):
             self.assertEqual(Path(row['state_file']),root/f'demos/10_hybrid_transformer/results/live/state/{product.lower()}_signal.json')

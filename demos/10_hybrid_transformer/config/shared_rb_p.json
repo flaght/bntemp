@@ -4,7 +4,7 @@
   "environment": "realtime",
   "execution_mode": "independent",
   "position_scope": "strategy_instruments",
-  "existing_position_policy": "require_flat",
+  "existing_position_policy": "preserve_external",
   "seconds": 86400,
   "account_state_file": "../results/live/state/account_rb_p.json",
   "report_dir": "../results/live",
