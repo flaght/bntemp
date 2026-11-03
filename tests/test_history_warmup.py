@@ -29,7 +29,7 @@ class HistoryWarmupTests(unittest.TestCase):
         self.stamps=self.calendar.last_minutes(self.end,3)
         self.temp=TemporaryDirectory();self.addCleanup(self.temp.cleanup)
         self.path=Path(self.temp.name)/'history.json'
-        self.values=json.loads((ROOT/'demos/10_hybrid_transformer/history_rb.json').read_text())
+        self.values=json.loads((ROOT/'demos/10_hybrid_transformer/config/history_rb.json').read_text())
         self.path.write_text(json.dumps(self.values))
 
     def point(self, stamp=None, **values):

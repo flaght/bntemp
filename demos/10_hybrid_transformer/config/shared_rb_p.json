@@ -4,10 +4,10 @@
   "environment": "realtime",
   "execution_mode": "independent",
   "position_scope": "strategy_instruments",
-  "existing_position_policy": "preserve_external",
+  "existing_position_policy": "require_flat",
   "seconds": 86400,
-  "account_state_file": "../../prod/01_hybrid_transformer/results/live/state_RB_20261029.json",
-  "report_dir": "../../prod/01_hybrid_transformer/results/live",
+  "account_state_file": "../results/live/state/account_rb_p.json",
+  "report_dir": "../results/live",
   "account": {
     "client_id": "hybrid-transformer-live",
     "max_gross_quantity": 4,
@@ -19,7 +19,7 @@
     {
       "strategy_id": "hybrid-transformer-live",
       "kind": "hybrid_transformer",
-      "state_file": "../../prod/01_hybrid_transformer/results/live/shared_RB_signal.json",
+      "state_file": "../results/live/state/rb_signal.json",
       "argv": [
         "--product",
         "RB",
@@ -28,7 +28,7 @@
         "--directions-file",
         "/workspace/worker/pj/Chrono/genuis/mizar/records/ricso2/rbb/rulex/113001/nxt1_ret_5h/cohort_pro.csv",
         "--signal-config",
-        "../../prod/01_hybrid_transformer/signal_config.json",
+        "signal_rb.json",
         "--max-contracts",
         "2",
         "--entry-contracts",
@@ -36,20 +36,20 @@
         "--no-session-overrides",
         "--market-source",
         "dolphindb",
-        "--market-config",
-        "../../prod/01_hybrid_transformer/market_dolphindb_rb.json",
         "--history-minutes",
         "260",
-        "--history-config",
-        "../../prod/01_hybrid_transformer/history_rb.json",
+        "--market-config",
+        "market_dolphindb_rb.json",
         "--report-dir",
-        "../../prod/01_hybrid_transformer/results/live"
+        "../results/live/RB",
+        "--history-config",
+        "history_rb.json"
       ]
     },
     {
       "strategy_id": "hybrid-p-live",
       "kind": "hybrid_transformer",
-      "state_file": "../../prod/01_hybrid_transformer/results/live/shared_P_signal.json",
+      "state_file": "../results/live/state/p_signal.json",
       "argv": [
         "--product",
         "P",
@@ -71,7 +71,7 @@
         "--market-config",
         "market_dolphindb_p.json",
         "--report-dir",
-        "../../prod/01_hybrid_transformer/results/live/P",
+        "../results/live/P",
         "--history-config",
         "history_p.json"
       ]

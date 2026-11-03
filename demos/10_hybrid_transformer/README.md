@@ -28,7 +28,7 @@ Live 历史、CTP 本地分钟和休市窗口续接现已共用 `runtime.live.hi
 
 ## 品种与信号配置
 
-新增 `signal_config.example.json`，其中 P、RB 仅为已有研究参数的示例，代码不会自动回退到它们。使用时显式传入 `--signal-config /ABS/PATH/TO/signals.json`。JSON 结构为“品种名 -> 该品种配置”：
+配置在 `config/signal_p.json`、`config/signal_rb.json` 中，P、RB 为已有研究参数，代码不会自动回退到它们。使用时显式传入 `--signal-config /ABS/PATH/TO/signals.json`。JSON 结构为“品种名 -> 该品种配置”：
 
 ```json
 {
@@ -350,7 +350,7 @@ CTP路径、本地分钟录制和已存CTP会话身份保持兼容；持仓期�
 `history_rb.json`，对应已确认的新行情表 `dfs://ctp/bar_1min_shfe`。启动时在原命令上增加：
 
 ```bash
---history-minutes 1500 --history-config demos/10_hybrid_transformer/history_rb.json
+--history-minutes 1500 --history-config demos/10_hybrid_transformer/config/history_rb.json
 ```
 
 远程目录为 `prod/01_hybrid_transformer` 时，将上面的配置路径同步替换为该目录。
@@ -578,6 +578,6 @@ python -u -m demos.10_hybrid_transformer.recover_expired \
 
 ## RB/P同账户：同进程与多进程布局
 
-共享入口`run_shared.py`复用现有账户服务与Unix IPC，使用同一份`shared_rb_p.example.json`，通过`--process-layout same-process`或`separate-processes`切换。模型、独立五分钟批次、信号与仓位限制不变。
+共享入口`run_shared.py`复用现有账户服务与Unix IPC，使用同一份`config/shared_rb_p.json`，通过`--process-layout same-process`或`separate-processes`切换。模型、独立五分钟批次、信号与仓位限制不变。
 
 完整参数、原RB检查点接入及布局切换步骤见[共享执行指南](../../doc/strategies/HYBRID_SHARED_EXECUTION_GUIDE.md)。

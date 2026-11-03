@@ -584,7 +584,7 @@ class HybridLayoutConfigTests(unittest.TestCase):
 
     def test_example_config_has_independent_dolphindb_market_and_history_for_rb_and_p(self):
         from scripts.integration.shared_account.config import read_config
-        path=Path(__file__).resolve().parents[1]/'demos/10_hybrid_transformer/shared_rb_p.example.json'
+        path=Path(__file__).resolve().parents[1]/'demos/10_hybrid_transformer/config/shared_rb_p.json'
         config=read_config(path)
         launcher.validate_layout(config,'same-process');launcher.validate_layout(config,'separate-processes')
         rb,p=config['strategies']
@@ -609,6 +609,23 @@ class HybridLayoutConfigTests(unittest.TestCase):
             p['argv'][p['argv'].index('--signal-config')+1],'P')
         self.assertEqual((product_signal.signal_method,product_signal.signal_params['threshold']),('linear_signal',.05))
         self.assertEqual(rb['strategy_id'],config['account']['client_id'])
+
+    def test_config_directory_uses_fresh_state_without_reading_old_rb_checkpoint(self):
+        from scripts.integration.shared_account.config import read_config, strategy_report_dir
+        root=Path(__file__).resolve().parents[1]
+        directory=root/'demos/10_hybrid_transformer/config'
+        config=read_config(directory/'shared_rb_p.json')
+        self.assertEqual(Path(config['account_state_file']),root/'demos/10_hybrid_transformer/results/live/state/account_rb_p.json')
+        self.assertEqual(config['existing_position_policy'],'require_flat')
+        self.assertEqual(Path(config['report_dir']),root/'demos/10_hybrid_transformer/results/live')
+        for row,product in zip(config['strategies'],('RB','P')):
+            self.assertEqual(Path(row['state_file']),root/f'demos/10_hybrid_transformer/results/live/state/{product.lower()}_signal.json')
+            self.assertEqual(Path(strategy_report_dir(row,config)),root/f'demos/10_hybrid_transformer/results/live/{product}')
+            args=row['argv']
+            for flag in ('--market-config','--signal-config','--history-config'):
+                path=Path(args[args.index(flag)+1])
+                self.assertEqual(path.parent,directory)
+                self.assertTrue(path.is_file(),str(path))
 
     def test_native_entry_explains_shared_account_format_without_touching_state(self):
         lifecycle=object.__new__(live.HybridSessionLifecycle)

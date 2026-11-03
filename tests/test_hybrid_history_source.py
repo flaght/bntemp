@@ -154,7 +154,7 @@ class TradingHistoryTests(unittest.TestCase):
     def test_actual_hybrid_build_and_warm_only_calls_predictor(self):
         history=import_module('demos.10_hybrid_transformer.history')
         source=import_module('bomber.framework.dataprep.history.dolphindb')
-        config_path=ROOT/'demos/10_hybrid_transformer/history_rb.json'
+        config_path=ROOT/'demos/10_hybrid_transformer/config/history_rb.json'
         def current_frame(points):
             converted=[]
             for point in points:
