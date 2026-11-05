@@ -27,6 +27,20 @@ def readiness_failure_context(runner):
     return context
 
 
+def record_runner_failure(runner, error):
+    """异常发生时保存首个本地诊断，避免停机清理Feed后丢失原因。"""
+    context = getattr(runner, "failure_readiness", None)
+    if context is None:
+        try:
+            context = readiness_failure_context(runner)
+        except Exception as diagnostic_error:
+            context = {"diagnostic_error": str(diagnostic_error)}
+        runner.failure_readiness = context
+    context.setdefault("error", str(error))
+    context.setdefault("error_type", type(error).__name__)
+    return context
+
+
 def validate_instrument_max_age(seconds):
     if not math.isfinite(seconds) or not 0 < seconds <= 120:
         raise ValueError("instrument-max-age-seconds须为(0,120]内有限数")

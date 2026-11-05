@@ -83,7 +83,9 @@ def run_same_process(config, window, stop, *, resume, remaining, clock=None):
         while not stop.is_set() and clock() < stop_at:
             host.poll()
             if not any(item.active for item in host.strategies.values()):
-                raise RuntimeError('所有Hybrid策略已停止；查看各策略failure')
+                reasons = '；'.join(f'{sid}: {item.failure or "未提供停止原因"}'
+                    for sid, item in host.strategies.items())
+                raise RuntimeError('所有Hybrid策略已停止；' + reasons)
             stop.wait(0.2)
         status = 'completed'
     except (StopRequested, CtpQueryInterrupted):

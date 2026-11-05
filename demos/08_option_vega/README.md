@@ -8,7 +8,7 @@
 | --- | --- |
 | `run_backtest.py` | 文件准备、公共模拟Backend/结算接线及回测报告 |
 | `run_live.py` | 在线参数、行情/参考/执行渠道选择及公共Live生命周期启动 |
-| `features.py` | 自定义指数特征声明、文件读取、历史可见时钟与分钟决策帧 |
+| `features.py` | 特征文件生成、声明加载、读取、历史可见时钟与分钟决策帧 |
 | `strategy.py` | 策略决策、实际自有仓位管理、公共装配绑定与限额 |
 | `vega_signal.py` | 配置、原数值算法、合约关系及可独立恢复的信号状态 |
 | `live.py` | Live分钟帧适配、健康检查、公共执行装配与只读诊断 |
@@ -94,12 +94,54 @@ python -u -m scripts.integration.options.shared \
 
 统一入口是`features.py`；使用现有特征注册/Provider，不再建一套指数文件或数据库接口。
 
+四项业务职责都保留在这一个文件：`generate_index_features`生成文件、`index_bundle`加载声明、`read_index_features`读取文件、`build_backtest_runner`驱动分钟帧决策。生成一次后可重复回测；回测入口不隐式连接数据库、重复下载或覆盖数据。Live继续复用相同声明连接来源。
+
+### 从DolphinDB生成文件
+
+在项目根目录运行，连接使用`.env`/环境中的`DDB_MARKET_*`（兼容旧`DDB_*`）：
+
+```bash
+python -u -m demos.08_option_vega.features \
+  --connect --index-code 000852 \
+  --start-day 2026-09-01 --end-day 2026-09-11 \
+  --output tests/results/features/index-000852-20260901-20260911.csv
+```
+
+默认声明读取`dfs://min_bar/index_1min`，生成CSV和同名`.manifest.json`，随即读回核对；输出`status=passed`、`file_roundtrip=passed`、记录数及最大可见延迟。输出路径已存在、数据为空或字段/版本无效时失败，不创建成功空包或覆盖旧文件。改为`.parquet`使用相同流程，底层注册、查询、编码和摘要均复用公共API。
+
+默认`observed`保留本次观测时间：能得到数据快照，不代表9月份当时已可见，不能直接用于9月份的时点回测。若数据源确认配置中的`updateTime`是该版本真实可用时刻，可显式加`--index-availability source-time`；如果只是后来补录的时间，仍不能提前使用。先核对输出可见时间与实际`--frame-wait-seconds`，不要为了成交把时间改成Bar结束。
+
+生成后将输出路径传给`run_backtest.py --index-feature-file`；这条入口会调用同一文件完成声明加载、文件校验和帧决策。该过程标准化已有指数OHLCV，引用的期权5分钟/期货行情导出不能替代一分钟指数输入，也不把M5补成M1。新计算公式属于本文件的业务逻辑，新增声明/映射仍使用已有底层框架。
+
+### 修改自定义声明
+
 1. 通过`--index-feature-config /实际路径/features.json`指定声明，`--index-dataset`与`--index-schema-version`选择数据集。
-2. 08要求一分钟、EXACT对齐及真实OHLCV的Bar投影。自定义计算版本和映射写在声明中，不能只换名称而沿用错误指纹。
+2. 08要求一分钟、EXACT对齐。默认使用真实OHLCV的Bar投影；回测可显式用`--index-value-field`选择声明中的非空数值字段，无需为MA等标量伪造OHLCV。自定义计算版本和映射写在声明中，不能只换名称而沿用错误指纹。
 3. 回测使用标准导出的`--index-feature-file`；Live默认查询声明对应的DolphinDB来源。切换存储保留同一Schema、计算版本和时间语义。
 4. 保留`ts_event,available_ns,received_ns,revision`。历史决策按真实可见时间封帧，不把今天观测到历史数据的时间改写成过去发布时间。
 
 声明示例与导出方式见[特征框架](../../bomber/framework/dataprep/features/README.md)和[集成工具](../../scripts/integration/features/README.md)。自定义特征仍需满足当前策略的指数价格语义；若改变业务含义，应显式修改策略。
+
+### 用MA20替换原始指数信号回测
+
+这里的MA20是20根已完成的一分钟收盘价的均值，包含当前已收盘Bar。当前策略将指数信号用于`行权价 > 指数信号`的候选筛选；选择MA20会改变这个筛选基准。IV、Delta、Vega及退出计算继续使用真实期权价格和同月期货价格。MA20仍是价格量纲；收益率等无量纲特征不能直接套用这个比较。
+
+已有[MA计算与导出工具](../../scripts/integration/features/example.py)支持`export-ma --window 20`，生成`research.index.ma20.minute`，字段为`close/ma20/window`，同时保存CSV、`.manifest.json`与`.dataset.json`。该工具按连续自然分钟计算，缺分钟、午休或跨日清空窗口；每段前19根预热，不输出不完整均值。它不会自动向查询起点之前补取预热数据。
+
+对于**已经具备历史可见时间的MA20标准文件**，在上面的完整回测命令中替换/添加以下参数：
+
+```bash
+--index-feature-file /实际路径/index-ma20.csv \
+--index-feature-config /实际路径/index-ma20.csv.dataset.json \
+--index-dataset research.index.ma20.minute \
+--index-value-field ma20
+```
+
+同一文件改用`--index-value-field close`，可对比相同分钟、相同可见时间下的原始值与MA20；保持交易腿、日期、资金、风险及等待时间参数一致。报告`index_feature.value_field`和可用帧的`value_field`记录实际选用字段。新参数仅用于回测，Live仍沿用原投影路径。
+
+注意现有`export-ma`是**当前计算的研究快照**，可用时间是本次计算完成时间。今天导出9月份的MA20，可以核验计算与读写，却不能直接参加9月份的时点回测；需要保留历史已发布MA记录，或另行实现按输入当时可见版本逐分钟计算的历史回放。不能把当前计算时间改成历史Bar时间。超过帧期限的MA不会进入已封闭决策。
+
+离线测试覆盖20条输入计算MA20、声明与标准文件读回、原策略候选/目标变化，以及预热、缺口和迟到拒绝；这些是夹具验证，不是收益表现或原生成交回测结果。
 
 ## 验证与诊断
 

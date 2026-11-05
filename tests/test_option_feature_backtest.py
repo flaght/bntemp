@@ -7,6 +7,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace as NS
 import unittest
+from unittest.mock import patch
 
 from bomber.framework.datahub.features import ExternalDataRecord, FeatureError
 from bomber.framework.dataprep.features import DEFAULT_FEATURE_CONFIG, export_features, load_feature_bundle
@@ -144,3 +145,244 @@ class FeatureBacktestTests(unittest.TestCase):
         timers[0]["callback"](NS(ts_event=END+2*S+1))
         self.assertEqual(delivered[0].request_ns, END+2*S+1)
         self.assertEqual(delivered[0].observations["000852"].received_ns, END+S)
+
+
+class FeatureGenerationTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.path = Path(self.temp.name) / "index.csv"
+        self.connection = DolphinDbReferenceConfig("fixture", 8848, "user", "fixture-secret")
+        self.args = NS(output=self.path, index_feature_config=DEFAULT_FEATURE_CONFIG,
+            index_dataset="index.minute", index_schema_version=1, index_code="000852",
+            index_availability=None, max_rows=100)
+
+    def generate(self, *, rows=None, availability=None):
+        from tests.test_dolphindb_index_features import Session
+        from bomber.framework.dataprep.features import DolphinDbRawFeatureProvider
+        session = Session(rows=rows)
+        self.args.index_availability = availability
+        def create(purpose, backend, config, registry, **options):
+            self.assertEqual(purpose.value, "feature_export")
+            self.assertEqual(backend, "dolphindb-raw")
+            return DolphinDbRawFeatureProvider(config, registry,
+                session_factory=lambda **kwargs: session, clock_ns=lambda: END+10*S)
+        with patch.object(features.FeatureProviderFactory, "create_for", side_effect=create), \
+                patch.object(features.time, "time_ns", return_value=END+10*S):
+            report = features.generate_index_features(self.args, END, END, connection=self.connection)
+        self.assertTrue(session.closed)
+        return report
+
+    def read(self):
+        args = NS(**vars(self.args), index_feature_file=self.path)
+        return features.read_index_features(args, END, END+M)
+
+    def test_dolphindb_to_file_to_original_frame_keeps_historical_source_time(self):
+        report = self.generate(availability="source-time")
+        bundle, binding, records, identity = self.read()
+        self.assertEqual(report["file_roundtrip"], "passed")
+        self.assertEqual(report["records"], 1)
+        self.assertEqual(report["availability"], "source-time")
+        self.assertEqual(records[0].available_ns, END+100)
+        self.assertEqual(records[0].payload.close, Decimal("6401.2"))
+        self.assertEqual(identity["schema_fingerprint"], report["export_manifest"]["schema_fingerprint"])
+        bars = [NS(ts_event=t, ts_init=t, bar_type=NS(instrument_id=NS(symbol="IM2610")),
+            close=NS(as_decimal=lambda: Decimal(6500))) for t in (END, END+M)]
+        outcomes, _ = features.prepare_feature_frames(bars, bundle, binding, records, "000852", 2*S)
+        self.assertEqual(outcomes[0].status, "READY")
+        self.assertEqual(outcomes[0].frame.features.latest("index").payload.close, Decimal("6401.2"))
+        self.assertNotIn("fixture-secret", str(report))
+
+    def test_observed_export_keeps_observation_time_and_cannot_enter_earlier_frame(self):
+        report = self.generate()
+        bundle, binding, records, _ = self.read()
+        self.assertEqual(report["availability"], "observed")
+        self.assertEqual(records[0].available_ns, END+10*S)
+        self.assertEqual(report["max_visibility_delay_seconds"], 10)
+        bars = [NS(ts_event=t, ts_init=t, bar_type=NS(instrument_id=NS(symbol="IM2610")),
+            close=NS(as_decimal=lambda: Decimal(6500))) for t in (END, END+M)]
+        outcomes, _ = features.prepare_feature_frames(bars, bundle, binding, records, "000852", 2*S)
+        self.assertEqual(outcomes[0].status, "SKIPPED")
+
+    def test_empty_source_does_not_create_file_or_manifest(self):
+        with self.assertRaisesRegex(FeatureError, "没有可见记录"):
+            self.generate(rows=[])
+        self.assertFalse(self.path.exists())
+        self.assertFalse(Path(str(self.path)+".manifest.json").exists())
+
+    def test_existing_output_or_manifest_fails_before_query(self):
+        for existing in (self.path, Path(str(self.path)+".manifest.json")):
+            with self.subTest(existing=existing):
+                existing.write_text("preserved")
+                try:
+                    with patch.object(features.FeatureProviderFactory, "create_for") as create:
+                        with self.assertRaisesRegex(FeatureError, "已存在"):
+                            features.generate_index_features(self.args, END, END, connection=self.connection)
+                        create.assert_not_called()
+                    self.assertEqual(existing.read_text(), "preserved")
+                finally:
+                    existing.unlink()
+
+    def test_source_schema_failure_does_not_create_file(self):
+        from tests.test_dolphindb_index_features import row
+        with self.assertRaises(FeatureError):
+            self.generate(rows=[row(close=-1)])
+        self.assertFalse(self.path.exists())
+
+    def test_cli_requires_explicit_connection_and_valid_identity_before_credentials(self):
+        from contextlib import redirect_stderr
+        from io import StringIO
+        base = ["--start-day", "2026-09-01", "--end-day", "2026-09-11", "--output", str(self.path)]
+        for extra in ([], ["--connect", "--index-code", "bad"]):
+            with redirect_stderr(StringIO()), patch(
+                    "bomber.framework.dolphindb.DolphinDbConnectionConfig.from_env") as env:
+                with self.assertRaises(SystemExit):
+                    features.main(base+extra)
+                env.assert_not_called()
+
+    def test_cli_selects_range_and_dolphindb_purpose_without_exposing_credentials(self):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        stdout = StringIO()
+        with redirect_stdout(stdout), patch("dotenv.load_dotenv"), patch(
+                "bomber.framework.dolphindb.DolphinDbConnectionConfig.from_env",
+                return_value=self.connection) as env, patch.object(
+                features, "generate_index_features", return_value={"status": "passed"}) as generate:
+            features.main(["--connect", "--start-day", "2026-09-01", "--end-day", "2026-09-11",
+                "--index-availability", "source-time", "--output", str(self.path)])
+        env.assert_called_once_with(purpose="market", read_timeout_seconds=30)
+        args, start, end = generate.call_args.args
+        from tests.test_demo_option_vega import ns
+        self.assertEqual(start, ns("2026-09-01 00:00"))
+        self.assertEqual(end, ns("2026-09-12 00:00")-1)
+        self.assertEqual(args.index_availability, "source-time")
+        self.assertEqual(json.loads(stdout.getvalue())["status"], "passed")
+        self.assertNotIn("fixture-secret", stdout.getvalue())
+
+
+class Ma20BacktestTests(unittest.TestCase):
+    """真实20条输入→标准MA包→字段选择→原策略选约；不模拟交易所成交。"""
+    def setUp(self):
+        from tests import test_demo_option_vega as fixture
+        from bomber.framework.datahub.features import dataset_from_definition, DatasetRegistry
+        from scripts.integration.features.example import moving_average_definition
+        self.fixture = fixture
+        fixture.StrategyTests.setUpClass()
+        self.temp = TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.path = Path(self.temp.name) / "ma20.csv"
+        self.config = Path(str(self.path) + ".dataset.json")
+        self.stamp = fixture.ns("2026-08-13 13:58")
+        self.input = dataset_from_definition({"dataset_id": "fixture.index.minute", "schema_version": 1,
+            "fields": [{"name": "close", "kind": "decimal", "minimum": "0", "exclusive_minimum": True}]})
+        self.definition = moving_average_definition(20)
+        self.output = dataset_from_definition(self.definition)
+        self.registry = DatasetRegistry((self.output,))
+        self.config.write_text(json.dumps({"format_version": 1, "datasets": [{
+            "schema": self.definition, "source": {"backend": "file", "path": self.path.name}}]}))
+
+    def inputs(self, count=20):
+        return tuple(ExternalDataRecord(self.input.dataset_id, 1, "000852",
+            self.input.payload_type(close=Decimal(6700 if i == 19 else 6490)),
+            self.stamp-(19-i)*M, self.stamp-(19-i)*M+S//10,
+            self.stamp-(19-i)*M, 0, "minute-fixture") for i in range(count))
+
+    def export(self, delay=S//2):
+        from scripts.integration.features.example import moving_average_records
+        records, coverage = moving_average_records(self.inputs(), self.input, self.output,
+            "000852", 20, clock_ns=lambda: self.stamp+delay)
+        export_features(self.path, self.registry, records)
+        return records, coverage
+
+    def args(self, field):
+        return NS(index_feature_file=self.path, index_feature_config=self.config,
+            index_dataset=self.output.dataset_id, index_schema_version=1, index_code="000852",
+            index_value_field=field)
+
+    def decide(self, field):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        bundle, binding, records, identity = features.read_index_features(self.args(field), self.stamp, self.stamp)
+        f = self.fixture.StrategyTests()
+        f.setUp()
+        strategy = f.strategy
+        now = datetime.fromtimestamp(self.stamp/1e9, ZoneInfo("Asia/Shanghai"))
+        signal = import_module("demos.08_option_vega.vega_signal")
+        premium = signal.call_price(6500, 6600,
+            signal.source_years(now, strategy._remaining_days(now.date(), f.info.last_day)), .02, .25)
+        def bar(key, stamp, value):
+            return NS(ts_event=stamp, ts_init=stamp, bar_type=NS(instrument_id=NS(symbol=key)),
+                close=NS(as_decimal=lambda: Decimal(str(value))))
+        bars = [bar("IM2609", self.stamp, 6500), bar(f.info.symbol, self.stamp, premium),
+                bar("IM2609", self.stamp+M, 6500)]
+        outcomes, deadlines = features.prepare_feature_frames(bars, bundle, binding, records, "000852", 2*S)
+        timers = []
+        runner = features.build_backtest_runner(positions=None, feed=None,
+            backend=NS(engine=NS(kernel=NS(clock=NS(set_time_alert_ns=lambda **kw: timers.append(kw))))),
+            bundle=bundle, binding=binding, records=records, index_key="000852", wait_seconds=2,
+            index_value_field=field)
+        runner.strategy = strategy
+        runner.outcomes, runner.deadlines = {r.event_ns: r for r in outcomes}, deadlines
+        runner.publish("option-bars", bars[0])
+        runner.publish("option-bars", bars[1])
+        timers[0]["callback"](NS(ts_event=self.stamp+2*S+1))
+        return f, runner, identity, now
+
+    def test_raw_close_vs_ma20_changes_original_candidate_filter_not_pricing_inputs(self):
+        records, coverage = self.export()
+        self.assertEqual(records[0].payload.ma20, Decimal("6500.5"))
+        self.assertEqual(coverage["warmup_skipped"], 19)
+        raw, raw_runner, raw_identity, now = self.decide("close")
+        ma, ma_runner, ma_identity, _ = self.decide("ma20")
+        self.assertEqual(raw.strategy.latest["000852"][1], 6700)
+        self.assertEqual(ma.strategy.latest["000852"][1], 6500.5)
+        self.assertEqual(raw.strategy.entry_audit[-1]["candidate_count"], 0)
+        self.assertEqual(ma.strategy.entry_audit[-1]["candidate_count"], 1)
+        self.assertEqual(raw.ctx.intents, [])
+        self.assertTrue(ma.ctx.intents)
+        for key in (raw.info.symbol, "IM2609"):
+            self.assertEqual(raw.strategy.latest[key], ma.strategy.latest[key])
+        self.assertEqual(raw.strategy._greeks(raw.info.symbol, self.stamp, now),
+                         ma.strategy._greeks(ma.info.symbol, self.stamp, now))
+        self.assertEqual(raw_identity["value_field"], "close")
+        self.assertEqual(ma_identity["value_field"], "ma20")
+        self.assertEqual(ma_runner.frame_audit[0]["value_field"], "ma20")
+        self.assertNotIn("bar_projection", json.loads(self.config.read_text())["datasets"][0])
+
+    def test_late_ma20_is_skipped_without_backdating_calculation(self):
+        records, _ = self.export(delay=3*S)
+        f, runner, _, _ = self.decide("ma20")
+        self.assertEqual(records[0].available_ns, self.stamp+3*S)
+        self.assertEqual(runner.frame_audit[0]["status"], "SKIPPED")
+        self.assertEqual(f.ctx.intents, [])
+
+    def test_warmup_and_gap_require_twenty_complete_consecutive_minutes(self):
+        from scripts.integration.features.example import moving_average_records
+        records, _ = moving_average_records(self.inputs(19), self.input, self.output,
+            "000852", 20, clock_ns=lambda: self.stamp+S)
+        self.assertEqual(records, ())
+        inputs = self.inputs(19) + (replace(self.inputs()[-1], ts_event=self.stamp+M,
+            available_ns=self.stamp+M+S//10, source_ns=self.stamp+M),)
+        records, coverage = moving_average_records(inputs, self.input, self.output,
+            "000852", 20, clock_ns=lambda: self.stamp+M+S)
+        self.assertEqual(records, ())
+        self.assertEqual(coverage["window_resets"], 1)
+
+    def test_scalar_selection_is_explicit_and_must_name_a_numeric_field(self):
+        self.export()
+        for field in (None, "missing"):
+            with self.subTest(field=field), self.assertRaises(FeatureError):
+                features.read_index_features(self.args(field), self.stamp, self.stamp)
+        with self.assertRaisesRegex(ValueError, "尚未可见"):
+            from scripts.integration.features.example import moving_average_records
+            moving_average_records(self.inputs(), self.input, self.output,
+                "000852", 20, clock_ns=lambda: self.stamp)
+
+    def test_backtest_cli_passes_ma20_field_without_connecting_to_sources(self):
+        entry = import_module("demos.08_option_vega.run_backtest")
+        with patch.object(entry, "run_case") as run, patch("sys.argv", ["run_backtest.py",
+                "--start-day", "2026-08-13", "--end-day", "2026-08-13",
+                "--index-feature-file", str(self.path), "--index-feature-config", str(self.config),
+                "--index-dataset", self.output.dataset_id, "--index-value-field", "ma20"]):
+            entry.main()
+        self.assertEqual(run.call_args.args[0].index_value_field, "ma20")

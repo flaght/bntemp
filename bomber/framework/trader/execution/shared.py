@@ -149,8 +149,15 @@ class SharedAccountExecutionService(AccountExecutionService):
                 continue
             reference = self.prices.get(instrument)
             limits = self.instrument_limits[instrument]
-            if reference is None or not 0 <= now_ns - reference.ts_event <= (limits.max_market_age_ns or 120_000_000_000):
-                raise RuntimeError("共享执行预算缺少当前有效参考价")
+            max_age = limits.max_market_age_ns or 120_000_000_000
+            age = None if reference is None else now_ns - reference.ts_event
+            if age is None or not 0 <= age <= max_age:
+                reason = "missing" if age is None else "future" if age < 0 else "stale"
+                raise RuntimeError("共享执行预算缺少当前有效参考价: "
+                    f"strategy_id={row['strategy_id']} target_key={row['target_key']} "
+                    f"instrument={instrument} reason={reason} now_ns={now_ns} "
+                    f"reference_ns={None if reference is None else reference.ts_event} "
+                    f"age_seconds={None if age is None else age / 1e9} max_age_seconds={max_age / 1e9}")
             notional += amount * reference.price * limits.contract_multiplier
         if quantity > budget.max_gross_quantity or notional > budget.max_gross_notional:
             raise ValueError(f"策略或账户归属总量／名义金额超过预算: gross_quantity={quantity} "

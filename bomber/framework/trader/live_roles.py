@@ -199,6 +199,8 @@ class SessionRoleLiveRunner(FixedRoleLiveRunner):
                 return super().publish(feed_id, event)
             except Exception as error:
                 self.failure = str(error)
+                from .runtime.live.health import record_runner_failure
+                record_runner_failure(self, error)
                 self.accept_bars = False
                 if self.orders and self._role_binding is not None:
                     self._clients[self._role_binding.client_id].disarm("bar_dispatch_failed")
