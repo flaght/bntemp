@@ -854,6 +854,30 @@ class HybridLayoutConfigTests(unittest.TestCase):
                 launcher.main(['--config',str(self.path),'--process-layout',layout])
             self.assertIn('未连接',output.getvalue())
 
+    def test_prepare_seconds_defaults_and_override_reach_calendar_scheduler(self):
+        from contextlib import nullcontext
+        import threading
+        from bomber.framework.trader.runtime.live import continuous
+        for extra, seconds in (([],300),(['--prepare-seconds','600'],600),(['--prepare-seconds','0'],0)):
+            with self.subTest(seconds=seconds), redirect_stdout(StringIO()) as output, \
+                    patch.object(launcher,'load_calendar',return_value=object()), \
+                    patch('dotenv.load_dotenv'), \
+                    patch('bomber.framework.trader.runtime.live.local.strategy_state_lock',return_value=nullcontext()), \
+                    patch.object(continuous,'StopSignal',return_value=nullcontext(threading.Event())), \
+                    patch.object(continuous,'ContinuousPositionRuntime') as runtime:
+                launcher.main(['--config',str(self.path),'--run-forever','--connect',
+                    '--enable-orders','--confirm-simnow',*extra])
+                self.assertEqual(runtime.call_args.kwargs['prepare_seconds'],seconds)
+                self.assertIn(f'prepare_seconds={seconds}',output.getvalue())
+                self.assertFalse((self.root/'state').exists())
+
+    def test_negative_prepare_seconds_is_rejected_before_connections(self):
+        from contextlib import redirect_stderr
+        with redirect_stderr(StringIO()), patch.object(launcher,'load_calendar') as load, \
+                self.assertRaises(SystemExit):
+            launcher.main(['--config',str(self.path),'--prepare-seconds','-1'])
+        load.assert_not_called()
+
     def test_layout_change_cannot_silently_change_netting_policy(self):
         self.config['execution_mode']='netted'
         for layout in ('same-process','separate-processes'):

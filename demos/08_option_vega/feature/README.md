@@ -12,6 +12,7 @@
 | `generate.py` | 原始指数及MA的计算、导出和命令行入口 |
 | `dataframe.py` | 业务DataFrame转换为标准特征记录，与具体公式无关 |
 | `example_dataframe.py` | 可直接运行的完整调用示例：MA20/MA60组合、转换、导出与读回 |
+| `example_dolphindb.py` | 真实DolphinDB指数输入及自写DataFrame组合公式的完整调用 |
 | `backtest.py` | 特征可见时钟、分钟帧与原回测策略适配 |
 | `index.json` | 本地来源及Schema声明示例 |
 
@@ -116,6 +117,38 @@ python -u -m demos.08_option_vega.feature.example_dataframe \
 输出`index-blend.csv`、`index-blend.csv.manifest.json`、`index-blend.csv.dataset.json`及`summary.json`。
 已有文件时换新输出目录。替换`calculate_features()`中的业务公式，并同步输出字段与计算版本，即可参考相同转换流程。
 真实输入的缺口、午休和跨日窗口规则由业务函数明确处理；此合成例子只覆盖一个连续上午时段。
+
+### 从DolphinDB读取真实指数再计算
+
+真实数据版在[example_dolphindb.py](example_dolphindb.py)。同步代码后，在项目根目录执行：
+
+```bash
+python -u -m demos.08_option_vega.feature.example_dolphindb \
+  --connect --key 000852 \
+  --start '2026-09-01T00:00:00+08:00' \
+  --end '2026-09-11T23:59:59+08:00' \
+  --output-dir tests/results/features/ddb-index-ma20-ma60-20260901-20260911
+```
+
+连接读取项目`.env`/环境的`DDB_MARKET_*`，兼容旧`DDB_*`。默认声明为本目录`index.json`，
+来源是`dfs://min_bar/index_1min`。库表或字段不同时用`--config`选择实际声明；
+源代码为`SH000852`时加`--source-key SH000852`，导出业务键仍为`000852`。
+自有声明的数据集/版本不同时，相应指定`--dataset`和`--schema-version`。
+
+流程对应源码的四步：
+
+1. 公共Provider读取一次真实指数，负责DolphinDB字段和时间转换。
+2. 声明组合数据集`research.index.ma20_ma60.minute`的`close/ma20/ma60/index_blend`字段。
+3. `moving_average_records(..., calculator=calculate_blend)`准备DataFrame并调用你写的Pandas公式，再复用`dataframe_to_records`；保留最大60根依赖的源时间、质量及实际完成时间。
+4. 使用同一个`_export_and_check`导出CSV、manifest、声明，并逐记录读回；额外保存`summary.json`。
+
+业务公式在`calculate_blend()`中，输入是`close/segment_id`，整数纳秒索引为业务时间；
+返回原索引的已完成特征行。修改公式时同步调整输出Schema、计算版本以及最大依赖窗口。
+本例按连续分钟分段，午休、跨日或真实缺口后重新预热60根；不足时不会生成空包。
+成功需看到`status=passed`、`synthetic=false`和`file_roundtrip=passed`，记录数由真实数据覆盖决定。
+
+此例保留当前计算快照语义：输出可用时间是本次计算完成时间，不能直接当作9月份当时已发布的特征。
+已有原始查询错误仍须先定位源配置/库表；示例不把查询失败解释为空数据。
 
 新增独立模块`dataframe.py`，接口为：
 
