@@ -47,7 +47,7 @@ class SharedContinuousTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, '固定'):
             config_for_day(self.config, '20261014')
 
-    def processes(self, *, fail_worker=False, stop_before_seconds=0):
+    def processes(self, *, fail_worker=False, stop_before_seconds=0, prepare_before_open=False):
         commands, stopped, processes = [], [], []
         now = [self.window.start]
         def popen(command, *, start_new_session):
@@ -70,7 +70,7 @@ class SharedContinuousTests(unittest.TestCase):
                 now[0] = self.window.end - timedelta(seconds=stop_before_seconds)
             return proc
         runtime = ProcessWindowRuntime(self.config, self.window, Event(), 17, popen=popen, clock=lambda: now[0],
-            stop_before_seconds=stop_before_seconds)
+            stop_before_seconds=stop_before_seconds, prepare_before_open=prepare_before_open)
         return runtime, commands, stopped, processes
 
     def test_separate_workers_stop_before_single_account_and_carry_remaining_budget(self):
@@ -82,6 +82,16 @@ class SharedContinuousTests(unittest.TestCase):
         for command in commands[1:]:
             self.assertNotIn('--remaining-orders', command)
             self.assertIn('--resume', command)
+
+    def test_preopen_boundary_is_forwarded_to_account_and_all_workers_only_when_enabled(self):
+        runtime, commands, stopped, _ = self.processes(prepare_before_open=True)
+        self.assertEqual(runtime.run()['status'], 'completed')
+        self.assertEqual(stopped, ['worker', 'worker', 'server'])
+        for command in commands:
+            self.assertEqual(command[command.index('--activate-at')+1], self.window.start.isoformat())
+        normal, commands, _, _ = self.processes()
+        normal.run()
+        self.assertTrue(all('--activate-at' not in command for command in commands))
 
     def test_worker_shutdown_failure_keeps_account_service_for_diagnosis(self):
         runtime, _, stopped, processes = self.processes(fail_worker=True)

@@ -25,7 +25,7 @@ def config_for_day(config, day):
 
 class ProcessWindowRuntime:
     """调度server/worker原入口；先正常停止worker，再停止唯一TD服务。"""
-    def __init__(self, config, window, stop_event, remaining, *, popen=None, clock=None, resume=True, stop_before_seconds=0):
+    def __init__(self, config, window, stop_event, remaining, *, popen=None, clock=None, resume=True, stop_before_seconds=0, prepare_before_open=False):
         if type(stop_before_seconds) is not int or stop_before_seconds < 0:
             raise ValueError('休盘前停止秒数须为非负整数')
         self.stop_at = window.end - timedelta(seconds=stop_before_seconds)
@@ -34,6 +34,7 @@ class ProcessWindowRuntime:
         self.clock = clock or (lambda: datetime.now(window.end.tzinfo))
         self.workers, self.server = [], None
         self.resume = resume
+        self.prepare_before_open = prepare_before_open
 
     def stop_process(self, process):
         if process.poll() is None:
@@ -60,12 +61,14 @@ class ProcessWindowRuntime:
         common = ['--config', str(config_file), '--connect', '--enable-orders', '--confirm-simnow']
         if self.resume:
             common.append('--resume')
+        if self.prepare_before_open:
+            common += ['--activate-at', self.window.start.isoformat()]
         errors = []
         try:
             self.server = self.popen([sys.executable, '-u', '-m', 'scripts.integration.shared_account.server',
                 *common, '--socket', str(socket), '--credentials-dir', str(credentials),
                 '--remaining-orders', str(self.remaining)], start_new_session=True)
-            deadline = time.monotonic() + 180
+            deadline = time.monotonic() + 180 + max(0, (self.window.start-self.clock()).total_seconds())
             while not all((credentials/(row['strategy_id']+'.json')).is_file() for row in self.config['strategies']):
                 if self.stop.is_set() or self.clock() >= self.stop_at:
                     return {'status': 'completed'}

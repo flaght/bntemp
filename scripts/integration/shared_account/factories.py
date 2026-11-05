@@ -86,9 +86,9 @@ def assemble_strategy_session(entry, args, inputs, *, service, driver, strategy_
             history_config=args.history_config, history_file=args.history_file,
             shared_service=service, strategy_id=strategy_id, strategy=strategy)
     elif hasattr(inputs, "ctp_upstream"):
-        session = import_module("demos.08_option_vega.live_runtime").assemble(args, inputs, driver,
+        session = import_module("demos.08_option_vega.live").assemble(args, inputs, driver,
             shared_service=service, strategy_id=strategy_id)
-        session.restore_signal = lambda state: import_module("demos.08_option_vega.rollover").restore_signal(session, state)
+        session.restore_signal = lambda state: import_module("demos.08_option_vega.recovery").restore_signal(session, state)
     else:
         refresh_prepared_references(inputs.references, prepared_reference)
         session = entry.assemble(args, inputs.references, driver, inputs.upstream,

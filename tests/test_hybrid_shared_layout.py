@@ -715,6 +715,39 @@ class HybridLayoutConfigTests(unittest.TestCase):
             candidate={**self.config,key:value};self.path.write_text(json.dumps(candidate))
             with self.assertRaisesRegex(ValueError,'Hybrid历史根数'):read_config(self.path)
 
+    def test_same_process_connects_and_prewarms_before_open_but_waits_before_decisions(self):
+        from datetime import timedelta
+        from unittest.mock import Mock
+        import threading
+        window = hybrid_fixture.TradingWindow(trading_day='20261013', segment_id='am',
+            start=hybrid_fixture.dt('2026-10-13 09:00'), end=hybrid_fixture.dt('2026-10-13 11:30'))
+        now = [window.start-timedelta(minutes=5)]
+        host = Mock()
+        host.strategies = {'rb': NS(active=True,session=NS(runner=NS()))}
+        host.snapshot.return_value = {}
+        host.account.execution.backend.reports = ()
+        calls = []
+        def poll_preparation():
+            calls.append('preopen')
+            self.assertLess(now[0], window.start)
+            now[0] = window.start
+        host.poll_preparation.side_effect = poll_preparation
+        def start():
+            self.assertEqual(now[0], window.start-timedelta(minutes=5))
+            host.activation_wait()
+            self.assertEqual(now[0], window.start)
+            calls.append('open')
+        host.start.side_effect = start
+        host.poll.side_effect = lambda: now.__setitem__(0, window.end-timedelta(seconds=30))
+        with patch('scripts.integration.shared_account.run.build_host',return_value=host), \
+                patch('bomber.framework.trader.runtime.reports.TradingDayLiveReport'):
+            result = launcher.run_same_process(self.config,window,threading.Event(),
+                resume=False,remaining=100,clock=lambda:now[0])
+        self.assertEqual(result['status'], 'completed')
+        self.assertEqual(calls, ['preopen', 'open'])
+        self.assertEqual(launcher.PREPARE_SECONDS, 300)
+        host.stop.assert_called_once()
+
     def test_same_process_begins_stop_thirty_seconds_before_close(self):
         from datetime import timedelta
         from unittest.mock import Mock

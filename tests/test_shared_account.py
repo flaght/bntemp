@@ -1453,6 +1453,62 @@ class SharedAccountTests(unittest.TestCase):
             finally:
                 host.stop()
 
+    def test_host_preopen_warms_without_quotes_waits_unarmed_then_rechecks_at_open(self):
+        calls, captured = [], []
+        def configure(host, transport, rows):
+            captured.append(host)
+            ready = [False]
+            for row in rows:
+                runner = row.session.runner
+                runner.session_ready = lambda: ready[0]
+                runner.mark_history_live_start = lambda: None
+                def warm(runner=runner):
+                    self.assertFalse(runner.accept_bars)
+                    self.assertFalse(host.account.client.is_armed)
+                    calls.append('history')
+                runner.prepare_history = warm
+            def wait():
+                self.assertEqual(calls, ['history', 'history'])
+                for row in rows:
+                    row.save(host.service)  # 回调也不能在账户事务提交前写信号文件。
+                self.assertFalse(host.account.client.is_armed)
+                self.assertTrue(all(not row.session.runner.accept_bars for row in rows))
+                self.assertTrue(all(not row.state_file.exists() for row in rows))
+                host.poll_preparation()  # 尚无新行情时仍维护账户，不以行情就绪为等待前提。
+                self.assertEqual(transport.sent, [])
+                calls.append('open')
+                ready[0] = True
+            host.activation_wait = wait
+        with TemporaryDirectory() as directory:
+            host, transport, rows = self.callback_host(Path(directory), prepare=configure)
+            try:
+                self.assertEqual(calls, ['history', 'history', 'open'])
+                self.assertTrue(host.account.client.is_armed)
+                self.assertTrue(all(row.session.runner.accept_bars for row in rows))
+                self.assertTrue(all(row.state_file.exists() for row in rows))
+                self.assertEqual(transport.sent, [])
+            finally:
+                host.stop()
+
+    def test_preopen_operator_stop_never_authorizes_or_advances_signal_files(self):
+        from bomber.framework.trader.runtime.live.continuous import StopRequested
+        captured = []
+        def configure(host, transport, rows):
+            captured.extend((host, transport, rows))
+            def wait():
+                self.assertFalse(host.account.client.is_armed)
+                raise StopRequested()
+            host.activation_wait = wait
+        with TemporaryDirectory() as directory:
+            with self.assertRaises(StopRequested):
+                self.callback_host(Path(directory), prepare=configure)
+            host, transport, rows = captured
+            self.assertFalse(host._prepared)
+            self.assertFalse(host.account.client.is_armed)
+            self.assertEqual(transport.sent, [])
+            self.assertTrue(all(not row.session.runner.accept_bars for row in rows))
+            self.assertTrue(all(not row.state_file.exists() for row in rows))
+
     def test_host_history_failure_or_lost_health_never_authorizes_or_opens_bars(self):
         for lose_health in (False, True):
             with self.subTest(lose_health=lose_health), TemporaryDirectory() as directory:

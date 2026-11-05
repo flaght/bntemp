@@ -7,7 +7,7 @@ import unittest
 from bomber.framework.market.basic.base import InstrumentId, InstrumentMeta, MarketDataFeed, make_bar
 from tests.test_demo_option_vega import ns
 
-module = import_module("demos.08_option_vega.replay_test")
+module = import_module("scripts.integration.options.replay")
 
 
 class Feed(MarketDataFeed):

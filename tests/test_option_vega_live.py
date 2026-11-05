@@ -13,7 +13,7 @@ fixtures = import_module("tests.test_demo_option_vega")
 from bomber.framework.market.frames import MinuteFrameBuffer, minute_close_ns, MINUTE_NS
 from bomber.framework.dataprep.live_options import LiveOptionReferences
 from bomber.framework.dataprep.sources.base import ReferenceBatch, ReferenceDataset
-checkpoint = import_module("demos.08_option_vega.checkpoint")
+checkpoint = import_module("demos.08_option_vega.vega_signal")
 
 
 class FrameTests(unittest.TestCase):

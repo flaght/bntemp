@@ -27,7 +27,7 @@ from bomber.framework.trader.persistence import JsonStateStore
 from scripts.integration.options import simnow_migrate as migrate
 from tests.test_option_vega_assembly import ReferenceService,Feed
 
-runtime=import_module("demos.08_option_vega.live_runtime")
+runtime=import_module("demos.08_option_vega.live")
 entry=import_module("demos.08_option_vega.run_live")
 CLIENT=migrate.CLIENT
 OPTION="MO2609-C-6600.CFFEX"

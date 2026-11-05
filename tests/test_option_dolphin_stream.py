@@ -256,7 +256,7 @@ class DolphinMinuteTests(unittest.TestCase):
 
     def test_required_bar_gate_expires_source_even_if_late_receipt_is_recent(self):
         from tests.test_option_vega_assembly import ReferenceService
-        runtime = import_module("demos.08_option_vega.live_runtime")
+        runtime = import_module("demos.08_option_vega.live")
         from bomber.framework.trader.portfolio import PositionManager
         service = ReferenceService()
         refs = runtime.OptionReferences(service, "20260813", tuple(date(2026, 8, 13) + timedelta(days=n) for n in range(50)))
@@ -272,7 +272,7 @@ class DolphinMinuteTests(unittest.TestCase):
     def test_stream_callback_reaches_recording_target_without_ctp_market_or_td(self):
         from tests.test_option_vega_assembly import ReferenceService, Feed
         from zoneinfo import ZoneInfo
-        runtime = import_module("demos.08_option_vega.live_runtime")
+        runtime = import_module("demos.08_option_vega.live")
         entry = import_module("demos.08_option_vega.run_live")
         signal = import_module("demos.08_option_vega.vega_signal")
         args = entry.parse_args(["--connect", "--expected-trading-day", "20260813",

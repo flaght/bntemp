@@ -32,7 +32,7 @@ def validate_session_ready(session):
         raise RuntimeError(getattr(runner, "failure", None) or "会话准备后参考、行情或执行失效，保持闭闸")
 
 
-def prepare_strategy_history(session):
+def prepare_strategy_history(session, *, require_ready=True):
     """订阅后且决策关闭时准备历史，结束后重新观测参考和执行状态。"""
     runner = session.runner
     prepare = getattr(runner, "prepare_history", None)
@@ -54,7 +54,8 @@ def prepare_strategy_history(session):
     poll = getattr(runner, "poll_live_inputs", None)
     if callable(poll):
         poll()
-    validate_session_ready(session)
+    if require_ready:
+        validate_session_ready(session)
     return True
 
 

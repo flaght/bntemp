@@ -8,7 +8,7 @@ from pathlib import Path
 import sys
 
 if __package__ in (None, ""):
-    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from bomber.framework.dataprep.bars import read_bar_frame
 from bomber.framework.dataprep.catalog import scan_bar_files
@@ -97,7 +97,7 @@ def main(argv=None):
     args = parse_args(argv)
     # 与回测入口一样加载.env，已有运行环境变量优先。
     from dotenv import load_dotenv
-    load_dotenv(Path(__file__).resolve().parents[2] / ".env")
+    load_dotenv(Path(__file__).resolve().parents[3] / ".env")
     paths = resolve_paths(vars(args), validate=False)
     kwargs = dict(at=args.at, timestamp_label=args.bar_timestamp,
         max_age_seconds=args.max_market_age_seconds)

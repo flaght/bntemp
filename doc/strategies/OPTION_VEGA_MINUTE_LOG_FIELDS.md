@@ -1,3 +1,7 @@
+# 08分钟日志历史字段说明
+
+当前代码位于[08 Live](../../demos/08_option_vega/live.py)。以下示例保留原采样日期，不作为当前运行状态。
+
 # 08 Option Vega 分钟日志字段说明
 
 更新：2026-10-15（Asia/Shanghai）。适用于当前 `OptionSessionRunner`、`OptionVegaStrategy` 和 `minute_diagnostics.py` 的日志实现。本文解释现有代码，不改变策略规则或运行参数。
@@ -230,10 +234,10 @@
 
 | 代码 | 对应内容 |
 | --- | --- |
-| [minute_diagnostics.py](minute_diagnostics.py) | 行情摘要、决策摘要及时间/JSON格式 |
-| [live_runtime.py](live_runtime.py) | 接收年龄校验、候选忽略、封帧、缺指数跳过、心跳及错误处理 |
-| [strategy.py](strategy.py) | 动态必需集合、仓位/目标、退出、选约、对冲、提交与回报计数 |
-| [checkpoint.py](checkpoint.py) | 信号目标、选约日期及提交次数的保存/恢复 |
-| [vega_signal.py](vega_signal.py) | 配置、交易日计数、Greeks与配仓数值函数 |
+| [minute_diagnostics.py](../../demos/08_option_vega/minute_diagnostics.py) | 行情摘要、决策摘要及时间/JSON格式 |
+| [live_runtime.py](../../demos/08_option_vega/live_runtime.py) | 接收年龄校验、候选忽略、封帧、缺指数跳过、心跳及错误处理 |
+| [strategy.py](../../demos/08_option_vega/strategy.py) | 动态必需集合、仓位/目标、退出、选约、对冲、提交与回报计数 |
+| [checkpoint.py](../../demos/08_option_vega/checkpoint.py) | 信号目标、选约日期及提交次数的保存/恢复 |
+| [vega_signal.py](../../demos/08_option_vega/vega_signal.py) | 配置、交易日计数、Greeks与配仓数值函数 |
 | [frames.py](../../bomber/framework/market/frames.py) | 分钟标签归一化、首次接收截止、迟到计数、封帧规则 |
 | [日志回归测试](../../tests/test_option_minute_diagnostics.py) | 正常不变、目标提交、缺指数跳过、恢复等待、异常与日志不改变目标等验证 |

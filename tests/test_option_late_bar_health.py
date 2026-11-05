@@ -10,7 +10,7 @@ from bomber.framework.market.basic.base import make_bar
 from tests import test_option_vega_assembly as fixture
 from tests.test_demo_option_vega import ns
 
-runtime = import_module("demos.08_option_vega.live_runtime")
+runtime = import_module("demos.08_option_vega.live")
 signal = import_module("demos.08_option_vega.vega_signal")
 OPTION = "MO2609-C-6600"
 

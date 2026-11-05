@@ -4,6 +4,7 @@ import argparse
 from contextlib import ExitStack
 from dataclasses import replace
 from pathlib import Path
+from datetime import datetime
 from types import SimpleNamespace
 import json
 import time
@@ -69,7 +70,10 @@ def _main(argv):
     parser.add_argument("--enable-orders", action="store_true")
     parser.add_argument("--confirm-simnow", action="store_true")
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--activate-at", type=datetime.fromisoformat, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
+    if args.activate_at is not None and args.activate_at.tzinfo is None:
+        parser.error("开盘边界须携带时区")
     config = read_config(args.config)
     rows = [r for r in config["strategies"] if r["strategy_id"] == args.strategy_id]
     if len(rows) != 1 or config.get("execution_mode") != "independent":
@@ -89,7 +93,7 @@ def _main(argv):
 
 def _run(args, config, stop_event):
     row = next(row for row in config["strategies"] if row["strategy_id"] == args.strategy_id)
-    from bomber.framework.trader.runtime.live.continuous import StopRequested
+    from bomber.framework.trader.runtime.live.continuous import StopRequested, wait_for_open
     from bomber.framework.trader.execution.contracts import MarketDataUnavailable, OrderBudgetExhausted
     from dotenv import load_dotenv
     from .run import PROJECT_ROOT
@@ -194,6 +198,20 @@ def _run(args, config, stop_event):
                 bind(save)
             port.ready_check = session.runner.session_ready
             session.runner.start()
+            from bomber.framework.trader.runtime.live.shared import prepare_strategy_history
+            activate_at = getattr(args, "activate_at", None)
+            if activate_at is not None:
+                if prepare_strategy_history(session, require_ready=False) is False:
+                    raise StopRequested()
+                def poll_preparation():
+                    if session.runner.failure:
+                        raise RuntimeError(session.runner.failure)
+                    port.drain_events()
+                    session.references.refresh()
+                    poll = getattr(session.runner, "poll_live_inputs", None)
+                    if callable(poll):
+                        poll()
+                wait_for_open(activate_at, stop_event, poll=poll_preparation)
             ready_seconds = strategy_args.ready_timeout if row["kind"] == "option_vega" else 30
             if source_config(strategy_args).source != "ctp":
                 ready_seconds = max(ready_seconds, source_config(strategy_args).max_age_seconds)
@@ -216,8 +234,13 @@ def _run(args, config, stop_event):
             save()
             if stop_event.is_set():
                 raise StopRequested()
-            from bomber.framework.trader.runtime.live.shared import prepare_strategy_history
-            prepare_strategy_history(session)
+            if activate_at is None:
+                if prepare_strategy_history(session) is False:
+                    raise StopRequested()
+            else:
+                from bomber.framework.trader.runtime.live.lifecycle import validate_session_ready
+                session.references.refresh()
+                validate_session_ready(session)
             if stop_event.is_set():
                 raise StopRequested()
             session.runner.begin_bars()

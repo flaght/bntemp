@@ -238,6 +238,24 @@ class SessionCalendar:
                 raise RuntimeError("日历未覆盖跨午夜会话的起始日期")
         return None
 
+    def next_window(self, now, *, before):
+        """查找有限准备期内的下一开盘；沿用夜盘归属和日期例外规则。"""
+        if now.tzinfo is None or before.tzinfo is None or before < now:
+            raise ValueError("下一窗口查询须使用有时区的递增时间")
+        self.window(now)  # 核验当前边界，包括跨午夜日历覆盖。
+        now, before = now.astimezone(self.zone), before.astimezone(self.zone)
+        self._require_day(before.date())
+        first = max(self.start, now.date() - timedelta(days=1))
+        candidates = sorted((w for day in self.calendar.days[
+            bisect_left(self.calendar.days, first):bisect_right(self.calendar.days, before.date())]
+            for w in self._anchor_windows(day) if now < w.start <= before), key=lambda w: w.start)
+        if not candidates:
+            return None
+        window = candidates[0]
+        if not window.trading_day:
+            raise RuntimeError("日历未覆盖盘前准备窗口所属的下一交易日")
+        return window
+
     def _minutes(self, before_ns, after_ns=None):
         self._require_day(ns_datetime(before_ns - 1, self.zone).date())
         if after_ns is not None:

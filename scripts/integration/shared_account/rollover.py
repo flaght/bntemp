@@ -13,7 +13,7 @@ def validate_strategy_identity(old, new):
     previous["trading_day"] = current["trading_day"]
     if new["kind"] == "option_vega" and "reference" in new:
         from importlib import import_module
-        import_module("demos.08_option_vega.rollover").validate_identity(previous["reference"], current["reference"])
+        import_module("demos.08_option_vega.recovery").validate_identity(previous["reference"], current["reference"])
         previous["reference"] = current["reference"]
         old_routes, new_routes = previous["routes"], current["routes"]
         for key in set(old_routes["routes"]) & set(new_routes["routes"]):
@@ -189,7 +189,7 @@ def import_option_payload(account, payload):
         if old != session.session_identity:
             raise ValueError("同日导入08须保留原会话身份")
     else:
-        payload = import_module("demos.08_option_vega.rollover").payload_for_day(session, payload,
+        payload = import_module("demos.08_option_vega.recovery").payload_for_day(session, payload,
             driver=account.driver, transport=account.transport, day=account.expected_day)
         account.rollover_audit = session.rollover_audit
         signal = deepcopy(payload["component_states"]["vega_signal"])

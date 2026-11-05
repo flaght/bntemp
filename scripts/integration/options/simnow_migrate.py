@@ -195,7 +195,7 @@ def main(argv=None):
         from bomber.framework.trader.runtime.live.contracts import LiveRunContext
         from bomber.framework.trader.runtime.live.channels.ctp_recovery import validate_ctp_account
         entry = import_module("demos.08_option_vega.run_live")
-        runtime = import_module("demos.08_option_vega.live_runtime")
+        runtime = import_module("demos.08_option_vega.live")
         recovery = import_module("demos.08_option_vega.recovery")
         with ExitStack() as resources:
             resources.enter_context(strategy_state_lock(source));resources.enter_context(strategy_state_lock(output))

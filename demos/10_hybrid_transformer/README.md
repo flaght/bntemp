@@ -581,3 +581,10 @@ python -u -m demos.10_hybrid_transformer.recover_expired \
 共享入口`run_shared.py`复用现有账户服务与Unix IPC，使用同一份`config/shared_rb_p.json`，通过`--process-layout same-process`或`separate-processes`切换。模型、独立五分钟批次、信号与仓位限制不变。
 
 完整参数、原RB检查点接入及布局切换步骤见[共享执行指南](../../doc/strategies/HYBRID_SHARED_EXECUTION_GUIDE.md)。
+
+
+共享入口默认在每个交易时段开盘前5分钟开始连接账户、恢复检查点、订阅行情和历史预热。
+例如09:00开盘，08:55进入盘前准备；21:00夜盘则20:55开始。准备完成后闭闸等待，开盘前
+不产生策略新单；开盘后重新检查参考、行情和账户，健康通过才授权并开放策略决策。
+盘前尚无新行情不会消耗开盘后的就绪超时。原启动命令不变，两种进程布局均适用；
+休盘前30秒开始正常撤单、保存和停机的规则仍保留。程序若在准备期内或开盘后才启动，立即准备。
