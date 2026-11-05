@@ -32,8 +32,8 @@ FOUR_VENUE_RUNTIME_HASHES = {
 FEATURE_DEPLOYMENT_GROUPS = frozenset(("feature-datahub", "feature-query-live", "option-vega", "option-vega-live", "option-calendar", "option-shared"))
 # 补充原生/08被测文件摘要；入口摘要由独立GAP08入口持有，不在此处自引用。
 RETIRED_OPTION_SOURCES = ('demos/08_option_vega/features.py', 'demos/08_option_vega/acceptance.py', 'demos/08_option_vega/assembly.py', 'demos/08_option_vega/backtest_runtime.py', 'demos/08_option_vega/check_backtest_data.py', 'demos/08_option_vega/checkpoint.py', 'demos/08_option_vega/execution_audit.py', 'demos/08_option_vega/live_runtime.py', 'demos/08_option_vega/minute_diagnostics.py', 'demos/08_option_vega/replay_test.py', 'demos/08_option_vega/rollover.py')
-FEATURE_RUNTIME_HASHES = {'tests/test_option_dolphindb_dataframe_example.py': '390d1e2ba603379d6bead9c05f58c813215da2ac05feaa037a8f415c7e2c3bca',
- 'demos/08_option_vega/feature/example_dolphindb.py': 'a85ce66bfd0762590315ebd851114fadab1e68456caa0dd2a6fea5f7eafc272c',
+FEATURE_RUNTIME_HASHES = {'tests/test_option_dolphindb_dataframe_example.py': 'e09f8475ccb0139c8c9b14ca5d0a02e937f11cff524588f5d6f36a8a0af4a102',
+ 'demos/08_option_vega/feature/example_dolphindb.py': 'e647ce40266453ec2441a923f110af60b0b14fa42c711c42253eb1034b8978fb',
  'demos/08_option_vega/feature/example_dataframe.py': 'b8c54b7592e1df7b4fcaf045e616a1bb7dd7186124c41bb22d53660dd70d9285',
  'tests/test_option_feature_dataframe.py': 'd93ab2e370fcfa50f1c9755b6e1ecea9d085a6ccd53e941cbc3d43faad28db55',
  'demos/08_option_vega/feature/dataframe.py': '410b21f0aae903e379ff71ffe637878984358ca58056a2201b74b9fae1c0066b',
