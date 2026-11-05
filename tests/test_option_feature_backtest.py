@@ -163,7 +163,10 @@ class FeatureGenerationTests(unittest.TestCase):
         from bomber.framework.dataprep.features import DolphinDbRawFeatureProvider
         session = Session(rows=rows)
         self.args.index_availability = availability
+        original_create = exporter.FeatureProviderFactory.create_for
         def create(purpose, backend, config, registry, **options):
+            if backend == "file":
+                return original_create(purpose, backend, config, registry, **options)
             self.assertEqual(purpose.value, "feature_export")
             self.assertEqual(backend, "dolphindb-raw")
             return DolphinDbRawFeatureProvider(config, registry,
@@ -181,12 +184,12 @@ class FeatureGenerationTests(unittest.TestCase):
     def test_dolphindb_to_file_to_original_frame_keeps_historical_source_time(self):
         report = self.generate(availability="source-time")
         bundle, binding, records, identity = self.read()
-        self.assertEqual(report["file_roundtrip"], "passed")
-        self.assertEqual(report["records"], 1)
-        self.assertEqual(report["availability"], "source-time")
+        self.assertEqual(report["index"]["file_roundtrip"], "passed")
+        self.assertEqual(report["index"]["rows"], 1)
+        self.assertEqual(report["index_availability"], "source-time")
         self.assertEqual(records[0].available_ns, END+100)
         self.assertEqual(records[0].payload.close, Decimal("6401.2"))
-        self.assertEqual(identity["schema_fingerprint"], report["export_manifest"]["schema_fingerprint"])
+        self.assertEqual(identity["schema_fingerprint"], report["index"]["schema_fingerprint"])
         bars = [NS(ts_event=t, ts_init=t, bar_type=NS(instrument_id=NS(symbol="IM2610")),
             close=NS(as_decimal=lambda: Decimal(6500))) for t in (END, END+M)]
         outcomes, _ = replay.prepare_feature_frames(bars, bundle, binding, records, "000852", 2*S)
@@ -197,9 +200,9 @@ class FeatureGenerationTests(unittest.TestCase):
     def test_observed_export_keeps_observation_time_and_cannot_enter_earlier_frame(self):
         report = self.generate()
         bundle, binding, records, _ = self.read()
-        self.assertEqual(report["availability"], "observed")
+        self.assertEqual(report["index_availability"], "observed")
         self.assertEqual(records[0].available_ns, END+10*S)
-        self.assertEqual(report["max_visibility_delay_seconds"], 10)
+        self.assertEqual(report["index"]["max_visibility_delay_seconds"], 10)
         bars = [NS(ts_event=t, ts_init=t, bar_type=NS(instrument_id=NS(symbol="IM2610")),
             close=NS(as_decimal=lambda: Decimal(6500))) for t in (END, END+M)]
         outcomes, _ = replay.prepare_feature_frames(bars, bundle, binding, records, "000852", 2*S)
@@ -212,7 +215,8 @@ class FeatureGenerationTests(unittest.TestCase):
         self.assertFalse(Path(str(self.path)+".manifest.json").exists())
 
     def test_existing_output_or_manifest_fails_before_query(self):
-        for existing in (self.path, Path(str(self.path)+".manifest.json")):
+        for existing in (self.path, Path(str(self.path)+".manifest.json"),
+                         Path(str(self.path)+".dataset.json"), self.path.parent / "summary.json"):
             with self.subTest(existing=existing):
                 existing.write_text("preserved")
                 try:
