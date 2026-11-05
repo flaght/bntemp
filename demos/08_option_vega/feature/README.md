@@ -15,6 +15,7 @@
 | `example_dolphindb.py` | 真实DolphinDB指数输入及自写DataFrame组合公式的完整调用 |
 | `backtest.py` | 特征可见时钟、分钟帧与原回测策略适配 |
 | `index.json` | 本地来源及Schema声明示例 |
+| `index_close.json` | 只读取close的精简来源声明，数据集为`index.close.minute` |
 
 回测与Live均从`demos.08_option_vega.feature`导入声明/读取接口。
 生成命令保持`python -m demos.08_option_vega.feature.generate`；原`python -m demos.08_option_vega.features`入口移除。
@@ -119,6 +120,19 @@ python -u -m demos.08_option_vega.feature.example_dataframe \
 真实输入的缺口、午休和跨日窗口规则由业务函数明确处理；此合成例子只覆盖一个连续上午时段。
 
 ### 从DolphinDB读取真实指数再计算
+
+当前DataFrame计算只依赖`close`时，可改用精简声明`index_close.json`：
+
+```bash
+--config demos/08_option_vega/feature/index_close.json \
+--dataset index.close.minute
+```
+
+该声明只映射`close`，仍保留业务键、日期/分钟映射和频率。`observed`模式不依赖`updateTime`，
+因此省略`publication_time`；若要使用`source-time`，须先补充经确认的真实发布时间映射。
+读取时可只提供`Code/date/minTime/close`四列，不需要OHLCV及`bar_projection`。
+精简声明用于`example_dolphindb.py`与`read_index_dataframe`；`generate.py`和Live默认Bar投影路径
+仍使用原`index.json`。使用独立数据集ID，保留已有`index.minute`的Schema身份。
 
 如果先只提取指数DataFrame，使用包内的`read_index_dataframe`，传入连接配置对象：
 

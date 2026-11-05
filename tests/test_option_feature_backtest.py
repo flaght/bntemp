@@ -1,5 +1,6 @@
 """08特征文件、Live声明与模拟可见时间的离线回归，无数据库/柜台连接。"""
 from dataclasses import replace
+from datetime import date
 from decimal import Decimal
 from importlib import import_module
 import json
@@ -393,3 +394,79 @@ class Ma20BacktestTests(unittest.TestCase):
                 "--index-dataset", self.output.dataset_id, "--index-value-field", "ma20"]):
             entry.main()
         self.assertEqual(run.call_args.args[0].index_value_field, "ma20")
+
+
+class BacktestCalendarTests(unittest.TestCase):
+    def setUp(self):
+        self.entry = import_module("demos.08_option_vega.run_backtest")
+        self.args = NS(start_day=date(2026, 8, 13), end_day=date(2026, 9, 30),
+            calendar=None, calendar_id="china.cffex", fut_dir=Path("fut"), opt_dir=Path("opt"))
+
+    def test_native_calendar_retains_future_days_for_expiry_without_future_market_data(self):
+        from bomber.framework.calendars import CalendarSnapshot
+        # 日期仅为测试夹具；实际日期规则由公共Provider提供。
+        days = (self.args.start_day, date(2026, 9, 23), date(2026, 9, 24),
+            date(2026, 9, 28), date(2026, 9, 29), self.args.end_day,
+            date(2026, 10, 9), date(2026, 10, 12), date(2026, 10, 13),
+            date(2026, 10, 14), date(2026, 10, 15), date(2026, 10, 16))
+        snapshot = CalendarSnapshot("china.cffex", "fixture-v1", self.args.start_day,
+            date(2026, 12, 31), days, "compiled")
+        with patch.object(self.entry, "NativeCalendarProvider") as provider, \
+                patch.object(self.entry, "load_calendar") as file_load, \
+                patch.object(self.entry, "infer_market_calendar") as infer:
+            provider.return_value.snapshot.return_value = snapshot
+            calendar, source = self.entry.load_backtest_calendar(self.args)
+        provider.assert_called_once_with("china.cffex")
+        provider.return_value.snapshot.assert_called_once_with(self.args.start_day)
+        file_load.assert_not_called()
+        infer.assert_not_called()
+        self.assertEqual(calendar, days)
+        self.assertIn(snapshot.fingerprint, source)
+        self.assertIn("fixture-v1", source)
+        self.assertEqual(self.entry.remaining_trading_days(
+            calendar, self.args.end_day, date(2026, 10, 16), 5), 6)
+        self.assertEqual([day for day in calendar if day <= self.args.end_day], list(days[:6]))
+
+    def test_native_coverage_and_extension_failures_do_not_fall_back_to_inference(self):
+        from bomber.framework.calendars import CalendarSnapshot
+        snapshot = CalendarSnapshot("china.cffex", "fixture-v1", self.args.start_day,
+            date(2026, 12, 31), (self.args.start_day,), "compiled")
+        self.args.end_day = date(2027, 1, 4)
+        with patch.object(self.entry, "NativeCalendarProvider") as provider, \
+                patch.object(self.entry, "infer_market_calendar") as infer:
+            provider.return_value.snapshot.return_value = snapshot
+            with self.assertRaisesRegex(ValueError, "覆盖不足"):
+                self.entry.load_backtest_calendar(self.args)
+            provider.return_value.snapshot.side_effect = RuntimeError("日历扩展不可用")
+            with self.assertRaisesRegex(RuntimeError, "日历扩展不可用"):
+                self.entry.load_backtest_calendar(self.args)
+            infer.assert_not_called()
+
+    def test_existing_file_and_inferred_calendar_modes_are_preserved(self):
+        self.args.calendar_id = None
+        self.args.calendar = Path("calendar.csv")
+        days = (self.args.start_day, self.args.end_day)
+        with patch.object(self.entry, "load_calendar", return_value=days) as file_load:
+            self.assertEqual(self.entry.load_backtest_calendar(self.args), (days, "calendar.csv"))
+            file_load.assert_called_once_with(self.args.calendar, self.args.start_day, self.args.end_day)
+        self.args.calendar = None
+        with patch.object(self.entry, "infer_market_calendar", return_value=days) as infer:
+            self.assertEqual(self.entry.load_backtest_calendar(self.args), (days, "MARKET_DATES"))
+            infer.assert_called_once_with((self.args.fut_dir, self.args.opt_dir),
+                self.args.start_day, self.args.end_day)
+
+    def test_cli_selects_native_calendar_and_rejects_conflicting_file(self):
+        from contextlib import redirect_stderr
+        import io
+        cli = ["run_backtest.py", "--start-day", "2026-08-13", "--end-day", "2026-09-30",
+            "--index-feature-file", "index.csv", "--calendar-id", "china.cffex"]
+        with patch.object(self.entry, "run_case") as run, patch("sys.argv", cli):
+            self.entry.main()
+        self.assertEqual(run.call_args.args[0].calendar_id, "china.cffex")
+        self.assertIsNone(run.call_args.args[0].calendar)
+        with patch.object(self.entry, "run_case") as run, \
+                patch("sys.argv", [*cli, "--calendar", "calendar.csv"]), \
+                redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as error:
+            self.entry.main()
+        self.assertEqual(error.exception.code, 2)
+        run.assert_not_called()
