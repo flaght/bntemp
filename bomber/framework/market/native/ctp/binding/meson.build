@@ -1,7 +1,7 @@
 project(
   'bomber_ctp',
   'cpp',
-  version: '0.1.1',
+  version: '0.1.2',
   license: 'MIT',
   meson_version: '>=1.7.0',
   default_options: ['buildtype=release', 'cpp_std=c++17', 'warning_level=2'],

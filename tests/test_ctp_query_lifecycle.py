@@ -31,6 +31,30 @@ class CtpQueryLifecycleTests(unittest.TestCase):
         self.addCleanup(transport.close)
         return transport
 
+    def test_trade_query_preserves_real_execution_details(self):
+        t = self.transport()
+        def query(fields, reqid):
+            self.assertEqual(fields, {'BrokerID':'9999','InvestorID':'demo'})
+            t._api.onRspQryTrade(dict(BrokerID='9999',InvestorID='demo',InstrumentID='p2701',
+                ExchangeID='DCE',OrderRef='223',OrderSysID='SYS223',TradeID='REAL223',Direction='0',
+                TradingDay='20260922',TradeDate='20260922',TradeTime='10:14:59',OffsetFlag='1',
+                Volume=1,Price=8981),{},reqid,False)
+            t._api.onRspQryTrade({}, {}, reqid, True)
+            return 0
+        t._api.reqQryTrade = query
+        rows = t.query_trades()
+        self.assertEqual(len(rows),1)
+        self.assertEqual((rows[0]['TradeID'],rows[0]['Price'],rows[0]['Volume']),('REAL223',8981,1))
+        with self.assertRaises(TypeError): rows[0]['Price']=1
+
+    def test_trade_query_requires_new_native_binding_and_complete_final_reply(self):
+        t = self.transport()
+        with self.assertRaisesRegex(RuntimeError,'0.1.2'): t.query_trades()
+        t._api.reqQryTrade = lambda fields, reqid: 0
+        with self.assertRaises(TimeoutError): t.query_trades()
+        self.assertEqual(t._pending.kind,'trades')
+        self.assertTrue(t._pending.timed_out)
+
     def test_nonqueueing_terminal_statuses_are_excluded_from_active_order_query(self):
         t = self.transport()
         states = ('0', '1', '2', '3', '4', '5', 'a', 'b', 'c')

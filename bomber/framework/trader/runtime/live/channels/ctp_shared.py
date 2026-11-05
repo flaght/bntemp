@@ -231,6 +231,9 @@ class CtpSharedAccountLifecycle:
                     from .ctp_owned import restore_external_baseline
                     return restore_external_baseline(self, payload)
                 transform = owned_transform
+            if transform is None and saved and any(row.get("orders") for row in saved.payload.get("ctp_drivers", {}).values()):
+                # 同日终态补记也沿用原子恢复提交和备份，核验失败不覆盖原文件。
+                transform = lambda payload: payload
             if self.manager.restore(payload_transform=transform) is None:
                 raise RuntimeError("共享账户恢复文件不存在")
             self._restored = True
@@ -241,6 +244,16 @@ class CtpSharedAccountLifecycle:
             self.service.validate_owned_state()
         elif self.manager.repository.load() is not None:
             raise RuntimeError("共享账户新会话不能覆盖原文件")
+        if resume and getattr(self.driver, "has_recovery_orders", False) and self.service.event_journal is not None:
+            # 在受控客户端记录known订单集之前，补齐有柜台完整证据的同日终态。
+            # 回放复用真实成交入账链，不由仓位差额或委托限价推断成交。
+            self.driver.terminal_query_recovery = True
+            self.client.backend.start()
+            try:
+                self.driver.reconcile_active_orders()
+            except BaseException:
+                self.client.backend.stop()
+                raise
         self.client.start()
         self._started = True
         if self.driver.trading_day != self.expected_day:

@@ -159,6 +159,9 @@ class CtpNativeTraderDriver:
         # 终态通知可能先于OnRtnTrade到达；等已声明成交量全部入账后再释放余量。
         self._terminal_cancels: dict[str, tuple[Decimal, dict[str, Any]]] = {}
         self._recovery_checkpoint: CtpDriverCheckpoint | None = None
+        self._replaying_recovery = False
+        self.terminal_query_recovery = False
+        self._recovery_pushes: list[tuple[str, dict[str, Any]]] = []
         self._before_send: Callable[[str, OrderIntent], None] | None = None
         self._after_transition: Callable[[], None] | None = None
         self._on_unsent: Callable[[str], None] | None = None
@@ -311,6 +314,7 @@ class CtpNativeTraderDriver:
                 or checkpoint.driver_id != self.driver_id
                 or checkpoint.account_id != self.account_id):
             raise ValueError("CTP检查点客户端或账户不匹配")
+        self._recovery_pushes.clear()
         self._recovery_checkpoint = checkpoint
 
     def discard_staged_recovery(self) -> None:
@@ -318,6 +322,93 @@ class CtpNativeTraderDriver:
         if self._connected or self._session is not None:
             raise RuntimeError("CTP Driver运行中不能撤销恢复检查点")
         self._recovery_checkpoint = None
+        self._recovery_pushes.clear()
+
+    @property
+    def has_recovery_orders(self):
+        return self._recovery_checkpoint is not None and bool(self._recovery_checkpoint.orders)
+
+    @property
+    def is_replaying_recovery_reports(self):
+        return self._replaying_recovery
+
+    def _terminal_recovery_evidence(self, checkpoint, reported):
+        """只接受本次完整订单查询的终态；新增成交必须有完整真实成交明细。"""
+        if not self.terminal_query_recovery:
+            return {}
+        queried = getattr(self.transport, 'queried_order_states', {})
+        terminals = {}
+        for record in checkpoint.orders:
+            if record.client_order_id in reported:
+                continue
+            raw = queried.get(record.client_order_id)
+            if raw is None:
+                continue
+            state = str(raw.get('OrderStatus', ''))
+            rejected = str(raw.get('OrderSubmitStatus', '')) == '4'
+            if state not in {'0', '2', '4', '5'} and not rejected:
+                continue
+            intent = record.intent
+            symbol, _, venue = str(intent.instrument_id).rpartition('.')
+            identity = dict(BrokerID=checkpoint.broker_id, InvestorID=checkpoint.investor_id,
+                InstrumentID=symbol, ExchangeID=venue, OrderRef=record.order_ref,
+                Direction='0' if intent.side.value == 'BUY' else '1')
+            if any(str(raw.get(key, '')).strip() != value for key, value in identity.items()):
+                raise RuntimeError(f'CTP终态订单身份不匹配: {record.client_order_id}')
+            total, filled = Decimal(str(raw.get('VolumeTotalOriginal', 'NaN'))), Decimal(str(raw.get('VolumeTraded', 'NaN')))
+            if (not total.is_finite() or not filled.is_finite() or total != intent.quantity
+                    or filled != filled.to_integral_value() or not record.filled_quantity <= filled <= total
+                    or state == '0' and filled != total or state == '2' and not 0 < filled < total
+                    or (state == '4' or rejected) and filled != 0):
+                raise RuntimeError(f'CTP终态订单累计量与本地不符: {record.client_order_id}')
+            terminals[record.client_order_id] = (dict(raw, _recovery_query=True), filled, [])
+        needs_trades = any(terminals[row.client_order_id][1] > row.filled_quantity
+            for row in checkpoint.orders if row.client_order_id in terminals)
+        trades = ()
+        if needs_trades:
+            query = getattr(self.transport, 'query_trades', None)
+            if not callable(query):
+                raise RuntimeError('缺失成交须查询真实成交明细；当前CTP传输不支持query_trades')
+            trades = query()
+        for record in checkpoint.orders:
+            if record.client_order_id not in terminals:
+                continue
+            raw, filled, missing = terminals[record.client_order_id]
+            if filled == record.filled_quantity:
+                continue
+            system_id = str(raw.get('OrderSysID', '')).strip()
+            venue = str(raw['ExchangeID']).strip()
+            if not system_id:
+                raise RuntimeError('终态订单缺少OrderSysID，不能仅凭OrderRef猜测成交归属')
+            unique = {}
+            for trade in trades:
+                if (str(trade.get('ExchangeID', '')).strip() != venue
+                        or str(trade.get('OrderSysID', '')).strip() != system_id):
+                    continue
+                for key in ('BrokerID', 'InvestorID', 'InstrumentID', 'ExchangeID', 'OrderRef', 'Direction'):
+                    if str(trade.get(key, '')).strip() != str(raw.get(key, '')).strip():
+                        raise RuntimeError('CTP成交明细与终态委托身份不一致')
+                trade_id = str(trade.get('TradeID', ''))
+                if not trade_id.strip() or str(trade.get('TradingDay', '')).strip() != checkpoint.trading_day:
+                    raise RuntimeError('CTP恢复成交编号或交易日无效；禁止跨日推断漏成交')
+                offsets = {'OPEN': '0', 'CLOSE': '1', 'CLOSE_TODAY': '3', 'CLOSE_YESTERDAY': '4'}
+                if str(trade.get('OffsetFlag', '')) != offsets.get(record.intent.position_effect.value):
+                    raise RuntimeError('CTP恢复成交的开平标志与本地委托不一致')
+                quantity, price = Decimal(str(trade.get('Volume', 'NaN'))), Decimal(str(trade.get('Price', 'NaN')))
+                if (not quantity.is_finite() or not price.is_finite() or quantity <= 0 or price <= 0
+                        or quantity != quantity.to_integral_value()):
+                    raise RuntimeError('CTP恢复成交的真实价格或数量无效')
+                key = (checkpoint.trading_day, venue, trade_id)
+                if key in unique and dict(unique[key]) != dict(trade):
+                    raise RuntimeError('CTP同一成交编号返回冲突明细')
+                unique[key] = trade
+            seen = set(record.seen_trades)
+            known_volume = sum((Decimal(str(row['Volume'])) for key, row in unique.items() if key in seen), Decimal(0))
+            total_volume = sum((Decimal(str(row['Volume'])) for row in unique.values()), Decimal(0))
+            if not seen <= unique.keys() or known_volume != record.filled_quantity or total_volume != filled:
+                raise RuntimeError(f'CTP真实成交明细不足或与累计成交量不一致: {record.client_order_id}')
+            missing.extend(dict(row, _recovery_query=True) for key, row in sorted(unique.items()) if key not in seen)
+        return terminals
 
     def _restore_associations_from_snapshot(
         self, checkpoint: CtpDriverCheckpoint, snapshot: ActiveOrderSnapshot,
@@ -338,7 +429,8 @@ class CtpNativeTraderDriver:
             raise RuntimeError("CTP检查点OrderRef重复或序号无效")
         reported = {order.client_order_id: order for order in snapshot.orders}
         local = {record.client_order_id: record for record in checkpoint.orders}
-        if len(local) != len(refs) or reported.keys() != local.keys():
+        terminals = self._terminal_recovery_evidence(checkpoint, reported) if reported.keys() <= local.keys() else {}
+        if len(local) != len(refs) or reported.keys() | terminals.keys() != local.keys():
             statuses = {key: getattr(self.transport, "order_query_diagnostics", {}).get(key)
                         for key in sorted(local.keys()-reported.keys())}
             raise RuntimeError("CTP柜台与本地活动订单ID不一致，需要人工对账；"
@@ -350,7 +442,7 @@ class CtpNativeTraderDriver:
                 f"CTP-{session.broker_id}-{session.investor_id}-"
                 f"{session.trading_day}-{record.order_ref}"
             )
-            order = reported[record.client_order_id]
+            order = reported.get(record.client_order_id)
             intent = record.intent
             if (
                 not record.order_ref.isdigit()
@@ -358,11 +450,11 @@ class CtpNativeTraderDriver:
                 or record.client_order_id != expected_id
                 or intent.backend_id != self.driver_id
                 or not intent.strategy_id
-                or str(intent.instrument_id) != order.instrument_id
-                or intent.side.value != order.side.value
-                or intent.quantity != order.order_quantity
-                or record.filled_quantity != order.cumulative_filled
-                or intent.quantity - record.filled_quantity != order.remaining_quantity
+                or order is not None and (str(intent.instrument_id) != order.instrument_id
+                    or intent.side.value != order.side.value
+                    or intent.quantity != order.order_quantity
+                    or record.filled_quantity != order.cumulative_filled
+                    or intent.quantity - record.filled_quantity != order.remaining_quantity)
                 or record.sequence < 0
             ):
                 raise RuntimeError(f"CTP活动订单{record.client_order_id}归属或数量不一致")
@@ -370,28 +462,40 @@ class CtpNativeTraderDriver:
                 if len(key) != 3 or key[0] != session.trading_day or key in restored_trades:
                     raise RuntimeError("CTP检查点成交去重键无效或重复")
                 restored_trades[key] = record.order_ref
-        self._orders = {
-            record.order_ref: (record.client_order_id, record.intent)
-            for record in checkpoint.orders
-        }
-        self._filled = {
-            record.order_ref: record.filled_quantity for record in checkpoint.orders
-        }
-        self._sequences = {
-            record.order_ref: record.sequence for record in checkpoint.orders
-        }
-        self._accepted = {
-            record.order_ref for record in checkpoint.orders if record.accepted
-        }
-        self._trade_refs = restored_trades
-        self._seen_trades = set(restored_trades)
-        self._next_ref = max(self._next_ref, checkpoint.next_ref)
-        self._recovery_checkpoint = None
+        with (self._transition_lock if self._transition_lock is not None else nullcontext()):
+            self._orders = {
+                record.order_ref: (record.client_order_id, record.intent)
+                for record in checkpoint.orders
+            }
+            self._filled = {
+                record.order_ref: record.filled_quantity for record in checkpoint.orders
+            }
+            self._sequences = {
+                record.order_ref: record.sequence for record in checkpoint.orders
+            }
+            self._accepted = {
+                record.order_ref for record in checkpoint.orders if record.accepted
+            }
+            self._trade_refs = restored_trades
+            self._seen_trades = set(restored_trades)
+            self._next_ref = max(self._next_ref, checkpoint.next_ref)
+            self._recovery_checkpoint = None
+            self._replaying_recovery = True
+            try:
+                for raw, filled, trades in terminals.values():
+                    for trade in trades:
+                        self.on_trade(trade)
+                    self.on_order(raw)
+                pushes, self._recovery_pushes = self._recovery_pushes, []
+                for kind, raw in pushes:
+                    (self.on_trade if kind == 'trade' else self.on_order)(raw)
+            finally:
+                self._replaying_recovery = False
 
     @_serialized_transition
     def submit_order(self, order: OrderIntent) -> None:
         self._require_connected()
-        if self._recovery_checkpoint is not None:
+        if self._recovery_checkpoint is not None or self._replaying_recovery:
             raise RuntimeError("CTP活动订单关联尚未经过柜台权威快照恢复")
         if not self._enable_test_orders:
             raise RuntimeError("原生CTP Driver默认禁单；本阶段只读")
@@ -447,7 +551,7 @@ class CtpNativeTraderDriver:
 
     def cancel_strategy(self, strategy_id: str) -> None:
         self._require_connected()
-        if self._recovery_checkpoint is not None:
+        if self._recovery_checkpoint is not None or self._replaying_recovery:
             raise RuntimeError("CTP活动订单关联尚未经过柜台权威快照恢复")
         if not self._enable_test_orders:
             raise RuntimeError("原生CTP Driver默认禁单；本阶段只读")
@@ -461,8 +565,17 @@ class CtpNativeTraderDriver:
         if self._disconnect_handler is not None:
             self._disconnect_handler(f"ctp_front_disconnected:{reason}")
 
+    def _queue_recovery_push(self, kind, raw):
+        if len(self._recovery_pushes) >= 65536:
+            self.on_disconnect(-1)
+            raise RuntimeError('CTP恢复回报缓冲溢出，保留检查点')
+        self._recovery_pushes.append((kind, dict(raw)))
+
     @_serialized_transition
     def on_order(self, raw: Mapping[str, Any]) -> None:
+        if self._recovery_checkpoint is not None:
+            self._queue_recovery_push("order", raw)
+            return
         order_ref = str(raw.get("OrderRef", ""))
         if order_ref in self._completed_refs:
             return
@@ -513,6 +626,9 @@ class CtpNativeTraderDriver:
 
     @_serialized_transition
     def on_trade(self, raw: Mapping[str, Any]) -> None:
+        if self._recovery_checkpoint is not None:
+            self._queue_recovery_push("trade", raw)
+            return
         order_ref = str(raw.get("OrderRef", ""))
         trade_id = str(raw.get("TradeID", ""))
         exchange = str(raw.get("ExchangeID", ""))
@@ -600,6 +716,9 @@ class CtpNativeTraderDriver:
         metadata["venue_order_id"] = self._venue_order_ids.get(order_ref)
         if trade_id is not None:
             metadata["trade_id"] = trade_id
+        if raw.get("_recovery_query"):
+            metadata.update(execution_origin="ctp_trade_query_recovery",
+                ctp_trade_date=raw.get("TradeDate"), ctp_trade_time=raw.get("TradeTime"))
         report = ExecutionReport(
             backend_id=self.driver_id,
             client_order_id=client_id,

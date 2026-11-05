@@ -85,7 +85,7 @@ py::dict as_dict(const CThostFtdcOrderField &value) {
 py::dict as_dict(const CThostFtdcTradeField &value) {
     py::dict result; OS(BrokerID); OS(InvestorID); OS(InstrumentID);
     OS(ExchangeID); OS(OrderRef); OS(TradeID); OC(Direction); OC(OffsetFlag);
-    ON(Price); ON(Volume); OS(TradingDay); OS(TradeTime); return result;
+    ON(Price); ON(Volume); OS(TradingDay); OS(TradeDate); OS(TradeTime); OS(OrderSysID); return result;
 }
 py::dict as_dict(const CThostFtdcInputOrderField &value) {
     py::dict result; OS(BrokerID); OS(InvestorID); OS(InstrumentID);
@@ -156,6 +156,11 @@ int TdApi::reqQryOrder(const py::dict &fields, int id) {
         IS(BrokerID); IS(InvestorID);
         return required().ReqQryOrder(&value, id);
     }
+int TdApi::reqQryTrade(const py::dict &fields, int id) {
+        CThostFtdcQryTradeField value{};
+        IS(BrokerID); IS(InvestorID);
+        return required().ReqQryTrade(&value, id);
+    }
 int TdApi::reqOrderInsert(const py::dict &fields, int id) {
         CThostFtdcInputOrderField value{};
         IS(BrokerID); IS(InvestorID); IS(UserID); IS(InstrumentID);
@@ -197,6 +202,7 @@ void TdApi::OnFrontDisconnected(int reason) {
     RSP(OnRspQryInvestorPosition, "onRspQryInvestorPosition", CThostFtdcInvestorPositionField)
     RSP(OnRspQryTradingAccount, "onRspQryTradingAccount", CThostFtdcTradingAccountField)
     RSP(OnRspQryOrder, "onRspQryOrder", CThostFtdcOrderField)
+    RSP(OnRspQryTrade, "onRspQryTrade", CThostFtdcTradeField)
     RSP(OnRspOrderInsert, "onRspOrderInsert", CThostFtdcInputOrderField)
     RSP(OnRspOrderAction, "onRspOrderAction", CThostFtdcInputOrderActionField)
     RTN(OnRtnOrder, "onRtnOrder", CThostFtdcOrderField)
@@ -301,6 +307,7 @@ PYBIND11_MODULE(bomber_ctp_td, module) {
         .def("reqQryInvestorPosition", &TdApi::reqQryInvestorPosition)
         .def("reqQryTradingAccount", &TdApi::reqQryTradingAccount)
         .def("reqQryOrder", &TdApi::reqQryOrder)
+        .def("reqQryTrade", &TdApi::reqQryTrade)
         .def("reqOrderInsert", &TdApi::reqOrderInsert)
         .def("reqOrderAction", &TdApi::reqOrderAction);
 }
