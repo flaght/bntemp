@@ -2,6 +2,7 @@
 import json
 from decimal import Decimal
 from pathlib import Path
+import time
 
 from bomber.framework.datahub.features import Alignment, FeatureError
 from bomber.framework.dataprep.features import (DEFAULT_FEATURE_CONFIG, bundle_from_definition,
@@ -79,5 +80,36 @@ def read_index_features(args, start_ns, end_ns):
         "value_field": field,
         "alignment": binding.spec.default_alignment.value, "records": len(batch.records)}
     return bundle, binding, batch.records, identity
+
+
+def read_index_dataframe(connection, config=DEFAULT_FEATURE_CONFIG, *, start_ns, end_ns,
+        dataset="index.minute", schema_version=1, key="000852", max_rows=1_000_000):
+    """通过声明和公共Provider读取指数，返回DataFrame；不计算、不导出、不删修订。"""
+    import pandas as pd
+
+    bundle = load_feature_bundle(config, connection)
+    binding = bundle.binding(dataset, schema_version)
+    if binding.backend not in {"dolphindb", "dolphindb-raw"}:
+        raise FeatureError("指数DataFrame读取须使用DolphinDB来源声明")
+    metadata = ("key", "available_ns", "source_ns", "received_ns", "revision", "quality_flags", "source")
+    if {field.name for field in binding.spec.payload_fields}.intersection((*metadata, "ts_event")):
+        raise FeatureError("指数Payload字段与DataFrame元数据列冲突")
+    request = FeatureRequest(dataset, schema_version, (key,), start_ns, end_ns,
+        time.time_ns(), max_rows=max_rows)
+    with FeatureProviderFactory.create_for(DataSourcePurpose.FEATURE_EXPORT,
+            binding.backend, binding.source_config, bundle.registry, **binding.provider_options) as provider:
+        batch = provider.read(request)
+
+    index = pd.Index([record.ts_event for record in batch.records], name="ts_event", dtype="int64")
+    frame = pd.DataFrame(index=index)
+    for field in binding.spec.payload_fields:
+        frame[field.name] = pd.Series([getattr(record.payload, field.name) for record in batch.records],
+            index=index, dtype=object)
+    for name in metadata:
+        # object保留Decimal、整数纳秒、None及业务键，避免含空值的整数先变成float。
+        frame[name] = pd.Series([getattr(record, name) for record in batch.records], index=index, dtype=object)
+    frame.attrs.update(dataset_id=dataset, schema_version=schema_version,
+        schema_fingerprint=binding.spec.fingerprint, source_identity=batch.source_identity)
+    return frame.sort_index(kind="stable")
 
 
