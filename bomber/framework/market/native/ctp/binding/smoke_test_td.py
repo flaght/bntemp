@@ -8,7 +8,7 @@ def main() -> None:
     for name in (
         "createFtdcTraderApi", "registerFront", "init", "exit",
         "reqAuthenticate", "reqUserLogin", "reqSettlementInfoConfirm",
-        "reqQryInvestorPosition", "reqQryTradingAccount", "reqQryOrder",
+        "reqQryInvestorPosition", "reqQryTradingAccount", "reqQryOrder", "reqQryTrade",
         "reqOrderInsert", "reqOrderAction",
     ):
         if not callable(getattr(api, name, None)):

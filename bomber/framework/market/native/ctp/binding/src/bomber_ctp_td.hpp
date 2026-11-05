@@ -34,6 +34,7 @@ public:
     int reqQryInvestorPosition(const pybind11::dict &fields, int id);
     int reqQryTradingAccount(const pybind11::dict &fields, int id);
     int reqQryOrder(const pybind11::dict &fields, int id);
+    int reqQryTrade(const pybind11::dict &fields, int id);
     int reqOrderInsert(const pybind11::dict &fields, int id);
     int reqOrderAction(const pybind11::dict &fields, int id);
 
@@ -46,6 +47,7 @@ public:
     void OnRspQryInvestorPosition(CThostFtdcInvestorPositionField *data, CThostFtdcRspInfoField *error, int id, bool last) override;
     void OnRspQryTradingAccount(CThostFtdcTradingAccountField *data, CThostFtdcRspInfoField *error, int id, bool last) override;
     void OnRspQryOrder(CThostFtdcOrderField *data, CThostFtdcRspInfoField *error, int id, bool last) override;
+    void OnRspQryTrade(CThostFtdcTradeField *data, CThostFtdcRspInfoField *error, int id, bool last) override;
     void OnRspOrderInsert(CThostFtdcInputOrderField *data, CThostFtdcRspInfoField *error, int id, bool last) override;
     void OnRspOrderAction(CThostFtdcInputOrderActionField *data, CThostFtdcRspInfoField *error, int id, bool last) override;
     void OnRtnOrder(CThostFtdcOrderField *data) override;

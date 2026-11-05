@@ -293,6 +293,10 @@ class RuntimeStateManager:
 
         def save_after_transition() -> None:
             with client._submit_lock:
+                # 恢复查询的真实回报先入内存，完整柜台核验通过后统一提交。
+                # before_send仍直接save，未经核验的恢复不能发出新订单。
+                if self._restore_pending or getattr(driver, "is_replaying_recovery_reports", False):
+                    return
                 self.save()
 
         # 同步发送失败时，客户端先撤回在途量，再保存修正后的检查点。

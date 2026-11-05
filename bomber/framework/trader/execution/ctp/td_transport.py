@@ -99,6 +99,7 @@ class CtpTdApiTransport:
         self._orders_revision = 0
         self._last_orders: dict[str, dict[str, Any]] = {}
         self.order_query_diagnostics: Mapping[str, Mapping[str, str]] = MappingProxyType({})
+        self.queried_order_states: Mapping[str, Mapping[str, Any]] = MappingProxyType({})
         self._insert_requests: dict[int, dict[str, Any]] = {}
         self._rejected_refs: set[str] = set()
         self._action_requests: dict[int, str] = {}
@@ -157,6 +158,9 @@ class CtpTdApiTransport:
 
             def onRspQryOrder(self, data, error, reqid, last):
                 owner._response("orders", data, error, reqid, last)
+
+            def onRspQryTrade(self, data, error, reqid, last):
+                owner._response("trades", data, error, reqid, last)
 
             def onRtnOrder(self, data):
                 owner._order_push(data)
@@ -573,6 +577,7 @@ class CtpTdApiTransport:
     def query_active_orders(self) -> ActiveOrderSnapshot:
         self._require_ready()
         self.order_query_diagnostics = MappingProxyType({})
+        self.queried_order_states = MappingProxyType({})
         rows = self._request("orders", "reqQryOrder", {
             "BrokerID": self.broker_id, "InvestorID": self.investor_id,
         })
@@ -580,7 +585,7 @@ class CtpTdApiTransport:
         if session is None:
             raise RuntimeError("CTP活动订单查询缺少登录会话")
         orders: list[ActiveOrder] = []
-        details = {}
+        details, raw_orders = {}, {}
         for row in rows:
             if (str(row.get("BrokerID", "")) != self.broker_id
                     or str(row.get("InvestorID", "")) != self.investor_id):
@@ -588,6 +593,9 @@ class CtpTdApiTransport:
             status = str(row.get("OrderStatus", ""))
             ref = str(row.get("OrderRef", ""))
             key = f"CTP-{session.broker_id}-{session.investor_id}-{session.trading_day}-{ref}"
+            if key in raw_orders and dict(raw_orders[key]) != row:
+                raise RuntimeError("CTP同一订单查询返回冲突记录")
+            raw_orders[key] = MappingProxyType(dict(row))
             details[key] = {name: str(row.get(name, "")) for name in (
                 "InstrumentID", "OrderStatus", "OrderSubmitStatus", "Direction",
                 "VolumeTotalOriginal", "VolumeTraded", "VolumeTotal")}
@@ -614,12 +622,27 @@ class CtpTdApiTransport:
                 remaining_quantity=remaining,
             ))
         self.order_query_diagnostics = MappingProxyType(details)
+        self.queried_order_states = MappingProxyType(raw_orders)
         snapshot = ActiveOrderSnapshot(
             self.client_id, self.account_id, self._orders_revision + 1,
             time.time_ns(), tuple(orders),
         )
         self._orders_revision = snapshot.revision
         return snapshot
+
+    def query_trades(self) -> tuple[Mapping[str, Any], ...]:
+        """本交易日完整成交明细；只供真实成交恢复，禁止以委托价补造成交。"""
+        self._require_ready()
+        if not callable(getattr(self._api, "reqQryTrade", None)):
+            raise RuntimeError("恢复缺失成交须升级bomber-ctp至0.1.2并重新编译reqQryTrade扩展")
+        rows = self._request("trades", "reqQryTrade", {
+            "BrokerID": self.broker_id, "InvestorID": self.investor_id,
+        })
+        for row in rows:
+            if (str(row.get("BrokerID", "")) != self.broker_id
+                    or str(row.get("InvestorID", "")) != self.investor_id):
+                raise RuntimeError("CTP成交查询账户不匹配")
+        return tuple(MappingProxyType(dict(row)) for row in rows)
 
     def send_order(self, fields: Mapping[str, Any]) -> None:
         self._require_ready()
