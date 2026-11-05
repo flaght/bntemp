@@ -58,7 +58,7 @@ FEATURE_RUNTIME_HASHES = {'demos/08_option_vega/feature/index_close.json': '06ba
  'demos/08_option_vega/live.py': '841fc91679fe9dd1e022469f40e64f05cea5f0a6bcce26eac4e372e596b49fb0',
  'demos/08_option_vega/recovery.py': '858effba2625278832c78d1be2305f16c570ca10f385faeb3bba13381b72a14e',
  'demos/08_option_vega/run_live.py': 'f25177b917360e6632e786cc933bb749f23a5e01b3a0018eacb488ce14655eb7',
- 'demos/08_option_vega/strategy.py': '50b49975577909de7e96017cd93461a7f123f7acf6daa7b5b14edba764c14dd9',
+ 'demos/08_option_vega/strategy.py': '7162170ae8db43bf080f5e7dfd0f22a703efbd9f184917d547048115185a5466',
  'scripts/integration/options/__init__.py': 'be65a34d8f3388d3252d04a55411d216618753783cbba6d4cf40f8aa24690b02',
  'scripts/integration/reference_data/calendar_export.py': 'f6ac57245f7893d0cc7406173f573e466df143fb617de969c95f9c49c9e90555',
  'tests/run_option_vega_offline.py': 'dc296d8e9b05e0416366ab8c7a21a68c47e3b33599f39c0f6b7fc58b685e61a9',
@@ -113,9 +113,9 @@ FEATURE_RUNTIME_HASHES = {'demos/08_option_vega/feature/index_close.json': '06ba
  'bomber/framework/calendars/hours.py': '273d4ab3bb0da4dd28fc805d4bc8c50790b328309461a7ee36383dc935facda7',
  'demos/08_option_vega/vega_signal.py': '5dccae3a51183d94062c288044cfe28f1776ca44b9b792c9d1d8b8c6b0304cc9',
  'demos/08_option_vega/feature/__init__.py': '4346c583915c67812676b8e2d520e669ae5b26aebbda05976f44f9f5a5b8bb40',
- 'demos/08_option_vega/run_backtest.py': '5aa1c54fdd731a58630c3bdf3c4cd9d92b5502c985d7cbecc4bd979c1bbcbcc2',
+ 'demos/08_option_vega/run_backtest.py': '46fe1801a61c73dc52c0a821540c3737cf32df9016205409988b1bf5804a4556',
  'scripts/integration/options/check_backtest_data.py': '75c1140f623f14ac08a4e7f337066462dfcea337d8b69cd99186df5a6f7fbbaa',
- 'tests/test_option_feature_backtest.py': 'e6e086f46ec1831a6016f6f1c6024545f21effab7c12915935cb53cdbd9b8a92'}
+ 'tests/test_option_feature_backtest.py': 'f2a1f2fe7eb500725185860e3e1143f3b6ee0b802a45f59a5191c34d7104568a'}
 
 
 def inspect_feature_deployment(root, expected, retired=()):

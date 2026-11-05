@@ -19,7 +19,7 @@ else:
 
 @unittest.skipIf(NATIVE_ERROR is not None, f"需要Bomber编译扩展: {NATIVE_ERROR}")
 class VegaNativeSettlementTests(unittest.TestCase):
-    def fixture(self, root, terminal):
+    def fixture(self, root, terminal, *, option_bar_minutes=1, execution_timing="native"):
         module = import_module("demos.08_option_vega.run_backtest")
         features = import_module("demos.08_option_vega.feature")
         from bomber.framework.datahub.features import ExternalDataRecord
@@ -40,7 +40,8 @@ class VegaNativeSettlementTests(unittest.TestCase):
         pd.DataFrame({"date": pd.bdate_range("2026-09-17", "2026-10-16"),
             "is_trading_day": True}).to_csv(calendar, index=False)
         days = ("2026-09-17", "2026-09-18", "2026-09-21")
-        clocks = ("13:58", "13:59", "14:50", "14:51", "14:52")
+        clocks = (("14:00", "14:01", "14:05", "14:06", "14:50", "14:51", "14:55", "15:00")
+            if option_bar_minutes == 5 else ("13:58", "13:59", "14:50", "14:51", "14:52"))
         index_path = root / "index.csv"
         bundle, binding = features.index_bundle(DEFAULT_FEATURE_CONFIG, "index.minute", 1, file_path=index_path)
         records = []
@@ -52,7 +53,9 @@ class VegaNativeSettlementTests(unittest.TestCase):
                 for kind, symbol, price in (("opt", code, 50), ("fut", "IM"+code[2:6], 6900)):
                     destination = root / "kline" / kind / day.replace("-", "")
                     destination.mkdir(parents=True, exist_ok=True)
-                    pd.DataFrame(dict(symbol=symbol, trade_date=day, datetime=stamps,
+                    market_stamps = (stamps[stamps.minute % 5 == 0]
+                        if option_bar_minutes == 5 and kind == "opt" else stamps)
+                    pd.DataFrame(dict(symbol=symbol, trade_date=day, datetime=market_stamps,
                         open=price, high=price, low=price, close=price, volume=100)).to_feather(
                             destination / f"{symbol}_{day.replace('-', '')}.feather")
             for stamp in stamps:
@@ -73,6 +76,10 @@ class VegaNativeSettlementTests(unittest.TestCase):
             "--delta-targets", "0.25", "--max-option-lots", "1", "--max-total-option-lots", "2",
             "--hedge-slots", "09:00", "--report-dir", str(root / "reports"), "--no-tearsheet",
             "--log-level", "ERROR", "--require-fills"]
+        cli.extend(["--option-bar-minutes", str(option_bar_minutes),
+            "--execution-timing", execution_timing])
+        if option_bar_minutes == 5:
+            cli.extend(["--option-slot", "14:00"])
         if terminal is not None:
             cli.extend(["--option-settlements", str(settlements)])
         with patch.object(module, "run_case") as capture, patch("sys.argv", cli):
@@ -101,6 +108,24 @@ class VegaNativeSettlementTests(unittest.TestCase):
             module, args = self.fixture(Path(directory), None)
             with self.assertRaisesRegex(RuntimeError, "Missing final settlement.*MO2609-C-7000"):
                 module.run_case(args)
+
+    def test_m5_options_m1_futures_next_market_and_cash_settlement(self):
+        with TemporaryDirectory() as directory:
+            module, args = self.fixture(Path(directory), Decimal(0),
+                option_bar_minutes=5, execution_timing="next_market")
+            output = module.run_case(args)
+            summary = json.loads((output / "summary.json").read_text())
+            self.assertEqual(summary["bar_specs"]["option"]["bar_spec"], "5-MINUTE")
+            self.assertEqual(summary["bar_specs"]["future"]["bar_spec"], "1-MINUTE")
+            self.assertEqual(summary["execution_timing"], "next_market")
+            self.assertEqual(summary["settlements"], 1)
+            self.assertGreater(summary["fills"], 0)
+            self.assertEqual(summary["remaining_positions_or_working"], {})
+            fills = pd.read_csv(output / "fills.csv")
+            option_fills = fills.loc[fills.instrument_id.str.contains("-C-")]
+            times = pd.to_datetime(option_fills.ts_event, utc=True).dt.tz_convert("Asia/Shanghai")
+            self.assertTrue((times.dt.minute % 5 == 0).all())
+            self.assertFalse(times.dt.strftime("%H:%M").eq("14:00").any())
 
 
 if __name__ == "__main__":

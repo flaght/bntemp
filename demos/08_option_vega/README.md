@@ -35,12 +35,32 @@ python -u demos/08_option_vega/run_backtest.py \
 
 `--data-root`按公共路径规则推导交易腿与基础条款，也可逐项传`--fut-dir --opt-dir --fut-basic --opt-basic`。不读取`.env`补文件路径。完整参数见`python demos/08_option_vega/run_backtest.py --help`。
 
-- 分钟行情使用真实期权与同月期货；`--bar-timestamp start/end`只调整交易腿标签。不会以前一分钟价格补造同步开仓输入。
+- 分钟行情使用真实期权与同月期货；`--bar-timestamp start/end`声明交易腿源标签，期权可用`--options-bar-timestamp`单独覆盖。不会以前一分钟价格补造同步开仓输入。
 - 指数是标准特征CSV/Parquet，旁边必须有同名`.manifest.json`。Schema/计算版本、原始字节SHA256与时间标签均核验。传输需保留文件字节，包括换行格式。
 - 可传`--calendar-id china.cffex`直接调用框架`NativeCalendarProvider`，无需导出或加载日历文件。日历保留回测开始日至规则维护末端的日期，回测行情仍只加载`--start-day`至`--end-day`，避免在回测末端把日历不足误判成临近到期。报告记录日历标识、规则版本、指纹和实际交易日范围。当前原生日历维护至2026-12-31；超出维护范围或原生扩展不可用时明确报错，不回退为工作日猜测。
 - `--calendar`仍可提供完整`date/is_trading_day`文件，与`--calendar-id`互斥；两项均省略时沿用已知行情日期推导。期权到期判断需要足够的后续交易日；超过已知日历末端时，只有剩余日期下界已达到对应阈值才允许继续。
 - 每日期权交易时点默认13:58，对冲默认10:00/11:00/13:30/14:00/14:55。每日新增目标累加，持仓使用成交归属数量；总量与单腿限额仍生效。
 - 最后回测日默认14:50清仓，指数还须至少覆盖之后两分钟，交易腿也需真实后续报价完成撮合。`remaining_positions_or_working`和`report_errors`必须为空。
+
+### 使用期权M5、期货M1行情
+
+默认仍为期权M1。若已有真实五分钟期权Feather，在原回测命令中增加：
+
+```bash
+--opt-dir /实际路径/五分钟期权目录 \
+--option-bar-minutes 5 \
+--option-slot 14:00 \
+--options-bar-timestamp end \
+--execution-timing next_market
+```
+
+读取规格、策略订阅和引擎回放分别声明期权`5-MINUTE`、期货`1-MINUTE`；指数自定义特征仍为一分钟。复用公共`BarReadSpec`和撮合网关，与12示例使用相同多周期能力，不转换或填充期权M5为M1。这个参数声明源文件已经是M5，不能用来修复M1文件缺口，也不自动聚合M1。
+
+开仓使用同一时点的完整三腿行情。M5模式须显式选择五分钟完成时刻，如14:00；不会把默认13:58自动改成14:00，也不把14:00完整Bar提前用于13:58。起点标签M5以5分钟右移；期货起点标签仍以1分钟右移。旧M1命令与Live默认订阅保持原样。
+
+期货M1继续推进分钟决策，M5之间只保留此前真实期权报价的原时间，并按原有新鲜度限制使用，不读取下一根M5。`next_market`由公共网关等待下单后本合约下一根真实Bar：期货不等待期权M5，期权也不会因期货M1到达而提前放行。它使用下一根完整Bar处理后的盘口，不承诺下一根开盘价。默认`native`保留原有撮合行为，建议M5研究时显式选择`next_market`。
+
+`summary.json`记录`bar_specs`、各类时间标签和`execution_timing`。缺少开仓时点的真实三腿行情仍报错；到期实际残仓仍由公共现金结算模块处理。
 
 ### 到期现金结算
 
