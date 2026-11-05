@@ -11,7 +11,7 @@ from scripts.integration.shared_account.config import read_config
 
 # 正常分钟信号处理完后，给休盘前撤单和回报留出时间。
 SESSION_STOP_SECONDS = 30
-# 各交易时段开盘前连接、恢复和预热；不增加命令行配置。
+# 各交易时段默认提前5分钟连接、恢复和预热；可由启动参数覆盖。
 PREPARE_SECONDS = 300
 
 
@@ -135,9 +135,13 @@ def main(argv=None):
     parser.add_argument('--config', type=Path, required=True)
     parser.add_argument('--process-layout', choices=('same-process', 'separate-processes'), default='same-process')
     parser.add_argument('--run-forever', action='store_true')
+    parser.add_argument('--prepare-seconds', type=int, default=PREPARE_SECONDS,
+        help='开盘前开始准备的秒数，默认300；0表示开盘时开始准备')
     for flag in ('connect', 'enable-orders', 'confirm-simnow'):
         parser.add_argument('--'+flag, action='store_true')
     options = parser.parse_args(argv)
+    if options.prepare_seconds < 0:
+        parser.error('prepare-seconds须为非负整数')
     config = read_config(options.config)
     validate_layout(config, options.process_layout)
     if not options.connect:
@@ -153,10 +157,12 @@ def main(argv=None):
     from bomber.framework.trader.runtime.live.continuous import ContinuousPositionRuntime, StopSignal
     with strategy_state_lock(str(Path(config['account_state_file']).resolve())+'.continuous-owner'), StopSignal() as stop:
         calendar = load_calendar(config)
+        print(f'Hybrid准备调度: prepare_seconds={options.prepare_seconds}；'
+              '按交易日历提前准备，开盘且健康核验通过后才放行', flush=True)
         return ContinuousPositionRuntime(calendar,
             lambda window, event: SimpleNamespace(run=lambda: run_window(config, options.process_layout,
                 calendar, window, event)), run_forever=options.run_forever, stop_event=stop,
-            prepare_seconds=PREPARE_SECONDS).run()
+            prepare_seconds=options.prepare_seconds).run()
 
 
 if __name__ == '__main__':
