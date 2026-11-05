@@ -513,6 +513,91 @@ class SharedAccountTests(unittest.TestCase):
         self.addCleanup(client.stop)
         return lifecycle, service, transport, ports, resources
 
+    def test_partial_nonqueueing_terminal_releases_only_remainder_and_keeps_short_one(self):
+        modules = self.native_modules()
+        with TemporaryDirectory() as directory:
+            account, service, transport, (one, _), _ = self.native_account(Path(directory)/'account.json', modules)
+            self.addCleanup(account.driver.stop)
+            account.start(resume=False); service.start(); one.start(); account.authorize()
+            self.submit(one, -2)
+            ref = transport.sent[0]['OrderRef']
+            transport.fill(ref, 1)
+            raw = {**transport.raw(ref), 'OrderStatus': '2', 'VolumeTraded': 1}
+            transport.active.pop(ref)
+            transport.on_order(raw)
+            state = account.client.order_state_machine.states()[0]
+            self.assertEqual(state.status.value, 'CANCELED')
+            self.assertEqual(state.filled_quantity, 1)
+            self.assertEqual(service.position_manager.position('one', 'main'), -1)
+            self.assertEqual(service.position_manager.working_quantity('account', self.instrument), 0)
+            self.assertFalse(account.driver._orders or account.driver._terminal_cancels)
+            transport.on_order(raw)  # 重复终态不重复释放或产生新成交。
+            one.stop(); account.stop()
+            saved = account.manager.repository.load().payload
+            self.assertFalse(saved['ctp_drivers']['account']['orders'])
+            self.assertEqual(len(transport.sent), 1)
+            self.assertEqual(account.final_gross[str(self.instrument)], (0, 1))
+
+    def test_terminal_notification_before_trade_waits_for_fill_then_releases_remainder(self):
+        modules = self.native_modules()
+        for terminal in ('2', '5'):
+            with self.subTest(status=terminal), TemporaryDirectory() as directory:
+                account, service, transport, (one, _), _ = self.native_account(Path(directory)/'account.json', modules)
+                self.addCleanup(account.driver.stop)
+                account.start(resume=False); service.start(); one.start(); account.authorize()
+                self.submit(one, -2)
+                ref = transport.sent[0]['OrderRef']
+                raw = {**transport.raw(ref), 'OrderStatus': terminal, 'VolumeTraded': 1}
+                transport.on_order(raw)
+                self.assertIn(ref, account.driver._orders)
+                self.assertEqual(service.position_manager.position('one', 'main'), 0)
+                self.assertEqual(service.position_manager.working_quantity('account', self.instrument), -2)
+                transport.fill(ref, 1)
+                duplicate = {**transport.raw(ref), 'TradeID': f'T{ref}-1', 'Volume': 1,
+                    'Price': transport.active[ref]['LimitPrice']}
+                transport.active.pop(ref)
+                transport.on_trade(duplicate)
+                transport.on_order(raw)
+                self.assertEqual(service.position_manager.position('one', 'main'), -1)
+                self.assertEqual(service.position_manager.working_quantity('account', self.instrument), 0)
+                self.assertEqual(account.client.order_state_machine.states()[0].status.value, 'CANCELED')
+                self.assertFalse(account.driver._orders or account.driver._terminal_cancels)
+                one.stop(); account.stop()
+                self.assertEqual(account.final_gross[str(self.instrument)], (0, 1))
+                self.assertEqual(len(transport.sent), 1)
+
+    def test_no_trade_nonqueueing_terminal_releases_all_working_quantity_without_fill(self):
+        modules = self.native_modules()
+        with TemporaryDirectory() as directory:
+            account, service, transport, (one, _), _ = self.native_account(Path(directory)/'account.json', modules)
+            self.addCleanup(account.driver.stop)
+            account.start(resume=False); service.start(); one.start(); account.authorize()
+            self.submit(one, 2)
+            ref = transport.sent[0]['OrderRef']
+            raw = {**transport.raw(ref), 'OrderStatus': '4', 'VolumeTraded': 0}
+            transport.active.pop(ref)
+            transport.on_order(raw)
+            self.assertEqual(service.position_manager.position('one', 'main'), 0)
+            self.assertEqual(service.position_manager.working_quantity('account', self.instrument), 0)
+            self.assertEqual(account.client.order_state_machine.states()[0].status.value, 'CANCELED')
+            self.assertFalse(account.driver._orders or account.driver._terminal_cancels)
+            one.stop(); account.stop()
+            self.assertFalse(account.final_gross)
+
+    def test_trade_larger_than_terminal_cumulative_does_not_apply_a_guessed_fill(self):
+        modules = self.native_modules()
+        with TemporaryDirectory() as directory:
+            account, service, transport, (one, _), _ = self.native_account(Path(directory)/'account.json', modules)
+            self.addCleanup(account.driver.stop)
+            account.start(resume=False); service.start(); one.start(); account.authorize()
+            self.submit(one, -2)
+            ref = transport.sent[0]['OrderRef']
+            transport.on_order({**transport.raw(ref), 'OrderStatus': '2', 'VolumeTraded': 1})
+            with self.assertRaisesRegex(RuntimeError, '超过终态'):
+                transport.on_trade({**transport.raw(ref), 'TradeID': 'conflicting', 'Volume': 2, 'Price': 3000})
+            self.assertEqual(service.position_manager.position('one', 'main'), 0)
+            self.assertIn(ref, account.driver._orders)
+
     def test_late_order_query_final_reply_cannot_complete_next_request(self):
         self.native_modules()
         from tests.run_p4_ctp_td_transport import FakeTdApi, _transport
