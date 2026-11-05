@@ -1,31 +1,42 @@
-"""真实DolphinDB指数→自写DataFrame公式→标准特征文件；只读，不报单。"""
+"""DolphinDB指数→DataFrame→自定义计算→标准特征文件；只读，不报单。"""
 import argparse
 from dataclasses import replace
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 import sys
 import time
+
+import numpy as np
+import pandas as pd
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
     __package__ = "demos.08_option_vega.feature"
 
 from bomber.framework.datahub.features import DatasetRegistry, FeatureError, dataset_from_definition
-from bomber.framework.dataprep.features import FeatureProviderFactory, FeatureRequest, load_feature_bundle
+from bomber.framework.dataprep.features import FeatureProviderFactory, FeatureRequest, export_features, load_feature_bundle
 from bomber.framework.dataprep.sources.policy import DataSourcePurpose
-from .generate import CONFIG, _export_and_check, moving_average_records, timestamp
+from .dataframe import dataframe_to_records
+
+CONFIG = Path(__file__).with_name("index.json")
 
 
-def calculate_blend(frame, window):
-    """自己编写的业务公式：入参/返回值都是DataFrame，最大依赖窗口为60。"""
-    import pandas as pd
+def timestamp(value):
+    parsed = datetime.fromisoformat(value)
+    if parsed.utcoffset() is None:
+        raise ValueError("时间须带时区，例如2026-10-22T00:00:00+08:00")
+    delta = parsed.astimezone(timezone.utc) - datetime(1970, 1, 1, tzinfo=timezone.utc)
+    return (delta.days * 86400 + delta.seconds) * 1_000_000_000 + delta.microseconds * 1000
 
-    close = frame["close"].astype(float)
-    groups = close.groupby(frame["segment_id"])
-    ma20 = groups.transform(lambda values: values.rolling(20, min_periods=20).mean())
-    ma60 = groups.transform(lambda values: values.rolling(window, min_periods=window).mean())
-    return pd.DataFrame({"close": close, "ma20": ma20, "ma60": ma60,
-        "index_blend": (ma20 + ma60) / 2}, index=frame.index).dropna()
+
+def calculate_features(frame):
+    """按输入行滚动，跨午休/跨日延续；公式和窗口规则由业务代码决定。"""
+    result = frame.copy()
+    result["ma20"] = result["close"].rolling(20, min_periods=20).mean()
+    result["ma60"] = result["close"].rolling(60, min_periods=60).mean()
+    result["index_blend"] = (result["ma20"] + result["ma60"]) / 2
+    return result.dropna(subset=["ma20", "ma60", "index_blend"])
 
 
 def run_example(*, start_ns, end_ns, output_dir, connection, config=CONFIG,
@@ -33,19 +44,22 @@ def run_example(*, start_ns, end_ns, output_dir, connection, config=CONFIG,
         max_rows=1_000_000, availability=None):
     output_dir = Path(output_dir).expanduser().resolve()
     output = output_dir / "index-blend.csv"
+    declaration = Path(str(output) + ".dataset.json")
+    manifest = Path(str(output) + ".manifest.json")
     summary = output_dir / "summary.json"
-    if any(path.exists() for path in (output, Path(str(output)+".manifest.json"),
-            Path(str(output)+".dataset.json"), summary)):
+    if any(path.exists() for path in (output, declaration, manifest, summary)):
         raise FeatureError("输出文件已存在，请另选输出目录")
     cutoff = time.time_ns()
     if not 0 <= start_ns <= end_ns <= cutoff:
         raise FeatureError("时间区间无效，结束时刻不能在未来")
 
-    # 1. 读真实指数。来源映射、DolphinDB日期类型与标准时间统一由公共Provider处理。
+    # 1. 通过连接配置、声明和公共Provider读取DolphinDB。
     bundle = load_feature_bundle(config, connection)
     binding = bundle.binding(dataset, schema_version)
     if binding.backend not in {"dolphindb", "dolphindb-raw"}:
         raise FeatureError("本例须使用DolphinDB来源声明")
+    if binding.spec.frequency.period_ns != 60_000_000_000:
+        raise FeatureError("本例输入须为一分钟指数数据")
     source_config = binding.source_config
     if availability is not None:
         if binding.backend != "dolphindb-raw" or availability not in {"observed", "source-time"}:
@@ -60,10 +74,38 @@ def run_example(*, start_ns, end_ns, output_dir, connection, config=CONFIG,
         raise FeatureError("指定区间没有可见指数记录，未生成文件")
     inputs = tuple(replace(record, key=key) for record in batch.records)
 
-    # 2. 声明自己公式的输出字段和算法版本，不沿用单MA的计算版本。
+    # 2. inputs→DataFrame。元数据单独保存，业务计算只接收close。
+    raw = pd.DataFrame({
+        "ts_event": [record.ts_event for record in inputs],
+        "revision": pd.Series([record.revision for record in inputs], dtype=object),
+        "close": [record.payload.close for record in inputs],
+        "source_ns": pd.Series([record.source_ns for record in inputs], dtype=object),
+        "visible_ns": pd.Series([record.visible_ns for record in inputs], dtype=object),
+        "quality_flags": pd.Series([record.quality_flags for record in inputs], dtype=object),
+    })
+    # 当前研究快照：同一业务分钟取最新修订；质量不合格时失败，不退回旧版。
+    raw = raw.sort_values(["ts_event", "revision"]).drop_duplicates("ts_event", keep="last")
+    raw.index = pd.DatetimeIndex(pd.to_datetime(raw.pop("ts_event"), unit="ns", utc=True)).tz_convert("Asia/Shanghai")
+    raw.index.name = "ts_event"
+    raw["close"] = raw["close"].astype(float)
+    if not np.isfinite(raw["close"].to_numpy()).all() or (raw["close"] <= 0).any():
+        raise FeatureError("指数close须为有限正价格")
+    if any(flags & binding.spec.rejected_quality_flags for flags in raw["quality_flags"]):
+        raise FeatureError("输入最新修订质量不合格")
+    frame = raw[["close"]].copy()
+
+    # 3. 自己计算DataFrame公式。
+    result = calculate_features(frame)
+    completed_ns = time.time_ns()
+    if result.empty:
+        raise FeatureError("不足60根记录，计算结果为空，未生成文件")
+    if completed_ns < max(raw["visible_ns"]):
+        raise FeatureError("计算完成时间早于输入可见时间")
+
+    # 4. 声明输出字段；版本名与上面的按行滚动口径保持一致。
     definition = {
         "dataset_id": "research.index.ma20_ma60.minute", "schema_version": 1,
-        "computation_version": "pandas-float64-sma20-sma60-half-consecutive-minute-reset-v1",
+        "computation_version": "pandas-float64-sma20-sma60-half-row-window-v1",
         "frequency": {"period_ns": 60_000_000_000, "timezone": "Asia/Shanghai"},
         "alignment": "EXACT",
         "fields": [{"name": name, "kind": "float", "minimum": "0", "exclusive_minimum": True}
@@ -71,21 +113,41 @@ def run_example(*, start_ns, end_ns, output_dir, connection, config=CONFIG,
     }
     spec = dataset_from_definition(definition)
 
-    # 3. 适配器将输入整理为DataFrame，调用上面的calculate_blend，然后复用
-    # dataframe_to_records转换结果；同时保留60根输入的来源、质量及可见时间约束。
-    records, coverage = moving_average_records(inputs, binding.spec, spec, key, 60,
-        calculator=calculate_blend)
-    if not records:
-        raise FeatureError("没有足够的连续60根分钟Bar，未生成文件")
+    # 5. 将每条结果依赖的最近60行源时间和质量传给通用转换器。
+    # 元数据用object整数运算，避免rolling.max把纳秒转成float而丢精度。
+    window_index = raw.index[59:]
+    source_times = pd.Series(np.lib.stride_tricks.sliding_window_view(
+        raw["source_ns"].to_numpy(dtype=object), 60).max(axis=1), index=window_index, dtype=object)
+    qualities = pd.Series(np.bitwise_or.reduce(np.lib.stride_tricks.sliding_window_view(
+        raw["quality_flags"].to_numpy(dtype=object), 60), axis=1), index=window_index, dtype=object)
+    records = dataframe_to_records(result, spec, key=key,
+        source=f"derived:ma20-ma60:{batch.source_identity}",
+        available_ns=completed_ns, received_ns=completed_ns,
+        source_ns=source_times.reindex(result.index), quality_flags=qualities.reindex(result.index))
 
-    # 4. 使用与原始指数/单MA相同的导出、manifest、声明和读回校验。
-    file_report = _export_and_check(output, {"schema": definition}, DatasetRegistry((spec,)),
-        records, key, max_rows)
+    # 6. 标准导出：CSV和manifest由公共接口一起生成。
+    export_features(output, DatasetRegistry((spec,)), records)
+    with declaration.open("x", encoding="utf-8") as stream:
+        json.dump({"format_version": 1, "datasets": [{"schema": definition,
+            "source": {"backend": "file", "path": output.name, "require_manifest": True}}]},
+            stream, ensure_ascii=False, indent=2)
+        stream.write("\n")
+
+    # 7. 从文件声明读回，核对记录、类型、时间及manifest。
+    file_bundle = load_feature_bundle(declaration, None)
+    with file_bundle.provider(spec.dataset_id, spec.schema_version) as provider:
+        loaded = provider.read(FeatureRequest(spec.dataset_id, spec.schema_version, (key,),
+            records[0].ts_event, records[-1].ts_event, time.time_ns(), max_rows=max_rows)).records
+    if loaded != records:
+        raise FeatureError("导出后文件读回记录不一致")
     report = {"status": "passed", "synthetic": False, "key": key, "source_key": request.keys[0],
-        "input_rows": len(batch.records), "feature_rows": len(records), "coverage": coverage,
-        "input_source": batch.source_identity, "input_schema_fingerprint": binding.spec.fingerprint,
-        "input_availability": getattr(source_config, "availability", "standard-envelope"),
-        **file_report, "visibility_note": "真实指数的当前计算快照；不作为历史逐分钟已可用的证明"}
+        "input_rows": len(inputs), "feature_rows": len(records), "dataset_id": spec.dataset_id,
+        "coverage": {"selected_input_rows": len(frame), "warmup_skipped": 59, "window_policy": "rows"},
+        "input_source": batch.source_identity, "input_availability": getattr(source_config, "availability", "standard-envelope"),
+        "output": str(output), "manifest": str(manifest), "dataset_config": str(declaration),
+        "file_roundtrip": "passed", "first_minute": result.index[0].isoformat(),
+        "last_minute": result.index[-1].isoformat(), "first_value": records[0].payload.index_blend,
+        "visibility_note": "真实指数的当前计算快照，不是历史逐分钟可用性回放"}
     with summary.open("x", encoding="utf-8") as stream:
         json.dump(report, stream, ensure_ascii=False, indent=2)
         stream.write("\n")

@@ -166,12 +166,13 @@ python -u -m demos.08_option_vega.feature.example_dolphindb \
 
 1. 公共Provider读取一次真实指数，负责DolphinDB字段和时间转换。
 2. 声明组合数据集`research.index.ma20_ma60.minute`的`close/ma20/ma60/index_blend`字段。
-3. `moving_average_records(..., calculator=calculate_blend)`准备DataFrame并调用你写的Pandas公式，再复用`dataframe_to_records`；保留最大60根依赖的源时间、质量及实际完成时间。
-4. 使用同一个`_export_and_check`导出CSV、manifest、声明，并逐记录读回；额外保存`summary.json`。
+3. 直接将`inputs`转为带时区DatetimeIndex的DataFrame，调用`calculate_features(frame)`，再显式调用`dataframe_to_records`；保留最近60行依赖的源时间、质量及实际完成时间。
+4. 调用公共`export_features`生成CSV与manifest，保存声明后重新加载Provider逐记录读回；额外保存`summary.json`。
 
-业务公式在`calculate_blend()`中，输入是`close/segment_id`，整数纳秒索引为业务时间；
+业务公式在`calculate_features()`中，输入仅有`close`列，带时区的DatetimeIndex为业务时间；
 返回原索引的已完成特征行。修改公式时同步调整输出Schema、计算版本以及最大依赖窗口。
-本例按连续分钟分段，午休、跨日或真实缺口后重新预热60根；不足时不会生成空包。
+该真实数据示例采用`row-window`口径：MA20/60按排序后的记录行计算，跨午休、跨日或缺口延续；
+前59行预热，不足60行时不会生成空包。这与`generate.py`默认的连续分钟分段MA例子是两个明确不同的业务口径。
 成功需看到`status=passed`、`synthetic=false`和`file_roundtrip=passed`，记录数由真实数据覆盖决定。
 
 此例保留当前计算快照语义：输出可用时间是本次计算完成时间，不能直接当作9月份当时已发布的特征。

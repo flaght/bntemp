@@ -63,12 +63,12 @@ class DolphinDataFrameExampleTests(unittest.TestCase):
         self.assertEqual(report["source_key"], "SH000852")
         self.assertNotIn("fixture-secret", str(report))
 
-    def test_lunch_gap_resets_both_windows(self):
+    def test_business_formula_keeps_row_windows_across_lunch(self):
         afternoon = example.timestamp("2026-09-01T13:01:00+08:00")
         report = self.generate([BASE+i*M for i in range(60)] + [afternoon+i*M for i in range(60)])
-        self.assertEqual(report["feature_rows"], 2)
-        self.assertEqual(report["coverage"]["window_resets"], 1)
-        self.assertEqual(report["coverage"]["warmup_skipped"], 118)
+        self.assertEqual(report["feature_rows"], 61)
+        self.assertEqual(report["coverage"]["window_policy"], "rows")
+        self.assertEqual(report["coverage"]["warmup_skipped"], 59)
 
     def test_empty_or_short_input_does_not_publish_files(self):
         for count in (0, 59):
