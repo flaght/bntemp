@@ -1503,6 +1503,122 @@ class SharedAccountTests(unittest.TestCase):
             host.stop_strategy("one")
             self.assertFalse(rows[0].session.client._events)
 
+    def test_host_stop_starts_both_cancellations_before_waiting_for_first(self):
+        with TemporaryDirectory() as directory:
+            host, transport, rows = self.callback_host(Path(directory))
+            first = rows[0].session.client
+            finish = first.finish_stop_events
+            def check_all_stopped():
+                self.assertTrue(all(not row.session.runner.accept_bars for row in rows))
+                self.assertTrue(all(row.session.client._stopping for row in rows))
+                return finish()
+            first.finish_stop_events = check_all_stopped
+            host.stop()
+            self.assertTrue(all(not row.active for row in rows))
+            self.assertTrue(host._stopped)
+
+    def test_host_final_reconciliation_finishes_late_cancel_without_losing_fill_or_position(self):
+        with TemporaryDirectory() as directory:
+            host, transport, rows = self.callback_host(Path(directory))
+            strategy = rows[0].session.strategy
+            strategy.set_target("main", 2, self.now)
+            ref = transport.sent[0]["OrderRef"]
+            cancel = transport.cancel_order
+            calls = []
+            def late_cancel(order_ref):
+                calls.append(order_ref)
+                if len(calls) >= 2:
+                    transport.fill(order_ref, 1)
+                    cancel(order_ref)  # 首次超时后，账户停机阶段才收到终态。
+            transport.cancel_order = late_cancel
+            stop = host.stop_strategy
+            first = [True]
+            def expire_first(sid, **kwargs):
+                if sid == "one" and first[0]:
+                    first[0] = False
+                    seconds = host.account.cancel_seconds
+                    host.account.cancel_seconds = 0
+                    try:
+                        return stop(sid, **kwargs)
+                    finally:
+                        host.account.cancel_seconds = seconds
+                return stop(sid, **kwargs)
+            host.stop_strategy = expire_first
+            host.stop()
+            self.assertTrue(host._stopped)
+            self.assertFalse(rows[0].active)
+            self.assertEqual([row[1:] for row in strategy.fills], [(1, 1)])
+            self.assertEqual(host.service.position_manager.position("one", "main"), 1)
+            self.assertEqual(transport.gross[str(self.instrument)], (1, 0))
+            self.assertFalse(transport.active)
+            self.assertEqual(rows[0].session.client.event_diagnostics()["pending_fills"], 0)
+            saved = host.account.manager.repository.load().payload
+            self.assertFalse(saved["ctp_drivers"]["account"]["orders"])
+            self.assertTrue(all(row["status"] in {"FILLED", "CANCELED", "REJECTED"}
+                for row in saved["orders"]["account"]))
+            self.assertEqual(len(transport.sent), 1)  # 停机不平仓、不续发目标。
+
+    def test_scheduled_query_interruption_stops_readonly_and_clears_guard_for_final_reconciliation(self):
+        with TemporaryDirectory() as directory:
+            host, transport, rows = self.callback_host(Path(directory))
+            from bomber.framework.trader.execution.ctp.query_errors import CtpQueryInterrupted
+            query = transport.query_account
+            stop = [False]
+            transport.query_stop_requested = lambda: stop[0]
+            def interrupted():
+                if transport.query_stop_requested is not None and stop[0]:
+                    raise CtpQueryInterrupted("fixture scheduled stop")
+                return query()
+            transport.query_account = interrupted
+            host.account._next_check = 0
+            stop[0] = True
+            with self.assertRaises(CtpQueryInterrupted):
+                host.account.poll()
+            self.assertFalse(host.account.client.is_armed)
+            host.stop()
+            self.assertIsNone(transport.query_stop_requested)
+            self.assertTrue(host._stopped)
+            self.assertEqual(host.account.final_active_orders, 0)
+            self.assertFalse(transport.sent)
+            self.assertFalse(host.account.execution.positions.is_recovery_required('account'))
+
+    def test_window_check_after_slow_account_poll_blocks_strategy_work(self):
+        from bomber.framework.trader.runtime.live.continuous import StopRequested
+        with TemporaryDirectory() as directory:
+            host, transport, rows = self.callback_host(Path(directory))
+            elapsed = [False]
+            def check():
+                if elapsed[0]:
+                    raise StopRequested()
+            host.preparation_check = check
+            original = host.account.poll
+            def slow_poll():
+                original()
+                elapsed[0] = True
+            host.account.poll = slow_poll
+            with self.assertRaises(StopRequested):
+                host.poll()
+            self.assertFalse(transport.sent)
+            host.preparation_check = None
+            host.stop()
+
+    def test_window_check_after_slow_reference_refresh_propagates_normal_stop(self):
+        from bomber.framework.trader.runtime.live.continuous import StopRequested
+        with TemporaryDirectory() as directory:
+            host, transport, rows = self.callback_host(Path(directory))
+            elapsed = [False]
+            def check():
+                if elapsed[0]:
+                    raise StopRequested()
+            host.preparation_check = check
+            rows[0].session.references.refresh = lambda: elapsed.__setitem__(0, True)
+            with self.assertRaises(StopRequested):
+                host.poll()
+            self.assertTrue(all(row.active for row in rows))
+            self.assertFalse(transport.sent)
+            host.preparation_check = None
+            host.stop()
+
     def test_callback_failure_keeps_event_pending_and_closes_account(self):
         service, client, (one, two) = self.service()
         self.submit(one)

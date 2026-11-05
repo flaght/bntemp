@@ -7,6 +7,17 @@ from .contracts import InputIssue
 from .session import current_session, read_feather, record_issue
 
 
+def add_option_settlement_arguments(parser):
+    """现金结算回测入口共用的显式资料与费用参数。"""
+    from decimal import Decimal
+    parser.add_argument("--option-settlements", type=Path,
+        help="最终结算CSV/Parquet/Feather，或按到期日保存的期权日行情目录")
+    parser.add_argument("--settlement-available-time", default="16:00",
+        help="结算文件未提供available_at时显式采用的本地可用时刻，默认16:00")
+    parser.add_argument("--exercise-fee-per-contract", type=Decimal, default=Decimal(0),
+        help="每手现金结算费用；文件逐合约fee_per_contract优先")
+
+
 def load_option_settlements(path, options, *, start_day, end_day,
                             available_time="16:00", fee_per_contract=0):
     """支持标准结算文件，或 YYYY-MM-DD.feather 原始期权日行情目录。

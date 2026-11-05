@@ -3,23 +3,20 @@ from __future__ import annotations
 
 import argparse
 from collections import defaultdict
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 import json
 import math
 from pathlib import Path
 import sys
 from time import perf_counter
+from types import SimpleNamespace
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from bomber.framework.market.sources import (MarketSourceConfig, create_market_feed,
     add_market_source_arguments, market_config_from_args)
-from dotenv import load_dotenv
-
-load_dotenv()
-
 from importlib import import_module
 _signal = import_module("demos.08_option_vega.vega_signal")
 Contract, OptionVegaConfig = _signal.Contract, _signal.OptionVegaConfig
@@ -33,6 +30,8 @@ from bomber.framework.dataprep.paths import resolve_option_args
 from bomber.framework.dataprep.scenarios.option_chain import plan_option_chain, prepare_option_chain
 from bomber.framework.dataprep.session import input_session, write_input_reports
 from bomber.framework.dataprep.commissions import add_commission_arguments, commission_config_from_args
+from bomber.framework.dataprep.option_settlements import (add_option_settlement_arguments,
+    load_option_settlements)
 
 DEFAULT_REPORT_DIR = Path(__file__).resolve().parent / "results"
 
@@ -73,7 +72,7 @@ def run_case(args):
     from bomber.framework.trader import (CtpFuturesBasicProfile, MarketStreamBinding,
         NautilusMarketFeedAdapter, NautilusSimExecutionBackend,
         UnifiedHistoricalRuntime)
-    from bomber.framework.trader.instrument_factory import instrument_meta, make_future, make_option
+    from bomber.framework.trader.instrument_factory import day_ns, instrument_meta, make_future, make_option
     assemble_strategy_components = import_module("demos.08_option_vega.assembly").assemble_strategy_components
 
     started = perf_counter()
@@ -205,19 +204,37 @@ def run_case(args):
     print(f"行情覆盖: 请求={args.start_day}..{args.end_day} 实际={days[0]}..{days[-1]} "
           f"交易日={len(days)} 认购合约={len(contracts)} 同月期货={len(future_rows)}")
     _finish_phase("开仓同步与末日清仓时钟检查", phase)
+    phase = _start_phase("期权到期与最终结算资料准备")
+    # 公共资料读取器消费标准条款last_trade；不从代码月份猜测到期日。
+    settlement_path = getattr(args, "option_settlements", None)
+    settlements = (load_option_settlements(settlement_path,
+        {key: SimpleNamespace(last_trade=info.last_day) for key, info in contracts.items()},
+        start_day=args.start_day, end_day=args.end_day,
+        available_time=getattr(args, "settlement_available_time", "16:00"),
+        fee_per_contract=getattr(args, "exercise_fee_per_contract", Decimal(0)))
+        if settlement_path else {})
+    period_end_ns = day_ns(args.end_day + timedelta(days=1)) - 1
+    if any(item.available_ns > period_end_ns for item in settlements.values()):
+        raise ValueError("结算可用时刻超过回测结束；请延长 --end-day")
+    last_trade_times = {key: day_ns(info.last_day, "15:00") for key, info in contracts.items()}
+    _finish_phase("期权到期与最终结算资料准备", phase)
     phase = _start_phase("模拟账户与真实合约注册")
     backend = NautilusSimExecutionBackend("option-vega-sim", BacktestEngineConfig(
         trader_id=TraderId("OPTION-VEGA-001"), logging=LoggingConfig(log_level=args.log_level), run_analysis=True))
-    profile = CtpFuturesBasicProfile(profile_id="option-vega-basic", venue=Venue("CFFEX"),
-        starting_balance=args.starting_balance, commission_per_contract=args.commission,
-        **commission_config_from_args(args).profile_kwargs())
-    backend.add_profile(profile)
-    feed = create_market_feed(getattr(args, "market_source_config", None) or MarketSourceConfig(source="file"), "OPTION_VEGA_REPLAY")
     instruments = {}
     multipliers = {}
     try:
+        profile = CtpFuturesBasicProfile(profile_id="option-vega-basic", venue=Venue("CFFEX"),
+            starting_balance=args.starting_balance, commission_per_contract=args.commission,
+            **commission_config_from_args(args).profile_kwargs())
+        feed = create_market_feed(getattr(args, "market_source_config", None) or MarketSourceConfig(source="file"), "OPTION_VEGA_REPLAY")
+        backend.add_profile(profile,
+            option_settlements={item.instrument_id: item for item in settlements.values()},
+            option_last_trade_times={key + ".CFFEX": stamp for key, stamp in last_trade_times.items()},
+            settlement_end_ns=period_end_ns)
         for key, info in contracts.items():
-            contract = make_option(info, args.option_margin_init, args.option_margin_maint, args.index_code)
+            contract = make_option(info, args.option_margin_init, args.option_margin_maint, args.index_code,
+                expiry_policy="CASH_SETTLEMENT")
             instruments[key] = contract.id
             multipliers[contract.id] = info.multiplier
             backend.add_instrument(contract)
@@ -254,7 +271,7 @@ def run_case(args):
             index_key=args.index_code, index_id=index_id, trading_days=calendar,
             options_by_day=options_by_day, feeds={"option-bars": feed},
             feed_by_key={key: "option-bars" for key in all_ids}, final_day=days[-1],
-            strategy_id="option-vega")
+            strategy_id="option-vega", option_last_trade_times=last_trade_times)
         runner.strategy = strategy
         adapter = NautilusMarketFeedAdapter("option-vega-clock", feed, backend,
             tuple(MarketStreamBinding(item, DataType.BAR, "1-MINUTE") for item in instruments.values()), manage_lifecycle=False)
@@ -280,6 +297,9 @@ def run_case(args):
             position_report.to_csv(output / "positions.csv")
             account_report.to_csv(output / "account.csv")
             pd.DataFrame(strategy.signals).to_csv(output / "signals.csv", index=False)
+            pd.DataFrame(backend.option_settlement_records, columns=("instrument_id", "quantity", "side",
+                "price", "commission", "ts_event", "available_ns", "last_trade_ns", "client_order_id",
+                "source")).to_csv(output / "settlements.csv", index=False)
             remaining = {key: str(strategy.position(str(item))) for key, item in instruments.items()
                          if strategy.position(str(item)) or strategy.strategy_working_quantity(str(item))}
             errors = [str(value) for value in client.report_errors]
@@ -296,9 +316,12 @@ def run_case(args):
                 "skipped_index_frames": sum(row["status"] == "SKIPPED" for row in runner.frame_audit),
                 "bars": result.replay_summary.bars, "frames": strategy.frames,
                 "entry_decisions": strategy.entry_decisions, "submissions": strategy.submissions,
+                "option_settlements": str(settlement_path) if settlement_path else None,
+                "settlement_prices_loaded": len(settlements),
+                "settlements": len(backend.option_settlement_records),
                 "orders": len(orders), "fills": len(fills), "remaining_positions_or_working": remaining,
                 "report_errors": errors, "config": vars(config),
-                "simulation": "NETTING/BAR/FIXED_FEE/PREMIUM_PERCENT_MARGIN; NO_EXPIRY_SETTLEMENT",
+                "simulation": "NETTING/BAR/CONFIGURED_FEE/PREMIUM_PERCENT_MARGIN; OPTION_CASH_SETTLEMENT",
                 "backend": str(result.backend_result)}
             (output / "feature_frames.json").write_text(json.dumps(runner.frame_audit, ensure_ascii=False, indent=2) + "\n")
             (output / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2, default=str) + "\n")
@@ -316,6 +339,7 @@ def run_case(args):
                 except ImportError as exc:
                     print(f"绩效图依赖不可用: {exc}；CSV/JSON已保存")
             _finish_phase("可选绩效图生成", phase)
+            return output
         finally:
             phase = _start_phase("运行器清理")
             runtime.stop()
@@ -332,6 +356,7 @@ def main():
     """解析期权组合、数据路径及风险限制后启动回测。"""
     parser = argparse.ArgumentParser(description="认购期权卖方Vega预算与同月期货Delta对冲")
     add_commission_arguments(parser)
+    add_option_settlement_arguments(parser)
     add_market_source_arguments(parser, backtest=True)
     parser.add_argument("--start-day", type=date.fromisoformat, required=True)
     parser.add_argument("--end-day", type=date.fromisoformat, required=True)

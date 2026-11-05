@@ -1,13 +1,16 @@
 """同一份Hybrid配置切换同进程/多进程；复用共享执行、IPC和交易日历。"""
 from argparse import ArgumentParser
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, timedelta
 import math
 import os
 from pathlib import Path
 from types import SimpleNamespace
 
 from scripts.integration.shared_account.config import read_config
+
+# 正常分钟信号处理完后，给休盘前撤单和回报留出时间。
+SESSION_STOP_SECONDS = 30
 
 
 def validate_layout(config, layout):
@@ -48,6 +51,7 @@ def load_calendar(config):
 
 def run_same_process(config, window, stop, *, resume, remaining, clock=None):
     from scripts.integration.shared_account.run import build_host
+    from bomber.framework.trader.execution.ctp.query_errors import CtpQueryInterrupted
     from bomber.framework.trader.runtime.live.continuous import StopRequested
     from bomber.framework.trader.runtime.reports import TradingDayLiveReport
     clock = clock or (lambda: datetime.now(window.end.tzinfo))
@@ -55,24 +59,30 @@ def run_same_process(config, window, stop, *, resume, remaining, clock=None):
         trading_day=window.trading_day, metadata={'process_layout': 'same-process'})
     report.begin()
     host, failure, status = None, None, 'failed'
+    stop_at = window.end - timedelta(seconds=SESSION_STOP_SECONDS)
+    def stop_requested():
+        return stop.is_set() or clock() >= stop_at
     def check():
-        if stop.is_set() or clock() >= window.end:
+        if stop_requested():
             raise StopRequested()
     try:
         check()
         host = build_host(config, resume=resume, session_order_budget=remaining)
         host.preparation_check = check
+        host.account.transport.query_stop_requested = stop_requested
         for item in host.strategies.values():
             item.session.runner.continuous_window = window
             item.session.runner.continuous_stop_event = stop
         host.start()
-        while not stop.is_set() and clock() < window.end:
+        print(f'Hybrid休盘前停机: stop_at={stop_at.isoformat()} session_end={window.end.isoformat()}；'
+              '撤单并保留持仓及批次', flush=True)
+        while not stop.is_set() and clock() < stop_at:
             host.poll()
             if not any(item.active for item in host.strategies.values()):
                 raise RuntimeError('所有Hybrid策略已停止；查看各策略failure')
             stop.wait(0.2)
         status = 'completed'
-    except StopRequested:
+    except (StopRequested, CtpQueryInterrupted):
         status = 'completed'
     except BaseException as error:
         failure = str(error)
@@ -110,7 +120,8 @@ def run_window(config, layout, calendar, window, stop):
         raise RuntimeError('本交易日报单额度已用完，不通过切换布局重置额度')
     if layout == 'same-process':
         return run_same_process(current, window, stop, resume=saved is not None, remaining=remaining)
-    return ProcessWindowRuntime(current, window, stop, remaining, resume=saved is not None).run()
+    return ProcessWindowRuntime(current, window, stop, remaining, resume=saved is not None,
+        stop_before_seconds=SESSION_STOP_SECONDS).run()
 
 
 def main(argv=None):

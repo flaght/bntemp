@@ -1,0 +1,33 @@
+2026-11-05 Asia/Shanghai; framework base aabee59
+Python: /Users/kerry/.local/bin/python3.12; PYTHONPATH=.validation/packages:.
+No external data services, CTP, or live orders were used.
+SDK types/counterparty fixtures; actual Python framework Runner/strategy/client/attribution code.
+
+1. 08 original regression plus 11 new settlement tests:
+Ran 102 tests in 0.223s
+
+OK
+
+2. Source formulas/strategy/Live/settlement/12/timing:
+Ran 90 tests in 0.443s
+
+OK
+
+3. Late bars/rollover/minute diagnostics/query cadence:
+Ran 51 tests in 1.202s
+
+OK
+
+Total distinct test cases passed: 102 + 90 + 51 = 243.
+Native engine tests NOT passed here: bomber.backtest is unavailable; 2 explicit skips.
+test_missing_final_value_rejects_actual_expiry_residual (tests.test_option_vega_native.VegaNativeSettlementTests.test_missing_final_value_rejects_actual_expiry_residual) ... skipped "需要Bomber编译扩展: No module named 'bomber.backtest'"
+test_zero_and_nonzero_expiry_settlement_then_continue_to_next_day (tests.test_option_vega_native.VegaNativeSettlementTests.test_zero_and_nonzero_expiry_settlement_then_continue_to_next_day) ... skipped "需要Bomber编译扩展: No module named 'bomber.backtest'"
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.000s
+
+OK (skipped=2)
+
+Native fixture files/contract/calendar/final values were separately loaded and validated; this is not engine execution.
+compileall and git diff --check passed.
+Reproduction/scope: doc/audits/OPTION_VEGA_FRAMEWORK_REVIEW_2026-11-05.md

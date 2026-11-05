@@ -1,4 +1,4 @@
-"""查询发送未受理的错误；不适用于报单或撤单的自动重试。"""
+"""CTP只读查询的拒绝及调度中断；不适用于报单或撤单的自动重试。"""
 
 
 class CtpQueryRejected(RuntimeError):
@@ -7,3 +7,7 @@ class CtpQueryRejected(RuntimeError):
         self.request_id, self.code = request_id, code
         self.retryable = method.startswith("reqQry") and code in {-2, -3}
         super().__init__(f"CTP {method}请求被拒绝: {code} (kind={kind} request_id={request_id})")
+
+
+class CtpQueryInterrupted(TimeoutError):
+    """调度要求停止等待；已受理的查询仍须等待原最终回报，不能覆盖。"""

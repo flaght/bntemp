@@ -715,6 +715,64 @@ class HybridLayoutConfigTests(unittest.TestCase):
             candidate={**self.config,key:value};self.path.write_text(json.dumps(candidate))
             with self.assertRaisesRegex(ValueError,'Hybrid历史根数'):read_config(self.path)
 
+    def test_same_process_begins_stop_thirty_seconds_before_close(self):
+        from datetime import timedelta
+        from unittest.mock import Mock
+        import threading
+        window = hybrid_fixture.TradingWindow('20261013', 'am',
+            hybrid_fixture.dt('2026-10-13 09:00'), hybrid_fixture.dt('2026-10-13 11:30'))
+        now = [window.end-timedelta(seconds=31)]
+        host = Mock()
+        host.strategies = {'rb': NS(active=True,session=NS(runner=NS()))}
+        host.snapshot.return_value = {}
+        host.account.execution.backend.reports = ()
+        host.poll.side_effect = lambda: now.__setitem__(0, window.end-timedelta(seconds=30))
+        with patch('scripts.integration.shared_account.run.build_host',return_value=host), \
+                patch('bomber.framework.trader.runtime.reports.TradingDayLiveReport'):
+            result = launcher.run_same_process(self.config,window,threading.Event(),
+                resume=False,remaining=100,clock=lambda:now[0])
+        self.assertEqual(result['status'],'completed')
+        host.poll.assert_called_once()
+        host.stop.assert_called_once()
+        self.assertLess(now[0],window.end)
+        self.assertEqual(host.strategies['rb'].session.runner.continuous_window,window)
+
+    def test_same_process_scheduled_query_interruption_is_normal_stop(self):
+        from datetime import timedelta
+        from unittest.mock import Mock
+        from bomber.framework.trader.execution.ctp.query_errors import CtpQueryInterrupted
+        import threading
+        window = hybrid_fixture.TradingWindow('20261013','am',
+            hybrid_fixture.dt('2026-10-13 09:00'), hybrid_fixture.dt('2026-10-13 11:30'))
+        now=[window.end-timedelta(seconds=31)]
+        host=Mock()
+        host.strategies={'rb':NS(active=True,session=NS(runner=NS()))}
+        host.snapshot.return_value={}
+        host.account.execution.backend.reports=()
+        def delayed_query():
+            now[0]=window.end-timedelta(seconds=30)
+            self.assertTrue(host.account.transport.query_stop_requested())
+            raise CtpQueryInterrupted('fixture scheduled stop')
+        host.poll.side_effect=delayed_query
+        with patch('scripts.integration.shared_account.run.build_host',return_value=host), \
+                patch('bomber.framework.trader.runtime.reports.TradingDayLiveReport'):
+            result=launcher.run_same_process(self.config,window,threading.Event(),
+                resume=False,remaining=100,clock=lambda:now[0])
+        self.assertEqual(result['status'],'completed')
+        host.stop.assert_called_once()
+
+    def test_same_process_does_not_start_during_close_grace_period(self):
+        from datetime import timedelta
+        import threading
+        window = hybrid_fixture.TradingWindow('20261013', 'am',
+            hybrid_fixture.dt('2026-10-13 09:00'), hybrid_fixture.dt('2026-10-13 11:30'))
+        with patch('scripts.integration.shared_account.run.build_host') as build, \
+                patch('bomber.framework.trader.runtime.reports.TradingDayLiveReport'):
+            result=launcher.run_same_process(self.config,window,threading.Event(),
+                resume=False,remaining=100,clock=lambda:window.end-timedelta(seconds=20))
+        self.assertEqual(result['status'],'completed')
+        build.assert_not_called()
+
     def test_layout_window_uses_same_account_and_signal_paths_and_deducts_daily_budget(self):
         from scripts.integration.shared_account.config import read_config
         from bomber.framework.trader.persistence import JsonStateStore
@@ -732,6 +790,7 @@ class HybridLayoutConfigTests(unittest.TestCase):
             separate.return_value.run.return_value={'status':'completed'}
             launcher.run_window(parsed,'separate-processes',None,window,threading.Event())
             self.assertEqual(separate.call_args.args[3],99)
+            self.assertEqual(separate.call_args.kwargs['stop_before_seconds'],30)
             self.assertEqual(same.call_args.args[0]['account_state_file'],separate.call_args.args[0]['account_state_file'])
             self.assertEqual(same.call_args.args[0]['strategies'],separate.call_args.args[0]['strategies'])
 

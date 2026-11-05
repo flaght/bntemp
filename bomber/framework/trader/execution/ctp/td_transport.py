@@ -14,7 +14,7 @@ from typing import Any, Callable, Mapping
 
 from bomber.framework.market.basic.base import InstrumentId
 from bomber.framework.trader.execution.ctp.native_driver import CtpTraderSession
-from bomber.framework.trader.execution.ctp.query_errors import CtpQueryRejected
+from bomber.framework.trader.execution.ctp.query_errors import CtpQueryRejected, CtpQueryInterrupted
 from bomber.framework.trader.execution.events import (
     AccountStateEvent,
     ActiveOrder,
@@ -76,6 +76,8 @@ class CtpTdApiTransport:
         self.flow_path = flow_path
         self.production_mode = production_mode
         self.timeout_seconds = timeout_seconds
+        # 运行时调度注入；默认不改变原有查询行为，不参与恢复身份。
+        self.query_stop_requested: Callable[[], bool] | None = None
         self.td_api_base = td_api_base
         self._api: Any = None
         self._api_created = False
@@ -262,14 +264,29 @@ class CtpTdApiTransport:
         if not self._ready or self._disconnected or self._api is None:
             raise RuntimeError("CTP TraderApi尚未完成登录结算确认或已断线")
 
+    def _check_query_stop(self):
+        """调用方持有_cv；中断本地等待，不把柜台旧查询解释为已经结束。"""
+        if self.query_stop_requested is not None and self.query_stop_requested():
+            pending = self._pending
+            if pending is not None and not pending.done:
+                pending.timed_out = True
+                pending.rows.clear()
+                self._audit_query("interrupted", pending)
+            raise CtpQueryInterrupted("CTP查询等待已响应调度停止；原请求身份保留")
+
+    def _query_wait(self, remaining):
+        self._cv.wait(min(remaining, 0.1) if self.query_stop_requested is not None else remaining)
+
     def _request(self, kind: str, method: str, fields: dict[str, Any]) -> list[dict[str, Any]]:
         with self._request_lock:
             with self._cv:
+                self._check_query_stop()
                 # 本地超时不表示API已结束旧请求。保留身份，只等旧最终回报，禁止覆盖。
                 drain_deadline = time.monotonic() + self.timeout_seconds
                 if self._pending is not None and not self._pending.done:
                     self._audit_query("wait_previous", self._pending, next_method=method)
                 while self._pending is not None and not self._pending.done:
+                    self._check_query_stop()
                     if self._disconnected or self._api is None:
                         raise RuntimeError("CTP等待旧查询结束时前置断开")
                     remaining = drain_deadline - time.monotonic()
@@ -277,7 +294,8 @@ class CtpTdApiTransport:
                         old = self._pending
                         self._audit_query("drain_timeout", old)
                         raise TimeoutError(f"CTP旧请求尚未结束: kind={old.kind} request_id={old.reqid}；未发送{method}")
-                    self._cv.wait(remaining)
+                    self._query_wait(remaining)
+                self._check_query_stop()
                 if self._disconnected or self._api is None:
                     raise RuntimeError("CTP查询前置已断开")
                 if self._pending is not None:
@@ -304,13 +322,14 @@ class CtpTdApiTransport:
             deadline = time.monotonic() + pending.timeout_seconds
             with self._cv:
                 while not pending.done and not self._disconnected:
+                    self._check_query_stop()
                     remaining = deadline - time.monotonic()
                     if remaining <= 0:
                         pending.timed_out = True
                         pending.rows.clear()
                         self._audit_query("timeout", pending)
                         raise TimeoutError(f"等待CTP {kind}最终回报超时 (request_id={pending.reqid})")
-                    self._cv.wait(remaining)
+                    self._query_wait(remaining)
                 self._pending = None
                 if self._disconnected or pending.error:
                     raise RuntimeError(pending.error or f"CTP {kind}查询期间前置断线")
@@ -324,7 +343,7 @@ class CtpTdApiTransport:
         self._query_audit.append(row)
         level = (logging.WARNING if event in {"timeout", "drain_timeout", "rejected", "send_exception"}
                  else logging.INFO if event in {"wait_previous", "late_final", "drained"}
-                      or pending.kind in {"auth", "login", "settlement"} else logging.DEBUG)
+                      or event == "interrupted" or pending.kind in {"auth", "login", "settlement"} else logging.DEBUG)
         logging.getLogger("CtpQuery").log(level, "CTP查询: %s", row)
 
     def query_diagnostics(self):

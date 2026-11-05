@@ -31,6 +31,95 @@ class CtpQueryLifecycleTests(unittest.TestCase):
         self.addCleanup(transport.close)
         return transport
 
+    def test_stop_before_query_sends_no_request(self):
+        t = self.transport()
+        t.query_stop_requested = lambda: True
+        with self.assertRaises(self.mod.CtpQueryInterrupted):
+            t.query_account()
+        self.assertFalse(t._api.calls)
+        self.assertIsNone(t._pending)
+
+    def test_window_stop_interrupts_long_wait_but_retains_identity_until_late_final(self):
+        sent, stop = threading.Event(), threading.Event()
+        def behavior(api, rid):
+            if len(api.calls) == 1:
+                sent.set()
+                return 0
+            api.onRspQryTradingAccount(dict(BrokerID="9999", AccountID="demo", CurrencyID="CNY",
+                Balance=200, Available=180, CurrMargin=20), {}, rid, True)
+            return 0
+        t = self.transport(behavior)
+        t.timeout_seconds = 120
+        t.query_stop_requested = stop.is_set
+        errors = []
+        def query():
+            try:
+                t.query_account()
+            except BaseException as error:
+                errors.append(error)
+        worker = threading.Thread(target=query, daemon=True)
+        worker.start()
+        try:
+            self.assertTrue(sent.wait(1))
+            stop.set()
+            worker.join(1)
+            self.assertFalse(worker.is_alive(), "调度停止不应等待完整120秒")
+        finally:
+            stop.set()
+            worker.join(1)
+        self.assertEqual(len(errors), 1)
+        self.assertIsInstance(errors[0], self.mod.CtpQueryInterrupted)
+        old = t._pending.reqid
+        self.assertTrue(t._pending.timed_out)
+        self.assertEqual(t._account_revision, 0)
+        self.assertEqual(t.query_diagnostics()["recent"][-1]["event"], "interrupted")
+        # 停机撤单请求不经过只读查询等待；旧查询未结束也能请求撤单。
+        t._last_orders['17'] = dict(FrontID=1, SessionID=2, InstrumentID='rb2701', ExchangeID='SHFE')
+        t.cancel_order('17')
+        self.assertIn('cancel', t._api.request_names)
+        self.assertEqual(t._pending.reqid, old)
+        self.assertFalse(t._pending.done)
+        t._api.onRspQryTradingAccount(dict(Balance=999), {}, old, True)
+        self.assertTrue(t._pending.done)
+        self.assertFalse(t._pending.rows)
+        t.query_stop_requested = None
+        self.assertEqual(t.query_account().balances['CNY'].equity, 200)
+        self.assertEqual(len(t._api.calls), 2)
+        self.assertNotEqual(t._api.calls[-1], old)
+
+    def test_stop_interrupts_wait_for_previous_without_sending_another_query(self):
+        t = self.transport(lambda api, rid: 0)
+        with self.assertRaises(TimeoutError):
+            t.query_account()
+        old = t._pending.reqid
+        stop, waiting = threading.Event(), threading.Event()
+        t.timeout_seconds = 120
+        t.query_stop_requested = stop.is_set
+        errors = []
+        wait = t._cv.wait
+        def observed_wait(seconds):
+            waiting.set()
+            return wait(seconds)
+        def query():
+            try:
+                t.query_account()
+            except BaseException as error:
+                errors.append(error)
+        with patch.object(t._cv, 'wait', side_effect=observed_wait):
+            worker = threading.Thread(target=query, daemon=True)
+            worker.start()
+            try:
+                self.assertTrue(waiting.wait(1))
+                stop.set()
+                worker.join(1)
+                self.assertFalse(worker.is_alive())
+            finally:
+                stop.set()
+                worker.join(1)
+        self.assertIsInstance(errors[0], self.mod.CtpQueryInterrupted)
+        self.assertEqual(t._pending.reqid, old)
+        self.assertEqual(len(t._api.calls), 1)
+
     def test_timeout_retains_request_and_blocks_every_later_query_until_final(self):
         t = self.transport(lambda api, rid: 0)
         with self.assertRaises(TimeoutError): t.query_account()

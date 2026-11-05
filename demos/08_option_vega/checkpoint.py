@@ -56,6 +56,6 @@ class OptionVegaCheckpoint:
         s.flatten_requested = state["flatten_requested"]
         s.latest.clear()
         s.iv_cache.clear()
-        s.pending_ts = s.resume_ns = s.last_actual = None
+        s.pending_ts = s.resume_ns = None
         s.last_event_ns = -1
         s.restored = True

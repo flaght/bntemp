@@ -1,0 +1,30 @@
+{
+  "date": "2026-11-05",
+  "base": "aabee59",
+  "scope": "08 framework reuse and explicit historical option cash settlement",
+  "offline_status": "passed",
+  "offline_tests": 243,
+  "new_settlement_tests": 11,
+  "native_status": "pending",
+  "native_skipped_tests": 2,
+  "native_reason": "Local Python has no bomber.backtest extension",
+  "live_verified": false,
+  "external_connections": false,
+  "orders_sent": false,
+  "strategy_formula_changed": false,
+  "live_settlement_enabled": false,
+  "checkpoint_schema_changed": false,
+  "public_reuse": [
+    "load_option_settlements",
+    "OptionSettlement",
+    "OptionCashSettlementModule",
+    "NautilusSimExecutionBackend",
+    "SimulationExecutionClient",
+    "PositionAttributionLedger"
+  ],
+  "shared_cli": [
+    "--option-settlements",
+    "--settlement-available-time",
+    "--exercise-fee-per-contract"
+  ]
+}

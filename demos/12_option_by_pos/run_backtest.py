@@ -16,6 +16,7 @@ if __package__ in (None, ""):
 
 from bomber.framework.dataprep.commissions import add_commission_arguments, commission_config_from_args
 from bomber.framework.dataprep.session import input_session, current_session, write_input_reports
+from bomber.framework.dataprep.option_settlements import add_option_settlement_arguments
 
 DEFAULT_POSITIONS = ROOT / "3rd/strategies/kd_option_by_pos/positions.csv"
 DEFAULT_REPORT_DIR = Path(__file__).resolve().parent / "results"
@@ -232,10 +233,7 @@ def parse_args(argv=None):
     parser.add_argument("--end-day", type=date.fromisoformat, required=True)
     for name in ("data-root", "fut-dir", "opt-dir", "fut-basic", "opt-basic"):
         parser.add_argument("--" + name, type=Path)
-    parser.add_argument("--option-settlements", type=Path,
-        help="标准最终结算文件，或含 code,trade_date,settlPrice 的 YYYY-MM-DD.feather 日行情目录")
-    parser.add_argument("--settlement-available-time", default="16:00")
-    parser.add_argument("--exercise-fee-per-contract", type=Decimal, default=Decimal(0))
+    add_option_settlement_arguments(parser)
     parser.add_argument("--starting-balance", type=Decimal, default=Decimal("40000000"))
     parser.add_argument("--commission-per-contract", type=Decimal, default=Decimal(1))
     parser.add_argument("--option-commission-per-contract", type=Decimal, default=Decimal("0.15"))

@@ -1,7 +1,7 @@
 """08共享账户日历调度：同进程多策略，或唯一账户服务加独立策略进程。"""
 import argparse
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 from pathlib import Path
 import subprocess
@@ -25,7 +25,10 @@ def config_for_day(config, day):
 
 class ProcessWindowRuntime:
     """调度server/worker原入口；先正常停止worker，再停止唯一TD服务。"""
-    def __init__(self, config, window, stop_event, remaining, *, popen=None, clock=None, resume=True):
+    def __init__(self, config, window, stop_event, remaining, *, popen=None, clock=None, resume=True, stop_before_seconds=0):
+        if type(stop_before_seconds) is not int or stop_before_seconds < 0:
+            raise ValueError('休盘前停止秒数须为非负整数')
+        self.stop_at = window.end - timedelta(seconds=stop_before_seconds)
         self.config, self.window, self.stop, self.remaining = config, window, stop_event, remaining
         self.popen = popen or subprocess.Popen
         self.clock = clock or (lambda: datetime.now(window.end.tzinfo))
@@ -46,7 +49,7 @@ class ProcessWindowRuntime:
     def run(self):
         if self.config.get('execution_mode') != 'independent':
             raise ValueError('独立进程部署须使用independent执行模式')
-        if self.stop.is_set() or self.clock() >= self.window.end:
+        if self.stop.is_set() or self.clock() >= self.stop_at:
             return {'status': 'completed'}
         directory = Path(self.config['report_dir']) / ('continuous-window-' + uuid.uuid4().hex)
         directory.mkdir(parents=True, mode=0o700)
@@ -64,7 +67,7 @@ class ProcessWindowRuntime:
                 '--remaining-orders', str(self.remaining)], start_new_session=True)
             deadline = time.monotonic() + 180
             while not all((credentials/(row['strategy_id']+'.json')).is_file() for row in self.config['strategies']):
-                if self.stop.is_set() or self.clock() >= self.window.end:
+                if self.stop.is_set() or self.clock() >= self.stop_at:
                     return {'status': 'completed'}
                 if self.server.poll() is not None:
                     raise RuntimeError('账户服务在worker启动前退出；请检查server报告')
@@ -72,12 +75,12 @@ class ProcessWindowRuntime:
                     raise RuntimeError('账户服务未在期限内发布本窗口能力文件')
                 self.stop.wait(0.2)
             for row in self.config['strategies']:
-                if self.stop.is_set() or self.clock() >= self.window.end:
+                if self.stop.is_set() or self.clock() >= self.stop_at:
                     break
                 self.workers.append(self.popen([sys.executable, '-u', '-m', 'scripts.integration.shared_account.worker',
                     *common, '--strategy-id', row['strategy_id'], '--credentials',
                     str(credentials/(row['strategy_id']+'.json'))], start_new_session=True))
-            while not self.stop.is_set() and self.clock() < self.window.end:
+            while not self.stop.is_set() and self.clock() < self.stop_at:
                 if self.server.poll() is not None or any(worker.poll() is not None for worker in self.workers):
                     raise RuntimeError('共享运行进程提前退出，不自动重复启动')
                 self.stop.wait(0.2)
