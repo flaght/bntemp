@@ -2,6 +2,7 @@
 
 import argparse
 from pathlib import Path
+from datetime import datetime
 import secrets
 import time
 
@@ -105,8 +106,11 @@ def _main(argv):
     parser.add_argument("--enable-orders", action="store_true")
     parser.add_argument("--confirm-simnow", action="store_true")
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--activate-at", type=datetime.fromisoformat, help=argparse.SUPPRESS)
     parser.add_argument("--remaining-orders", type=int, help="持续调度从账户订单历史扣除后的本窗口额度")
     args = parser.parse_args(argv)
+    if args.activate_at is not None and args.activate_at.tzinfo is None:
+        parser.error("开盘边界须携带时区")
     config = read_config(args.config)
     if config.get("execution_mode") != "independent":
         parser.error("独立进程账户服务须execution_mode=independent")
@@ -123,7 +127,7 @@ def _main(argv):
 
 
 def _run(args, config, stop_event):
-    from bomber.framework.trader.runtime.live.continuous import StopRequested
+    from bomber.framework.trader.runtime.live.continuous import StopRequested, wait_for_open
     from dotenv import load_dotenv
     from .run import build_host, PROJECT_ROOT
     from bomber.framework.trader.execution.ipc import AccountExecutionProtocol, UnixExecutionServer, encode
@@ -147,40 +151,59 @@ def _run(args, config, stop_event):
         if any(row["status"] != "completed" for row in protocol.journal.requests.values()):
             raise RuntimeError("恢复存在未决跨进程请求，须权威核查，拒绝自动重复发单")
         host.service.start()
+        def publish_server():
+            nonlocal server
+            args.credentials_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+            args.socket.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            server = UnixExecutionServer(args.socket, protocol)
+            for sid, key in keys.items():
+                import os
+                path = args.credentials_dir / f"{sid}.json"
+                # 文件仅传递本机能力令牌，不打印令牌；服务重启后旧连接失效。
+                from tempfile import NamedTemporaryFile
+                with NamedTemporaryFile(dir=args.credentials_dir, prefix=f".{sid}-", delete=False) as output:
+                    temporary = Path(output.name)
+                    try:
+                        os.fchmod(output.fileno(), 0o600)
+                        output.write(encode({"version": 1, "strategy_id": sid, "key": key,
+                            "socket": str(args.socket.resolve()), "configuration": host.service._ports[sid].configuration(),
+                            "bootstrap_signal": host.service.bootstrap_signals.get(sid),
+                            "reference": getattr(host.strategies[sid].session, "session_identity", None)}))
+                        output.flush(); os.fsync(output.fileno())
+                        os.replace(temporary, path)
+                    finally:
+                        temporary.unlink(missing_ok=True)
+
+
+        def poll_preparation():
+            if server is not None:
+                server.poll()
+                protocol.poll()
+            host.account.poll()
+
         valuation = connect_valuation_market(host, config)
+        activate_at = getattr(args, "activate_at", None)
+        if activate_at is not None:
+            # 让worker提前连接并预热，账户仍未授权；已停止的行情恢复沿用原无租约校验。
+            if host.service.execution_stop is None:
+                publish_server()
+            wait_for_open(activate_at, stop_event, poll=poll_preparation)
         until_market = time.monotonic() + 30
         while valuation is not None and not valuation.check().ready:
             if stop_event.is_set():
                 raise StopRequested()
             if time.monotonic() >= until_market:
                 raise RuntimeError(f"账户估值行情未就绪: {valuation.check().as_dict()}")
-            time.sleep(0.05)
+            poll_preparation()
+            stop_event.wait(0.05)
         if valuation is not None:
             host.service.resume_market_data(valuation.check())
             guard_valuation_submission(host.account.execution.backend, valuation)
         if stop_event.is_set():
             raise StopRequested()
         host.account.authorize()
-        args.credentials_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-        args.socket.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        server = UnixExecutionServer(args.socket, protocol)
-        for sid, key in keys.items():
-            import os
-            path = args.credentials_dir / f"{sid}.json"
-            # 文件仅传递本机能力令牌，不打印令牌；服务重启后旧连接失效。
-            from tempfile import NamedTemporaryFile
-            with NamedTemporaryFile(dir=args.credentials_dir, prefix=f".{sid}-", delete=False) as output:
-                temporary = Path(output.name)
-                try:
-                    os.fchmod(output.fileno(), 0o600)
-                    output.write(encode({"version": 1, "strategy_id": sid, "key": key,
-                        "socket": str(args.socket.resolve()), "configuration": host.service._ports[sid].configuration(),
-                        "bootstrap_signal": host.service.bootstrap_signals.get(sid),
-                        "reference": getattr(host.strategies[sid].session, "session_identity", None)}))
-                    output.flush(); os.fsync(output.fileno())
-                    os.replace(temporary, path)
-                finally:
-                    temporary.unlink(missing_ok=True)
+        if server is None:
+            publish_server()
 
         print(f"账户服务就绪：socket={args.socket}；策略客户端文件目录={args.credentials_dir}", flush=True)
         print(f"账户CTP逐合约估值时效: {ctp_instrument_max_age_seconds(config)}秒", flush=True)

@@ -38,7 +38,7 @@ class OptionSharedRolloverTests(unittest.TestCase):
         import json
         from bomber.framework.dataprep.features import DEFAULT_FEATURE_CONFIG
         from bomber.framework.datahub.features.schema import dataset_from_definition
-        module = import_module("demos.08_option_vega.rollover")
+        module = import_module("demos.08_option_vega.recovery")
         spec = dataset_from_definition(json.loads(DEFAULT_FEATURE_CONFIG.read_text())["datasets"][0]["schema"])
         old, new = deepcopy(self.identity), deepcopy(self.new_identity)
         index = old["sources"]["index"]

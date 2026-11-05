@@ -10,7 +10,7 @@ import pandas as pd
 
 from bomber.framework.dataprep.contracts import BarFileKey
 
-check = import_module("demos.08_option_vega.check_backtest_data")
+check = import_module("scripts.integration.options.check_backtest_data")
 
 
 class BacktestDataTests(unittest.TestCase):

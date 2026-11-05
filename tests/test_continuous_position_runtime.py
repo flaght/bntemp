@@ -8,7 +8,7 @@ import unittest
 from bomber.framework.calendars.hours import SessionSegment, TradingHoursSnapshot
 from bomber.framework.calendars.sessions import SessionBinding, SessionCalendar, SessionOverride
 from bomber.framework.calendars.trading import CalendarSnapshot
-from bomber.framework.trader.runtime.live.continuous import ContinuousPositionRuntime, orders_for_day
+from bomber.framework.trader.runtime.live.continuous import ContinuousPositionRuntime, orders_for_day, wait_for_open, StopRequested
 
 ZONE = ZoneInfo('Asia/Shanghai')
 
@@ -98,6 +98,79 @@ class ContinuousPositionTests(unittest.TestCase):
         runtime = self.runtime('2026-10-14T14:30')
         runtime.session_factory = lambda *_: SimpleNamespace(run=lambda: {'status': 'completed'})
         self.assertEqual(runtime.run()['windows'], 1)
+
+    def test_preopen_prepares_each_session_five_minutes_early_without_reentry(self):
+        now = [datetime(2026, 10, 14, 9, 20, tzinfo=ZONE)]
+        seen, messages = [], []
+        def factory(window, stop):
+            seen.append((now[0], window))
+            def run():
+                now[0] = window.end
+                return {'status': 'completed'}
+            return SimpleNamespace(run=run)
+        runtime = ContinuousPositionRuntime(calendar(), factory, prepare_seconds=300,
+            clock=lambda: now[0], wait=lambda seconds: now.__setitem__(0, now[0]+timedelta(seconds=seconds)),
+            status=messages.append)
+        self.assertEqual(runtime.run()['windows'], 2)
+        self.assertEqual([at.strftime('%H:%M') for at, _ in seen], ['09:25', '12:55'])
+        self.assertTrue(all(window.start-at == timedelta(minutes=5) for at, window in seen))
+        self.assertEqual(sum('进入盘前准备窗口' in line for line in messages), 2)
+
+    def test_preopen_night_uses_next_trading_day_and_holiday_override(self):
+        cal = calendar(overrides=(SessionOverride('TRADING_DAY', date(2026, 10, 19),
+            'CANCEL', 'morning', ()),))
+        hours = TradingHoursSnapshot(cal.hours.rows + (('IM', SessionSegment(
+            'night', 'NIGHT_START', 0, '21:00', 0, '23:00')),), 'night-fixture')
+        cal = SessionCalendar(hours, cal.calendar, cal.binding, overrides=cal.overrides)
+        now = datetime(2026, 10, 16, 20, 55, tzinfo=ZONE)
+        stop, seen = Event(), []
+        def factory(window, event):
+            seen.append(window)
+            event.set()
+            return SimpleNamespace(run=lambda: {'status': 'completed'})
+        result = ContinuousPositionRuntime(cal, factory, run_forever=True, prepare_seconds=300,
+            clock=lambda: now, stop_event=stop, status=lambda _: None).run()
+        self.assertEqual(result['windows'], 1)
+        self.assertEqual(seen[0].trading_day, '20261019')
+        self.assertEqual(seen[0].start.date(), date(2026, 10, 16))
+        morning = datetime(2026, 10, 19, 9, 25, tzinfo=ZONE)
+        self.assertIsNone(cal.next_window(morning, before=morning+timedelta(minutes=5)))
+
+    def test_next_window_finds_short_overridden_segment_within_prepare_period(self):
+        override = SessionOverride('TRADING_DAY', date(2026, 10, 14), 'REPLACE', 'morning',
+            (SessionSegment('morning', 'TRADING_DAY', 0, '09:30', 0, '09:31'),))
+        now = datetime(2026, 10, 14, 9, 29, tzinfo=ZONE)
+        window = calendar((override,)).next_window(now, before=now+timedelta(minutes=5))
+        self.assertEqual(window.start.hour, 9)
+        self.assertEqual(window.start.minute, 30)
+
+    def test_preopen_wait_polls_with_decisions_closed_until_boundary_and_honors_stop(self):
+        start = datetime(2026, 10, 14, 9, 30, tzinfo=ZONE)
+        now, polls, messages = [start-timedelta(minutes=5)], [], []
+        stop = Event()
+        def poll():
+            polls.append(now[0])
+            now[0] = start
+        wait_for_open(start, stop, clock=lambda: now[0], poll=poll, wait=lambda _: None,
+                      status=messages.append)
+        self.assertEqual(len(polls), 1)
+        self.assertIn('报单保持关闭', messages[0])
+        stop.set()
+        with self.assertRaises(StopRequested):
+            wait_for_open(start, stop, clock=lambda: now[0])
+        with self.assertRaises(ValueError):
+            wait_for_open(start.replace(tzinfo=None), Event())
+
+    def test_preopen_poll_failure_is_not_hidden_or_retried(self):
+        start = datetime(2026, 10, 14, 9, 30, tzinfo=ZONE)
+        def fail():
+            raise RuntimeError('账户失去连接')
+        with self.assertRaisesRegex(RuntimeError, '账户失去连接'):
+            wait_for_open(start, Event(), clock=lambda: start-timedelta(minutes=1),
+                poll=fail, status=lambda _: None)
+        for invalid in (-1, True, 1.5):
+            with self.assertRaises(ValueError):
+                ContinuousPositionRuntime(calendar(), None, prepare_seconds=invalid)
 
     def test_persisted_order_budget_keeps_today_across_windows(self):
         payload = {'orders': {'option-vega-live': [

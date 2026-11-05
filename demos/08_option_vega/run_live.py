@@ -120,7 +120,7 @@ def parse_args(argv=None):
         if args.replay_test_source_time and not args.replay_test_start_time:
             raise ValueError("replay-test-source-time须同时声明replay-test-start-time")
         if args.replay_test_start_time:
-            from .replay_test import parse_minute
+            from scripts.integration.options.replay import parse_minute
             parse_minute(args.replay_test_start_time)
             if args.replay_test_source_time:
                 parse_minute(args.replay_test_source_time)
@@ -207,7 +207,7 @@ def prepare_inputs(args, context, lifecycle):
     from bomber.framework.dataprep.sources.base import ReferenceDataset
     from bomber.framework.market.basic.base import InstrumentId, InstrumentMeta
     from bomber.framework.market.stream.aggregation import TradeTickBarFeed, QuoteMidBarFeed
-    from .live_runtime import OptionReferences
+    from .live import OptionReferences
     from .vega_signal import remaining_trading_days
     valuation_day = datetime.strptime(args.valuation_day, "%Y%m%d").date()
     calendar_snapshot = NativeCalendarProvider(args.calendar_id).snapshot(valuation_day, RULES_END)
@@ -294,7 +294,7 @@ def prepare_inputs(args, context, lifecycle):
             flow_path=f"/tmp/bomber-vega-md-{os.getpid()}", environment=args.simnow_environment)
         cls = TradeTickBarFeed if args.ctp_price_type == "last" else QuoteMidBarFeed
         if args.replay_test_start_time:
-            from .replay_test import ReplayTestTimeMap, mapped_bar_feed
+            from scripts.integration.options.replay import ReplayTestTimeMap, mapped_bar_feed
             time_map = ReplayTestTimeMap(valuation_day, args.replay_test_start_time, args.replay_test_source_time)
             ctp_bar_feed = market = mapped_bar_feed("VEGA_CTP_1M", ctp_upstream,
                 price_type=args.ctp_price_type, time_map=time_map)
@@ -368,7 +368,7 @@ def build_runtime(args, *, account_routes=()):
     from bomber.framework.trader.runtime.live.channels.ctp import required, build_simnow_transport
     from bomber.framework.trader.runtime.live.channels.ctp_market import CtpMarketCredentials
     from .recovery import OptionLocalLifecycle, OptionCtpLifecycle
-    from .live_runtime import CLIENT_ID, assemble
+    from .live import CLIENT_ID, assemble
     if args.mode == "simnow":
         from bomber.framework.trader.execution.ctp import CtpTdApiTransport
         transport = build_simnow_transport(CtpTdApiTransport, client_id=CLIENT_ID,

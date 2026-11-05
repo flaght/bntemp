@@ -15,7 +15,7 @@ import pandas as pd
 from tests import test_demo_option_vega as fixture
 
 signal = import_module("demos.08_option_vega.vega_signal")
-checkpoint = import_module("demos.08_option_vega.checkpoint")
+checkpoint = import_module("demos.08_option_vega.vega_signal")
 
 
 def original():

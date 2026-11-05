@@ -73,7 +73,7 @@ def run_case(args):
         NautilusMarketFeedAdapter, NautilusSimExecutionBackend,
         UnifiedHistoricalRuntime)
     from bomber.framework.trader.instrument_factory import day_ns, instrument_meta, make_future, make_option
-    assemble_strategy_components = import_module("demos.08_option_vega.assembly").assemble_strategy_components
+    assemble_strategy_components = import_module("demos.08_option_vega.strategy").assemble_strategy_components
 
     started = perf_counter()
     phase = _start_phase("输入路径解析与配置校验")
@@ -257,11 +257,11 @@ def run_case(args):
         _finish_phase("已准备行情注册到回放源", phase)
         phase = _start_phase("策略、执行路由与风控装配")
         from bomber.framework.trader.execution.builders import build_simulation_execution
-        risk_limits = import_module("demos.08_option_vega.assembly").risk_limits
+        risk_limits = import_module("demos.08_option_vega.strategy").risk_limits
         execution = build_simulation_execution(backend, instrument_limits=risk_limits(
             config, contracts, instruments, multipliers, args.max_notional))
         positions, prices, client = execution.positions, execution.prices, execution.client
-        runner_type = import_module("demos.08_option_vega.backtest_runtime").OptionFeatureBacktestRunner
+        runner_type = import_module("demos.08_option_vega.features").build_backtest_runner
         runner = runner_type(positions=positions, feed=feed, backend=backend,
             bundle=index_bundle, binding=index_binding, records=index_records,
             index_key=args.index_code, wait_seconds=args.frame_wait_seconds,

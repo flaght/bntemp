@@ -11,6 +11,8 @@ from scripts.integration.shared_account.config import read_config
 
 # 正常分钟信号处理完后，给休盘前撤单和回报留出时间。
 SESSION_STOP_SECONDS = 30
+# 各交易时段开盘前连接、恢复和预热；不增加命令行配置。
+PREPARE_SECONDS = 300
 
 
 def validate_layout(config, layout):
@@ -52,7 +54,7 @@ def load_calendar(config):
 def run_same_process(config, window, stop, *, resume, remaining, clock=None):
     from scripts.integration.shared_account.run import build_host
     from bomber.framework.trader.execution.ctp.query_errors import CtpQueryInterrupted
-    from bomber.framework.trader.runtime.live.continuous import StopRequested
+    from bomber.framework.trader.runtime.live.continuous import StopRequested, wait_for_open
     from bomber.framework.trader.runtime.reports import TradingDayLiveReport
     clock = clock or (lambda: datetime.now(window.end.tzinfo))
     report = TradingDayLiveReport(config['report_dir'], prefix='hybrid-shared-account',
@@ -69,6 +71,8 @@ def run_same_process(config, window, stop, *, resume, remaining, clock=None):
         check()
         host = build_host(config, resume=resume, session_order_budget=remaining)
         host.preparation_check = check
+        host.activation_wait = lambda: wait_for_open(window.start, stop,
+            poll=host.poll_preparation, clock=clock)
         host.account.transport.query_stop_requested = stop_requested
         for item in host.strategies.values():
             item.session.runner.continuous_window = window
@@ -121,7 +125,7 @@ def run_window(config, layout, calendar, window, stop):
     if layout == 'same-process':
         return run_same_process(current, window, stop, resume=saved is not None, remaining=remaining)
     return ProcessWindowRuntime(current, window, stop, remaining, resume=saved is not None,
-        stop_before_seconds=SESSION_STOP_SECONDS).run()
+        stop_before_seconds=SESSION_STOP_SECONDS, prepare_before_open=True).run()
 
 
 def main(argv=None):
@@ -149,7 +153,8 @@ def main(argv=None):
         calendar = load_calendar(config)
         return ContinuousPositionRuntime(calendar,
             lambda window, event: SimpleNamespace(run=lambda: run_window(config, options.process_layout,
-                calendar, window, event)), run_forever=options.run_forever, stop_event=stop).run()
+                calendar, window, event)), run_forever=options.run_forever, stop_event=stop,
+            prepare_seconds=PREPARE_SECONDS).run()
 
 
 if __name__ == '__main__':

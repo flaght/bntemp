@@ -8,7 +8,7 @@ from bomber.framework.trader.persistence import JsonStateStore
 from .local import strategy_state_lock
 from .continuous import StopRequested
 from .health import readiness_failure_context
-from .lifecycle import prepare_strategy_history
+from .lifecycle import prepare_strategy_history, validate_session_ready
 
 
 def history_snapshot(session):
@@ -35,6 +35,7 @@ class SharedStrategySession:
     stopped_at_ns: int | None = None
     saved_signal: object = None
     saved_cursor: int | None = None
+    _save_deferred: bool = False
 
     @property
     def strategy_id(self):
@@ -89,6 +90,8 @@ class SharedStrategySession:
         # 指标按各原Runner重新预热。旧账户目标处于暂停状态，不重放历史交易。
 
     def save(self, service):
+        if self._save_deferred:
+            return  # 账户恢复事务尚未提交，不让回调推进信号游标。
         source = service.snapshot_state()["sources"].get(self.strategy_id)
         revision = source["revision"] if source else 0
         checkpoint = getattr(self.session, "signal_checkpoint", None)
@@ -136,10 +139,27 @@ class SharedAccountLiveHost:
         self._started = self._stopped = False
         self._prepared = False
         self.preparation_check = None
+        self.activation_wait = None
 
     def _check_preparation(self):
         if self.preparation_check is not None:
             self.preparation_check()
+
+    def poll_preparation(self):
+        """闭闸准备阶段维护行情和账户；缺少新行情留到开盘后就绪检查。"""
+        self._check_preparation()
+        for item in self.strategies.values():
+            if item.session.runner.accept_bars:
+                raise RuntimeError("盘前准备期间不能开放策略决策")
+            if item.session.runner.failure:
+                raise RuntimeError(item.session.runner.failure)
+            item.session.references.refresh()
+            item.session.client.drain_events()
+            poll = getattr(item.session.runner, "poll_live_inputs", None)
+            if callable(poll):
+                poll()
+        self.account.poll()
+        self._check_preparation()
 
     def start(self):
         if self._stopped:
@@ -156,28 +176,40 @@ class SharedAccountLiveHost:
             self.service.start()  # 宿主租约；各Runner取得自己的租约。
             self._started = True
             for item in self.strategies.values():
+                item._save_deferred = True
                 item.restore(self.service, resume=self.resume)
                 item.active = True
                 item.session.runner.start()
+            if self.activation_wait is not None:
+                for item in self.strategies.values():
+                    self._check_preparation()
+                    if prepare_strategy_history(item.session, require_ready=False) is False:
+                        raise StopRequested()
+                self.activation_wait()
+            # 盘前没有新行情是正常情况；开盘后才开始计算就绪超时。
             deadline = time.monotonic() + self.ready_seconds
             while any(not item.session.runner.session_ready() for item in self.strategies.values()):
                 self._check_preparation()
-                for item in self.strategies.values():
-                    item.session.references.refresh()
-                    poll = getattr(item.session.runner, "poll_live_inputs", None)
-                    if callable(poll):
-                        poll()
-                self.account.poll()
+                self.poll_preparation()
                 if time.monotonic() > deadline:
                     raise RuntimeError("共享策略未在期限内取得健康行情/参考/账户")
                 time.sleep(0.2)
             for item in self.strategies.values():
                 self._check_preparation()
-                prepare_strategy_history(item.session)
-                item.save(self.service)
+                if self.activation_wait is None:
+                    if prepare_strategy_history(item.session) is False:
+                        raise StopRequested()
+                else:
+                    # 等待后重新核验，不能沿用几分钟前的参考或健康状态。
+                    item.session.references.refresh()
+                    validate_session_ready(item.session)
             self._check_preparation()
             self.account.authorize()
             self._prepared = True
+            # 账户恢复事务提交后再推进信号游标，避免信号状态领先账户文件。
+            for item in self.strategies.values():
+                item._save_deferred = False
+                item.save(self.service)
             self._check_preparation()
             for item in self.strategies.values():
                 item.session.runner.begin_bars()

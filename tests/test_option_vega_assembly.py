@@ -17,7 +17,7 @@ from bomber.framework.trader.contracts import ExecutionRequest
 from bomber.framework.trader.execution.contracts import OrderSide, PositionEffect
 from bomber.framework.trader.execution.ctp import CtpPositionLedger
 from bomber.framework.trader.execution.ctp.planner import CtpClosePlanner
-runtime = import_module("demos.08_option_vega.live_runtime")
+runtime = import_module("demos.08_option_vega.live")
 recovery = import_module("demos.08_option_vega.recovery")
 signal = import_module("demos.08_option_vega.vega_signal")
 from tests.test_demo_option_vega import ns
@@ -147,7 +147,7 @@ class AssemblyTests(unittest.TestCase):
         refs = runtime.OptionReferences(service, "20261009", calendar)
         market, index = Feed("test-market"), Feed("test-index")
         if test_clock:
-            mapping = import_module("demos.08_option_vega.replay_test")
+            mapping = import_module("scripts.integration.options.replay")
             market = mapping.mapped_bar_feed("test-market", Feed("raw-test"), price_type="last",
                 time_map=mapping.ReplayTestTimeMap(service.valuation_day, "13:58"))
         index_id = InstrumentId.from_str("000852.XSHG")

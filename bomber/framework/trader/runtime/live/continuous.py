@@ -2,7 +2,7 @@
 from contextlib import nullcontext
 from copy import deepcopy
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 import signal
 import threading
@@ -12,6 +12,32 @@ from types import SimpleNamespace
 
 class StopRequested(Exception):
     """主动停止不是行情或账户故障。"""
+
+
+def wait_for_open(start, stop_event, *, poll=None, clock=None, wait=None, status=None):
+    """连接和预热完成后闭闸等开盘；等待期间维护连接，不触发策略决策。"""
+    if start.tzinfo is None:
+        raise ValueError("开盘边界须携带时区")
+    clock = clock or (lambda: datetime.now(start.tzinfo))
+    wait = wait or stop_event.wait
+    status = status or (lambda message: print(message, flush=True))
+    announced = False
+    previous = None
+    while True:
+        if stop_event.is_set():
+            raise StopRequested()
+        now = clock()
+        if now.tzinfo is None or previous is not None and now < previous:
+            raise RuntimeError("盘前时钟无时区或发生倒退")
+        previous = now
+        if now >= start:
+            return
+        if not announced:
+            status(f"盘前准备完成，等待开盘: start={start.isoformat()}；策略决策及报单保持关闭")
+            announced = True
+        if poll is not None:
+            poll()
+        wait(min(0.2, (start - now).total_seconds()))
 
 
 class StopSignal:
@@ -178,9 +204,12 @@ class ContinuousPositionRuntime:
     或passed才可进入下一窗口。使用注入时钟/等待器可无网络、无sleep验收。
     """
     def __init__(self, calendar, session_factory, *, run_forever=False, stop_event=None,
-                 clock=None, wait=None, status=None, poll_seconds=5):
+                 clock=None, wait=None, status=None, poll_seconds=5, prepare_seconds=0):
         if not 0 < poll_seconds <= 60:
             raise ValueError("休市轮询须在(0,60]秒")
+        if type(prepare_seconds) is not int or prepare_seconds < 0:
+            raise ValueError("盘前准备秒数须为非负整数")
+        self.prepare_seconds = prepare_seconds
         self.calendar, self.session_factory = calendar, session_factory
         self.run_forever, self.stop = run_forever, stop_event or threading.Event()
         self.clock = clock or (lambda: datetime.now(calendar.zone))
@@ -205,6 +234,11 @@ class ContinuousPositionRuntime:
     def run(self):
         first = self.now()
         day = first.astimezone(self.calendar.zone).date()
+        if self.prepare_seconds:
+            initial = self.calendar.window(first) or self.calendar.next_window(
+                first, before=first + timedelta(seconds=self.prepare_seconds))
+            if initial is not None:
+                day = datetime.strptime(initial.trading_day, "%Y%m%d").date()
         completed = set()
         last_status = None
         while not self.stop.is_set():
@@ -215,8 +249,14 @@ class ContinuousPositionRuntime:
                     break
             window = self.calendar.window(now)
             token = None if window is None else (window.trading_day, window.segment_id, window.start, window.end)
+            if self.prepare_seconds and (window is None or token in completed):
+                upcoming = self.calendar.next_window(now, before=now + timedelta(seconds=self.prepare_seconds))
+                if upcoming is not None and (self.run_forever or upcoming.trading_day == day.strftime("%Y%m%d")):
+                    window = upcoming
+                    token = (window.trading_day, window.segment_id, window.start, window.end)
             if window is not None and token not in completed:
-                message = f"进入交易窗口: TD={window.trading_day} segment={window.segment_id} end={window.end.isoformat()}"
+                phase = "进入盘前准备窗口" if now < window.start else "进入交易窗口"
+                message = f"{phase}: TD={window.trading_day} segment={window.segment_id} start={window.start.isoformat()} end={window.end.isoformat()}"
                 self.status(message)
                 result = self.session_factory(window, self.stop).run()
                 if result.get("status") not in {"completed", "passed", "skipped"}:

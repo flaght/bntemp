@@ -4,7 +4,7 @@ import unittest
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-review = import_module("demos.08_option_vega.acceptance").review_recording
+review = import_module("scripts.integration.options.recording").review_recording
 
 
 def report():

@@ -13,7 +13,7 @@ from bomber.framework.dataprep.features import DEFAULT_FEATURE_CONFIG, export_fe
 from bomber.framework.dataprep.sources.dolphindb import DolphinDbReferenceConfig
 
 features = import_module("demos.08_option_vega.features")
-replay = import_module("demos.08_option_vega.backtest_runtime")
+replay = import_module("demos.08_option_vega.features")
 M, S = 60_000_000_000, 1_000_000_000
 END = 1_791_767_460_000_000_000 // M * M
 
@@ -64,6 +64,32 @@ class FeatureBacktestTests(unittest.TestCase):
         with self.assertRaisesRegex(FeatureError, "计算版本"):
             features.read_index_features(args, END, END+M)
 
+    def test_custom_dataset_version_roundtrips_and_drives_same_feature_frame(self):
+        definition = json.loads(DEFAULT_FEATURE_CONFIG.read_text())
+        schema = definition["datasets"][0]["schema"]
+        schema.update(dataset_id="research.custom_index", schema_version=2,
+                      computation_version="custom-index-v1")
+        config = Path(self.temp.name) / "custom-features.json"
+        config.write_text(json.dumps(definition))
+        bundle, binding = features.index_bundle(config, "research.custom_index", 2, file_path=self.path)
+        payload = binding.spec.payload_type(open=Decimal(7777), high=Decimal(7777),
+            low=Decimal(7777), close=Decimal(7777), volume=Decimal(0), turnover=Decimal(0),
+            prev_close=None, pct_change=None)
+        record = ExternalDataRecord("research.custom_index", 2, "000852", payload,
+            END, END, END, 0, "custom-fixture", received_ns=END+S)
+        export_features(self.path, bundle.registry, [record])
+        args = NS(index_feature_config=config, index_dataset="research.custom_index",
+            index_schema_version=2, index_code="000852", index_feature_file=self.path)
+        loaded, selected, records, identity = features.read_index_features(args, END, END+M)
+        outcomes, _ = features.prepare_feature_frames([self.bar(), self.bar(END+M)],
+            loaded, selected, records, "000852", 2*S)
+        self.assertEqual(identity["computation_version"], binding.spec.computation_version)
+        self.assertTrue(identity["computation_version"].startswith("custom-index-v1:declaration:"))
+        self.assertEqual(identity["dataset_id"], "research.custom_index")
+        self.assertEqual(outcomes[0].status, "READY")
+        self.assertEqual(outcomes[0].frame.features.latest("index").payload.close, Decimal(7777))
+        self.assertNotEqual(selected.spec.fingerprint, self.binding.spec.fingerprint)
+
     def test_deadline_inclusive_and_received_time_controls_visibility(self):
         for delay, status in ((2*S, "READY"), (2*S+1, "SKIPPED")):
             with self.subTest(delay=delay):
@@ -105,7 +131,7 @@ class FeatureBacktestTests(unittest.TestCase):
     def test_original_strategy_receives_frame_at_native_clock_deadline(self):
         outcomes, deadlines = self.prepare([self.record(received=END+S)])
         timers, delivered = [], []
-        runner = replay.OptionFeatureBacktestRunner(positions=None, feed=None,
+        runner = replay.build_backtest_runner(positions=None, feed=None,
             backend=NS(engine=NS(kernel=NS(clock=NS(set_time_alert_ns=lambda **kw: timers.append(kw))))),
             bundle=self.bundle, binding=self.binding, records=(), index_key="000852", wait_seconds=2)
         runner.outcomes, runner.deadlines = {r.event_ns: r for r in outcomes}, deadlines

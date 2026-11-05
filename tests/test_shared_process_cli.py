@@ -16,6 +16,138 @@ from scripts.integration.shared_account import config, prepare_session, prepare_
 
 
 class ProcessCliTests(unittest.TestCase):
+    def test_server_preopen_publishes_worker_access_without_authorizing_orders(self):
+        from datetime import datetime, timedelta
+        from zoneinfo import ZoneInfo
+        from unittest.mock import Mock
+        from bomber.framework.trader.runtime.live import continuous
+        start = datetime(2026, 11, 5, 9, tzinfo=ZoneInfo('Asia/Shanghai'))
+        for interrupt in (False, True):
+            with self.subTest(interrupt=interrupt), TemporaryDirectory() as directory:
+                root = Path(directory)
+                now, armed, calls = [start-timedelta(minutes=5)], [False], []
+                stop = threading.Event()
+                host = Mock()
+                host.strategies = {'one': SimpleNamespace(session=SimpleNamespace())}
+                host.service.execution_stop = None
+                host.service.bootstrap_signals = {}
+                host.service._ports = {'one': SimpleNamespace(configuration=lambda: {})}
+                host.service.snapshot_state.return_value = {}
+                host.account.execution.backend.reports = ()
+                protocol = Mock()
+                protocol.journal.requests = {}
+                protocol.leases = {}
+                ipc_server = Mock()
+                args = SimpleNamespace(socket=root/'exec.sock', credentials_dir=root/'credentials',
+                    resume=False, remaining_orders=100, activate_at=start)
+                def authorize():
+                    self.assertGreaterEqual(now[0], start)
+                    armed[0] = True
+                    calls.append('authorize')
+                host.account.authorize.side_effect = authorize
+                def poll_server():
+                    if armed[0]:
+                        stop.set()
+                    else:
+                        calls.append('preopen_poll')
+                        self.assertTrue((args.credentials_dir/'one.json').is_file())
+                        if interrupt:
+                            stop.set()
+                        now[0] = start
+                ipc_server.poll.side_effect = poll_server
+                actual_wait = continuous.wait_for_open
+                def wait_for_open(boundary, event, *, poll):
+                    self.assertFalse(armed[0])
+                    self.assertEqual(boundary, start)
+                    actual_wait(boundary, event, poll=poll, clock=lambda: now[0],
+                        wait=lambda _: None, status=lambda _: None)
+                with patch('scripts.integration.shared_account.run.build_host',return_value=host), \
+                        patch('bomber.framework.trader.execution.ipc.AccountExecutionProtocol',return_value=protocol), \
+                        patch('bomber.framework.trader.execution.ipc.UnixExecutionServer',return_value=ipc_server), \
+                        patch('bomber.framework.trader.runtime.reports.LiveRunReport'), \
+                        patch.object(server,'connect_valuation_market',return_value=None), \
+                        patch.object(continuous,'wait_for_open',side_effect=wait_for_open):
+                    server._run(args, {'trading_day':'20261105','seconds':1,'report_dir':str(root)}, stop)
+                self.assertEqual(calls[0], 'preopen_poll')
+                if interrupt:
+                    host.account.authorize.assert_not_called()
+                else:
+                    self.assertEqual(calls, ['preopen_poll','authorize'])
+                ipc_server.close.assert_called_once()
+                host.account.stop.assert_called_once()
+
+    def test_worker_prewarms_before_open_and_waits_for_account_authorization(self):
+        from datetime import datetime, timedelta
+        from zoneinfo import ZoneInfo
+        from threading import RLock
+        from unittest.mock import Mock
+        from bomber.framework.trader.runtime.live import continuous
+        start = datetime(2026, 11, 5, 9, tzinfo=ZoneInfo('Asia/Shanghai'))
+        now, calls = [start-timedelta(minutes=5)], []
+        stop = threading.Event()
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            row = {'strategy_id':'one','kind':'main_ema','argv':[],
+                'state_file':str(root/'signal.json'),'report_dir':str(root)}
+            config_doc = {'strategies':[row],'trading_day':'20261105','environment':'realtime',
+                'execution_mode':'independent','seconds':1,'report_dir':str(root)}
+            credentials = root/'credentials.json'
+            credentials.write_text(json.dumps({'strategy_id':'one','socket':str(root/'exec.sock'),
+                'key':'fixture','configuration':{}}))
+            args = SimpleNamespace(strategy_id='one',credentials=credentials,resume=False,activate_at=start)
+            state = {'trading_day':'20261105','source_revision':0,'ack':0,'positions':{},'reconciled':False}
+            connection = Mock()
+            connection.call.return_value = {'state':state}
+            port = Mock()
+            port.state, port.cursor, port.received_events = state, 0, []
+            runner = SimpleNamespace(accept_bars=False, failure=None, _submit_lock=RLock(),
+                fixed_spec='fixed', session_ready=lambda: state['reconciled'],
+                start=lambda: calls.append('subscribe'), stop=lambda: None,
+                mark_history_live_start=lambda: None, poll_live_inputs=lambda: None)
+            def warm():
+                self.assertLess(now[0], start)
+                self.assertFalse(runner.accept_bars)
+                self.assertFalse(state['reconciled'])
+                calls.append('warm')
+            runner.prepare_history = warm
+            def drain():
+                if now[0] >= start:
+                    state['reconciled'] = True  # 模拟开盘后账户server授权的RPC状态。
+            port.drain_events.side_effect = drain
+            def begin():
+                self.assertGreaterEqual(now[0], start)
+                self.assertTrue(state['reconciled'])
+                calls.append('begin')
+                runner.accept_bars = True
+                stop.set()
+            runner.begin_bars = begin
+            session = SimpleNamespace(runner=runner,client=port,
+                references=SimpleNamespace(spec='fixed',refresh=lambda: None),
+                strategy=SimpleNamespace(fills_received=0,restore_target_revision=lambda _: None))
+            actual_wait = continuous.wait_for_open
+            def wait_for_open(boundary, event, *, poll):
+                self.assertEqual(calls, ['subscribe','warm'])
+                self.assertFalse(runner.accept_bars)
+                def advance():
+                    poll()
+                    self.assertFalse(state['reconciled'])
+                    now[0] = start
+                actual_wait(boundary,event,poll=advance,clock=lambda:now[0],wait=lambda _:None,status=lambda _:None)
+            with patch('scripts.integration.shared_account.factories.strategy_arguments',return_value=(None,SimpleNamespace())), \
+                    patch('scripts.integration.shared_account.factories.prepare_strategy_inputs',return_value=SimpleNamespace()), \
+                    patch('scripts.integration.shared_account.factories.assemble_strategy_session',return_value=session), \
+                    patch('bomber.framework.trader.execution.ipc.UnixExecutionConnection',return_value=connection), \
+                    patch('bomber.framework.trader.execution.ipc_client.RemoteAccountService'), \
+                    patch('bomber.framework.trader.execution.ipc_client.RemoteTraderSession'), \
+                    patch('bomber.framework.market.sources.source_config',return_value=SimpleNamespace(source='dolphindb',max_age_seconds=120)), \
+                    patch('bomber.framework.trader.runtime.live.channels.ctp.required',return_value='fixture'), \
+                    patch('bomber.framework.trader.runtime.reports.LiveRunReport'), \
+                    patch.object(continuous,'wait_for_open',side_effect=wait_for_open), \
+                    patch.object(worker.time,'sleep'):
+                worker._run(args,config_doc,stop)
+            self.assertEqual(calls,['subscribe','warm','begin'])
+            port.submit_targets.assert_not_called()
+
     def test_history_minutes_override_preserves_resume_identity_and_other_strategy(self):
         from scripts.integration.shared_account import factories
         from scripts.integration.shared_account.migrate_scope import worker_identity
