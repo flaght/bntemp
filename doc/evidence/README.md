@@ -214,3 +214,7 @@ sha256sum -c doc/evidence/checksums/DOCUMENTATION_20261010_SHA256.txt
 ### 2026-10-23：08迟到Bar健康更新修复
 
 有效新分钟Bar被帧期限拒绝时仍更新行情健康，决策帧与策略/执行价格缓存保持原样，不追溯目标。同分钟重复不续健康，过期/倒退/无效价格仍拒绝；保留20秒封帧和120秒源时效。302项离线测试通过，服务器待验。[说明](../HANDOFF/live/HANDOFF_OPTION_VEGA_LATE_BAR_HEALTH_2026-10-23.md)、[更新包](archives/OPTION_VEGA_LATE_BAR_HEALTH_20261023.tar.gz)、[SHA](checksums/OPTION_VEGA_LATE_BAR_HEALTH_20261023_SHA256.txt)、[范围](live/OPTION_VEGA_LATE_BAR_HEALTH_20261023.json)。
+
+### 2026-11-05：08最新框架复用与期权现金结算
+
+08文件回测接入既有公共到期结算、撤单和成交归属组件；策略按结算事实清理目标，保留原公式与Live保护。08/12复用结算CLI声明，移除08无用状态及回测导入时的环境副作用。243项离线通过；原生整包两项因缺少扩展明确跳过、服务器待验。[审查与用法](../audits/OPTION_VEGA_FRAMEWORK_REVIEW_2026-11-05.md)、[更新包](archives/OPTION_VEGA_FRAMEWORK_SETTLEMENT_20261105.tar.gz)、[SHA](checksums/OPTION_VEGA_FRAMEWORK_SETTLEMENT_20261105_SHA256.txt)、[范围](live/OPTION_VEGA_FRAMEWORK_SETTLEMENT_20261105.json)、[离线记录](live/OPTION_VEGA_FRAMEWORK_SETTLEMENT_20261105_OFFLINE.txt)。

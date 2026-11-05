@@ -395,6 +395,8 @@ class CtpSharedAccountLifecycle:
             self._next_check = time.monotonic() + self.reconcile_seconds
 
     def stop(self):
+        # 停机仍须等待旧最终回报并完成权威核验，不能再被运行窗口的停止信号中断。
+        self.transport.query_stop_requested = None
         if not self._started:
             self.driver.stop()
             return
@@ -446,6 +448,9 @@ class CtpSharedAccountLifecycle:
                     or any(self.execution.positions.snapshot().working_quantities.values())):
                 raise RuntimeError("最终查询成功但仍有未决执行状态，禁止完成停止")
             self.execution.positions.complete_working_recovery(self.service.client_id, {})
+        drain = getattr(self, "drain_stop_events", None)
+        if drain is not None:
+            drain()
         self.manager.validate_components()
         self.manager.save()
         self.final_gross = gross

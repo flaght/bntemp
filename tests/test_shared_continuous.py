@@ -1,6 +1,6 @@
 """同/不同进程日历调度的参数、唯一TD及正常停机顺序；不连接柜台。"""
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from threading import Event
@@ -47,7 +47,7 @@ class SharedContinuousTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, '固定'):
             config_for_day(self.config, '20261014')
 
-    def processes(self, *, fail_worker=False):
+    def processes(self, *, fail_worker=False, stop_before_seconds=0):
         commands, stopped, processes = [], [], []
         now = [self.window.start]
         def popen(command, *, start_new_session):
@@ -67,9 +67,10 @@ class SharedContinuousTests(unittest.TestCase):
                     (credentials/(row['strategy_id']+'.json')).write_text('{}')
                 self.assertLess(len(command[command.index('--socket')+1].encode()), 104)
             if len(commands) == 3:
-                now[0] = self.window.end
+                now[0] = self.window.end - timedelta(seconds=stop_before_seconds)
             return proc
-        runtime = ProcessWindowRuntime(self.config, self.window, Event(), 17, popen=popen, clock=lambda: now[0])
+        runtime = ProcessWindowRuntime(self.config, self.window, Event(), 17, popen=popen, clock=lambda: now[0],
+            stop_before_seconds=stop_before_seconds)
         return runtime, commands, stopped, processes
 
     def test_separate_workers_stop_before_single_account_and_carry_remaining_budget(self):
@@ -107,6 +108,22 @@ class SharedContinuousTests(unittest.TestCase):
             self.assertEqual(len(run.call_args.args[0]['strategies']), 2)
             self.assertEqual(run.call_args.kwargs['session_order_budget'], 19)
             run.assert_called_once()
+
+    def test_process_workers_stop_before_close_and_server_stops_last(self):
+        runtime, commands, stopped, _ = self.processes(stop_before_seconds=30)
+        result=runtime.run()
+        self.assertEqual(result['status'],'completed')
+        self.assertEqual(runtime.stop_at,self.window.end-timedelta(seconds=30))
+        self.assertEqual(stopped,['worker','worker','server'])
+        self.assertEqual(len(commands),3)
+
+    def test_processes_are_not_started_inside_close_grace_period(self):
+        from unittest.mock import Mock
+        popen=Mock()
+        runtime=ProcessWindowRuntime(self.config,self.window,Event(),17,popen=popen,
+            clock=lambda:self.window.end-timedelta(seconds=20),stop_before_seconds=30)
+        self.assertEqual(runtime.run()['status'],'completed')
+        popen.assert_not_called()
 
     def test_td_mismatch_or_exhausted_budget_never_starts_shared_host(self):
         adapter = SharedWindowRuntime(self.config, NS(provenance={}), self.window, Event(), 'same-process')

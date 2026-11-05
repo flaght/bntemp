@@ -280,6 +280,9 @@ python demos/08_option_vega/run_backtest.py \
 | `--max-market-age-seconds / --max-iv-age-seconds` | 可选 | 默认 300 / 300 秒，真实价格及成功波动率缓存的最长允许年龄 |
 | `--max-option-lots / --max-total-option-lots / --max-future-lots` | 可选 | 默认 100 / 200 / 100；单认购、认购总手数、单对冲期货手数上限 |
 | `--commission / --max-notional` | 可选 | 每手每次固定手续费默认 1；单订单及单合约持仓名义金额上限默认 100000000 |
+| `--option-settlements` | 可选 | 显式最终结算CSV/Parquet/Feather，或按到期日存储的期权日行情目录；到期有实际残仓时必须有终值 |
+| `--settlement-available-time` | 可选 | 文件未给available_at时声明的本地可用时刻，默认16:00；不将终值提前用于交易 |
+| `--exercise-fee-per-contract` | 可选 | 默认0，每手现金结算费用；文件逐合约fee_per_contract优先，独立于交易手续费 |
 | `--margin-init / --margin-maint` | 可选 | 基础期货保证金比例，默认 0.15 / 0.12 |
 | `--option-margin-init / --option-margin-maint` | 可选 | 基础期权保证金比例，默认 1 / 1，以权利金名义金额近似 |
 | `--require-fills / --no-tearsheet` | 可选 | 可选要求至少一笔成交 / 跳过绩效图 |
@@ -305,6 +308,7 @@ python demos/08_option_vega/run_backtest.py \
 | fills.csv | 实际模拟成交；提交目标不等于成交 |
 | positions.csv | 真实合约持仓记录 |
 | account.csv | 模拟账户及资金记录 |
+| settlements.csv | 公共现金结算明细，含零终值、数量、费用、可用时间与来源；无结算时保留表头 |
 | summary.json | 回测摘要、策略参数、信号或调仓统计 |
 | input_manifest.json / input_coverage.json / input_issues.json | 输入版本、覆盖与质量诊断 |
 | tearsheet.html | 可选绩效图；省略 --no-tearsheet 且绘图依赖可用时生成 |
@@ -360,7 +364,27 @@ python demos/08_option_vega/run_backtest.py \
 
 每天选约分钟至少要有一组认购、对应期货、指数同步行情；缺日数据会报错，不自动截短请求区间。最后实际回测日的指数最大时间须不早于 `flatten-slot + 2分钟`，持仓腿还需有退出报价及后续撮合事件。报告中 `remaining_positions_or_working` 应为空，`report_errors` 应为空；未触发最终清仓或有残留则失败。`--require-fills` 额外要求至少一笔模拟成交。
 
-模拟使用 NETTING、Bar 撮合、每手固定手续费和权利金比例近似期权保证金；订单最早在后续行情事件撮合，组合多腿不保证原子成交。没有完整期权卖方保证金、行权和到期结算模型；实际成交、资金和风险应结合这些范围解释。
+模拟使用 NETTING、Bar 撮合、公共可配置费用模型和权利金比例近似期权保证金。原生native提交时序保持不变；08分钟决策在帧截止后产生，成交仍需后续可撮合行情，组合多腿不保证原子成交。指数期权到期现金结算已接入公共模块；完整卖方保证金、实物行权/交割及柜台逐日结算不在本入口的模拟范围内。
+
+### 2026-11-05：公共期权到期现金结算
+
+08回测复用`dataprep.option_settlements.load_option_settlements`、`make_option(expiry_policy="CASH_SETTLEMENT")`和Backend的`OptionCashSettlementModule`。最后交易时刻来自基础条款；15:00完成Bar仍可撮合先前订单，之后公共模块撤销余单、等待显式终值可用，再通过原生订单/成交更新账户与策略归属。结算时钟只推进时间，不伪造行情。
+
+到期停止交易后，策略保持真实残仓等待结算，不继续为该期权计算IV、要求旧腿更新或发送普通平仓。收到本策略归属的结算成交后，清理该腿业务目标、IV和价格缓存；当时不重入提交委托。原选约、源Greeks、增量配仓和配置对冲时点保持一致，末日清仓检查仍有效。
+
+标准结算文件至少包含`symbol,last_trade_date,settlement_price`，可提供`available_at,fee_per_contract`；日行情目录为`YYYY-MM-DD.feather`，读取`code,trade_date,settlPrice`，仅取基础条款指定到期日。允许终值0及比市场tick更细的终值；不以普通close推算终值。没有到期残仓可不传资料，有残仓缺终值则失败；可用时间超过回测结束会要求延长日期。
+
+在原回测命令上按实际路径追加，例如：
+
+```bash
+--option-settlements /path/to/official-option-daily \
+--settlement-available-time 16:00 \
+--exercise-fee-per-contract 0
+```
+
+`summary.json`新增`option_settlements,settlement_prices_loaded,settlements`；`signals.csv`保留`OPTION_CASH_SETTLEMENT`业务记录，正式数量/费用以`settlements.csv`和原生成交/账户报告核对。08与12共用结算CLI声明，参数名和默认值一致。
+
+这次结算接线仅用于08文件回测；Live/SimNow保持柜台事实和原恢复保护，不在本地生成结算成交。回测入口取消导入时读取`.env`，使用显式文件及参数。策略检查点仍为版本1。框架复用审查、测试范围和待验项见[专项审查](../../doc/audits/OPTION_VEGA_FRAMEWORK_REVIEW_2026-11-05.md)。
 
 ### 排查“持仓计算缺少新鲜行情”
 

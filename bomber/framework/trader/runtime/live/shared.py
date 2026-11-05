@@ -6,6 +6,7 @@ import time
 
 from bomber.framework.trader.persistence import JsonStateStore
 from .local import strategy_state_lock
+from .continuous import StopRequested
 from .health import readiness_failure_context
 from .lifecycle import prepare_strategy_history
 
@@ -114,6 +115,10 @@ class SharedStrategySession:
                 service._save()
 
 
+class StrategyStopPending(RuntimeError):
+    """委托终态尚未到齐；账户最终核验完成前继续保留绑定。"""
+
+
 class SharedAccountLiveHost:
     """每个策略保留Runner，执行端口共用账户服务；异常分策略隔离。
 
@@ -183,7 +188,7 @@ class SharedAccountLiveHost:
             self.stop()
             raise
 
-    def stop_strategy(self, strategy_id, *, reason="operator"):
+    def _begin_stop_strategy(self, strategy_id, *, reason):
         item = self.strategies[strategy_id]
         if not item.active:
             return
@@ -195,9 +200,17 @@ class SharedAccountLiveHost:
         with runner._submit_lock:
             runner.accept_bars = False
             if self._prepared:
-                port.begin_stop()
+                if not getattr(port, "_stopping", False):
+                    port.begin_stop()
             else:
                 self.service.suspend_strategy(strategy_id)
+
+    def stop_strategy(self, strategy_id, *, reason="operator"):
+        item = self.strategies[strategy_id]
+        if not item.active:
+            return
+        self._begin_stop_strategy(strategy_id, reason=reason)
+        runner, port = item.session.runner, item.session.client
         if self._prepared:
             deadline = time.monotonic() + getattr(self.account, "cancel_seconds", 15)
             while True:
@@ -206,7 +219,7 @@ class SharedAccountLiveHost:
                 if port.finish_stop_events():
                     break
                 if time.monotonic() >= deadline:
-                    raise RuntimeError(f"策略停机撤单或回报未完成，保留绑定及账户锁: {strategy_id}")
+                    raise StrategyStopPending(f"策略停机撤单或回报未完成，保留绑定及账户锁: {strategy_id}")
                 time.sleep(0.05)
             item.save(self.service)
         finish = getattr(item.session, "finish_report", None)
@@ -219,7 +232,9 @@ class SharedAccountLiveHost:
     def poll(self):
         if not self._started or self._stopped:
             raise RuntimeError("共享宿主未运行")
+        self._check_preparation()
         self.account.poll()
+        self._check_preparation()  # 慢查询可能跨过停机边界，不能再处理新目标。
         self.service.poll()
         if self.service.execution_stop is not None:
             for item in self.strategies.values():
@@ -227,6 +242,7 @@ class SharedAccountLiveHost:
                     self.stop_strategy(item.strategy_id, reason=self.service.execution_stop["reason"])
             return
         for item in self.strategies.values():
+            self._check_preparation()
             if not item.active:
                 continue
             session = item.session
@@ -235,6 +251,7 @@ class SharedAccountLiveHost:
                 if session.runner.failure:
                     raise RuntimeError(session.runner.failure)
                 session.references.refresh()
+                self._check_preparation()
                 poll = getattr(session.runner, "poll_live_inputs", None)
                 if callable(poll):
                     poll()
@@ -247,6 +264,8 @@ class SharedAccountLiveHost:
                     session.runner.failure_readiness = readiness_failure_context(session.runner)
                     raise RuntimeError(f"策略行情或账户未就绪: strategy_id={item.strategy_id}")
                 item.save(self.service)
+            except StopRequested:
+                raise
             except Exception as error:
                 if self.service.client.report_errors or self.service._failed:
                     raise
@@ -267,6 +286,7 @@ class SharedAccountLiveHost:
             while not session.runner.session_ready():
                 self.account.poll()
                 session.references.refresh()
+                self._check_preparation()
                 poll = getattr(session.runner, "poll_live_inputs", None)
                 if callable(poll):
                     poll()
@@ -284,19 +304,39 @@ class SharedAccountLiveHost:
     def stop(self):
         if self._stopped:
             return
-        errors = []
+        errors, pending = [], {}
+        # 先向所有策略关闭新目标并发起撤单，不能等完第一个才停第二个。
+        for item in self.strategies.values():
+            if item.active:
+                try:
+                    self._begin_stop_strategy(item.strategy_id, reason="host_stop")
+                except Exception as error:
+                    errors.append(error)
         for item in self.strategies.values():
             if item.active:
                 try:
                     self.stop_strategy(item.strategy_id, reason="host_stop")
+                except StrategyStopPending as error:
+                    pending[item.strategy_id] = error
                 except Exception as error:
                     errors.append(error)
+        previous_drain = getattr(self.account, "drain_stop_events", None)
+        def drain_stop_events():
+            if previous_drain is not None:
+                previous_drain()
+            for sid in tuple(pending):
+                # 仅重试尚缺终态的策略；回调、保存等真实异常不能被成功对账掩盖。
+                self.stop_strategy(sid, reason="host_stop")
+                pending.pop(sid)
+        self.account.drain_stop_events = drain_stop_events
         try:
-            self.account.stop()  # 撤单确认、保存、断TD；失败保留锁。
+            self.account.stop()  # 最终核验后、保存并断TD前，排空迟到回报。
         except Exception as error:
             errors.append(error)
-        if errors:
-            raise RuntimeError("共享宿主停机未完成，资源锁保留") from errors[0]
+        finally:
+            self.account.drain_stop_events = previous_drain
+        if errors or pending:
+            raise RuntimeError("共享宿主停机未完成，资源锁保留") from (errors + list(pending.values()))[0]
         self._started = False
         self._stopped = True
         self.resources.close()

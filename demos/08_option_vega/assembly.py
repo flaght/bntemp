@@ -17,12 +17,13 @@ def risk_limits(config, contracts, instruments, multipliers, max_notional):
 
 def assemble_strategy_components(runner, execution, *, config, contracts, futures, instruments,
         index_key, index_id, trading_days, options_by_day, feeds, feed_by_key,
-        final_day=None, strategy_id="option-vega"):
+        final_day=None, strategy_id="option-vega", option_last_trade_times=None):
     all_ids = {**instruments, index_key: index_id}
     if set(feed_by_key) != set(all_ids):
         raise ValueError("行情绑定须覆盖期权、期货及指数")
     strategy = OptionVegaStrategy(strategy_id, config, contracts, futures, instruments,
-        index_key, trading_days, final_day, options_by_day)
+        index_key, trading_days, final_day, options_by_day,
+        option_last_trade_times=option_last_trade_times)
     bindings = StrategyBindings(
         data=tuple(DataBinding(key, feed_by_key[key], item, DataType.BAR, "1-MINUTE")
             for key, item in all_ids.items()),

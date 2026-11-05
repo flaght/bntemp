@@ -245,6 +245,14 @@ fixed显式使用每手配置。交割费用和交割系数独立预留，普通
 
 角色 Bundle 调用前，业务必须声明新主力和换月当日旧主力所需文件；公共层不会因缺文件改变月份。BindingSpec 仍需运行器转为实际 DataBinding。准备得到 sources 后，用 add_prepared_bar_source 消费，不再 add_bar_feather 重新读取原文件。
 
+## 期权最终结算资料
+
+`option_settlements.add_option_settlement_arguments(parser)` 为08/12文件回测共用CLI声明：`--option-settlements`（Path，可选）、`--settlement-available-time`（默认16:00）、`--exercise-fee-per-contract`（Decimal，默认0）。只声明参数，不连接数据源或加载文件。
+
+`load_option_settlements(path, options, *, start_day, end_day, available_time="16:00", fee_per_contract=0)` 中options为合约代码→含`last_trade`日期的标准条款，返回合约代码→执行层`OptionSettlement`值。输入可为标准CSV/Parquet/Feather，或`YYYY-MM-DD.feather`期权日行情目录；仅读取基础条款指定的到期日，普通交易日结算价不作为终值。标准列为`symbol,last_trade_date,settlement_price`，可选`available_at,fee_per_contract`；日行情列为`code,trade_date,settlPrice`。允许零终值，拒绝负数、非有限值、冲突重复和日期不一致。缺文件/合约时记录输入问题，实际是否必需由执行层到期残仓核验。
+
+资料加载不改变仓位，也不计算逐日盯市。回测应用将返回值、真实最后交易时刻及回测终止时钟交给`NautilusSimExecutionBackend.add_profile`，并按`CASH_SETTLEMENT`构造期权；后续账户和策略归属由原生结算成交更新。
+
 ## 日历和目标计划函数
 
 `load_calendar(path, start_day=None, end_day=None)` 读取含 date/is_trading_day 的 CSV 或 Feather，返回排序交易日元组，拒绝重复、空日期及超范围请求。它不会自动返回 TradingCalendar 对象。需要对象时用 `TradingCalendar(days, source, inferred=False)`；其 previous(day) 查询严格早于 day 的最近交易日，require_range(start_day, end_day) 检查对象交易日首末边界。

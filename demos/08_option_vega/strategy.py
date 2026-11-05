@@ -4,13 +4,15 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from bomber.framework.trader.template import StrategyTemplate
+from bomber.framework.trader.execution.option_settlement import SETTLEMENT_ORIGIN
 from .vega_signal import remaining_trading_days, allocate_short, source_iv, source_years, source_greeks
 
 
 class OptionVegaStrategy(StrategyTemplate):
     """纯数值函数负责选约配仓，策略负责行情时序和实际敞口执行。"""
     def __init__(self, strategy_id, config, contracts, futures, instruments,
-                 index_id, trading_days, final_day=None, options_by_day=None):
+                 index_id, trading_days, final_day=None, options_by_day=None, *,
+                 option_last_trade_times=None):
         super().__init__(strategy_id)
         self.config = config
         self.contracts = dict(contracts)
@@ -20,6 +22,10 @@ class OptionVegaStrategy(StrategyTemplate):
         self.trading_days = tuple(trading_days)
         self.final_day = final_day
         self.options_by_day = options_by_day or {}
+        self.option_last_trade_times = dict(option_last_trade_times or {})
+        if ((option_last_trade_times is not None and set(self.option_last_trade_times) != set(self.contracts))
+                or any(type(stamp) is not int or stamp < 0 for stamp in self.option_last_trade_times.values())):
+            raise ValueError("现金结算生命周期须覆盖全部期权，时间须为非负整数纳秒")
         self.restored = False
         self.stopping = False
         self.order_updates_received = 0
@@ -33,7 +39,6 @@ class OptionVegaStrategy(StrategyTemplate):
         self.iv_cache = {}
         self.sent_days = set()
         self.hedge_sent = set()
-        self.last_actual = None
         self.submissions = 0
         self.entry_decisions = 0
         self.entry_audit = []
@@ -90,6 +95,20 @@ class OptionVegaStrategy(StrategyTemplate):
 
     def on_fill(self, event):
         self.fills_received += 1
+        if event.metadata.get("execution_origin") == SETTLEMENT_ORIGIN:
+            key = next((key for key, instrument in self.instruments.items()
+                        if str(instrument) == event.identity.instrument_id), None)
+            if key not in self.option_last_trade_times:
+                raise RuntimeError("收到未声明现金结算生命周期的成交")
+            if event.ts_event < self.option_last_trade_times[key] or self.position(str(self.instruments[key])):
+                raise RuntimeError("现金结算尚未权威了结本策略仓位")
+            # 归属账本已经按真实结算回报更新；这里只清理业务目标，不伪造成交或重入下单。
+            self.option_goals[key] = Decimal(0)
+            self.iv_cache.pop(key, None)
+            self.latest.pop(key, None)
+            self.signals.append({"signal_ns": event.ts_event, "request_ns": event.ts_event,
+                "action": "OPTION_CASH_SETTLEMENT", "instrument": key,
+                "quantity": str(event.quantity), "price": str(event.price)})
 
     def _remaining_days(self, day, last_day, threshold=None):
         """按已知交易日检查开仓或退出阈值，不把未来日期缺失视为临近到期。"""
@@ -146,7 +165,10 @@ class OptionVegaStrategy(StrategyTemplate):
         day, slot = now.date(), now.strftime("%H:%M")
         actual = {key: self.position(str(instrument)) for key, instrument in self.instruments.items()}
         working = {key: self.strategy_working_quantity(str(instrument)) for key, instrument in self.instruments.items()}
-        current = tuple((key, actual[key]) for key in sorted(self.contracts))
+        expired = {key for key, stamp in self.option_last_trade_times.items() if request_ns >= stamp}
+        # 已停止交易的残仓交给公共结算模块。保留真实数量，不能发普通平仓或重开单。
+        for key in expired:
+            self.option_goals[key] = actual[key]
         self.last_decision = decision = {
             "logic_version": "strategy1-noddb-v1", "status": "EVALUATING", "positions": {k: str(v) for k, v in actual.items() if v},
             "working": {k: str(v) for k, v in working.items() if v},
@@ -154,12 +176,14 @@ class OptionVegaStrategy(StrategyTemplate):
             "entry": "ALREADY_SELECTED" if day in self.sent_days else
                      "DUE" if slot == self.config.option_slot else
                      "WAIT_SLOT" if slot < self.config.option_slot else "SLOT_PASSED",
-            "hedge": "NOT_EVALUATED", "exit_checks": []}
+            "hedge": "NOT_EVALUATED", "exit_checks": [],
+            "awaiting_settlement": sorted(key for key in expired if actual[key])}
 
         if self.resume_ns is not None:
             # 隔夜/午休恢复时，各腿首Bar可相差一分钟；等待更新，不用上一场次报价。
             required = {key for key in self.instruments if actual[key] or working[key]
                         or self.option_goals.get(key) or self.future_goals.get(key)}
+            required.difference_update(expired)
             held_options = required.intersection(self.contracts)
             if held_options:
                 required.add(self.index_id)
@@ -180,22 +204,24 @@ class OptionVegaStrategy(StrategyTemplate):
         if day == self.final_day and slot >= self.config.flatten_slot:
             self.flatten_requested = True
             if not any(working.values()):
-                targets = {str(value): Decimal(0) for value in self.instruments.values()}
-                if any(actual.values()) or any(self.option_goals.values()) or any(self.future_goals.values()):
+                if (any(q for key, q in actual.items() if key not in expired)
+                        or any(q for key, q in self.option_goals.items() if key not in expired)
+                        or any(self.future_goals.values())):
                     for key, position in actual.items():
-                        if position:
+                        if position and key not in expired:
                             self._price(key, signal_ns)
-                    self.option_goals = {key: Decimal(0) for key in self.contracts}
+                    self.option_goals = {key: actual[key] if key in expired else Decimal(0) for key in self.contracts}
                     self.future_goals = {key: Decimal(0) for key in self.futures}
+                    targets = {str(self.instruments[key]): value for key, value in
+                               {**self.option_goals, **self.future_goals}.items()}
                     self._submit(targets, request_ns, signal_ns, "FINAL_FLAT")
             decision.update(status="FINAL_FLAT_CHECK" if decision["status"] == "EVALUATING" else decision["status"])
-            self.last_actual = current
             return
 
         changed = False
         # 到期仍有实际仓位必须核验结算，不能像原脚本删除字典冒充平仓。
         for key in self.contracts:
-            if day > self.contracts[key].last_day and actual[key]:
+            if day > self.contracts[key].last_day and actual[key] and key not in expired:
                 raise RuntimeError(f"{key}已过最后交易日但仍有实际持仓")
         option_due = slot == self.config.option_slot and day not in self.sent_days
         if slot == self.config.option_slot and day not in self.sent_days:
@@ -207,7 +233,7 @@ class OptionVegaStrategy(StrategyTemplate):
                 index = self._price(self.index_id, signal_ns)
                 candidates = []
                 eligible = [key for key in self.options_by_day.get(day, ())
-                    if self.contracts[key].list_day <= day <= self.contracts[key].last_day
+                    if key not in expired and self.contracts[key].list_day <= day <= self.contracts[key].last_day
                     and self.contracts[key].strike > index
                     and self._remaining_days(day, self.contracts[key].last_day) >= self.config.min_remaining_days
                     and all(self.latest.get(name, (None,))[0] == signal_ns
@@ -250,7 +276,7 @@ class OptionVegaStrategy(StrategyTemplate):
         if option_due and not any(working[key] for key in self.contracts):
             self.sent_days.add(day)
             for key, goal in tuple(self.option_goals.items()):
-                if not goal:
+                if not goal or key in expired:
                     continue
                 info = self.contracts[key]
                 close = self._price(key, signal_ns)
@@ -278,7 +304,7 @@ class OptionVegaStrategy(StrategyTemplate):
             totals = {key: 0.0 for key in self.futures}
             closing_without_iv = set()
             for key in self.contracts:
-                if not actual[key]:
+                if not actual[key] or key in expired:
                     continue
                 greeks = self._greeks(key, signal_ns, now, hedge=True)
                 info = self.contracts[key]
@@ -299,7 +325,6 @@ class OptionVegaStrategy(StrategyTemplate):
                 goals[key] = Decimal(lots)
             changed = changed or goals != self.future_goals
             self.future_goals = goals
-            self.last_actual = current
 
         decision["status"] = "NO_TARGET_CHANGE"
         if changed:
@@ -322,5 +347,9 @@ class OptionVegaStrategy(StrategyTemplate):
         """订单拒绝、取消或过期时停止，避免静默留下不完整对冲。"""
         self.order_updates_received += 1
         status = getattr(event.status, "value", str(event.status))
+        cutoff = next((stamp for key, stamp in self.option_last_trade_times.items()
+                       if str(self.instruments[key]) == event.identity.instrument_id), None)
+        if status in ("CANCELED", "EXPIRED") and cutoff is not None and event.ts_event >= cutoff:
+            return  # 公共生命周期撤销到期余单；拒单仍是硬错误。
         if status == "REJECTED" or (not self.stopping and status in ("CANCELED", "EXPIRED")):
             raise RuntimeError(f"订单{status}: {event.identity.instrument_id} {event.reason}")
