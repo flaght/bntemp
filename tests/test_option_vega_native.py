@@ -21,7 +21,7 @@ else:
 class VegaNativeSettlementTests(unittest.TestCase):
     def fixture(self, root, terminal):
         module = import_module("demos.08_option_vega.run_backtest")
-        features = import_module("demos.08_option_vega.features")
+        features = import_module("demos.08_option_vega.feature")
         from bomber.framework.datahub.features import ExternalDataRecord
         from bomber.framework.dataprep.features import DEFAULT_FEATURE_CONFIG, export_features
         role = root / "role"

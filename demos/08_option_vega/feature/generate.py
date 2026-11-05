@@ -13,10 +13,13 @@ from zoneinfo import ZoneInfo
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+    __package__ = "demos.08_option_vega.feature"
 
 from bomber.framework.datahub.features import Alignment, DatasetRegistry, ExternalDataRecord, FeatureError, dataset_from_definition
-from bomber.framework.dataprep.features import FeatureProviderFactory, FeatureRequest, encode_record, export_features, load_feature_bundle
+from bomber.framework.dataprep.features import FeatureProviderFactory, FeatureRequest, FileFeatureProvider, encode_record, export_features, load_feature_bundle
 from bomber.framework.dataprep.sources.policy import DataSourcePurpose
+
+from . import index_bundle
 
 CONFIG = Path(__file__).with_name("index.json")
 MINUTE_NS = 60_000_000_000
@@ -190,6 +193,51 @@ def generate_features(*, start_ns, end_ns, output_dir, connection, config=CONFIG
         json.dump(report, stream, ensure_ascii=False, indent=2)
         stream.write("\n")
     return report
+
+
+def generate_index_features(args, start_ns, end_ns, *, connection):
+    """显式从DolphinDB生成标准包；不回填可见时间、不覆盖已有文件。"""
+    output = Path(args.output).expanduser().resolve()
+    if output.suffix.lower() not in {".csv", ".parquet"}:
+        raise FeatureError("特征导出须为CSV或Parquet")
+    if output.exists() or Path(str(output) + ".manifest.json").exists():
+        raise FeatureError("导出目标已存在，请使用新文件名，不覆盖历史包")
+    bundle, binding = index_bundle(args.index_feature_config, args.index_dataset,
+        args.index_schema_version, connection=connection)
+    if binding.backend not in {"dolphindb", "dolphindb-raw"}:
+        raise FeatureError("08生成入口须使用DolphinDB来源声明")
+    config = binding.source_config
+    availability = getattr(args, "index_availability", None)
+    if availability is not None:
+        if binding.backend != "dolphindb-raw":
+            raise FeatureError("可见时间覆盖仅适用于DolphinDB原表；标准记录保留原时间")
+        config = replace(config, availability=availability)
+    cutoff = time.time_ns()
+    if end_ns > cutoff:
+        raise FeatureError("特征导出结束时刻尚未到达，请选择已结束的日期区间")
+    request = FeatureRequest(args.index_dataset, args.index_schema_version,
+        (args.index_code,), start_ns, end_ns, cutoff, max_rows=args.max_rows)
+    with FeatureProviderFactory.create_for(DataSourcePurpose.FEATURE_EXPORT,
+            binding.backend, config, bundle.registry, **binding.provider_options) as provider:
+        batch = provider.read(request)
+    if not batch.records:
+        raise FeatureError("指数来源在请求区间/代码下没有可见记录，未生成文件")
+    manifest = export_features(output, bundle.registry, batch.records)
+    with FileFeatureProvider(output, bundle.registry) as provider:
+        loaded = provider.read(replace(request, as_of_ns=max(cutoff, time.time_ns())))
+    if loaded.records != batch.records:
+        raise FeatureError("生成后的特征文件与来源记录不一致")
+    mode = getattr(config, "availability", "standard-envelope")
+    return {"status": "passed", "output": str(output), "manifest": str(output) + ".manifest.json",
+        "dataset_id": binding.spec.dataset_id, "schema_version": binding.spec.schema_version,
+        "computation_version": binding.spec.computation_version, "source": batch.source_identity,
+        "records": len(batch.records), "availability": mode, "file_roundtrip": "passed",
+        "first_event_ns": min(r.ts_event for r in batch.records),
+        "last_event_ns": max(r.ts_event for r in batch.records),
+        "max_visibility_delay_seconds": max((r.visible_ns - r.ts_event) / 1e9 for r in batch.records),
+        "visibility_note": "本次观测时间，不能作为过去分钟当时已可用的证明" if mode == "observed"
+            else "保留源记录的可用时间；原表发布时间含义由数据来源保证",
+        "export_manifest": manifest}
 
 
 def main(argv=None):

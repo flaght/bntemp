@@ -31,10 +31,11 @@ FOUR_VENUE_RUNTIME_HASHES = {
 }
 FEATURE_DEPLOYMENT_GROUPS = frozenset(("feature-datahub", "feature-query-live", "option-vega", "option-vega-live", "option-calendar", "option-shared"))
 # 补充原生/08被测文件摘要；入口摘要由独立GAP08入口持有，不在此处自引用。
-RETIRED_OPTION_SOURCES = ('demos/08_option_vega/acceptance.py', 'demos/08_option_vega/assembly.py', 'demos/08_option_vega/backtest_runtime.py', 'demos/08_option_vega/check_backtest_data.py', 'demos/08_option_vega/checkpoint.py', 'demos/08_option_vega/execution_audit.py', 'demos/08_option_vega/live_runtime.py', 'demos/08_option_vega/minute_diagnostics.py', 'demos/08_option_vega/replay_test.py', 'demos/08_option_vega/rollover.py')
-FEATURE_RUNTIME_HASHES = {'tests/test_option_feature_example.py': '405cbca2cc37b1ec277a813615d03d33c79b664f9938ecbb6180d49b6c4ad2cb',
+RETIRED_OPTION_SOURCES = ('demos/08_option_vega/features.py', 'demos/08_option_vega/acceptance.py', 'demos/08_option_vega/assembly.py', 'demos/08_option_vega/backtest_runtime.py', 'demos/08_option_vega/check_backtest_data.py', 'demos/08_option_vega/checkpoint.py', 'demos/08_option_vega/execution_audit.py', 'demos/08_option_vega/live_runtime.py', 'demos/08_option_vega/minute_diagnostics.py', 'demos/08_option_vega/replay_test.py', 'demos/08_option_vega/rollover.py')
+FEATURE_RUNTIME_HASHES = {'demos/08_option_vega/feature/backtest.py': 'e4e28359fcaa8a6f85ccdea4976a96d686c28a6585c8697b390be10f5b871f5f',
+ 'tests/test_option_feature_example.py': 'b9e9fbdd064d5182db8c2f81931b9fd1b661fba9940eb885903e52d1994248ba',
  'demos/08_option_vega/feature/index.json': 'eba898958f39a4235c4f62751d3e510ac0682fa1eac570a4bca6f43a25967470',
- 'demos/08_option_vega/feature/generate.py': 'bad3fbf1ef761b97c138b6af4f67515a5b60a5a996a09589b625268de040fac4',
+ 'demos/08_option_vega/feature/generate.py': '45bcb73e29d11eb8adfeff0a4976e1c3c6c346cf4a2df5cd7a2f57b579aadc40',
  'bomber/framework/market/stream/ctp/converter.py': '157648c40bed2f5467cb9de68ad4ec2c8f971d62ebf10c77bd7f7c052ea7ee7e',
  'bomber/framework/trader/execution/builders.py': '54733c8ab2e7bb9713a2cd2bfcd4d9fe274c53479bc7eac6a8661b9428d2b37d',
  'bomber/framework/trader/execution/ctp/accounting.py': '6bb37ceb2bcad91b4c82f6a6cf77da0440cc8403867a3353f3417106c952f162',
@@ -50,7 +51,7 @@ FEATURE_RUNTIME_HASHES = {'tests/test_option_feature_example.py': '405cbca2cc37b
  'scripts/integration/options/recording.py': 'bd4f0b5ad0e1a406b328b615c91d0cb59c14d099c41f9aa87bb916878cca214b',
  'demos/08_option_vega/live.py': '841fc91679fe9dd1e022469f40e64f05cea5f0a6bcce26eac4e372e596b49fb0',
  'demos/08_option_vega/recovery.py': '858effba2625278832c78d1be2305f16c570ca10f385faeb3bba13381b72a14e',
- 'demos/08_option_vega/run_live.py': '78c3f6c59d3d0579372bb518f315a2575a99bd917bcce5b413ae522b1b02e52d',
+ 'demos/08_option_vega/run_live.py': 'f25177b917360e6632e786cc933bb749f23a5e01b3a0018eacb488ce14655eb7',
  'demos/08_option_vega/strategy.py': '50b49975577909de7e96017cd93461a7f123f7acf6daa7b5b14edba764c14dd9',
  'scripts/integration/options/__init__.py': 'be65a34d8f3388d3252d04a55411d216618753783cbba6d4cf40f8aa24690b02',
  'scripts/integration/reference_data/calendar_export.py': 'f6ac57245f7893d0cc7406173f573e466df143fb617de969c95f9c49c9e90555',
@@ -105,10 +106,10 @@ FEATURE_RUNTIME_HASHES = {'tests/test_option_feature_example.py': '405cbca2cc37b
  'bomber/framework/calendars/sessions.py': '3ae1627d66f50a44a3ea53bb9e953b2e981b3e3a947ef36fbc18704199fb540f',
  'bomber/framework/calendars/hours.py': '273d4ab3bb0da4dd28fc805d4bc8c50790b328309461a7ee36383dc935facda7',
  'demos/08_option_vega/vega_signal.py': '5dccae3a51183d94062c288044cfe28f1776ca44b9b792c9d1d8b8c6b0304cc9',
- 'demos/08_option_vega/features.py': '4081dba522622a8a2a3f1b30b35bc9a2541b9bf27f2eecfa708a05f8d1c2e9f9',
- 'demos/08_option_vega/run_backtest.py': '804321f796a24e48a470c3f471990f12d0d8a36c7a63e442d7b96f80ca1d6d36',
+ 'demos/08_option_vega/feature/__init__.py': '161357ca7579bb3e50f3b5e8d4a23a23f33fe3280ea0d1828223e29771739cb8',
+ 'demos/08_option_vega/run_backtest.py': '83a28abd7e5abb5a09464bbf05f6ba016c7467da2ea2ca6098e0b7546294d01a',
  'scripts/integration/options/check_backtest_data.py': '75c1140f623f14ac08a4e7f337066462dfcea337d8b69cd99186df5a6f7fbbaa',
- 'tests/test_option_feature_backtest.py': '06f22ec3e2ea9d378139acac80297b4e7bc68d9ee7df2b154d397c1744a9d3d2'}
+ 'tests/test_option_feature_backtest.py': '83f1f2b19deef2451c58c7aeef2cbaf7706a927476ee2372be2255aa8cbd346c'}
 
 
 def inspect_feature_deployment(root, expected, retired=()):

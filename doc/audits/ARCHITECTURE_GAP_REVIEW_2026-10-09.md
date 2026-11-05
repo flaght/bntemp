@@ -121,7 +121,7 @@
 
 | 本批已完成 | 具体行为 |
 | --- | --- |
-| 共用指数特征契约 | 回测和默认`dolphindb-dfs` Live共用[features.py](/Users/kerry/work/bomber1/pro/demos/08_option_vega/features.py)及同一特征配置；默认index.minute／Schema1，核验计算版本指纹、一分钟完成标签、真实OHLCV投影及EXACT对齐。文件只替换存储来源，不复制策略算法 |
+| 共用指数特征契约 | 回测和默认`dolphindb-dfs` Live共用[feature包](/Users/kerry/work/bomber1/pro/demos/08_option_vega/feature/README.md)及同一特征配置；默认index.minute／Schema1，核验计算版本指纹、一分钟完成标签、真实OHLCV投影及EXACT对齐。文件只替换存储来源，不复制策略算法 |
 | 正式文件入口 | 08必填`--index-feature-file`，读取公共export_features导出的CSV／Parquet及同名manifest；旧指数Feather不直接冒充标准特征包。01／03／04／08回测从显式根目录或逐项路径取文件，不再用环境变量补路径；公共解析器其他调用方保留原默认政策 |
 | 可见时间与修订 | 保留ts_event、available_ns、received_ns、revision，按max(available_ns, received_ns)回放；同分钟首次可见版本封闭后固定，不用后续修订重做旧决策。期限边界可达，迟到／缺失跳过，不以前一分钟指数补齐；交易腿也受帧截止约束 |
 | 模拟时钟及审计 | [回测运行器](/Users/kerry/work/bomber1/pro/demos/08_option_vega/backtest_runtime.py)复用公共特征回放；原生模拟时钟到帧截止后调用同一个策略on_market_frame，交易行情仍进入原撮合链。summary记录来源／版本／等待及跳过数，feature_frames.json逐帧记录版本和可见／决策时间 |

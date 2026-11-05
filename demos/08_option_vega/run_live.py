@@ -21,7 +21,7 @@ if __package__ in (None, ""):
 from bomber.framework.market.sources import (add_market_source_arguments, market_config_from_args,
     source_config, create_market_feed, assemble_minute_market)
 from .vega_signal import OptionVegaConfig
-from .features import add_index_feature_arguments, index_bundle
+from .feature import add_index_feature_arguments, index_bundle
 
 
 def parse_args(argv=None):

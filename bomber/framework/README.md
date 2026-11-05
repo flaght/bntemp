@@ -123,7 +123,7 @@ flowchart LR
 
 特征来源已有标准文件、DolphinDB、DolphinDB原表映射及MongoDB适配。Schema、数据修订和计算版本分别管理，按业务时间与实际可见时间查询；未知历史发布时间不能用今天导出的时间伪造。普通因子直接读取DataHub，仅需OHLCV行情输入的消费者才投影为Bar。标准特征包、manifest和映射契约见[特征说明](dataprep/features/README.md)。
 
-08回测已在[demos/08_option_vega/features.py](../../demos/08_option_vega/features.py)与默认DFS Live共用指数契约，通过标准文件Provider和模拟可见时钟接入原策略帧接口；不再属于“缺接入代码”。真实现货场景、其他来源和完整回测／Live组合各按业务证据验收，不以通用Provider存在推定全部完成。
+08回测已在[demos/08_option_vega/feature](../../demos/08_option_vega/feature/README.md)与默认DFS Live共用指数契约，通过标准文件Provider和模拟可见时钟接入原策略帧接口；不再属于“缺接入代码”。真实现货场景、其他来源和完整回测／Live组合各按业务证据验收，不以通用Provider存在推定全部完成。
 
 会话核心支持跨午夜、夜盘交易日、特殊日期覆盖、窗口与分钟枚举；交易日历覆盖有限，规则／例外需真实资料。静态快照身份校验与完整历史规则发布版本是不同能力，见[calendars说明](calendars/README.md)。
 

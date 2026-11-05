@@ -13,8 +13,9 @@ from bomber.framework.datahub.features import ExternalDataRecord, FeatureError
 from bomber.framework.dataprep.features import DEFAULT_FEATURE_CONFIG, export_features, load_feature_bundle
 from bomber.framework.dataprep.sources.dolphindb import DolphinDbReferenceConfig
 
-features = import_module("demos.08_option_vega.features")
-replay = import_module("demos.08_option_vega.features")
+features = import_module("demos.08_option_vega.feature")
+replay = import_module("demos.08_option_vega.feature.backtest")
+exporter = import_module("demos.08_option_vega.feature.generate")
 M, S = 60_000_000_000, 1_000_000_000
 END = 1_791_767_460_000_000_000 // M * M
 
@@ -82,7 +83,7 @@ class FeatureBacktestTests(unittest.TestCase):
         args = NS(index_feature_config=config, index_dataset="research.custom_index",
             index_schema_version=2, index_code="000852", index_feature_file=self.path)
         loaded, selected, records, identity = features.read_index_features(args, END, END+M)
-        outcomes, _ = features.prepare_feature_frames([self.bar(), self.bar(END+M)],
+        outcomes, _ = replay.prepare_feature_frames([self.bar(), self.bar(END+M)],
             loaded, selected, records, "000852", 2*S)
         self.assertEqual(identity["computation_version"], binding.spec.computation_version)
         self.assertTrue(identity["computation_version"].startswith("custom-index-v1:declaration:"))
@@ -167,9 +168,9 @@ class FeatureGenerationTests(unittest.TestCase):
             self.assertEqual(backend, "dolphindb-raw")
             return DolphinDbRawFeatureProvider(config, registry,
                 session_factory=lambda **kwargs: session, clock_ns=lambda: END+10*S)
-        with patch.object(features.FeatureProviderFactory, "create_for", side_effect=create), \
-                patch.object(features.time, "time_ns", return_value=END+10*S):
-            report = features.generate_index_features(self.args, END, END, connection=self.connection)
+        with patch.object(exporter.FeatureProviderFactory, "create_for", side_effect=create), \
+                patch.object(exporter.time, "time_ns", return_value=END+10*S):
+            report = exporter.generate_index_features(self.args, END, END, connection=self.connection)
         self.assertTrue(session.closed)
         return report
 
@@ -188,7 +189,7 @@ class FeatureGenerationTests(unittest.TestCase):
         self.assertEqual(identity["schema_fingerprint"], report["export_manifest"]["schema_fingerprint"])
         bars = [NS(ts_event=t, ts_init=t, bar_type=NS(instrument_id=NS(symbol="IM2610")),
             close=NS(as_decimal=lambda: Decimal(6500))) for t in (END, END+M)]
-        outcomes, _ = features.prepare_feature_frames(bars, bundle, binding, records, "000852", 2*S)
+        outcomes, _ = replay.prepare_feature_frames(bars, bundle, binding, records, "000852", 2*S)
         self.assertEqual(outcomes[0].status, "READY")
         self.assertEqual(outcomes[0].frame.features.latest("index").payload.close, Decimal("6401.2"))
         self.assertNotIn("fixture-secret", str(report))
@@ -201,7 +202,7 @@ class FeatureGenerationTests(unittest.TestCase):
         self.assertEqual(report["max_visibility_delay_seconds"], 10)
         bars = [NS(ts_event=t, ts_init=t, bar_type=NS(instrument_id=NS(symbol="IM2610")),
             close=NS(as_decimal=lambda: Decimal(6500))) for t in (END, END+M)]
-        outcomes, _ = features.prepare_feature_frames(bars, bundle, binding, records, "000852", 2*S)
+        outcomes, _ = replay.prepare_feature_frames(bars, bundle, binding, records, "000852", 2*S)
         self.assertEqual(outcomes[0].status, "SKIPPED")
 
     def test_empty_source_does_not_create_file_or_manifest(self):
@@ -215,9 +216,9 @@ class FeatureGenerationTests(unittest.TestCase):
             with self.subTest(existing=existing):
                 existing.write_text("preserved")
                 try:
-                    with patch.object(features.FeatureProviderFactory, "create_for") as create:
+                    with patch.object(exporter.FeatureProviderFactory, "create_for") as create:
                         with self.assertRaisesRegex(FeatureError, "已存在"):
-                            features.generate_index_features(self.args, END, END, connection=self.connection)
+                            exporter.generate_index_features(self.args, END, END, connection=self.connection)
                         create.assert_not_called()
                     self.assertEqual(existing.read_text(), "preserved")
                 finally:
@@ -229,15 +230,16 @@ class FeatureGenerationTests(unittest.TestCase):
             self.generate(rows=[row(close=-1)])
         self.assertFalse(self.path.exists())
 
-    def test_cli_requires_explicit_connection_and_valid_identity_before_credentials(self):
+    def test_cli_requires_explicit_connection_and_valid_window_before_credentials(self):
         from contextlib import redirect_stderr
         from io import StringIO
-        base = ["--start-day", "2026-09-01", "--end-day", "2026-09-11", "--output", str(self.path)]
-        for extra in ([], ["--connect", "--index-code", "bad"]):
+        base = ["--start", "2026-09-01T00:00:00+08:00", "--end", "2026-09-11T23:59:59+08:00",
+            "--output-dir", str(self.path.parent / "generated")]
+        for extra in ([], ["--connect", "--window", "0"]):
             with redirect_stderr(StringIO()), patch(
                     "bomber.framework.dolphindb.DolphinDbConnectionConfig.from_env") as env:
                 with self.assertRaises(SystemExit):
-                    features.main(base+extra)
+                    exporter.main(base+extra)
                 env.assert_not_called()
 
     def test_cli_selects_range_and_dolphindb_purpose_without_exposing_credentials(self):
@@ -247,15 +249,16 @@ class FeatureGenerationTests(unittest.TestCase):
         with redirect_stdout(stdout), patch("dotenv.load_dotenv"), patch(
                 "bomber.framework.dolphindb.DolphinDbConnectionConfig.from_env",
                 return_value=self.connection) as env, patch.object(
-                features, "generate_index_features", return_value={"status": "passed"}) as generate:
-            features.main(["--connect", "--start-day", "2026-09-01", "--end-day", "2026-09-11",
-                "--index-availability", "source-time", "--output", str(self.path)])
+                exporter, "generate_features", return_value={"status": "passed"}) as generate:
+            exporter.main(["--connect", "--start", "2026-09-01T00:00:00+08:00",
+                "--end", "2026-09-11T23:59:59+08:00", "--availability", "source-time",
+                "--output-dir", str(self.path.parent / "generated")])
         env.assert_called_once_with(purpose="market", read_timeout_seconds=30)
-        args, start, end = generate.call_args.args
+        args = generate.call_args.kwargs
         from tests.test_demo_option_vega import ns
-        self.assertEqual(start, ns("2026-09-01 00:00"))
-        self.assertEqual(end, ns("2026-09-12 00:00")-1)
-        self.assertEqual(args.index_availability, "source-time")
+        self.assertEqual(args["start_ns"], ns("2026-09-01 00:00"))
+        self.assertEqual(args["end_ns"], ns("2026-09-12 00:00")-S)
+        self.assertEqual(args["availability"], "source-time")
         self.assertEqual(json.loads(stdout.getvalue())["status"], "passed")
         self.assertNotIn("fixture-secret", stdout.getvalue())
 
@@ -315,9 +318,9 @@ class Ma20BacktestTests(unittest.TestCase):
                 close=NS(as_decimal=lambda: Decimal(str(value))))
         bars = [bar("IM2609", self.stamp, 6500), bar(f.info.symbol, self.stamp, premium),
                 bar("IM2609", self.stamp+M, 6500)]
-        outcomes, deadlines = features.prepare_feature_frames(bars, bundle, binding, records, "000852", 2*S)
+        outcomes, deadlines = replay.prepare_feature_frames(bars, bundle, binding, records, "000852", 2*S)
         timers = []
-        runner = features.build_backtest_runner(positions=None, feed=None,
+        runner = replay.build_backtest_runner(positions=None, feed=None,
             backend=NS(engine=NS(kernel=NS(clock=NS(set_time_alert_ns=lambda **kw: timers.append(kw))))),
             bundle=bundle, binding=binding, records=records, index_key="000852", wait_seconds=2,
             index_value_field=field)

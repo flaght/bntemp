@@ -15,7 +15,7 @@ from bomber.framework.datahub.features import FeatureError
 from tests.test_dolphindb_index_features import Session, row
 
 example = import_module("demos.08_option_vega.feature.generate")
-features = import_module("demos.08_option_vega.features")
+features = import_module("demos.08_option_vega.feature")
 M, S = 60_000_000_000, 1_000_000_000
 BASE = example.timestamp("2026-09-01T09:31:00+08:00")
 
