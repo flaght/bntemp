@@ -1,10 +1,12 @@
 """真实Provider夹具→业务DataFrame组合→转换/导出；不联网、不报单。"""
 from importlib import import_module
 import io
+import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
+from decimal import Decimal
 
 from bomber.framework.dataprep.features import DolphinDbRawFeatureProvider, FeatureRequest, load_feature_bundle
 from bomber.framework.datahub.features import FeatureError
@@ -12,6 +14,7 @@ from bomber.framework.dolphindb import DolphinDbConnectionConfig
 from tests.test_dolphindb_index_features import Session, row
 
 example = import_module("demos.08_option_vega.feature.example_dolphindb")
+feature = import_module("demos.08_option_vega.feature")
 BASE = example.timestamp("2026-09-01T09:31:00+08:00")
 M, S = 60_000_000_000, 1_000_000_000
 
@@ -86,3 +89,37 @@ class DolphinDataFrameExampleTests(unittest.TestCase):
         self.assertEqual(run.call_args.kwargs["source_key"], "SH000852")
         self.assertEqual(run.call_args.kwargs["start_ns"], BASE)
         self.assertNotIn("fixture-secret", stdout.getvalue())
+
+    def test_connection_config_reader_returns_dataframe_and_preserves_all_source_revisions(self):
+        definition = json.loads(example.CONFIG.read_text())
+        definition["datasets"][0]["source"]["availability"] = "source-time"
+        config = Path(self.temp.name) / "source-time.json"
+        config.write_text(json.dumps(definition))
+        rows = [row(event=BASE, published=BASE+1, key="SH000852"),
+            row(event=BASE, published=BASE+2, key="SH000852", close=6402),
+            row(event=BASE+M, published=BASE+M+3, key="SH000852")]
+        for values in (rows, []):
+            with self.subTest(rows=len(values)):
+                session = Session(rows=values)
+                def create(purpose, backend, source_config, registry, **options):
+                    self.assertEqual(purpose.value, "feature_export")
+                    self.assertEqual(backend, "dolphindb-raw")
+                    return DolphinDbRawFeatureProvider(source_config, registry,
+                        session_factory=lambda **kw: session, clock_ns=lambda: BASE+2*M)
+                with patch.object(feature.FeatureProviderFactory, "create_for", side_effect=create):
+                    frame = feature.read_index_dataframe(self.connection, config,
+                        start_ns=BASE, end_ns=BASE+M, key="SH000852")
+                self.assertTrue(session.closed)
+                self.assertEqual(frame.index.name, "ts_event")
+                self.assertEqual(len(frame), len(values))
+                self.assertIn("close", frame.columns)
+                self.assertIn("available_ns", frame.columns)
+                self.assertEqual(frame.attrs["dataset_id"], "index.minute")
+                if values:
+                    self.assertEqual(frame.index.tolist(), [BASE, BASE, BASE+M])
+                    self.assertEqual(frame["revision"].tolist(), [BASE+1, BASE+2, BASE+M+3])
+                    self.assertEqual(frame["available_ns"].tolist(), frame["revision"].tolist())
+                    self.assertEqual(frame["key"].tolist(), ["SH000852"]*3)
+                    self.assertEqual(frame["close"].iloc[0], Decimal("6401.2"))
+                    self.assertEqual(frame["received_ns"].tolist(), [None]*3)
+                    self.assertTrue(all(type(value) is int for value in frame["available_ns"]))

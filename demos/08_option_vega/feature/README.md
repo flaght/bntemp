@@ -120,6 +120,33 @@ python -u -m demos.08_option_vega.feature.example_dataframe \
 
 ### 从DolphinDB读取真实指数再计算
 
+如果先只提取指数DataFrame，使用包内的`read_index_dataframe`，传入连接配置对象：
+
+```python
+from importlib import import_module
+import pandas as pd
+from bomber.framework.dolphindb import DolphinDbConnectionConfig
+
+feature = import_module("demos.08_option_vega.feature")
+connection = DolphinDbConnectionConfig.from_env(purpose="market", read_timeout_seconds=30)
+df = feature.read_index_dataframe(
+    connection,
+    "demos/08_option_vega/feature/index.json",
+    dataset="index.minute", schema_version=1, key="000852",
+    start_ns=int(pd.Timestamp("2026-09-01", tz="Asia/Shanghai").value),
+    end_ns=int(pd.Timestamp("2026-09-12", tz="Asia/Shanghai").value)-1,
+)
+print(df.head())
+```
+
+环境变量需已配置，或由调用方先加载`.env`。
+内部依次执行`load_feature_bundle(config, connection)`、`bundle.binding(...)`和公共Provider的`read(request)`。
+默认声明对应`index_1min`；`key`是源表实际代码，若源表使用`SH000852`就传该值。
+返回声明映射后的`open/high/low/close/...`列，整数纳秒索引为`ts_event`，保留全部源修订及
+`key/available_ns/source_ns/received_ns/revision/quality_flags/source`元数据列。
+这些列使用object保留Decimal、None及整数纳秒；未丢弃旧修订、补齐缺口或重写时间。
+无记录时返回带声明列的空DataFrame；查询失败仍抛异常。
+
 真实数据版在[example_dolphindb.py](example_dolphindb.py)。同步代码后，在项目根目录执行：
 
 ```bash
