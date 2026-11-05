@@ -8,8 +8,7 @@
 | --- | --- |
 | `run_backtest.py` | 文件准备、公共模拟Backend/结算接线及回测报告 |
 | `run_live.py` | 在线参数、行情/参考/执行渠道选择及公共Live生命周期启动 |
-| `features.py` | 特征文件生成、声明加载、读取、历史可见时钟与分钟决策帧 |
-| `feature/` | 本目录内的原始指数与MA双文件生成例子、来源声明及调用说明 |
+| `feature/` | 特征生成/导出、声明加载、标准文件读取及回测分钟帧适配 |
 | `strategy.py` | 策略决策、实际自有仓位管理、公共装配绑定与限额 |
 | `vega_signal.py` | 配置、原数值算法、合约关系及可独立恢复的信号状态 |
 | `live.py` | Live分钟帧适配、健康检查、公共执行装配与只读诊断 |
@@ -17,7 +16,7 @@
 
 解析、结算、模拟撮合、目标差额、OMS、归属、风险、日历及共享账户复用[框架](../../bomber/framework/README.md)。探针/验收在[scripts/integration/options](../../scripts/integration/options)，测试在[tests](../../tests)。目录不保留旧模块的转发壳。
 
-同步到服务器时须同步本次删除项，不能只覆盖新增文件。旧辅助模块导入路径已由工厂、脚本和测试统一替换；两个运行入口及JSON检查点格式保持不变。
+同步到服务器时须同步本次删除项，不能只覆盖新增文件。根目录`features.py`已迁入`feature/`包，须删除服务器上的旧文件；不保留转发壳。旧辅助模块导入路径已由工厂、脚本和测试统一替换；两个运行入口及JSON检查点格式保持不变。
 
 ## 1. 回测
 
@@ -93,9 +92,9 @@ python -u -m scripts.integration.options.shared \
 
 ## 3. 自定义特征
 
-生成例子统一放在[feature/](feature/README.md)，查询一次DolphinDB，同时导出原始指数与MA20；不依赖`scripts`。加载、读取及回测分钟帧仍由`features.py`负责，使用现有特征注册/Provider。
+所有特征职责统一放在[feature/](feature/README.md)：查询一次DolphinDB，同时导出原始指数与MA20；加载声明、读取和回测分钟帧也在该包内，不依赖`scripts`。底层使用现有特征注册/Provider。
 
-`feature/generate.py`提供`generate_features`双文件接口；`features.py`保留原始指数单独导出接口，并负责`index_bundle`加载声明、`read_index_features`读取文件、`build_backtest_runner`驱动分钟帧决策。回测入口不隐式连接数据库、重复下载或覆盖数据。Live继续复用相同声明连接来源。
+`feature/generate.py`负责生成/导出，提供`generate_features`双文件接口和`generate_index_features`单独指数导出API；`feature/__init__.py`负责`index_bundle`加载声明、`read_index_features`读取文件；`feature/backtest.py`负责`build_backtest_runner`驱动分钟帧决策。生成命令统一使用`feature.generate`。回测入口不隐式连接数据库、重复下载或覆盖数据。Live继续复用包内的声明接口。
 
 ### 从DolphinDB生成文件
 
@@ -113,7 +112,7 @@ python -u -m demos.08_option_vega.feature.generate \
 
 默认`observed`保留本次观测时间：能得到数据快照，不代表9月份当时已可见，不能直接用于9月份的时点回测。若数据源确认配置中的`updateTime`是该版本真实可用时刻，本例可显式加`--availability source-time`；如果只是后来补录的时间，仍不能提前使用。MA的可用时间仍是实际计算完成时间。先核对输出可见时间与实际`--frame-wait-seconds`，不要为了成交把时间改成Bar结束。
 
-生成后将输出文件及相应声明传给`run_backtest.py --index-feature-file/--index-feature-config`，由`features.py`完成声明加载、文件校验和帧决策。引用的期权5分钟/期货行情导出不能替代一分钟指数输入，也不把M5补成M1。新计算公式属于本例业务逻辑，新增声明/映射仍使用已有底层框架。
+生成后将输出文件及相应声明传给`run_backtest.py --index-feature-file/--index-feature-config`，由`feature`包完成声明加载、文件校验和帧决策。引用的期权5分钟/期货行情导出不能替代一分钟指数输入，也不把M5补成M1。新计算公式属于本例业务逻辑，新增声明/映射仍使用已有底层框架。
 
 ### 修改自定义声明
 

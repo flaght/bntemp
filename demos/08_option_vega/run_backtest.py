@@ -78,7 +78,7 @@ def run_case(args):
     started = perf_counter()
     phase = _start_phase("输入路径解析与配置校验")
     args = resolve_option_args(args, require_futures=True, require_index=False, use_environment=False)
-    features = import_module("demos.08_option_vega.features")
+    features = import_module("demos.08_option_vega.feature")
     index_bundle, index_binding, index_records, index_identity = features.read_index_features(args,
         int(pd.Timestamp(args.start_day, tz="Asia/Shanghai").value),
         int((pd.Timestamp(args.end_day, tz="Asia/Shanghai") + pd.Timedelta(days=1)).value)-1)
@@ -261,7 +261,7 @@ def run_case(args):
         execution = build_simulation_execution(backend, instrument_limits=risk_limits(
             config, contracts, instruments, multipliers, args.max_notional))
         positions, prices, client = execution.positions, execution.prices, execution.client
-        runner_type = import_module("demos.08_option_vega.features").build_backtest_runner
+        runner_type = import_module("demos.08_option_vega.feature.backtest").build_backtest_runner
         runner = runner_type(positions=positions, feed=feed, backend=backend,
             bundle=index_bundle, binding=index_binding, records=index_records,
             index_key=args.index_code, wait_seconds=args.frame_wait_seconds,
@@ -365,7 +365,7 @@ def main():
         help="显式文件根目录；或逐项指定交易腿和基础资料路径，不从环境变量补齐")
     for name in ("fut-dir", "opt-dir", "fut-basic", "opt-basic"):
         parser.add_argument("--" + name, type=Path)
-    import_module("demos.08_option_vega.features").add_index_feature_arguments(parser)
+    import_module("demos.08_option_vega.feature").add_index_feature_arguments(parser)
     parser.add_argument("--index-feature-file", type=Path, required=True,
         help="标准指数特征CSV/Parquet及同名.manifest.json；保留版本和可见时间")
     parser.add_argument("--index-value-field",

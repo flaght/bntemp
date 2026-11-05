@@ -4,6 +4,18 @@
 `index.json`是可编辑的来源/Schema示例，默认读取`dfs://min_bar/index_1min`的`000852`。
 数据库连接、标准记录、manifest、文件读回及回测可见性使用公共框架。
 
+所有特征代码均在本包，策略根目录不再保留`features.py`：
+
+| 文件 | 职责 |
+| --- | --- |
+| `__init__.py` | 共用声明、信号字段选择、标准文件读取 |
+| `generate.py` | 原始指数及MA的计算、导出和命令行入口 |
+| `backtest.py` | 特征可见时钟、分钟帧与原回测策略适配 |
+| `index.json` | 本地来源及Schema声明示例 |
+
+回测与Live均从`demos.08_option_vega.feature`导入声明/读取接口。
+生成命令保持`python -m demos.08_option_vega.feature.generate`；原`python -m demos.08_option_vega.features`入口移除。
+
 ## 一次生成两套文件
 
 在项目根目录、已安装项目依赖的Python环境执行：
@@ -82,7 +94,7 @@ MA20使用20根连续、已完成的一分钟收盘价，包含当前Bar，采�
 
 ## 08读取及驱动决策
 
-08的`features.py`负责声明加载、标准文件读取和分钟帧；`run_backtest.py`使用相同接口。
+本包`__init__.py`负责声明加载、标准文件读取，`backtest.py`负责分钟帧；`run_backtest.py`使用这些接口。
 在原完整回测命令中，原始指数使用：
 
 ```bash
