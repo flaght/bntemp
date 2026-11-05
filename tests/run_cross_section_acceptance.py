@@ -32,7 +32,8 @@ FOUR_VENUE_RUNTIME_HASHES = {
 FEATURE_DEPLOYMENT_GROUPS = frozenset(("feature-datahub", "feature-query-live", "option-vega", "option-vega-live", "option-calendar", "option-shared"))
 # 补充原生/08被测文件摘要；入口摘要由独立GAP08入口持有，不在此处自引用。
 RETIRED_OPTION_SOURCES = ('demos/08_option_vega/features.py', 'demos/08_option_vega/acceptance.py', 'demos/08_option_vega/assembly.py', 'demos/08_option_vega/backtest_runtime.py', 'demos/08_option_vega/check_backtest_data.py', 'demos/08_option_vega/checkpoint.py', 'demos/08_option_vega/execution_audit.py', 'demos/08_option_vega/live_runtime.py', 'demos/08_option_vega/minute_diagnostics.py', 'demos/08_option_vega/replay_test.py', 'demos/08_option_vega/rollover.py')
-FEATURE_RUNTIME_HASHES = {'tests/test_option_dolphindb_dataframe_example.py': 'e09f8475ccb0139c8c9b14ca5d0a02e937f11cff524588f5d6f36a8a0af4a102',
+FEATURE_RUNTIME_HASHES = {'demos/08_option_vega/feature/index_close.json': '06ba3d05ceb5822ff12181d9e38555ac6a8555602c06b4d57738bedd922d984d',
+ 'tests/test_option_dolphindb_dataframe_example.py': 'd5f66d42d3b6d54d59d8f6575f134724756a908193fe9b97319a6003395accbf',
  'demos/08_option_vega/feature/example_dolphindb.py': 'e647ce40266453ec2441a923f110af60b0b14fa42c711c42253eb1034b8978fb',
  'demos/08_option_vega/feature/example_dataframe.py': 'b8c54b7592e1df7b4fcaf045e616a1bb7dd7186124c41bb22d53660dd70d9285',
  'tests/test_option_feature_dataframe.py': 'd93ab2e370fcfa50f1c9755b6e1ecea9d085a6ccd53e941cbc3d43faad28db55',
@@ -112,9 +113,9 @@ FEATURE_RUNTIME_HASHES = {'tests/test_option_dolphindb_dataframe_example.py': 'e
  'bomber/framework/calendars/hours.py': '273d4ab3bb0da4dd28fc805d4bc8c50790b328309461a7ee36383dc935facda7',
  'demos/08_option_vega/vega_signal.py': '5dccae3a51183d94062c288044cfe28f1776ca44b9b792c9d1d8b8c6b0304cc9',
  'demos/08_option_vega/feature/__init__.py': '4346c583915c67812676b8e2d520e669ae5b26aebbda05976f44f9f5a5b8bb40',
- 'demos/08_option_vega/run_backtest.py': '83a28abd7e5abb5a09464bbf05f6ba016c7467da2ea2ca6098e0b7546294d01a',
+ 'demos/08_option_vega/run_backtest.py': '5aa1c54fdd731a58630c3bdf3c4cd9d92b5502c985d7cbecc4bd979c1bbcbcc2',
  'scripts/integration/options/check_backtest_data.py': '75c1140f623f14ac08a4e7f337066462dfcea337d8b69cd99186df5a6f7fbbaa',
- 'tests/test_option_feature_backtest.py': '97533ac6ac33bd249f1f5306bd5b9e48ff827cd6059401956f4060e5b93434bc'}
+ 'tests/test_option_feature_backtest.py': 'e6e086f46ec1831a6016f6f1c6024545f21effab7c12915935cb53cdbd9b8a92'}
 
 
 def inspect_feature_deployment(root, expected, retired=()):

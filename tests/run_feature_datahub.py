@@ -46,7 +46,7 @@ EXPECTED_SOURCE_HASHES = {
     "scripts/integration/features/read_only.py": "f4f591965459151a318e13cd6f2d942584f7911588003895b467464be864349b",
     "tests/test_dolphindb_index_features.py": "72f8107575170d4151131364051c26685a3ea82408cddd0cb3ba53b25216cb62",
     "tests/test_feature_acceptance_entry.py": "45706cff7e93a3a3fa2c74ee54d9f56f390e3c7bc2913ce736229872c95d30b5",
-    "tests/run_cross_section_acceptance.py": "58180c3e74aaa9c33ce5b31e9bc1934647625666541254a9b19013c2befa9213",
+    "tests/run_cross_section_acceptance.py": "a5837893ffa47c3d40a79be85496178238140b756943eaab4028a2d0db032e73",
     "tests/test_feature_datahub.py": "06ea20c4810696711aa16560dbf0fcea7102a23c729d1aea391f60d7f6f1b63a",
     "tests/test_feature_definitions.py": "66336d4061d813c3b55b8f2d84c258f28a0356c51a08089865ee9d2ed41745d2",
 }

@@ -26,6 +26,7 @@
 python -u demos/08_option_vega/run_backtest.py \
   --data-root /实际数据根目录 \
   --index-feature-file /实际路径/index-minute.csv \
+  --calendar-id china.cffex \
   --option-product MO --future-product IM --index-code 000852 \
   --start-day 2026-09-01 --end-day 2026-09-11 \
   --frame-wait-seconds 5 --bar-timestamp end \
@@ -36,7 +37,8 @@ python -u demos/08_option_vega/run_backtest.py \
 
 - 分钟行情使用真实期权与同月期货；`--bar-timestamp start/end`只调整交易腿标签。不会以前一分钟价格补造同步开仓输入。
 - 指数是标准特征CSV/Parquet，旁边必须有同名`.manifest.json`。Schema/计算版本、原始字节SHA256与时间标签均核验。传输需保留文件字节，包括换行格式。
-- 可传`--calendar`提供完整日期/is_trading_day日历；否则以已知行情日期推导。计算IV所需日历必须覆盖合约最后交易日。
+- 可传`--calendar-id china.cffex`直接调用框架`NativeCalendarProvider`，无需导出或加载日历文件。日历保留回测开始日至规则维护末端的日期，回测行情仍只加载`--start-day`至`--end-day`，避免在回测末端把日历不足误判成临近到期。报告记录日历标识、规则版本、指纹和实际交易日范围。当前原生日历维护至2026-12-31；超出维护范围或原生扩展不可用时明确报错，不回退为工作日猜测。
+- `--calendar`仍可提供完整`date/is_trading_day`文件，与`--calendar-id`互斥；两项均省略时沿用已知行情日期推导。期权到期判断需要足够的后续交易日；超过已知日历末端时，只有剩余日期下界已达到对应阈值才允许继续。
 - 每日期权交易时点默认13:58，对冲默认10:00/11:00/13:30/14:00/14:55。每日新增目标累加，持仓使用成交归属数量；总量与单腿限额仍生效。
 - 最后回测日默认14:50清仓，指数还须至少覆盖之后两分钟，交易腿也需真实后续报价完成撮合。`remaining_positions_or_working`和`report_errors`必须为空。
 

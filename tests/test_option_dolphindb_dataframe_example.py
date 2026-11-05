@@ -11,7 +11,7 @@ from decimal import Decimal
 from bomber.framework.dataprep.features import DolphinDbRawFeatureProvider, FeatureRequest, load_feature_bundle
 from bomber.framework.datahub.features import FeatureError
 from bomber.framework.dolphindb import DolphinDbConnectionConfig
-from tests.test_dolphindb_index_features import Session, row
+from tests.test_dolphindb_index_features import Session, definitions, row
 
 example = import_module("demos.08_option_vega.feature.example_dolphindb")
 feature = import_module("demos.08_option_vega.feature")
@@ -26,9 +26,9 @@ class DolphinDataFrameExampleTests(unittest.TestCase):
         self.output = Path(self.temp.name) / "features"
         self.connection = DolphinDbConnectionConfig("fixture", 8848, "user", "fixture-secret")
 
-    def generate(self, events):
+    def generate(self, events, *, config=example.CONFIG, dataset="index.minute", availability="source-time", schema=None):
         session = Session(rows=[row(event=event, published=event+S, key="SH000852",
-            close=6500+i*.2, open=6500, high=6600, low=6400) for i, event in enumerate(events)])
+            close=6500+i*.2, open=6500, high=6600, low=6400) for i, event in enumerate(events)], schema=schema)
         original_create = example.FeatureProviderFactory.create_for
         def create(purpose, backend, config, registry, **options):
             if backend == "file":
@@ -39,11 +39,25 @@ class DolphinDataFrameExampleTests(unittest.TestCase):
         with patch.object(example.FeatureProviderFactory, "create_for", side_effect=create):
             report = example.run_example(start_ns=BASE, end_ns=max(events, default=BASE),
                 output_dir=self.output, connection=self.connection, source_key="SH000852",
-                availability="source-time")
+                config=config, dataset=dataset, availability=availability)
         self.assertTrue(session.closed)
         self.assertEqual(sum(not sql.startswith("schema(") for sql in session.scripts), 1)
         self.assertIn('"SH000852"', session.scripts[-1])
+        self.query = session.scripts[-1]
         return report
+
+    def test_close_only_declaration_needs_no_ohlcv_projection_or_update_time(self):
+        schema = definitions()
+        schema = schema[schema.name.isin(("date", "minTime", "Code", "close"))]
+        report = self.generate([BASE+i*M for i in range(120)],
+            config=example.CONFIG.with_name("index_close.json"), dataset="index.close.minute",
+            availability=None, schema=schema)
+        self.assertEqual(report["feature_rows"], 61)
+        self.assertEqual(report["input_availability"], "observed")
+        self.assertEqual(report["file_roundtrip"], "passed")
+        self.assertIn("close as p_close", self.query)
+        for unused in ("p_open", "p_volume", "p_turnover", "updateTime"):
+            self.assertNotIn(unused, self.query)
 
     def test_provider_to_custom_formula_to_standard_file(self):
         report = self.generate([BASE+i*M for i in range(120)])

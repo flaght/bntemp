@@ -23,6 +23,7 @@ Contract, OptionVegaConfig = _signal.Contract, _signal.OptionVegaConfig
 remaining_trading_days, filter_hedgeable_options = _signal.remaining_trading_days, _signal.filter_hedgeable_options
 from bomber.framework.dataprep.bars import add_prepared_bar_source
 from bomber.framework.dataprep.calendar import infer_market_calendar, load_calendar
+from bomber.framework.calendars import NativeCalendarProvider
 from bomber.framework.dataprep.catalog import inventory
 from bomber.framework.dataprep.contracts import BarFileKey, BarReadSpec
 from bomber.framework.dataprep.metadata import load_cffex_futures, load_options_basic, positive
@@ -58,6 +59,22 @@ def load_contracts(opt_path, fut_path, option_product, future_product, index_cod
     if not contracts or not futures:
         raise ValueError("没有目标品种的认购期权或期货基础资料")
     return contracts, futures
+
+
+def load_backtest_calendar(args):
+    """日期日历独立于行情区间；原生模式保留规则维护范围内的后续日期。"""
+    calendar_id = getattr(args, "calendar_id", None)
+    if calendar_id:
+        if args.calendar is not None:
+            raise ValueError("--calendar与--calendar-id不能同时指定")
+        # 不把日历截到回测末日，否则末日仍无法判断远月合约的剩余交易日。
+        snapshot = NativeCalendarProvider(calendar_id).snapshot(args.start_day)
+        snapshot.require_range(args.start_day, args.end_day)
+        source = f"native:{snapshot.calendar_id}:{snapshot.rules_version}:{snapshot.fingerprint}"
+        return snapshot.days, source
+    if args.calendar is not None:
+        return load_calendar(args.calendar, args.start_day, args.end_day), str(args.calendar)
+    return infer_market_calendar((args.fut_dir, args.opt_dir), args.start_day, args.end_day), "MARKET_DATES"
 
 
 @input_session
@@ -101,13 +118,7 @@ def run_case(args):
         raise ValueError("手续费须为有限非负数")
     _finish_phase("输入路径解析与配置校验", phase)
     phase = _start_phase("交易日历加载或推导")
-    if args.calendar is not None:
-        calendar = load_calendar(args.calendar, args.start_day, args.end_day)
-        calendar_source = str(args.calendar)
-    else:
-        calendar = infer_market_calendar((args.fut_dir, args.opt_dir),
-                                         args.start_day, args.end_day)
-        calendar_source = "MARKET_DATES"
+    calendar, calendar_source = load_backtest_calendar(args)
     print(f"交易日来源={calendar_source} 日期范围={calendar[0]}..{calendar[-1]}")
     days = tuple(day for day in calendar if args.start_day <= day <= args.end_day)
     if not days:
@@ -372,7 +383,10 @@ def main():
         help="回测使用的非空数值特征字段，如ma20；省略沿用Bar投影的close")
     parser.add_argument("--frame-wait-seconds", type=float, default=2,
         help="与Live相同的分钟等待预算，范围[0,30]秒")
-    parser.add_argument("--calendar", type=Path, help="可选交易日历；未配置时由完整行情日期自动推导")
+    calendar_group = parser.add_mutually_exclusive_group()
+    calendar_group.add_argument("--calendar", type=Path, help="交易日历文件；与--calendar-id互斥")
+    calendar_group.add_argument("--calendar-id",
+        help="直接调用原生日历，如china.cffex；保留回测结束后的已维护日期用于到期判断；两项均省略时由行情推导")
     parser.add_argument("--option-product", default="MO")
     parser.add_argument("--future-product", default="IM")
     parser.add_argument("--index-code", default="000852")
