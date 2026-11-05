@@ -507,6 +507,8 @@ def assemble(inputs, lifecycle, *, product: str, release_path: Path, directions_
     runner = HybridLiveRunner(references=references, session_check=check, orders=orders,
         position_manager=execution.positions, instrument_health=health)
     # 决策闭闸及启动交接分钟仍更新执行参考价；此回调不调用模型、不产生交易目标。
+    # 每个来源在接收时独立刷新参考价，不等待模型线程消费完成分钟。
+    feed.register_reference_price_handler(execution.prices.update)
     feed.register_bar_handler(execution.prices.on_market_event)
     runner.execution_prices = execution.prices
     runner.calendar, runner.strategy, runner.client = calendar, strategy, execution.client

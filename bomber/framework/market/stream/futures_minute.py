@@ -48,6 +48,8 @@ model_timestamp 仅决定模型的原始分钟标签，事件统一为分钟结�
         self._lock = threading.RLock()
         self._states, self._previous, self._last_emitted = {}, {}, {}
         self.observations = {}
+        self._observation_lock = threading.RLock()
+        self._reference_price_handlers = []
         self.required_instruments = frozenset()
         self.failure = None
         self._attached = False
@@ -124,12 +126,52 @@ model_timestamp 仅决定模型的原始分钟标签，事件统一为分钟结�
         except Full:
             self.failure = '完整期货分钟队列溢出，不能继续使用缺失行情'
 
+    def register_reference_price_handler(self, handler):
+        """接收线程只更新线程安全价格缓存；禁止在此回调中计算模型或下单。"""
+        if not callable(handler):
+            raise TypeError('参考价回调须可调用')
+        if handler not in self._reference_price_handlers:
+            self._reference_price_handlers.append(handler)
+
+    def _receive_reference(self, instrument, stamp, price, *, trading_day=None):
+        # 与poll的模型分派锁分离，推理期间仍能接收真实报价。
+        now = self._clock_ns()
+        if instrument not in self._subscriptions or stamp < 0 or stamp > now:
+            return False
+        window = self.calendar.window(ns_datetime(stamp, self.calendar.zone))
+        if window is None or trading_day is not None and window.trading_day != trading_day:
+            return False
+        try:
+            price = number(price, 'reference_price', positive=True)
+        except ValueError:
+            return False  # 原始事件仍入队，由原分钟验证路径报告数据错误。
+        for handler in tuple(self._reference_price_handlers):
+            handler(instrument, price, stamp)
+        return True
+
+    def _observe(self, instrument, stamp, received):
+        with self._observation_lock:
+            previous = self.observations.get(instrument)
+            if previous is None or stamp >= previous[0]:
+                self.observations[instrument] = (stamp, received)
+
     def _enqueue_depth(self, instrument, ts_event, row):
+        observation = getattr(self.upstream, 'depth_observations', {}).get(instrument)
+        price = (getattr(observation, 'reference_price', None)
+                 if getattr(observation, 'ts_event', None) == ts_event else None)
+        self._receive_reference(instrument, ts_event,
+            row.get('LastPrice') if price is None else price, trading_day=str(row.get('TradingDay', '')))
         self._enqueue(('ctp', instrument, ts_event, dict(row)))
 
     def _enqueue_bar(self, event):
         end = event.ts_event + (MINUTE if self.config.timestamp_label == 'start' else 0) - 1
-        self.observations[event.bar.bar_type.instrument_id] = (end, self._clock_ns())
+        instrument = event.bar.bar_type.instrument_id
+        price = event.factors.get('close')
+        if price is None:
+            price = event.bar.close.as_decimal()
+        if event.ts_event % MINUTE == 0 and self._receive_reference(instrument, end, price):
+            # 先同步价格再发布健康观测：会话就绪时已有真实的可定价行情。
+            self._observe(instrument, end, self._clock_ns())
         self._enqueue(('dolphindb', event))
 
     def poll(self, now_ns=None):
@@ -278,14 +320,16 @@ model_timestamp 仅决定模型的原始分钟标签，事件统一为分钟结�
                 **{key: values[key] for key in
                    ('open', 'high', 'low', 'close', 'volume', 'value', 'open_interest')}))
         self._last_emitted[instrument] = end
-        self.observations[instrument] = (end, self._clock_ns())
+        self._observe(instrument, end, self._clock_ns())
         self._emit_bar(bar)
         self._emit_custom_bar(event)
 
     def stale_instruments(self):
         now = self._clock_ns()
+        with self._observation_lock:
+            observations = dict(self.observations)
         return {str(instrument): {'event_ns': stamp, 'received_ns': received, 'reason': self.failure or '分钟行情缺失或失效'}
                 for instrument in self.required_instruments
-                for stamp, received in (self.observations.get(instrument, (None, None)),)
+                for stamp, received in (observations.get(instrument, (None, None)),)
                 if self.failure or stamp is None or not 0 <= now - stamp <= self.config.max_age_seconds * 1e9
                 or received is None or not 0 <= now - received <= self.config.max_age_seconds * 1e9}
