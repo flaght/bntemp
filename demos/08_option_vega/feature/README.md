@@ -11,6 +11,7 @@
 | `__init__.py` | 共用声明、信号字段选择、标准文件读取 |
 | `generate.py` | 原始指数及MA的计算、导出和命令行入口 |
 | `dataframe.py` | 业务DataFrame转换为标准特征记录，与具体公式无关 |
+| `example_dataframe.py` | 可直接运行的完整调用示例：MA20/MA60组合、转换、导出与读回 |
 | `backtest.py` | 特征可见时钟、分钟帧与原回测策略适配 |
 | `index.json` | 本地来源及Schema声明示例 |
 
@@ -101,6 +102,20 @@ first_event_ns,last_event_ns,max_visibility_delay_seconds,file_roundtrip`。
 相同来源记录与配置下，两模式的原始指数内容及摘要一致；MA只按自己的计算完成时间记录可用性。
 
 ## 业务DataFrame转换接口
+
+完整可运行例子在[example_dataframe.py](example_dataframe.py)，从项目根目录执行：
+
+```bash
+python -u -m demos.08_option_vega.feature.example_dataframe \
+  --output-dir tests/results/features/dataframe-blend-example
+```
+
+也可运行`python demos/08_option_vega/feature/example_dataframe.py`并传相同参数。
+示例使用120根合成一分钟数据，计算MA20、MA60及`(MA20+MA60)/2`；预热后输出61条记录。
+不依赖DolphinDB或CTP。应看到`status=passed`、`synthetic=true`和`file_roundtrip=passed`。
+输出`index-blend.csv`、`index-blend.csv.manifest.json`、`index-blend.csv.dataset.json`及`summary.json`。
+已有文件时换新输出目录。替换`calculate_features()`中的业务公式，并同步输出字段与计算版本，即可参考相同转换流程。
+真实输入的缺口、午休和跨日窗口规则由业务函数明确处理；此合成例子只覆盖一个连续上午时段。
 
 新增独立模块`dataframe.py`，接口为：
 
