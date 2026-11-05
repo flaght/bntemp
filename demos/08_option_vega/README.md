@@ -9,6 +9,7 @@
 | `run_backtest.py` | 文件准备、公共模拟Backend/结算接线及回测报告 |
 | `run_live.py` | 在线参数、行情/参考/执行渠道选择及公共Live生命周期启动 |
 | `features.py` | 特征文件生成、声明加载、读取、历史可见时钟与分钟决策帧 |
+| `feature/` | 本目录内的原始指数与MA双文件生成例子、来源声明及调用说明 |
 | `strategy.py` | 策略决策、实际自有仓位管理、公共装配绑定与限额 |
 | `vega_signal.py` | 配置、原数值算法、合约关系及可独立恢复的信号状态 |
 | `live.py` | Live分钟帧适配、健康检查、公共执行装配与只读诊断 |
@@ -92,26 +93,27 @@ python -u -m scripts.integration.options.shared \
 
 ## 3. 自定义特征
 
-统一入口是`features.py`；使用现有特征注册/Provider，不再建一套指数文件或数据库接口。
+生成例子统一放在[feature/](feature/README.md)，查询一次DolphinDB，同时导出原始指数与MA20；不依赖`scripts`。加载、读取及回测分钟帧仍由`features.py`负责，使用现有特征注册/Provider。
 
-四项业务职责都保留在这一个文件：`generate_index_features`生成文件、`index_bundle`加载声明、`read_index_features`读取文件、`build_backtest_runner`驱动分钟帧决策。生成一次后可重复回测；回测入口不隐式连接数据库、重复下载或覆盖数据。Live继续复用相同声明连接来源。
+`feature/generate.py`提供`generate_features`双文件接口；`features.py`保留原始指数单独导出接口，并负责`index_bundle`加载声明、`read_index_features`读取文件、`build_backtest_runner`驱动分钟帧决策。回测入口不隐式连接数据库、重复下载或覆盖数据。Live继续复用相同声明连接来源。
 
 ### 从DolphinDB生成文件
 
 在项目根目录运行，连接使用`.env`/环境中的`DDB_MARKET_*`（兼容旧`DDB_*`）：
 
 ```bash
-python -u -m demos.08_option_vega.features \
-  --connect --index-code 000852 \
-  --start-day 2026-09-01 --end-day 2026-09-11 \
-  --output tests/results/features/index-000852-20260901-20260911.csv
+python -u -m demos.08_option_vega.feature.generate \
+  --connect --key 000852 --window 20 \
+  --start '2026-09-01T00:00:00+08:00' \
+  --end '2026-09-11T23:59:59+08:00' \
+  --output-dir tests/results/features/index-000852-20260901-20260911
 ```
 
-默认声明读取`dfs://min_bar/index_1min`，生成CSV和同名`.manifest.json`，随即读回核对；输出`status=passed`、`file_roundtrip=passed`、记录数及最大可见延迟。输出路径已存在、数据为空或字段/版本无效时失败，不创建成功空包或覆盖旧文件。改为`.parquet`使用相同流程，底层注册、查询、编码和摘要均复用公共API。
+默认声明是本目录`feature/index.json`，读取`dfs://min_bar/index_1min`。输出`index.csv`与`index-ma20.csv`，各自带`.manifest.json`和`.dataset.json`，以及`summary.json`；成功需看到`status=passed`及两套`file_roundtrip=passed`。已有文件、数据为空或无法完成MA预热时失败。底层注册、查询、编码和摘要均复用公共API，接口和完整输出说明见[例子](feature/README.md)。
 
-默认`observed`保留本次观测时间：能得到数据快照，不代表9月份当时已可见，不能直接用于9月份的时点回测。若数据源确认配置中的`updateTime`是该版本真实可用时刻，可显式加`--index-availability source-time`；如果只是后来补录的时间，仍不能提前使用。先核对输出可见时间与实际`--frame-wait-seconds`，不要为了成交把时间改成Bar结束。
+默认`observed`保留本次观测时间：能得到数据快照，不代表9月份当时已可见，不能直接用于9月份的时点回测。若数据源确认配置中的`updateTime`是该版本真实可用时刻，本例可显式加`--availability source-time`；如果只是后来补录的时间，仍不能提前使用。MA的可用时间仍是实际计算完成时间。先核对输出可见时间与实际`--frame-wait-seconds`，不要为了成交把时间改成Bar结束。
 
-生成后将输出路径传给`run_backtest.py --index-feature-file`；这条入口会调用同一文件完成声明加载、文件校验和帧决策。该过程标准化已有指数OHLCV，引用的期权5分钟/期货行情导出不能替代一分钟指数输入，也不把M5补成M1。新计算公式属于本文件的业务逻辑，新增声明/映射仍使用已有底层框架。
+生成后将输出文件及相应声明传给`run_backtest.py --index-feature-file/--index-feature-config`，由`features.py`完成声明加载、文件校验和帧决策。引用的期权5分钟/期货行情导出不能替代一分钟指数输入，也不把M5补成M1。新计算公式属于本例业务逻辑，新增声明/映射仍使用已有底层框架。
 
 ### 修改自定义声明
 
@@ -126,7 +128,7 @@ python -u -m demos.08_option_vega.features \
 
 这里的MA20是20根已完成的一分钟收盘价的均值，包含当前已收盘Bar。当前策略将指数信号用于`行权价 > 指数信号`的候选筛选；选择MA20会改变这个筛选基准。IV、Delta、Vega及退出计算继续使用真实期权价格和同月期货价格。MA20仍是价格量纲；收益率等无量纲特征不能直接套用这个比较。
 
-已有[MA计算与导出工具](../../scripts/integration/features/example.py)支持`export-ma --window 20`，生成`research.index.ma20.minute`，字段为`close/ma20/window`，同时保存CSV、`.manifest.json`与`.dataset.json`。该工具按连续自然分钟计算，缺分钟、午休或跨日清空窗口；每段前19根预热，不输出不完整均值。它不会自动向查询起点之前补取预热数据。
+[本目录MA例子](feature/generate.py)支持`--window 20`，生成`research.index.ma20.minute`，字段为`close/ma20/window`，同时保存CSV、`.manifest.json`与`.dataset.json`。按连续自然分钟计算，缺分钟、午休或跨日清空窗口；每段前19根预热，不输出不完整均值。不会自动向查询起点之前补取预热数据。
 
 对于**已经具备历史可见时间的MA20标准文件**，在上面的完整回测命令中替换/添加以下参数：
 
@@ -139,7 +141,7 @@ python -u -m demos.08_option_vega.features \
 
 同一文件改用`--index-value-field close`，可对比相同分钟、相同可见时间下的原始值与MA20；保持交易腿、日期、资金、风险及等待时间参数一致。报告`index_feature.value_field`和可用帧的`value_field`记录实际选用字段。新参数仅用于回测，Live仍沿用原投影路径。
 
-注意现有`export-ma`是**当前计算的研究快照**，可用时间是本次计算完成时间。今天导出9月份的MA20，可以核验计算与读写，却不能直接参加9月份的时点回测；需要保留历史已发布MA记录，或另行实现按输入当时可见版本逐分钟计算的历史回放。不能把当前计算时间改成历史Bar时间。超过帧期限的MA不会进入已封闭决策。
+注意本例是**当前计算的研究快照**，可用时间是本次计算完成时间。今天导出9月份的MA20，可以核验计算与读写，却不能直接参加9月份的时点回测；需要保留历史已发布MA记录，或另行实现按输入当时可见版本逐分钟计算的历史回放。不能把当前计算时间改成历史Bar时间。超过帧期限的MA不会进入已封闭决策。
 
 离线测试覆盖20条输入计算MA20、声明与标准文件读回、原策略候选/目标变化，以及预热、缺口和迟到拒绝；这些是夹具验证，不是收益表现或原生成交回测结果。
 

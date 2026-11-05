@@ -23,32 +23,88 @@ class SharedHybridCheckpoint:
     def __init__(self, session):
         self.session = session
         self.hybrid = HybridCheckpoint(session.strategy)
+        self._initial_hybrid = self.hybrid.snapshot_state()
         self.identity = {'model': {key: value for key, value in session.model_identity.items()
                                   if key != 'trading_day'},
                          'calendar': session.runner.calendar.provenance['sha256'],
                          'config': self.hybrid.config()}
+        self._accepted_state = None
 
-    def snapshot_state(self):
-        return {'version': 1, 'identity': deepcopy(self.identity), 'hybrid': self.hybrid.snapshot_state(),
-                'execution_cursor': getattr(self.session.client, 'cursor',
-                    getattr(self.session.client, '_journal_cursor', 0))}
-
-    def restore_state(self, state):
+    def _account_source(self):
         port = self.session.client
         if hasattr(port.service, 'snapshot_state'):
             source = port.service.snapshot_state()['sources'].get(port.strategy_id)
-            revision = source['revision'] if source else 0
-            metadata = source.get('metadata', {}) if source else {}
+            return (source['revision'], source.get('metadata', {})) if source else (0, {})
+        return port.state['source_revision'], port.state.get('source_metadata', {})
+
+    def snapshot_state(self):
+        state = {'version': 1, 'identity': deepcopy(self.identity), 'hybrid': self.hybrid.snapshot_state(),
+                'execution_cursor': getattr(self.session.client, 'cursor',
+                    getattr(self.session.client, '_journal_cursor', 0))}
+        revision, _ = self._account_source()
+        if state['hybrid']['revision'] == revision and not state['hybrid']['targets_pending']:
+            # 同向续持不改变账户目标版本，但新的五分钟期限同样属于已确认业务状态。
+            self._accepted_state = deepcopy(state)
+        elif state['hybrid']['revision'] > revision and self._accepted_state is not None:
+            state['accepted_state'] = deepcopy(self._accepted_state)
+        return state
+
+    def _validate_state(self, state, revision=None):
+        if not isinstance(state, dict) or state.get('version') != 1:
+            raise ValueError('共享Hybrid检查点格式或版本无效')
+        if state.get('identity') != self.identity:
+            from bomber.framework.trader.runtime.live.recovery import identity_difference_paths
+            paths = identity_difference_paths(state.get('identity'), self.identity)
+            raise ValueError('共享Hybrid恢复身份不一致；差异字段=' + ','.join(paths))
+        number = state.get('hybrid', {}).get('revision')
+        if type(number) is not int or number < 0 or revision is not None and number != revision:
+            raise ValueError(f'共享Hybrid目标版本不一致: local_revision={number} accepted_revision={revision}')
+        return number
+
+    def _empty_accepted_state(self):
+        """账户从未受理该策略目标时，仅允许恢复无归属仓位、无在途的初始批次。"""
+        port = self.session.client
+        if hasattr(port.service, 'snapshot_state'):
+            quantities = [port.position_manager.position(port.strategy_id, key) for key in port.routes]
+            quantities += [port.position_manager.attribution.working_quantity(
+                port.client_id, instrument, port.strategy_id, key) for key, instrument in port.routes.items()]
         else:
-            revision = port.state['source_revision']
-            metadata = port.state.get('source_metadata', {})
-        if state['hybrid']['revision'] < revision:
+            quantities = list(port.state['positions'].values()) + list(port.state['working'].values())
+        if any(Decimal(str(q)) != 0 for q in quantities) or self._initial_hybrid['revision'] != 0:
+            raise ValueError('共享账户未受理目标但已有策略归属或在途数量，不能恢复初始批次')
+        return dict(version=1, identity=deepcopy(self.identity),
+            hybrid=deepcopy(self._initial_hybrid), execution_cursor=0)
+
+    def restore_state(self, state):
+        local_revision = self._validate_state(state)
+        port = self.session.client
+        revision, metadata = self._account_source()
+        rejected = local_revision > revision
+        if rejected:
+            # set_targets先递增模板版本；预算/行情拒绝发生在账户受理前。
+            # 这份待提交状态不是成交义务，不可改大账户版本或重放旧开仓信号。
+            if local_revision != revision + 1 or state['hybrid'].get('targets_pending') is not True:
+                raise ValueError('共享Hybrid版本领先账户且不是单次待提交目标；'
+                    f'local_revision={local_revision} accepted_revision={revision}')
+            accepted = (deepcopy(metadata.get('hybrid_signal_state')) if revision
+                        else self._empty_accepted_state())
+            if accepted is None:
+                raise ValueError('未受理目标恢复缺少账户已受理的同代Hybrid批次，保留文件并要求核对')
+            self._validate_state(accepted, revision)
+            previous = state.get('accepted_state')
+            if previous is not None:
+                self._validate_state(previous, revision)
+                if previous['hybrid']['last_targets'] != accepted['hybrid']['last_targets']:
+                    raise ValueError('待提交目标的已受理副本与账户目标不一致，保留文件并要求核对')
+                # 优先保留最近同向续持的期限；旧文件无此副本时沿用账户同代副本。
+                accepted = deepcopy(previous)
+            state = accepted
+            state['hybrid']['targets_pending'] = False  # 账户已经受理的目标无需重新提交。
+        elif local_revision < revision:
             state = metadata.get('hybrid_signal_state')
-            if state is None or state['hybrid']['revision'] != revision:
+            if state is None:
                 raise ValueError('共享账户已推进但缺少同代Hybrid批次；保留文件并要求核对')
-        if (state.get('version') != 1 or state.get('identity') != self.identity
-                or state['hybrid']['revision'] != revision):
-            raise ValueError('共享Hybrid的模型、日历、参数或目标版本不一致')
+        self._validate_state(state, revision)
         self.hybrid.restore_state(state['hybrid'])
         self.session.restored_signal_cursor = state.get('execution_cursor')
         strategy, runner = self.session.strategy, self.session.runner
@@ -57,6 +113,13 @@ class SharedHybridCheckpoint:
             runner.target_store.apply(TargetPortfolio(strategy.strategy_id, strategy._revision,
                 strategy.last_processed_ns, targets))
         runner.hold_restored_target(strategy.strategy_id, strategy._revision)
+        self._accepted_state = deepcopy(state)
+        self._accepted_state.pop('accepted_state', None)
+        self._accepted_state['hybrid']['targets_pending'] = False
+        if rejected:
+            print(f'Hybrid恢复未受理目标: strategy_id={port.strategy_id} '
+                  f'local_revision={local_revision} accepted_revision={revision}；'
+                  '恢复账户已受理批次，不重放被拒绝的开仓信号', flush=True)
 
 
 def bind_shared_session(session, service):
