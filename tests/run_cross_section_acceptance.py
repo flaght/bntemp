@@ -102,10 +102,10 @@ FEATURE_RUNTIME_HASHES = {'bomber/framework/market/stream/ctp/converter.py': '15
  'bomber/framework/calendars/sessions.py': '3ae1627d66f50a44a3ea53bb9e953b2e981b3e3a947ef36fbc18704199fb540f',
  'bomber/framework/calendars/hours.py': '273d4ab3bb0da4dd28fc805d4bc8c50790b328309461a7ee36383dc935facda7',
  'demos/08_option_vega/vega_signal.py': '5dccae3a51183d94062c288044cfe28f1776ca44b9b792c9d1d8b8c6b0304cc9',
- 'demos/08_option_vega/features.py': '0907c01ef8d508dfee28cb147f59ff7c4dfe8747702998276d06761adc511338',
- 'demos/08_option_vega/run_backtest.py': 'a463c3bbc5d656a89bc5ffd9d4f44c30bbbf2f406ed57b1a9d87e0145e819fd2',
+ 'demos/08_option_vega/features.py': '4081dba522622a8a2a3f1b30b35bc9a2541b9bf27f2eecfa708a05f8d1c2e9f9',
+ 'demos/08_option_vega/run_backtest.py': '804321f796a24e48a470c3f471990f12d0d8a36c7a63e442d7b96f80ca1d6d36',
  'scripts/integration/options/check_backtest_data.py': '75c1140f623f14ac08a4e7f337066462dfcea337d8b69cd99186df5a6f7fbbaa',
- 'tests/test_option_feature_backtest.py': 'c2b85491318747154ff467c33b6d820af67b79c3f4b2e216aaf9a44d1b9ea680'}
+ 'tests/test_option_feature_backtest.py': '4b84e4b82d7357ff22d4d7c4f7ab01828f5e5e580eeea1ad3322af47df000bfc'}
 
 
 def inspect_feature_deployment(root, expected, retired=()):

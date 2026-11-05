@@ -305,6 +305,21 @@ class SharedAccountTests(unittest.TestCase):
         service.continue_targets("two", self.instrument, self.now)
         self.assertEqual(client.backend.sent[0].quantity, 1)
 
+    def test_missing_stale_and_future_budget_quotes_identify_owner_without_mutating_targets(self):
+        for reason in ('missing', 'stale', 'future'):
+            with self.subTest(reason=reason):
+                service, client, (one, _) = self.service()
+                service.prices = type(service.prices)()
+                limit = service.instrument_limits[self.instrument].max_market_age_ns or 120_000_000_000
+                if reason != 'missing':
+                    stamp = self.now-limit-1 if reason == 'stale' else self.now+1
+                    service.prices.update(self.instrument, 3000, stamp)
+                before = service.snapshot_state()
+                with self.assertRaisesRegex(RuntimeError,
+                        f'strategy_id=one target_key=main instrument={self.instrument} reason={reason}.*age_seconds=.*max_age_seconds='):
+                    self.submit(one, 2)
+                self.assertEqual(service.snapshot_state(), before)
+
     def test_strategy_and_gross_account_budgets_reject_before_mutating(self):
         service, client, (one, two) = self.service(quantity=3)
         self.submit(one, 2)
@@ -1431,6 +1446,36 @@ class SharedAccountTests(unittest.TestCase):
             prepare(host, transport, rows)
         host.start()
         return host, transport, rows
+
+    def test_poll_exception_captures_health_before_strategy_feed_is_stopped(self):
+        with TemporaryDirectory() as directory:
+            host, transport, rows = self.callback_host(Path(directory))
+            runner = rows[0].session.runner
+            contracts = import_module('bomber.framework.trader.runtime.live.contracts')
+            source = contracts.ChannelIdentity('market', 'dolphindb', 'fixture')
+            result = contracts.ReadinessResult((source,), (contracts.ReadinessIssue(
+                source, 'EVENT_STALE', '行情超过允许时效', {'age_seconds':121}),))
+            runner._session_check = NS(last_result=result)
+            def fail():
+                raise RuntimeError('共享执行预算缺少当前有效参考价: instrument=other.DCE')
+            runner.poll_live_inputs = fail
+            stop = runner.stop
+            def cleanup():
+                runner._session_check.last_result = None
+                stop()
+            runner.stop = cleanup
+            try:
+                host.poll()
+                self.assertFalse(rows[0].active)
+                self.assertTrue(rows[1].active)
+                context = runner.failure_readiness
+                self.assertEqual(context['channel_readiness']['issues'][0]['code'], 'EVENT_STALE')
+                self.assertIn('instrument=other.DCE', context['error'])
+                self.assertIn('instrument=other.DCE', runner.failure)
+                self.assertEqual(context['error_type'], 'RuntimeError')
+                self.assertIsNone(runner._session_check.last_result)
+            finally:
+                host.stop()
 
     def test_host_history_runs_with_bars_closed_before_account_authorization(self):
         calls = []

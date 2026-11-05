@@ -173,6 +173,21 @@ class HybridSharedLayoutTests(unittest.TestCase):
         session.runner.publish('model-bars',bar)
         session.runner.publish('model-bars',event)
 
+    def test_account_budget_failure_names_other_products_stale_quote_and_retains_owned_position(self):
+        rb, p = self.session('RB'), self.session('P')
+        self.start(rb, p)
+        self.bar(p, '2026-10-13 09:01', -1)
+        self.transport.fill(self.transport.sent[-1]['OrderRef'])
+        p.client.drain_events()
+        with self.assertRaisesRegex(RuntimeError,
+                'strategy_id=hybrid-p target_key=p_main instrument=p2701.DCE reason=stale'):
+            self.bar(rb, '2026-10-13 09:04', 1)
+        self.assertEqual(len(self.transport.sent), 1)
+        self.assertEqual(self.service.position_manager.position('hybrid-p', 'p_main'), -2)
+        self.assertEqual(self.service.position_manager.position('hybrid-rb', 'rb_main'), 0)
+        self.assertIn('instrument=p2701.DCE', rb.runner.failure_readiness['error'])
+        self.assertEqual(rb.runner.failure_readiness['error_type'], 'RuntimeError')
+
     def test_same_process_two_real_runners_continuous_quantity_and_independent_five_minute_expiry(self):
         rb,p=self.session('RB'),self.session('P')
         self.start(rb,p)
@@ -769,6 +784,23 @@ class HybridLayoutConfigTests(unittest.TestCase):
         host.stop.assert_called_once()
         self.assertLess(now[0],window.end)
         self.assertEqual(host.strategies['rb'].session.runner.continuous_window,window)
+
+    def test_all_stopped_exception_includes_each_strategy_failure(self):
+        from unittest.mock import Mock
+        import threading
+        window = hybrid_fixture.TradingWindow(trading_day='20261013', segment_id='am',
+            start=hybrid_fixture.dt('2026-10-13 09:00'), end=hybrid_fixture.dt('2026-10-13 11:30'))
+        host = Mock()
+        host.strategies = {'rb': NS(active=False,failure='价格缺失',session=NS(runner=NS())),
+            'p': NS(active=False,failure='行情超时',session=NS(runner=NS()))}
+        host.snapshot.return_value = {}
+        host.account.execution.backend.reports = ()
+        with patch('scripts.integration.shared_account.run.build_host',return_value=host), \
+                patch('bomber.framework.trader.runtime.reports.TradingDayLiveReport'):
+            with self.assertRaisesRegex(RuntimeError, 'rb: 价格缺失.*p: 行情超时'):
+                launcher.run_same_process(self.config,window,threading.Event(),
+                    resume=False,remaining=100,clock=lambda:window.start)
+        host.stop.assert_called_once()
 
     def test_same_process_scheduled_query_interruption_is_normal_stop(self):
         from datetime import timedelta

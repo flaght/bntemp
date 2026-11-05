@@ -7,7 +7,7 @@ import time
 from bomber.framework.trader.persistence import JsonStateStore
 from .local import strategy_state_lock
 from .continuous import StopRequested
-from .health import readiness_failure_context
+from .health import readiness_failure_context, record_runner_failure
 from .lifecycle import prepare_strategy_history, validate_session_ready
 
 
@@ -299,6 +299,8 @@ class SharedAccountLiveHost:
             except StopRequested:
                 raise
             except Exception as error:
+                record_runner_failure(session.runner, error)
+                session.runner.failure = session.runner.failure or str(error)
                 if self.service.client.report_errors or self.service._failed:
                     raise
                 self.stop_strategy(item.strategy_id, reason=str(error))

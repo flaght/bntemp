@@ -265,7 +265,8 @@ def run_case(args):
         runner = runner_type(positions=positions, feed=feed, backend=backend,
             bundle=index_bundle, binding=index_binding, records=index_records,
             index_key=args.index_code, wait_seconds=args.frame_wait_seconds,
-            max_market_age_seconds=args.max_market_age_seconds)
+            max_market_age_seconds=args.max_market_age_seconds,
+            index_value_field=getattr(args, "index_value_field", None))
         strategy = assemble_strategy_components(runner, execution, config=config,
             contracts=contracts, futures=future_rows, instruments=instruments,
             index_key=args.index_code, index_id=index_id, trading_days=calendar,
@@ -367,6 +368,8 @@ def main():
     import_module("demos.08_option_vega.features").add_index_feature_arguments(parser)
     parser.add_argument("--index-feature-file", type=Path, required=True,
         help="标准指数特征CSV/Parquet及同名.manifest.json；保留版本和可见时间")
+    parser.add_argument("--index-value-field",
+        help="回测使用的非空数值特征字段，如ma20；省略沿用Bar投影的close")
     parser.add_argument("--frame-wait-seconds", type=float, default=2,
         help="与Live相同的分钟等待预算，范围[0,30]秒")
     parser.add_argument("--calendar", type=Path, help="可选交易日历；未配置时由完整行情日期自动推导")
