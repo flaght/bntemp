@@ -116,6 +116,84 @@ class FuturesMinuteTests(unittest.TestCase):
         fields=dict(value=amount,open_interest=500, **extra)
         return CustomBar(bar,fields)
 
+    def test_received_dolphin_close_updates_reference_before_model_poll(self):
+        feed=self.feed(source='dolphindb',label='start')
+        self.now=ns('2026-10-28 09:02:02')
+        quotes=[]
+        feed.register_reference_price_handler(lambda *row: quotes.append(row))
+        self.upstream.custom(self.bar('2026-10-28 09:01',price=101,amount=2020))
+        self.assertEqual(quotes,[('rb2701.SHFE',Decimal(101),ns('2026-10-28 09:02')-1)])
+        self.assertFalse(feed.events)  # 只接收并缓存，还没有分派模型。
+        self.assertEqual(feed.observations['rb2701.SHFE'][0],quotes[0][2])
+        feed.poll()
+        self.assertEqual(len(feed.events),2)
+        self.assertEqual(len(quotes),1)
+
+    def test_ctp_raw_reference_does_not_wait_for_a_completed_minute(self):
+        feed=self.feed()
+        quotes=[]
+        feed.register_reference_price_handler(lambda *row: quotes.append(row))
+        self.now=ns('2026-10-28 09:01:30')
+        self.depth('2026-10-28 09:01:30',10,10000,price=101)
+        self.assertEqual(quotes,[('rb2701.SHFE',Decimal(101),self.now)])
+        self.assertFalse(feed.events)
+
+    def test_reference_and_health_advance_while_model_dispatch_lock_is_held(self):
+        from threading import Event,Thread
+        feed=self.feed(source='dolphindb',label='start')
+        self.now=ns('2026-10-28 09:02:02')
+        quotes=[]
+        feed.register_reference_price_handler(lambda *row: quotes.append(row))
+        self.upstream.custom(self.bar('2026-10-28 09:01'))
+        entered,release=Event(),Event()
+        errors=[]
+        emit=feed._emit_values
+        def blocked(*args):
+            entered.set()
+            if not release.wait(2):raise RuntimeError('fixture release timeout')
+            emit(*args)
+        feed._emit_values=blocked
+        def poll():
+            try:feed.poll()
+            except BaseException as error:errors.append(error)
+        thread=Thread(target=poll)
+        thread.start()
+        try:
+            self.assertTrue(entered.wait(2))
+            self.now=ns('2026-10-28 09:04:02')
+            self.upstream.custom(self.bar('2026-10-28 09:03',price=102,amount=2040))
+            newest=ns('2026-10-28 09:04')-1
+            self.assertEqual(quotes[-1],('rb2701.SHFE',Decimal(102),newest))
+            self.assertEqual(feed.observations['rb2701.SHFE'][0],newest)
+        finally:
+            release.set();thread.join(2)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(errors,[])
+        self.assertEqual(feed.observations['rb2701.SHFE'][0],newest)
+        self.assertIsNone(feed.failure)
+
+    def test_future_outside_session_and_invalid_prices_do_not_seed_reference(self):
+        feed=self.feed(source='dolphindb',label='start')
+        self.now=ns('2026-10-28 09:02:02')
+        quotes=[]
+        feed.register_reference_price_handler(lambda *row:quotes.append(row))
+        self.upstream.custom(self.bar('2026-10-28 09:02'))  # 尚未完成的未来分钟。
+        self.upstream.custom(self.bar('2026-10-28 08:59'))
+        self.upstream.custom(self.bar('2026-10-28 09:01',price=0))
+        self.assertEqual(quotes,[])
+        self.assertFalse(feed.observations)
+        with self.assertRaisesRegex(ValueError,'尚未完成'):
+            feed.poll()
+
+    def test_old_received_price_keeps_event_time_instead_of_becoming_fresh_on_receipt(self):
+        feed=self.feed(source='dolphindb',label='start')
+        self.now=ns('2026-10-28 09:05:02')
+        quotes=[]
+        feed.register_reference_price_handler(lambda *row:quotes.append(row))
+        self.upstream.custom(self.bar('2026-10-28 09:01'))
+        self.assertEqual(quotes[-1][2],ns('2026-10-28 09:02')-1)
+        self.assertGreater(self.now-quotes[-1][2],120_000_000_000)
+
     def test_ctp_raw_amount_and_interest_and_bar_before_custom(self):
         feed=self.feed()
         self.depth('2026-10-28 09:00:59',10,10000)

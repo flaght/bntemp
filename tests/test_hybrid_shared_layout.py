@@ -188,6 +188,34 @@ class HybridSharedLayoutTests(unittest.TestCase):
         self.assertIn('instrument=p2701.DCE', rb.runner.failure_readiness['error'])
         self.assertEqual(rb.runner.failure_readiness['error_type'], 'RuntimeError')
 
+    def test_rb_budget_can_value_received_p_bar_before_p_model_is_polled(self):
+        rb,p=self.session('RB'),self.session('P')
+        self.start(rb,p)
+        self.bar(p,'2026-10-13 09:00',-1)
+        self.transport.fill(self.transport.sent[-1]['OrderRef']);p.client.drain_events()
+        # 模拟重连后的瞬间：账户保留P归属，但新行情尚未经过P的模型消费路径。
+        self.service.prices._prices.pop(self.p)
+        self.now=hybrid_fixture.ns('2026-10-13 09:02:02')
+        p_processed=p.strategy.last_processed_ns
+        for session in (p,rb):
+            instrument=session.references.instrument_id
+            stamp=hybrid_fixture.ns('2026-10-13 09:01')
+            bar=hybrid_fixture.base.make_bar(instrument_id=instrument,meta=session.references.instrument_meta(),
+                ts_event=stamp,ts_init=self.now,open=100,high=100,low=100,close=100,volume=2)
+            event=hybrid_fixture.base.make_custom_bar(bar,dict(value=200,open_interest=500))
+            session.upstream._emit_custom_bar(event)
+        # 两个行情接收回调都只更新价格和队列，没有计算P/RB模型。
+        self.assertEqual(self.service.prices.get(self.p).ts_event,
+            hybrid_fixture.ns('2026-10-13 09:02')-1)
+        self.assertEqual(p.strategy.last_processed_ns,p_processed)
+        rb.strategy.predictor.on_bar=lambda row:dict(predicted_z=.03,signal=1)
+        rb.bar_feed.poll()
+        self.assertEqual(len(self.transport.sent),2)
+        self.assertEqual(self.transport.sent[-1]['InstrumentID'],'rb2701')
+        self.assertEqual(p.strategy.last_processed_ns,p_processed)
+        self.assertIsNone(rb.runner.failure)
+        self.assertIsNone(p.runner.failure)
+
     def test_same_process_two_real_runners_continuous_quantity_and_independent_five_minute_expiry(self):
         rb,p=self.session('RB'),self.session('P')
         self.start(rb,p)
