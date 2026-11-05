@@ -265,7 +265,7 @@ class Ma20BacktestTests(unittest.TestCase):
     def setUp(self):
         from tests import test_demo_option_vega as fixture
         from bomber.framework.datahub.features import dataset_from_definition, DatasetRegistry
-        from scripts.integration.features.example import moving_average_definition
+        moving_average_definition = import_module("demos.08_option_vega.feature.generate").moving_average_definition
         self.fixture = fixture
         fixture.StrategyTests.setUpClass()
         self.temp = TemporaryDirectory()
@@ -288,7 +288,7 @@ class Ma20BacktestTests(unittest.TestCase):
             self.stamp-(19-i)*M, 0, "minute-fixture") for i in range(count))
 
     def export(self, delay=S//2):
-        from scripts.integration.features.example import moving_average_records
+        moving_average_records = import_module("demos.08_option_vega.feature.generate").moving_average_records
         records, coverage = moving_average_records(self.inputs(), self.input, self.output,
             "000852", 20, clock_ns=lambda: self.stamp+delay)
         export_features(self.path, self.registry, records)
@@ -357,7 +357,7 @@ class Ma20BacktestTests(unittest.TestCase):
         self.assertEqual(f.ctx.intents, [])
 
     def test_warmup_and_gap_require_twenty_complete_consecutive_minutes(self):
-        from scripts.integration.features.example import moving_average_records
+        moving_average_records = import_module("demos.08_option_vega.feature.generate").moving_average_records
         records, _ = moving_average_records(self.inputs(19), self.input, self.output,
             "000852", 20, clock_ns=lambda: self.stamp+S)
         self.assertEqual(records, ())
@@ -374,7 +374,7 @@ class Ma20BacktestTests(unittest.TestCase):
             with self.subTest(field=field), self.assertRaises(FeatureError):
                 features.read_index_features(self.args(field), self.stamp, self.stamp)
         with self.assertRaisesRegex(ValueError, "尚未可见"):
-            from scripts.integration.features.example import moving_average_records
+            moving_average_records = import_module("demos.08_option_vega.feature.generate").moving_average_records
             moving_average_records(self.inputs(), self.input, self.output,
                 "000852", 20, clock_ns=lambda: self.stamp)
 

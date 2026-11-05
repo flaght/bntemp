@@ -32,7 +32,10 @@ FOUR_VENUE_RUNTIME_HASHES = {
 FEATURE_DEPLOYMENT_GROUPS = frozenset(("feature-datahub", "feature-query-live", "option-vega", "option-vega-live", "option-calendar", "option-shared"))
 # 补充原生/08被测文件摘要；入口摘要由独立GAP08入口持有，不在此处自引用。
 RETIRED_OPTION_SOURCES = ('demos/08_option_vega/acceptance.py', 'demos/08_option_vega/assembly.py', 'demos/08_option_vega/backtest_runtime.py', 'demos/08_option_vega/check_backtest_data.py', 'demos/08_option_vega/checkpoint.py', 'demos/08_option_vega/execution_audit.py', 'demos/08_option_vega/live_runtime.py', 'demos/08_option_vega/minute_diagnostics.py', 'demos/08_option_vega/replay_test.py', 'demos/08_option_vega/rollover.py')
-FEATURE_RUNTIME_HASHES = {'bomber/framework/market/stream/ctp/converter.py': '157648c40bed2f5467cb9de68ad4ec2c8f971d62ebf10c77bd7f7c052ea7ee7e',
+FEATURE_RUNTIME_HASHES = {'tests/test_option_feature_example.py': '405cbca2cc37b1ec277a813615d03d33c79b664f9938ecbb6180d49b6c4ad2cb',
+ 'demos/08_option_vega/feature/index.json': 'eba898958f39a4235c4f62751d3e510ac0682fa1eac570a4bca6f43a25967470',
+ 'demos/08_option_vega/feature/generate.py': 'bad3fbf1ef761b97c138b6af4f67515a5b60a5a996a09589b625268de040fac4',
+ 'bomber/framework/market/stream/ctp/converter.py': '157648c40bed2f5467cb9de68ad4ec2c8f971d62ebf10c77bd7f7c052ea7ee7e',
  'bomber/framework/trader/execution/builders.py': '54733c8ab2e7bb9713a2cd2bfcd4d9fe274c53479bc7eac6a8661b9428d2b37d',
  'bomber/framework/trader/execution/ctp/accounting.py': '6bb37ceb2bcad91b4c82f6a6cf77da0440cc8403867a3353f3417106c952f162',
  'bomber/framework/calendars/DateUtilities/Calendar.pyx': 'efcf365e9795bb1669527c3639b21d28d99627119f772ed8a219502c943543eb',
@@ -51,7 +54,7 @@ FEATURE_RUNTIME_HASHES = {'bomber/framework/market/stream/ctp/converter.py': '15
  'demos/08_option_vega/strategy.py': '50b49975577909de7e96017cd93461a7f123f7acf6daa7b5b14edba764c14dd9',
  'scripts/integration/options/__init__.py': 'be65a34d8f3388d3252d04a55411d216618753783cbba6d4cf40f8aa24690b02',
  'scripts/integration/reference_data/calendar_export.py': 'f6ac57245f7893d0cc7406173f573e466df143fb617de969c95f9c49c9e90555',
- 'tests/run_option_vega_offline.py': '02d2a295493a429720bb39f3083fa6c712904640672bf70fc5a9533c9756a52b',
+ 'tests/run_option_vega_offline.py': 'd0492d540a78a9f40622b9164d0b38bc9d14e1ea6eb4f042d0550b78c85401a0',
  'tests/test_calendars_compiled.py': 'bb410784db982991974947cd52242e6800d46e0eecc55b8f57e1c3316abf3c54',
  'tests/test_index_query_feed.py': 'b10ce4d0dff231e61e58c37b36f1a2b7a08615c6bd56c69139837f8544c7fafa',
  'tests/test_live_readiness.py': '68be26427fa88d3821f1aa520c84749756f1793a77c96aad1d0214f19f2a0540',
@@ -105,7 +108,7 @@ FEATURE_RUNTIME_HASHES = {'bomber/framework/market/stream/ctp/converter.py': '15
  'demos/08_option_vega/features.py': '4081dba522622a8a2a3f1b30b35bc9a2541b9bf27f2eecfa708a05f8d1c2e9f9',
  'demos/08_option_vega/run_backtest.py': '804321f796a24e48a470c3f471990f12d0d8a36c7a63e442d7b96f80ca1d6d36',
  'scripts/integration/options/check_backtest_data.py': '75c1140f623f14ac08a4e7f337066462dfcea337d8b69cd99186df5a6f7fbbaa',
- 'tests/test_option_feature_backtest.py': '4b84e4b82d7357ff22d4d7c4f7ab01828f5e5e580eeea1ad3322af47df000bfc'}
+ 'tests/test_option_feature_backtest.py': '06f22ec3e2ea9d378139acac80297b4e7bc68d9ee7df2b154d397c1744a9d3d2'}
 
 
 def inspect_feature_deployment(root, expected, retired=()):

@@ -337,6 +337,159 @@ class HybridSharedLayoutTests(unittest.TestCase):
         self.assertFalse(local_rb.strategy.holdings.active)
         self.assertFalse(self.transport.sent)
 
+    def rejected_target_checkpoint(self, *, previous_target=True, renew=False):
+        from bomber.framework.trader.persistence import JsonStateStore
+        rb, p = self.session('RB'), self.session('P')
+        self.start(rb, p)
+        item = SharedStrategySession(rb, self.root/'rejected-rb.json', {'id':'rejected-rb'})
+        rb.strategy.bind_checkpoint(lambda: item.save(self.service))
+        if previous_target:
+            self.bar(rb, '2026-10-13 09:01', 1)
+            self.transport.fill(self.transport.sent[-1]['OrderRef']); rb.client.drain_events()
+        self.bar(p, '2026-10-13 09:01', -1)
+        self.transport.fill(self.transport.sent[-1]['OrderRef']); p.client.drain_events()
+        if renew:
+            self.bar(p, '2026-10-13 09:05', -1)
+            self.bar(rb, '2026-10-13 09:06', 1)
+            self.bar(p, '2026-10-13 09:07', -1)
+        accepted = rb.signal_checkpoint.snapshot_state()
+        with self.assertRaisesRegex(RuntimeError, 'instrument=p2701.DCE reason=stale'):
+            self.bar(rb, '2026-10-13 09:11' if renew else
+                '2026-10-13 09:06' if previous_target else '2026-10-13 09:04',
+                -1 if previous_target else 1)
+        item.save(self.service)
+        saved = JsonStateStore(item.state_file).load()
+        self.assertEqual(saved.payload['signal']['hybrid']['revision'], saved.payload['revision']+1)
+        self.assertTrue(saved.payload['signal']['hybrid']['targets_pending'])
+        rb.client.begin_stop(); self.service.poll_stopping()
+        self.assertTrue(rb.client.finish_stop_events())
+        rb.runner.stop()
+        return rb, p, item.state_file, saved, accepted
+
+    def test_rejected_reversal_recovers_accepted_batch_and_original_expiry_without_orders(self):
+        from bomber.framework.trader.persistence import JsonStateStore
+        rb, p, path, saved, accepted = self.rejected_target_checkpoint()
+        expiry = accepted['hybrid']['holdings']['active'][0]['expires_at_ns']
+        original = path.read_bytes()
+        resumed = self.session('RB')
+        item = SharedStrategySession(resumed, path, {'id':'rejected-rb'})
+        account_before, sent = self.service.snapshot_state(), len(self.transport.sent)
+        item.restore(self.service, resume=True)
+        self.assertEqual(path.read_bytes(), original)
+        self.assertEqual(self.service.snapshot_state(), account_before)
+        self.assertEqual(resumed.strategy._revision, saved.payload['revision'])
+        self.assertFalse(resumed.strategy._targets_pending)
+        self.assertEqual(resumed.strategy.holdings.active[0].quantity, 2)
+        self.assertEqual(resumed.strategy.holdings.active[0].expires_at_ns, expiry)
+        self.assertEqual(resumed.strategy.last_targets, {'rb2701':Decimal(2)})
+        self.assertEqual(self.service.position_manager.position('hybrid-p','p_main'), -2)
+        self.assertEqual(len(self.transport.sent), sent)
+        # 账户已保存的回报从同代metadata游标重新交付，成交计数不丢失，也不重复下单。
+        resumed.runner.start(); self.addCleanup(resumed.runner.stop)
+        resumed.client.drain_events()
+        self.assertEqual(resumed.strategy.fills_received, 1)
+        item.save(self.service)
+        current = JsonStateStore(path).load()
+        self.assertEqual(current.payload['revision'], current.payload['signal']['hybrid']['revision'])
+        self.assertEqual(len(self.transport.sent), sent)
+
+    def test_rejected_target_preserves_latest_same_direction_renewal_deadline(self):
+        _, _, path, saved, accepted = self.rejected_target_checkpoint(renew=True)
+        original = self.service._sources['hybrid-rb']['metadata']['hybrid_signal_state']
+        latest_expiry = accepted['hybrid']['holdings']['active'][0]['expires_at_ns']
+        self.assertGreater(latest_expiry, original['hybrid']['holdings']['active'][0]['expires_at_ns'])
+        resumed = self.session('RB')
+        SharedStrategySession(resumed,path,{'id':'rejected-rb'}).restore(self.service,resume=True)
+        self.assertEqual(resumed.strategy.holdings.active[0].expires_at_ns, latest_expiry)
+        self.assertEqual(resumed.strategy.holdings.active[0].quantity, 2)
+        self.assertEqual(len(self.transport.sent), 2)
+
+    def test_old_rejected_checkpoint_without_accepted_copy_uses_account_metadata(self):
+        from copy import deepcopy
+        _, _, path, saved, accepted = self.rejected_target_checkpoint()
+        old = deepcopy(saved.payload['signal'])
+        old.pop('accepted_state',None)
+        resumed = self.session('RB')
+        resumed.restore_signal(old)
+        self.assertEqual(resumed.strategy.holdings.active[0].expires_at_ns,
+            accepted['hybrid']['holdings']['active'][0]['expires_at_ns'])
+        self.assertEqual(resumed.strategy._revision, saved.payload['revision'])
+        self.assertFalse(resumed.strategy._targets_pending)
+
+    def test_rejected_first_entry_recovers_empty_own_batches_preserving_other_strategy_position(self):
+        _, p, path, saved, _ = self.rejected_target_checkpoint(previous_target=False)
+        resumed = self.session('RB')
+        account_before = self.service.snapshot_state()
+        SharedStrategySession(resumed, path, {'id':'rejected-rb'}).restore(self.service, resume=True)
+        self.assertEqual(resumed.strategy._revision, 0)
+        self.assertFalse(resumed.strategy._targets_pending)
+        self.assertFalse(resumed.strategy.holdings.active)
+        self.assertEqual(resumed.strategy.last_targets, {})
+        self.assertEqual(self.service.position_manager.position('hybrid-p','p_main'), -2)
+        self.assertEqual(self.service.snapshot_state(), account_before)
+        self.assertEqual(len(self.transport.sent), 1)
+
+    def test_rejected_target_does_not_bypass_changed_model_or_sizing_identity(self):
+        from copy import deepcopy
+        _, _, path, saved, _ = self.rejected_target_checkpoint()
+        resumed = self.session('RB')
+        for key in ('model', 'calendar', 'config'):
+            bad = deepcopy(saved.payload['signal'])
+            if key == 'config':
+                bad['identity'][key]['max_contracts'] = 3
+            else:
+                bad['identity'][key] = 'changed'
+            before = resumed.signal_checkpoint.snapshot_state()
+            with self.assertRaisesRegex(ValueError, '恢复身份不一致；差异字段=session.'+key):
+                resumed.restore_signal(bad)
+            self.assertEqual(resumed.signal_checkpoint.snapshot_state(), before)
+
+    def test_unexplained_version_jump_or_missing_accepted_batches_still_rejects(self):
+        from copy import deepcopy
+        _, _, path, saved, _ = self.rejected_target_checkpoint()
+        resumed = self.session('RB')
+        for pending, delta in ((False,0),(True,1)):
+            bad = deepcopy(saved.payload['signal'])
+            bad['hybrid']['targets_pending'] = pending
+            bad['hybrid']['revision'] += delta
+            with self.assertRaisesRegex(ValueError, '不是单次待提交目标'):
+                resumed.restore_signal(bad)
+        source = self.service._sources['hybrid-rb']['metadata']
+        previous = source.pop('hybrid_signal_state')
+        try:
+            with self.assertRaisesRegex(ValueError, '缺少账户已受理的同代Hybrid批次'):
+                resumed.restore_signal(saved.payload['signal'])
+            self.assertEqual(resumed.strategy._revision, 0)
+        finally:
+            source['hybrid_signal_state'] = previous
+
+    def test_empty_accepted_target_cannot_clear_existing_owned_quantity(self):
+        _, _, path, saved, _ = self.rejected_target_checkpoint(previous_target=False)
+        resumed = self.session('RB')
+        self.service.position_manager.set_strategy_position('hybrid-rb','rb_main',1)
+        try:
+            with self.assertRaisesRegex(ValueError, '已有策略归属或在途数量'):
+                resumed.restore_signal(saved.payload['signal'])
+            self.assertEqual(resumed.strategy._revision, 0)
+        finally:
+            self.service.position_manager.set_strategy_position('hybrid-rb','rb_main',0)
+
+    def test_remote_worker_uses_same_accepted_state_for_rejected_target_recovery(self):
+        _, _, path, saved, accepted = self.rejected_target_checkpoint()
+        server_rb = self.session('RB')
+        protocol = AccountExecutionProtocol(self.service, keys={'hybrid-rb':'rb','hybrid-p':'p'},
+            trading_day='20261013')
+        state = protocol.state('hybrid-rb')
+        remote = RemoteAccountService(NS(sid='hybrid-rb'), server_rb.client.configuration(), state)
+        resumed = self.session('RB', service=remote, driver=RemoteTraderSession(remote,'20261013'))
+        resumed.restore_signal(saved.payload['signal'])
+        self.assertEqual(resumed.strategy._revision, state['source_revision'])
+        self.assertEqual(resumed.strategy.holdings.active[0].expires_at_ns,
+            accepted['hybrid']['holdings']['active'][0]['expires_at_ns'])
+        self.assertEqual(resumed.strategy.holdings.active[0].quantity, 2)
+        self.assertFalse(resumed.strategy._targets_pending)
+        self.assertEqual(len(self.transport.sent), 2)
+
     def test_account_metadata_recovers_batch_when_strategy_file_lags_one_target(self):
         rb,p=self.session('RB'),self.session('P')
         initial=rb.signal_checkpoint.snapshot_state()
