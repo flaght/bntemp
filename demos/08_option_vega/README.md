@@ -94,7 +94,7 @@ python -u -m scripts.integration.options.shared \
 
 所有特征职责统一放在[feature/](feature/README.md)：查询一次DolphinDB，同时导出原始指数与MA20；加载声明、读取和回测分钟帧也在该包内，不依赖`scripts`。底层使用现有特征注册/Provider。
 
-`feature/generate.py`负责生成/导出，提供`generate_features`双文件接口和`generate_index_features`单独指数导出API；`feature/__init__.py`负责`index_bundle`加载声明、`read_index_features`读取文件；`feature/backtest.py`负责`build_backtest_runner`驱动分钟帧决策。生成命令统一使用`feature.generate`。回测入口不隐式连接数据库、重复下载或覆盖数据。Live继续复用包内的声明接口。
+`feature/generate.py`负责生成/导出，提供`generate_features`双文件接口和`generate_index_features`单独指数导出API，两者共用查询、导出校验与报告结构，双文件模式增加MA计算；`feature/__init__.py`负责`index_bundle`加载声明、`read_index_features`读取文件；`feature/backtest.py`负责`build_backtest_runner`驱动分钟帧决策。生成命令统一使用`feature.generate`。回测入口不隐式连接数据库、重复下载或覆盖数据。Live继续复用包内的声明接口。
 
 ### 从DolphinDB生成文件
 
@@ -128,6 +128,8 @@ python -u -m demos.08_option_vega.feature.generate \
 这里的MA20是20根已完成的一分钟收盘价的均值，包含当前已收盘Bar。当前策略将指数信号用于`行权价 > 指数信号`的候选筛选；选择MA20会改变这个筛选基准。IV、Delta、Vega及退出计算继续使用真实期权价格和同月期货价格。MA20仍是价格量纲；收益率等无量纲特征不能直接套用这个比较。
 
 [本目录MA例子](feature/generate.py)支持`--window 20`，生成`research.index.ma20.minute`，字段为`close/ma20/window`，同时保存CSV、`.manifest.json`与`.dataset.json`。按连续自然分钟计算，缺分钟、午休或跨日清空窗口；每段前19根预热，不输出不完整均值。不会自动向查询起点之前补取预热数据。
+
+业务公式独立为`calculate_moving_average(frame, window)`，直接接收/返回DataFrame，默认以NumPy保留Decimal精度。`feature/dataframe.py`提供通用`dataframe_to_records`，其他业务特征算完DataFrame后也可直接转换；MA已复用它。`moving_average_records`负责MA来源、分段及依赖时间检查；可通过`calculator`传入其他Pandas/NumPy计算函数，配套修改输出Schema与计算版本。转换接口和组合均线示例见[说明](feature/README.md#业务dataframe转换接口)。
 
 对于**已经具备历史可见时间的MA20标准文件**，在上面的完整回测命令中替换/添加以下参数：
 

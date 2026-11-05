@@ -1,6 +1,5 @@
 """08自定义特征例子：只读查询一次DolphinDB，导出原始指数和MA标准文件包。"""
 import argparse
-from collections import deque
 from dataclasses import replace
 from datetime import datetime, timezone
 from decimal import Decimal, localcontext
@@ -15,11 +14,10 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
     __package__ = "demos.08_option_vega.feature"
 
-from bomber.framework.datahub.features import Alignment, DatasetRegistry, ExternalDataRecord, FeatureError, dataset_from_definition
-from bomber.framework.dataprep.features import FeatureProviderFactory, FeatureRequest, FileFeatureProvider, encode_record, export_features, load_feature_bundle
+from bomber.framework.datahub.features import Alignment, DatasetRegistry, FeatureError, dataset_from_definition
+from bomber.framework.dataprep.features import FeatureProviderFactory, FeatureRequest, bundle_from_definition, encode_record, export_features, load_feature_bundle
 from bomber.framework.dataprep.sources.policy import DataSourcePurpose
-
-from . import index_bundle
+from .dataframe import dataframe_to_records
 
 CONFIG = Path(__file__).with_name("index.json")
 MINUTE_NS = 60_000_000_000
@@ -49,10 +47,38 @@ def moving_average_definition(window):
     }
 
 
-def moving_average_records(records, input_spec, output_spec, key, window, *, clock_ns=time.time_ns):
-    """以当前可见最新修订计算研究快照；缺分钟/跨日重置，不伪造历史可用性。"""
+def calculate_moving_average(frame, window):
+    """纯DataFrame计算：输入close及可选segment_id，输出Payload列，保留索引。"""
+    import numpy as np
+    import pandas as pd
+
+    if type(window) is not int or not 1 <= window <= 10000:
+        raise ValueError("MA窗口须为1—10000的整数")
+    result = pd.DataFrame({"close": frame["close"].map(lambda value: Decimal(str(value)))}, index=frame.index)
+    result[f"ma{window}"] = None
+    result["window"] = window
+    groups = frame.groupby("segment_id", sort=False) if "segment_id" in frame else ((0, frame),)
+    with localcontext() as context:
+        context.prec = 34
+        for _, group in groups:
+            if len(group) < window:
+                continue
+            # NumPy窗口运算；object数组保留Decimal，避免rolling.mean转float64。
+            values = result.loc[group.index, "close"].to_numpy(dtype=object)
+            means = np.lib.stride_tricks.sliding_window_view(values, window).sum(
+                axis=1, initial=Decimal(0)) / Decimal(window)
+            result.loc[group.index[window-1:], f"ma{window}"] = means
+    return result.dropna()
+
+
+def moving_average_records(records, input_spec, output_spec, key, window, *, clock_ns=time.time_ns, calculator=None):
+    """记录→DataFrame→业务计算→标准记录；这里只适配来源、分段与可见时间。"""
+    import pandas as pd
+
     if input_spec.frequency.period_ns != MINUTE_NS:
         raise ValueError("本例输入须为一分钟频率")
+    if type(window) is not int or not 1 <= window <= 10000:
+        raise ValueError("MA窗口须为1—10000的整数")
     selected = {}
     for record in records:
         if (record.dataset_id, record.schema_version, record.key) != (
@@ -64,43 +90,60 @@ def moving_average_records(records, input_spec, output_spec, key, window, *, clo
         elif record.revision == previous.revision and record != previous:
             raise ValueError("同一输入修订存在冲突")
     ordered = sorted(selected.values(), key=lambda record: record.ts_event)
-    source_digest = hashlib.sha256(json.dumps(
-        sorted({record.source for record in ordered})).encode()).hexdigest()
-    source = f"derived:ma{window}:{input_spec.fingerprint}:{source_digest}"
-    history, derived, gaps = deque(maxlen=window), [], []
-    last_event, last_day, last_completed, warmup = None, None, -1, 0
+    source_digest = hashlib.sha256(json.dumps(sorted({record.source for record in ordered})).encode()).hexdigest()
+    source = f"derived:{output_spec.dataset_id}:{input_spec.fingerprint}:{source_digest}"
+    closing, segments, gaps = [], [], []
+    last_event, last_day, segment = None, None, 0
+    zone = ZoneInfo(input_spec.frequency.timezone)
     for record in ordered:
         input_spec.frequency.close_ns(record.ts_event)
         if record.quality_flags & input_spec.rejected_quality_flags:
             raise ValueError("输入最新修订质量不合格，不能计算MA")
-        day = datetime.fromtimestamp(record.ts_event // 1_000_000_000,
-            ZoneInfo(input_spec.frequency.timezone)).date()
-        if last_event is not None and (record.ts_event - last_event != MINUTE_NS or day != last_day):
+        day = datetime.fromtimestamp(record.ts_event // 1_000_000_000, zone).date()
+        if last_event is not None and (record.ts_event-last_event != MINUTE_NS or day != last_day):
             gaps.append({"previous_event_ns": last_event, "next_event_ns": record.ts_event})
-            history.clear()
-        closing = Decimal(str(record.payload.close))
-        if not closing.is_finite() or closing <= 0:
+            segment += 1
+        value = Decimal(str(record.payload.close))
+        if not value.is_finite() or value <= 0:
             raise ValueError("输入close须为有限正数")
-        history.append((record, closing))
+        closing.append(value)
+        segments.append(segment)
         last_event, last_day = record.ts_event, day
-        if len(history) < window:
-            warmup += 1
-            continue
-        with localcontext() as context:
-            context.prec = 34
-            average = sum((close for _, close in history), Decimal(0)) / Decimal(window)
-        payload = output_spec.payload_type(**{"close": closing, f"ma{window}": average, "window": window})
+    frame = pd.DataFrame({"close": closing, "segment_id": segments},
+        index=pd.Index([record.ts_event for record in ordered], name="ts_event"))
+    calculated = (calculator or calculate_moving_average)(frame, window)
+    fields = {field.name for field in output_spec.payload_fields}
+    if (not isinstance(calculated, pd.DataFrame) or not calculated.columns.is_unique
+            or set(calculated.columns) != fields or not calculated.index.is_unique
+            or not calculated.index.is_monotonic_increasing or not calculated.index.isin(frame.index).all()):
+        raise ValueError("计算函数须返回匹配输出Schema的DataFrame，索引为原始业务时间的有序唯一子集")
+    calculated = calculated.rename_axis("ts_event")
+    positions = {record.ts_event: index for index, record in enumerate(ordered)}
+    completed_times, source_times, qualities = [], [], []
+    last_completed = -1
+    for event in calculated.index:
+        position = positions[event]
+        first = position-window+1
+        if first < 0 or segments[first] != segments[position]:
+            raise ValueError("计算结果在完整窗口预热前输出")
+        history = ordered[first:position+1]
         completed = clock_ns()
-        if completed < max(item.visible_ns for item, _ in history) or completed < last_completed:
+        if completed < max(item.visible_ns for item in history) or completed < last_completed:
             raise ValueError("计算时钟回退或输入尚未可见，不能回填MA发布时间")
         flags = 0
-        for item, _ in history:
+        for item in history:
             flags |= item.quality_flags
-        derived.append(ExternalDataRecord(output_spec.dataset_id, output_spec.schema_version, key,
-            payload, record.ts_event, completed, max(item.source_ns for item, _ in history),
-            completed, source, flags, completed))
+        completed_times.append(completed)
+        source_times.append(max(item.source_ns for item in history))
+        qualities.append(flags)
         last_completed = completed
-    return tuple(derived), {"selected_input_rows": len(ordered), "warmup_skipped": warmup,
+    available = pd.Series(completed_times, index=calculated.index, dtype=object)
+    derived = dataframe_to_records(calculated, output_spec, key=key, source=source,
+        available_ns=available, received_ns=available,
+        source_ns=pd.Series(source_times, index=calculated.index, dtype=object),
+        quality_flags=pd.Series(qualities, index=calculated.index, dtype=object))
+    warmup = int(frame.groupby("segment_id").size().clip(upper=window-1).sum())
+    return derived, {"selected_input_rows": len(ordered), "warmup_skipped": warmup,
                             "window_resets": len(gaps), "gaps": gaps}
 
 
@@ -122,32 +165,40 @@ def _export_and_check(path, definition, registry, records, key, max_rows):
         loaded = provider.read(request).records
     if sorted(loaded, key=lambda row: row.identity) != sorted(records, key=lambda row: row.identity):
         raise FeatureError("特征导出后逐记录读回不一致")
+    spec = registry.get(first.dataset_id, first.schema_version)
     return {"output": str(path), "dataset_config": str(config), "manifest": str(path) + ".manifest.json",
         "dataset_id": first.dataset_id, "schema_version": first.schema_version,
-        "rows": len(records), "file_roundtrip": "passed", "sha256": manifest["sha256"]}
+        "schema_fingerprint": spec.fingerprint, "computation_version": spec.computation_version,
+        "rows": len(records), "file_roundtrip": "passed", "sha256": manifest["sha256"],
+        "first_event_ns": min(row.ts_event for row in records),
+        "last_event_ns": max(row.ts_event for row in records),
+        "max_visibility_delay_seconds": max((row.visible_ns-row.ts_event)/1e9 for row in records)}
 
 
-def generate_features(*, start_ns, end_ns, output_dir, connection, config=CONFIG,
-        dataset="index.minute", schema_version=1, key="000852", source_key=None,
-        window=20, max_rows=1_000_000, availability=None):
-    """显式注入连接；一次查询，原始记录与MA分别导出；不连接交易柜台。"""
-    definition = moving_average_definition(window)
-    if type(max_rows) is not int or not window <= max_rows <= 1_000_000:
-        raise FeatureError("须满足window <= max_rows <= 1000000")
+def _generate(*, output, start_ns, end_ns, connection, config, dataset, schema_version,
+        key, source_key, window, max_rows, availability):
+    """同一查询、记录处理和发布流程；window为空时跳过MA分支。"""
+    definition = moving_average_definition(window) if window is not None else None
+    if type(max_rows) is not int or not (window or 1) <= max_rows <= 1_000_000:
+        raise FeatureError("须满足1 <= window（若计算MA）<= max_rows <= 1000000")
     cutoff = time.time_ns()
     if not 0 <= start_ns <= end_ns <= cutoff or not key or source_key == "":
         raise FeatureError("时间区间或指数代码无效，结束时刻不能在未来")
-    output_dir = Path(output_dir).expanduser().resolve()
-    paths = (output_dir / "index.csv", output_dir / f"index-ma{window}.csv")
-    for path in paths:
+    output = Path(output).expanduser().resolve()
+    if output.suffix.lower() not in {".csv", ".parquet"}:
+        raise FeatureError("特征导出须为CSV或Parquet")
+    ma_output = output.with_name(f"index-ma{window}{output.suffix}") if definition else None
+    for path in (output, ma_output) if ma_output else (output,):
         for candidate in (path, Path(str(path) + ".manifest.json"), Path(str(path) + ".dataset.json")):
             if candidate.exists():
                 raise FeatureError(f"输出已存在，请另选目录: {candidate}")
-    report_path = output_dir / "summary.json"
+    report_path = output.parent / "summary.json"
     if report_path.exists():
         raise FeatureError("summary.json已存在，请另选输出目录")
     config = Path(config).expanduser().resolve()
-    bundle = load_feature_bundle(config, connection)
+    content = config.read_bytes()
+    declaration = json.loads(content)
+    bundle = bundle_from_definition(declaration, connection, base_dir=config.parent)
     binding = bundle.binding(dataset, schema_version)
     if (binding.backend not in {"dolphindb", "dolphindb-raw"}
             or binding.spec.frequency.period_ns != MINUTE_NS
@@ -156,7 +207,7 @@ def generate_features(*, start_ns, end_ns, output_dir, connection, config=CONFIG
         raise FeatureError("本例须使用DolphinDB一分钟EXACT指数及真实OHLCV投影")
     if not any(field.name == "close" and field.kind in {"decimal", "float", "int"}
                and not field.nullable for field in binding.spec.payload_fields):
-        raise FeatureError("MA输入须声明非空数值close")
+        raise FeatureError("指数输入须声明非空数值close")
     source_config = binding.source_config
     if availability is not None:
         if binding.backend != "dolphindb-raw" or availability not in {"observed", "source-time"}:
@@ -168,76 +219,52 @@ def generate_features(*, start_ns, end_ns, output_dir, connection, config=CONFIG
             binding.backend, source_config, bundle.registry, **binding.provider_options) as provider:
         batch = provider.read(request)
     if not batch.records:
-        raise FeatureError("指定区间没有可见指数记录，未生成文件")
-    # 显式业务键映射；保留源可用时间、接收时间和全部修订，原始文件不裁剪预热。
+        raise FeatureError("指定区间没有可见记录，未生成文件")
+    # 两接口共用显式业务键映射；不改时间或裁剪原始记录的预热/修订。
     inputs = tuple(replace(row, key=key) for row in batch.records)
-    output_spec = dataset_from_definition(definition)
-    records, coverage = moving_average_records(inputs, binding.spec, output_spec, key, window)
-    if not records:
-        raise FeatureError(f"没有足够的连续{window}根分钟Bar，未生成文件")
-    input_definition = next(item for item in json.loads(config.read_text(encoding="utf-8"))["datasets"]
+    records, coverage, ma_report = None, None, None
+    if definition is not None:
+        output_spec = dataset_from_definition(definition)
+        records, coverage = moving_average_records(inputs, binding.spec, output_spec, key, window)
+        if not records:
+            raise FeatureError(f"没有足够的连续{window}根分钟Bar，未生成文件")
+    input_definition = next(item for item in declaration["datasets"]
         if (item["schema"]["dataset_id"], item["schema"]["schema_version"]) == (dataset, schema_version))
-    index_report = _export_and_check(paths[0], input_definition, bundle.registry, inputs, key, max_rows)
-    ma_report = _export_and_check(paths[1], {"schema": definition}, DatasetRegistry((output_spec,)),
-        records, key, max_rows)
+    index_report = _export_and_check(output, input_definition, bundle.registry, inputs, key, max_rows)
+    if records is not None:
+        ma_report = _export_and_check(ma_output, {"schema": definition}, DatasetRegistry((output_spec,)),
+            records, key, max_rows)
     report = {"status": "passed", "key": key, "source_key": request.keys[0], "window": window,
         "input_source": batch.source_identity, "input_schema_fingerprint": binding.spec.fingerprint,
         "input_records_sha256": hashlib.sha256(json.dumps([encode_record(row) for row in inputs],
             sort_keys=True, separators=(",", ":"), allow_nan=False).encode()).hexdigest(),
-        "input_config_sha256": hashlib.sha256(config.read_bytes()).hexdigest(),
-        "index": index_report, "ma": ma_report, **coverage,
+        "input_config_sha256": hashlib.sha256(content).hexdigest(),
+        "index": index_report, "ma": ma_report, "coverage": coverage,
         "index_availability": getattr(source_config, "availability", "standard-envelope"),
-        "ma_availability": "actual_calculation_completion_after_input_observation",
-        "visibility_note": "MA为当前可见最新修订的研究快照，不是历史逐分钟可用性回放"}
+        "ma_availability": "actual_calculation_completion_after_input_observation" if ma_report else None,
+        "visibility_note": "原始指数保留源可见时间；MA为当前计算的研究快照，不是历史逐分钟可用性回放"
+            if ma_report else "原始指数保留源可用/接收时间，observed快照不能证明过去当时已可见"}
     with report_path.open("x", encoding="utf-8") as stream:
         json.dump(report, stream, ensure_ascii=False, indent=2)
         stream.write("\n")
     return report
 
 
+def generate_features(*, start_ns, end_ns, output_dir, connection, config=CONFIG,
+        dataset="index.minute", schema_version=1, key="000852", source_key=None,
+        window=20, max_rows=1_000_000, availability=None):
+    """统一生成接口；默认生成原始指数和MA，window=None时仅原始指数。"""
+    return _generate(output=Path(output_dir) / "index.csv", start_ns=start_ns, end_ns=end_ns,
+        connection=connection, config=config, dataset=dataset, schema_version=schema_version,
+        key=key, source_key=source_key, window=window, max_rows=max_rows, availability=availability)
+
+
 def generate_index_features(args, start_ns, end_ns, *, connection):
-    """显式从DolphinDB生成标准包；不回填可见时间、不覆盖已有文件。"""
-    output = Path(args.output).expanduser().resolve()
-    if output.suffix.lower() not in {".csv", ".parquet"}:
-        raise FeatureError("特征导出须为CSV或Parquet")
-    if output.exists() or Path(str(output) + ".manifest.json").exists():
-        raise FeatureError("导出目标已存在，请使用新文件名，不覆盖历史包")
-    bundle, binding = index_bundle(args.index_feature_config, args.index_dataset,
-        args.index_schema_version, connection=connection)
-    if binding.backend not in {"dolphindb", "dolphindb-raw"}:
-        raise FeatureError("08生成入口须使用DolphinDB来源声明")
-    config = binding.source_config
-    availability = getattr(args, "index_availability", None)
-    if availability is not None:
-        if binding.backend != "dolphindb-raw":
-            raise FeatureError("可见时间覆盖仅适用于DolphinDB原表；标准记录保留原时间")
-        config = replace(config, availability=availability)
-    cutoff = time.time_ns()
-    if end_ns > cutoff:
-        raise FeatureError("特征导出结束时刻尚未到达，请选择已结束的日期区间")
-    request = FeatureRequest(args.index_dataset, args.index_schema_version,
-        (args.index_code,), start_ns, end_ns, cutoff, max_rows=args.max_rows)
-    with FeatureProviderFactory.create_for(DataSourcePurpose.FEATURE_EXPORT,
-            binding.backend, config, bundle.registry, **binding.provider_options) as provider:
-        batch = provider.read(request)
-    if not batch.records:
-        raise FeatureError("指数来源在请求区间/代码下没有可见记录，未生成文件")
-    manifest = export_features(output, bundle.registry, batch.records)
-    with FileFeatureProvider(output, bundle.registry) as provider:
-        loaded = provider.read(replace(request, as_of_ns=max(cutoff, time.time_ns())))
-    if loaded.records != batch.records:
-        raise FeatureError("生成后的特征文件与来源记录不一致")
-    mode = getattr(config, "availability", "standard-envelope")
-    return {"status": "passed", "output": str(output), "manifest": str(output) + ".manifest.json",
-        "dataset_id": binding.spec.dataset_id, "schema_version": binding.spec.schema_version,
-        "computation_version": binding.spec.computation_version, "source": batch.source_identity,
-        "records": len(batch.records), "availability": mode, "file_roundtrip": "passed",
-        "first_event_ns": min(r.ts_event for r in batch.records),
-        "last_event_ns": max(r.ts_event for r in batch.records),
-        "max_visibility_delay_seconds": max((r.visible_ns - r.ts_event) / 1e9 for r in batch.records),
-        "visibility_note": "本次观测时间，不能作为过去分钟当时已可用的证明" if mode == "observed"
-            else "保留源记录的可用时间；原表发布时间含义由数据来源保证",
-        "export_manifest": manifest}
+    """保留单指数调用参数，发布流程和报告结构与双文件接口一致。"""
+    return _generate(output=args.output, start_ns=start_ns, end_ns=end_ns, connection=connection,
+        config=args.index_feature_config, dataset=args.index_dataset, schema_version=args.index_schema_version,
+        key=args.index_code, source_key=getattr(args, "source_key", None), window=None,
+        max_rows=args.max_rows, availability=getattr(args, "index_availability", None))
 
 
 def main(argv=None):
