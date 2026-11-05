@@ -98,6 +98,7 @@ class CtpTdApiTransport:
         self._account_revision = 0
         self._orders_revision = 0
         self._last_orders: dict[str, dict[str, Any]] = {}
+        self.order_query_diagnostics: Mapping[str, Mapping[str, str]] = MappingProxyType({})
         self._insert_requests: dict[int, dict[str, Any]] = {}
         self._rejected_refs: set[str] = set()
         self._action_requests: dict[int, str] = {}
@@ -571,6 +572,7 @@ class CtpTdApiTransport:
 
     def query_active_orders(self) -> ActiveOrderSnapshot:
         self._require_ready()
+        self.order_query_diagnostics = MappingProxyType({})
         rows = self._request("orders", "reqQryOrder", {
             "BrokerID": self.broker_id, "InvestorID": self.investor_id,
         })
@@ -578,14 +580,21 @@ class CtpTdApiTransport:
         if session is None:
             raise RuntimeError("CTP活动订单查询缺少登录会话")
         orders: list[ActiveOrder] = []
+        details = {}
         for row in rows:
             if (str(row.get("BrokerID", "")) != self.broker_id
                     or str(row.get("InvestorID", "")) != self.investor_id):
                 raise RuntimeError("CTP订单回报账户不匹配")
             status = str(row.get("OrderStatus", ""))
-            if status in {"0", "5"} or str(row.get("OrderSubmitStatus", "")) == "4":
+            ref = str(row.get("OrderRef", ""))
+            key = f"CTP-{session.broker_id}-{session.investor_id}-{session.trading_day}-{ref}"
+            details[key] = {name: str(row.get(name, "")) for name in (
+                "InstrumentID", "OrderStatus", "OrderSubmitStatus", "Direction",
+                "VolumeTotalOriginal", "VolumeTraded", "VolumeTotal")}
+            # SDK定义2/4为“不在队列中”，部分成交后的剩余量不再是活动委托。
+            if status in {"0", "2", "4", "5"} or str(row.get("OrderSubmitStatus", "")) == "4":
                 continue
-            if status not in {"1", "2", "3", "4", "a", "b", "c"}:
+            if status not in {"1", "3", "a", "b", "c"}:
                 raise RuntimeError(f"CTP未知活动订单状态: {status}")
             order_ref = str(row.get("OrderRef", ""))
             symbol, venue = str(row.get("InstrumentID", "")), str(row.get("ExchangeID", ""))
@@ -604,6 +613,7 @@ class CtpTdApiTransport:
                 order_quantity=original, cumulative_filled=filled,
                 remaining_quantity=remaining,
             ))
+        self.order_query_diagnostics = MappingProxyType(details)
         snapshot = ActiveOrderSnapshot(
             self.client_id, self.account_id, self._orders_revision + 1,
             time.time_ns(), tuple(orders),

@@ -156,6 +156,8 @@ class CtpNativeTraderDriver:
         self._trade_refs: dict[tuple[str, str, str], str] = {}
         self._accepted: set[str] = set()
         self._completed_refs: set[str] = set()
+        # 终态通知可能先于OnRtnTrade到达；等已声明成交量全部入账后再释放余量。
+        self._terminal_cancels: dict[str, tuple[Decimal, dict[str, Any]]] = {}
         self._recovery_checkpoint: CtpDriverCheckpoint | None = None
         self._before_send: Callable[[str, OrderIntent], None] | None = None
         self._after_transition: Callable[[], None] | None = None
@@ -337,7 +339,11 @@ class CtpNativeTraderDriver:
         reported = {order.client_order_id: order for order in snapshot.orders}
         local = {record.client_order_id: record for record in checkpoint.orders}
         if len(local) != len(refs) or reported.keys() != local.keys():
-            raise RuntimeError("CTP柜台与本地活动订单ID不一致，需要人工对账")
+            statuses = {key: getattr(self.transport, "order_query_diagnostics", {}).get(key)
+                        for key in sorted(local.keys()-reported.keys())}
+            raise RuntimeError("CTP柜台与本地活动订单ID不一致，需要人工对账；"
+                f"仅本地={sorted(local.keys()-reported.keys())}；"
+                f"仅柜台={sorted(reported.keys()-local.keys())}；柜台查询状态={statuses}")
         restored_trades: dict[tuple[str, str, str], str] = {}
         for record in checkpoint.orders:
             expected_id = (
@@ -473,7 +479,36 @@ class CtpNativeTraderDriver:
         if status in {"3", "1", "2", "0"} and order_ref not in self._accepted:
             self._accepted.add(order_ref)
             self._emit(order_ref, ExecutionReportType.ACCEPTED, raw)
-        if status == "5":
+        if status in {"2", "4", "5"}:
+            # 2=部分成交不排队，4=未成交不排队，5=撤单。它们的剩余量均已结束。
+            # 成交仍只接受OnRtnTrade，不能用VolumeTraded补造价格或提前丢弃成交。
+            reported = Decimal(str(raw.get("VolumeTraded", self._filled[order_ref])))
+            quantity = self._orders[order_ref][1].quantity
+            if (not reported.is_finite() or reported != reported.to_integral_value()
+                    or not self._filled[order_ref] <= reported <= quantity
+                    or status == "2" and not 0 < reported < quantity
+                    or status == "4" and reported != 0):
+                self.on_disconnect(-1)
+                raise RuntimeError("CTP非排队终态的累计成交量与本地订单矛盾")
+            previous = self._terminal_cancels.get(order_ref)
+            if previous is not None and previous[0] != reported:
+                self.on_disconnect(-1)
+                raise RuntimeError("CTP重复终态的累计成交量不一致")
+            self._terminal_cancels[order_ref] = (reported, dict(raw))
+            self._finish_cancel_if_ready(order_ref)
+
+    def _finish_cancel_if_ready(self, order_ref):
+        terminal = self._terminal_cancels.get(order_ref)
+        if terminal is None:
+            return
+        if order_ref not in self._orders:
+            self._terminal_cancels.pop(order_ref, None)
+            return
+        reported, raw = terminal
+        if self._filled[order_ref] > reported:
+            self.on_disconnect(-1)
+            raise RuntimeError("CTP终态之后的成交超过已声明累计量")
+        if self._filled[order_ref] == reported:
             self._emit(order_ref, ExecutionReportType.CANCELED, raw)
 
     @_serialized_transition
@@ -496,6 +531,10 @@ class CtpNativeTraderDriver:
         quantity = Decimal(str(raw.get("Volume", "0")))
         price = Decimal(str(raw.get("Price", "0")))
         cumulative = self._filled[order_ref] + quantity
+        terminal = self._terminal_cancels.get(order_ref)
+        if terminal is not None and cumulative > terminal[0]:
+            self.on_disconnect(-1)
+            raise RuntimeError("CTP成交超过终态已声明的累计量")
         if quantity <= 0 or price <= 0 or cumulative > order.quantity:
             self.on_disconnect(-1)
             raise RuntimeError("CTP成交数量或价格与本地订单矛盾")
@@ -512,6 +551,7 @@ class CtpNativeTraderDriver:
             raw, quantity=quantity, price=price,
             trade_id=f"{exchange}:{trade_id}",
         )
+        self._finish_cancel_if_ready(order_ref)
 
     def _check_identity(self, order_ref: str, raw: Mapping[str, Any]) -> None:
         session = self._session
@@ -584,6 +624,7 @@ class CtpNativeTraderDriver:
             }:
                 self._orders.pop(order_ref, None)
                 self._completed_refs.add(order_ref)
+                self._terminal_cancels.pop(order_ref, None)
             self._sink(report)
             if self._after_transition is not None:
                 self._after_transition()

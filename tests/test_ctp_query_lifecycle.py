@@ -31,6 +31,25 @@ class CtpQueryLifecycleTests(unittest.TestCase):
         self.addCleanup(transport.close)
         return transport
 
+    def test_nonqueueing_terminal_statuses_are_excluded_from_active_order_query(self):
+        t = self.transport()
+        states = ('0', '1', '2', '3', '4', '5', 'a', 'b', 'c')
+        def query(fields, reqid):
+            for number, status in enumerate(states):
+                filled = 2 if status == '0' else 1 if status in {'1', '2'} else 0
+                row = dict(BrokerID='9999', InvestorID='demo', InstrumentID='p2701', ExchangeID='DCE',
+                    OrderRef=str(number), OrderStatus=status, OrderSubmitStatus='3', Direction='1',
+                    VolumeTotalOriginal=2, VolumeTraded=filled, VolumeTotal=2-filled)
+                t._api.onRspQryOrder(row, {}, reqid, number == len(states)-1)
+            return 0
+        t._api.reqQryOrder = query
+        orders = t.query_active_orders().orders
+        expected = [str(i) for i, status in enumerate(states) if status in {'1', '3', 'a', 'b', 'c'}]
+        self.assertEqual([row.client_order_id.rsplit('-', 1)[-1] for row in orders], expected)
+        self.assertTrue(all(row.instrument_id == 'p2701.DCE' for row in orders))
+        self.assertEqual(t.order_query_diagnostics['CTP-9999-demo-20260922-2']['OrderStatus'], '2')
+        self.assertEqual(t.order_query_diagnostics['CTP-9999-demo-20260922-2']['VolumeTraded'], '1')
+
     def test_stop_before_query_sends_no_request(self):
         t = self.transport()
         t.query_stop_requested = lambda: True
