@@ -4,6 +4,7 @@ from decimal import Decimal
 import logging
 
 from bomber.framework.trader.runtime.live.channels.ctp_rollover import observe_rollover
+from bomber.framework.trader.runtime.live.recovery import identity_difference_paths
 
 
 def validate_strategy_identity(old, new):
@@ -54,7 +55,8 @@ def payload_for_day(account, payload):
             raise ValueError("跨日管理范围变化包含非08路由")
         candidate["managed_instruments"] = new.get("managed_instruments")
     if candidate != new:
-        raise ValueError("跨日不能更改账户身份、执行模式或管理范围")
+        paths = identity_difference_paths(candidate, new)
+        raise ValueError("跨日不能更改账户身份、执行模式或管理范围；差异字段=" + ",".join(paths))
     shared = payload["component_states"]["shared_account"]
     if shared.get("failed") or shared.get("pending"):
         raise ValueError("共享跨日存在未决发送或未完成停止")

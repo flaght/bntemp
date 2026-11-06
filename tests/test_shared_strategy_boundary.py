@@ -38,6 +38,27 @@ class SharedStrategyBoundaryTests(unittest.TestCase):
         lifecycle._started=False
         return lifecycle,store,before,observed
 
+    def test_cross_day_account_identity_error_names_changed_fields_without_values_or_writes(self):
+        from scripts.integration.shared_account.rollover import payload_for_day
+        old = {'trading_day':'20261106','environment':'realtime','strategies':{},
+            'account':{'client_id':'private-account','max_session_orders':100},
+            'managed_instruments':['rb2701.SHFE','p2701.DCE'],
+            'existing_position_policy':'preserve_external'}
+        for change, expected in (({'account':{'client_id':'private-account','max_session_orders':200}},
+                'session.account.max_session_orders'), ({'environment':'replay'},'session.environment'),
+                ({'existing_position_policy':'require_flat'},'session.existing_position_policy')):
+            with self.subTest(expected=expected):
+                current=deepcopy(old);current['trading_day']='20261109';current.update(change)
+                payload={'component_states':{'session_identity':{'identity':deepcopy(old)}}}
+                before=deepcopy(payload)
+                account=NS(manager=NS(state_components={'session_identity':NS(identity=current)}))
+                with patch('scripts.integration.shared_account.rollover.observe_rollover') as observe:
+                    with self.assertRaisesRegex(ValueError,'差异字段='+expected) as error:
+                        payload_for_day(account,payload)
+                    observe.assert_not_called()
+                self.assertNotIn('private-account',str(error.exception))
+                self.assertEqual(payload,before)
+
     def test_arbitrary_legacy_business_format_is_converted_by_application_callback(self):
         old={'component_states':{'custom_application_state':{'positions':[1,2]}}}
         def convert(account,payload):

@@ -93,6 +93,38 @@ server在开盘前不授权。调度器内部传递开盘边界，不改变模�
 5. `--run-forever`由公共交易日历安排休市等待、午休和下一交易日。初始trading_day用于声明和离线校验，各运行窗口自动更新实际TD和前一来源日；主力合约或模型/风险参数变化仍按原严格检查处理。
 6. 首版联合调度要求各策略的交易日历、时段和例外规则一致；RB/P分别读取自己的规则，不借用其他品种时段。
 
+## 后续交易日：柜台已空仓，但本地仍有旧平仓单
+
+只针对一个Hybrid策略的已受理旧平仓单。新交易日查不到旧委托，不代表它未成交；
+例如本地仍是RB空2手、订单380为ACCEPTED，柜台RB却已空仓，不能只删除订单，
+还要同时处理旧归属仓位、冻结量、批次和目标。P等其他策略的仓位和业务状态保留。
+
+正常停止共享进程后，使用原配置执行一次：
+
+```bash
+PYTHONPATH=.:/workspace/worker/pj/KiChaos IMPLUSE_VERSION=all \
+/workspace/worker/env/chs-live/bin/python -u \
+  -m demos.10_hybrid_transformer.reconcile_shared_flat \
+  --config demos/10_hybrid_transformer/config/shared_rb_p.json \
+  --strategy-id hybrid-transformer-live \
+  --confirm-broker-flat
+```
+
+此入口不加载模型、不发送或撤销订单。持有原账户和检查点写入锁，确认柜台已进入后续交易日，
+连续查询两次：指定策略合约多空仓均为0、管理范围内无活动委托，其他管理合约仍与原归属及外部
+基线一致，才提交对齐。账户参数须保持与原检查点一致，不在这里修改手数、报单额度或身份。
+查询失败或仓位不符时原文件不变。
+
+只改配置中`account_state_file`指向的账户文件（示例为`results/live/state/account_rb_p.json`）。
+同目录先生成`.before-shared-flat-*.bak`完整备份和`.shared-flat-*.json`审计。
+旧委托及其冻结计划从活动恢复集合归档，真实终态标注为`UNKNOWN`，不补造成交、撤单、价格或盈亏。
+原终结订单、成交事件、去重记录及报单计数保留；历史盈亏可能缺失，审计注明未重建。
+
+RB的旧信号文件不直接修改：账户留存更高版本的空仓业务副本，正常恢复时接续该副本，
+不会再次恢复旧RB批次。P信号文件及其仓位保持不变。对齐仍保存原交易日，后续正常启动
+继续通过既有跨日查询、今昨仓结转及一致性核验。看到“空仓基线对齐完成”后，单独运行原
+`run_shared`启动命令；不要在常驻启动流程中反复调用此维护入口。
+
 ## 报告
 
 按各自`--report-dir`归档：示例为`demos/10_hybrid_transformer/results/live/RB/hybrid-simnow-RB-20261103/`及`demos/10_hybrid_transformer/results/live/P/hybrid-simnow-P-20261103/`。未声明策略报告目录时沿用顶层`report_dir`；顶层仍保存账户/调度报告。各策略的夜盘、日盘、同日重启继续追加信号、批次与执行事件。进程布局切换不另分策略目录；summary是最新会话，sessions.jsonl保留各次摘要。
