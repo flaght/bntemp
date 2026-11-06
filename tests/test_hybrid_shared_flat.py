@@ -114,6 +114,7 @@ class SharedFlatAlignmentTests(unittest.TestCase):
     def test_aligned_state_passes_normal_cross_day_rollover_with_p_cost_and_ownership_preserved(self):
         from scripts.integration.shared_account.rollover import payload_for_day
         from dataclasses import replace
+        self.save_rb_external_baseline()
         after, _, _ = self.candidate()
         old_identity = dict(account=self.account_config, trading_day='20261013', environment='realtime',
             strategies={sid:dict(trading_day='20261013', environment='realtime', kind='hybrid_transformer')
@@ -133,7 +134,7 @@ class SharedFlatAlignmentTests(unittest.TestCase):
         f.account.rollover_transform=payload_for_day
         connect=f.transport.connect
         f.transport.connect=lambda *args:replace(connect(*args), trading_day='20261014')
-        f.transport.gross={'p2701.DCE':(0,1)}
+        f.transport.gross={'p2701.DCE':(0,1),'rb2701.SHFE':(3,0)}
         with redirect_stdout(StringIO()): f.account.start(resume=True)
         self.addCleanup(f.account.driver.stop)
         self.assertEqual(f.account.ledger.state().trading_day,'20261014')
@@ -142,6 +143,7 @@ class SharedFlatAlignmentTests(unittest.TestCase):
         self.assertEqual(f.service.position_manager.position('hybrid-p','p_main'),-1)
         self.assertEqual(f.account.ledger.state().positions[f.p].short_yesterday,1)
         self.assertEqual(f.account.ledger.state().positions[f.p].short_yesterday_basis,100)
+        self.assertEqual(f.account.external_gross,{'rb2701.SHFE':(3,0)})
         self.assertEqual(f.transport.sent,[])
 
     def test_commits_one_account_file_after_two_broker_checks_with_backup_and_unknown_audit(self):
@@ -198,6 +200,39 @@ class SharedFlatAlignmentTests(unittest.TestCase):
             before=deepcopy(payload)
             with self.assertRaises(ValueError): self.candidate(payload)
             self.assertEqual(payload,before)
+
+    def save_rb_external_baseline(self):
+        payload=deepcopy(self.original.payload)
+        payload['component_states']['external_positions'].update(
+            gross={'rb2701.SHFE':['3','0']}, buckets={'rb2701.SHFE':['3','0','0','0']})
+        self.original=JsonStateStore(self.path).save(payload,expected_generation=self.original.generation)
+        self.bytes=self.path.read_bytes()
+
+    def test_known_same_contract_external_long_is_preserved_when_only_strategy_becomes_flat(self):
+        self.save_rb_external_baseline()
+        self.broker.query_gross_positions=lambda:{'rb2701.SHFE':(3,0),'p2701.DCE':(0,1)}
+        saved=self.run_repair()
+        self.assertEqual(saved.payload['component_states']['external_positions'],
+            self.original.payload['component_states']['external_positions'])
+        owned={r['strategy_id']:r['quantity'] for r in saved.payload['positions']['strategy_positions']}
+        self.assertEqual(owned,{'hybrid-rb':'0','hybrid-p':'-1'})
+        self.assertFalse(any(r['instrument_id']=='rb2701.SHFE'
+            for r in saved.payload['ctp_ledgers']['account']['positions']))
+        self.assertEqual(self.p_path.read_bytes(),self.p_bytes)
+        audit=json.loads(next(self.path.parent.glob('account.json.shared-flat-*.json')).read_text())
+        self.assertEqual(audit['preserved_external_gross'],{'rb2701.SHFE':['3','0']})
+        self.assertEqual(audit['aligned_strategy_gross'],['0','0'])
+
+    def test_unknown_same_contract_difference_never_changes_external_baseline_and_names_both_sides(self):
+        self.save_rb_external_baseline()
+        # 净仓相同也不能忽略多空总仓变化；原基线被平掉也不能按策略空仓通过。
+        for actual in ((2,0),(4,1),(0,0)):
+            with self.subTest(actual=actual):
+                self.broker.query_gross_positions=lambda:{'rb2701.SHFE':actual,'p2701.DCE':(0,1)}
+                with self.assertRaisesRegex(RuntimeError,
+                        f'柜台多仓={actual[0]} 空仓={actual[1]}.*原外部基线多仓=3 空仓=0'):
+                    self.run_repair()
+                self.assert_unchanged()
 
     def test_external_positions_outside_managed_scope_are_preserved(self):
         self.broker.query_gross_positions=lambda:{'p2701.DCE':(0,1),'IF2611.CFFEX':(2,0)}

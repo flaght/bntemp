@@ -1,4 +1,4 @@
-"""共享账户单策略空仓基线对齐：归档旧未决订单，不补造成交或撤单。"""
+"""共享账户单策略空仓基线对齐：保留原外部仓位，归档旧未决订单。"""
 from __future__ import annotations
 
 import argparse
@@ -138,7 +138,7 @@ def align_flat_strategy(payload, signal, *, strategy_id, operation_id):
     ledger = validate_saved_ownership(result,client)
     PositionManager().restore(storage._decode_positions(result['positions']))
     PortfolioCoordinator().restore(storage._decode_portfolio(result['portfolio']))
-    evidence = dict(operation='operator_confirmed_broker_flat_unknown_old_order_outcome',
+    evidence = dict(operation='operator_confirmed_strategy_flat_unknown_old_order_outcome',
         operation_id=operation_id,strategy_id=strategy_id,instrument_id=instrument,
         archived_driver_orders=retired,archived_order_states=[by_id[key] for key in sorted(retired_ids)],
         archived_attribution_plans=retired_plans,previous_targets=previous_targets,
@@ -192,13 +192,20 @@ def reconcile(config, *, strategy_id, transport):
                 a,b=expected.get(key,(Decimal(0),Decimal(0)))
                 expected[key]=(a+Decimal(values[0]),b+Decimal(values[1]))
         expected={k:v for k,v in expected.items() if any(v)}
+        target_baseline=expected.get(instrument,(Decimal(0),Decimal(0)))
         try:
             session=transport.connect(lambda *_:None,lambda *_:None,lambda *_:None);transport.activate()
             if session.trading_day<=previous['trading_day']:
                 raise ValueError('归档旧未决订单只允许已进入后续交易日，不在原交易日忽略活动单')
             for _ in range(2):
                 gross={str(k):tuple(Decimal(str(v)) for v in pair) for k,pair in transport.query_gross_positions().items() if any(pair)}
-                if gross.get(instrument,(0,0))!=(0,0):raise RuntimeError('待对齐合约柜台仍有多空总仓，保持原文件')
+                actual=gross.get(instrument,(Decimal(0),Decimal(0)))
+                if actual!=target_baseline:
+                    raise RuntimeError('待对齐策略仓位无法确认为0；'
+                        f'instrument={instrument} TD={session.trading_day} '
+                        f'柜台多仓={actual[0]} 空仓={actual[1]}；'
+                        f'原外部基线多仓={target_baseline[0]} 空仓={target_baseline[1]}；'
+                        '不将未知差额归为其他策略，原文件未修改')
                 if {k:v for k,v in gross.items() if k in managed}!=expected:
                     raise RuntimeError('其他管理合约的柜台多空仓与原归属/基线不一致，保持原文件')
                 if any(str(row.instrument_id) in managed for row in transport.query_active_orders().orders):
@@ -212,11 +219,14 @@ def reconcile(config, *, strategy_id, transport):
                 persisted_trading_day=previous['trading_day'],backup_file=str(backup),
                 original_sha256=hashlib.sha256(original).hexdigest(),
                 managed_broker_gross={k:[str(v) for v in pair] for k,pair in gross.items() if k in managed},
-                active_orders=0,orders_submitted=0)
+                preserved_external_gross=deepcopy(external),
+                aligned_strategy_gross=['0','0'],active_orders=0,orders_submitted=0)
             _write_new(backup,original)
             _write_new(audit,(json.dumps(evidence,ensure_ascii=False,indent=2)+'\n').encode())
             updated=store.save(result,expected_generation=saved.generation)
-            print(f'空仓基线对齐完成: {strategy_id} {instrument}；generation={updated.generation}；未发送订单')
+            print(f'空仓基线对齐完成: {strategy_id} {instrument} 策略仓位=0；'
+                  f'保留原外部多仓={target_baseline[0]} 空仓={target_baseline[1]}；'
+                  f'generation={updated.generation}；未发送订单')
             print(f'备份: {backup}\n审计: {audit}\n旧委托真实终态及平仓盈亏未知，未补造成交；其他策略保持原样')
             return updated
         finally:transport.close()
@@ -232,7 +242,7 @@ def main(argv=None):
     parser.add_argument('--strategy-id',required=True)
     parser.add_argument('--confirm-broker-flat',action='store_true')
     args=parser.parse_args(argv)
-    if not args.confirm_broker_flat:parser.error('须明确confirm-broker-flat；这是空仓基线对齐，不是成交补记')
+    if not args.confirm_broker_flat:parser.error('须明确confirm-broker-flat；按原外部基线核验本策略空仓，不是成交补记')
     load_dotenv(Path(__file__).resolve().parents[2]/'.env')
     config=read_config(args.config)
     transport=build_simnow_transport(CtpTdApiTransport,client_id=config['account']['client_id'],
