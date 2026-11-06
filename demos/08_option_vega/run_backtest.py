@@ -1,9 +1,8 @@
 """当前统一策略框架的期权Vega卖方/期货Delta对冲离线入口。"""
 from __future__ import annotations
 
-import argparse
 from collections import defaultdict
-from datetime import date, timedelta
+from datetime import date, time, timedelta
 from decimal import Decimal
 import json
 import math
@@ -17,6 +16,7 @@ if __package__ in (None, ""):
 
 from bomber.framework.market.sources import (MarketSourceConfig, create_market_feed,
     add_market_source_arguments, market_config_from_args)
+from bomber.framework.cli import ConfigArgumentParser
 from importlib import import_module
 _signal = import_module("demos.08_option_vega.vega_signal")
 Contract, OptionVegaConfig = _signal.Contract, _signal.OptionVegaConfig
@@ -77,6 +77,22 @@ def load_backtest_calendar(args):
     return infer_market_calendar((args.fut_dir, args.opt_dir), args.start_day, args.end_day), "MARKET_DATES"
 
 
+def backtest_bar_specs(args):
+    """复用公共多周期输入；只声明真实源周期，不重采样或补齐缺失Bar。"""
+    minutes = getattr(args, "option_bar_minutes", 1)
+    if type(minutes) is not int or minutes not in (1, 5):
+        raise ValueError("option-bar-minutes须为1或5")
+    slot = time.fromisoformat(args.option_slot)
+    if slot.strftime("%H:%M") != args.option_slot or slot.minute % minutes:
+        raise ValueError(f"--option-slot须对齐期权M{minutes}完成时刻；M5可显式选择--option-slot 14:00")
+    return {
+        "option": BarReadSpec(interval_seconds=minutes * 60,
+            timestamp_label=getattr(args, "options_bar_timestamp", None) or args.bar_timestamp,
+            trading_day_policy="day_session"),
+        "future": BarReadSpec(timestamp_label=args.bar_timestamp, trading_day_policy="day_session"),
+    }
+
+
 @input_session
 def run_case(args):
     """准备期权链、同月期货和指数行情，运行卖方与实际持仓对冲回测。"""
@@ -95,6 +111,7 @@ def run_case(args):
     started = perf_counter()
     phase = _start_phase("输入路径解析与配置校验")
     args = resolve_option_args(args, require_futures=True, require_index=False, use_environment=False)
+    bar_specs = backtest_bar_specs(args)
     features = import_module("demos.08_option_vega.feature")
     index_bundle, index_binding, index_records, index_identity = features.read_index_features(args,
         int(pd.Timestamp(args.start_day, tz="Asia/Shanghai").value),
@@ -188,10 +205,9 @@ def run_case(args):
     plan = plan_option_chain((BarFileKey(
         "option" if key in contracts else "future", key, day,
     ) for day, key in needed), requested=(args.start_day, args.end_day))
-    spec = BarReadSpec(timestamp_label=args.bar_timestamp, trading_day_policy="day_session")
     bundle = prepare_option_chain(
         {"option": args.opt_dir, "future": args.fut_dir}, plan,
-        specs={kind: spec for kind in ("option", "future")},
+        specs=bar_specs,
     )
     prepared = {(source.result.key.trading_day, source.result.key.symbol): source.result for source in bundle.sources}
     frames = {identity: source.frame for identity, source in prepared.items()}
@@ -208,7 +224,8 @@ def run_case(args):
             minutes & set(frames[(day, key)].datetime) & set(frames[(day, contracts[key].future)].datetime)
             for key in options_by_day[day])
         if not synchronized:
-            raise ValueError(f"{day}: --option-slot时点没有三腿同步M1行情")
+            raise ValueError(f"{day}: --option-slot={config.option_slot}时点没有三腿同步行情"
+                f"（期权{bar_specs['option'].bar_spec}、期货1-MINUTE、指数1-MINUTE）")
 
     if skipped_hedges:
         print(f"已排除不可用的同月对冲期货（日期/合约/原因）: {skipped_hedges}")
@@ -231,7 +248,8 @@ def run_case(args):
     _finish_phase("期权到期与最终结算资料准备", phase)
     phase = _start_phase("模拟账户与真实合约注册")
     backend = NautilusSimExecutionBackend("option-vega-sim", BacktestEngineConfig(
-        trader_id=TraderId("OPTION-VEGA-001"), logging=LoggingConfig(log_level=args.log_level), run_analysis=True))
+        trader_id=TraderId("OPTION-VEGA-001"), logging=LoggingConfig(log_level=args.log_level), run_analysis=True),
+        execution_timing=getattr(args, "execution_timing", "native"))
     instruments = {}
     multipliers = {}
     try:
@@ -261,6 +279,9 @@ def run_case(args):
         feed.register_instrument(InstrumentMeta(index_id, price_precision=args.index_precision,
             size_precision=0, price_increment=Decimal(1).scaleb(-args.index_precision), exchange="XSHG"))
         all_ids = {**instruments, args.index_code: index_id}
+        bar_specs_by_key = {key: bar_specs["option" if key in contracts else "future"].bar_spec
+            for key in instruments}
+        bar_specs_by_key[args.index_code] = "1-MINUTE"
         _finish_phase("模拟账户与真实合约注册", phase)
         phase = _start_phase("已准备行情注册到回放源")
         for identity in sorted(frames):
@@ -283,10 +304,12 @@ def run_case(args):
             index_key=args.index_code, index_id=index_id, trading_days=calendar,
             options_by_day=options_by_day, feeds={"option-bars": feed},
             feed_by_key={key: "option-bars" for key in all_ids}, final_day=days[-1],
-            strategy_id="option-vega", option_last_trade_times=last_trade_times)
+            strategy_id="option-vega", option_last_trade_times=last_trade_times,
+            bar_specs_by_key=bar_specs_by_key)
         runner.strategy = strategy
         adapter = NautilusMarketFeedAdapter("option-vega-clock", feed, backend,
-            tuple(MarketStreamBinding(item, DataType.BAR, "1-MINUTE") for item in instruments.values()), manage_lifecycle=False)
+            tuple(MarketStreamBinding(item, DataType.BAR, bar_specs_by_key[key])
+                for key, item in instruments.items()), manage_lifecycle=False)
         runtime = UnifiedHistoricalRuntime("option-vega-runtime", runner, adapter)
         _finish_phase("策略、执行路由与风控装配", phase)
         try:
@@ -320,10 +343,15 @@ def run_case(args):
                 "requested": [str(args.start_day), str(args.end_day)],
                 "actual": [str(days[0]), str(days[-1])], "trading_days": len(days),
                 "calendar_source": calendar_source,
+                "parameter_config": ({"file": str(args.config_file), "id": args.config_id}
+                    if getattr(args, "config_file", None) is not None else None),
                 "skipped_unavailable_hedges": skipped_hedges,
                 "calendar_range": [str(calendar[0]), str(calendar[-1])],
                 "option_product": args.option_product, "future_product": args.future_product,
                 "index": args.index_code, "bar_timestamp": args.bar_timestamp,
+                "bar_specs": {kind: {"bar_spec": spec.bar_spec, "timestamp_label": spec.timestamp_label}
+                    for kind, spec in bar_specs.items()},
+                "execution_timing": getattr(args, "execution_timing", "native"),
                 "index_feature": index_identity, "frame_wait_seconds": args.frame_wait_seconds,
                 "skipped_index_frames": sum(row["status"] == "SKIPPED" for row in runner.frame_audit),
                 "bars": result.replay_summary.bars, "frames": strategy.frames,
@@ -366,7 +394,7 @@ def run_case(args):
 @input_session
 def main():
     """解析期权组合、数据路径及风险限制后启动回测。"""
-    parser = argparse.ArgumentParser(description="认购期权卖方Vega预算与同月期货Delta对冲")
+    parser = ConfigArgumentParser(description="认购期权卖方Vega预算与同月期货Delta对冲")
     add_commission_arguments(parser)
     add_option_settlement_arguments(parser)
     add_market_source_arguments(parser, backtest=True)
@@ -392,6 +420,12 @@ def main():
     parser.add_argument("--index-code", default="000852")
     parser.add_argument("--bar-timestamp", choices=("start", "end"), default="end",
                         help="源分钟标签，默认 end；开始标签数据需显式选择 start")
+    parser.add_argument("--option-bar-minutes", type=int, choices=(1, 5), default=1,
+        help="真实期权Bar周期；期货和指数保持M1，不把M5补成M1")
+    parser.add_argument("--options-bar-timestamp", choices=("start", "end"),
+        help="单独指定期权源时间标签；省略时沿用--bar-timestamp，M5开始标签按5分钟右移")
+    parser.add_argument("--execution-timing", choices=("native", "next_market"), default="native",
+        help="默认保留原生撮合；next_market等待本合约下一根真实Bar，期权M5不会阻塞期货M1")
     parser.add_argument("--index-precision", type=int, default=4)
     parser.add_argument("--starting-balance", type=Decimal, default=Decimal("40000000"))
     parser.add_argument("--nav", type=Decimal)
@@ -425,6 +459,7 @@ def main():
         parser.error("frame-wait-seconds须在[0,min(30,max-market-age-seconds)]秒")
     try:
         market_config_from_args(args)
+        backtest_bar_specs(args)
     except (ValueError, TypeError, OSError) as error:
         parser.error(str(error))
     started = perf_counter()

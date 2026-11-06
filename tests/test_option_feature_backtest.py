@@ -470,3 +470,172 @@ class BacktestCalendarTests(unittest.TestCase):
             self.entry.main()
         self.assertEqual(error.exception.code, 2)
         run.assert_not_called()
+
+
+class MultiPeriodBacktestTests(unittest.TestCase):
+    def setUp(self):
+        self.entry = import_module("demos.08_option_vega.run_backtest")
+
+    def test_real_m5_input_keeps_futures_m1_and_shifts_only_start_labeled_options(self):
+        import pandas as pd
+        from bomber.framework.dataprep.bars import read_bar_frame
+        from bomber.framework.dataprep.contracts import BarFileKey, InputError
+        args = NS(option_bar_minutes=5, option_slot="14:00", bar_timestamp="end",
+            options_bar_timestamp="start")
+        specs = self.entry.backtest_bar_specs(args)
+        self.assertEqual(specs["option"].bar_spec, "5-MINUTE")
+        self.assertEqual(specs["future"].bar_spec, "1-MINUTE")
+        with TemporaryDirectory() as directory:
+            for kind, symbol, minutes in (("option", "MO2609-C-6600", ("13:55", "14:00")),
+                                          ("future", "IM2609", ("14:00", "14:01"))):
+                path = Path(directory) / f"{symbol}_20260813.feather"
+                frame = pd.DataFrame(dict(datetime=pd.to_datetime([f"2026-08-13 {m}" for m in minutes]),
+                    open=100, high=100, low=100, close=100, volume=0))
+                frame.to_feather(path)
+                key = BarFileKey(kind, symbol, date(2026, 8, 13))
+                prepared = read_bar_frame(path, specs[kind], key).frame
+                self.assertEqual(len(prepared), 2)  # 不扩展或填充M5。
+                expected = ("14:00", "14:05") if kind == "option" else ("14:00", "14:01")
+                self.assertEqual(tuple(prepared.datetime.dt.strftime("%H:%M")), expected)
+                if kind == "option":
+                    frame.loc[0, "datetime"] = pd.Timestamp("2026-08-13 13:58")
+                    frame.to_feather(path)
+                    with self.assertRaisesRegex(InputError, "INVALID_TIMESTAMP"):
+                        read_bar_frame(path, specs[kind], key)
+
+    def test_cli_requires_explicit_aligned_slot_and_preserves_m1_defaults(self):
+        from contextlib import redirect_stderr
+        import io
+        cli = ["run_backtest.py", "--start-day", "2026-08-13", "--end-day", "2026-09-30",
+            "--index-feature-file", "index.csv"]
+        with patch.object(self.entry, "run_case") as run, patch("sys.argv", cli):
+            self.entry.main()
+        args = run.call_args.args[0]
+        self.assertEqual((args.option_bar_minutes, args.option_slot, args.execution_timing),
+            (1, "13:58", "native"))
+        for extra in (("--option-bar-minutes", "5"), ("--option-bar-minutes", "2")):
+            with patch.object(self.entry, "run_case") as run, patch("sys.argv", [*cli, *extra]), \
+                    redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+                self.entry.main()
+            run.assert_not_called()
+        with patch.object(self.entry, "run_case") as run, patch("sys.argv", [*cli,
+                "--option-bar-minutes", "5", "--option-slot", "14:00",
+                "--options-bar-timestamp", "start", "--execution-timing", "next_market"]):
+            self.entry.main()
+        args = run.call_args.args[0]
+        self.assertEqual((args.option_bar_minutes, args.option_slot, args.execution_timing),
+            (5, "14:00", "next_market"))
+        self.assertEqual(args.options_bar_timestamp, "start")
+
+    def test_strategy_subscriptions_use_each_real_bar_period(self):
+        from tests.test_demo_option_vega import StrategyTests
+        fixture = StrategyTests()
+        fixture.setUp()
+        module = import_module("demos.08_option_vega.strategy")
+        keys = (*fixture.ids, "000852")
+        args = dict(config=fixture.strategy.config, contracts={fixture.info.symbol: fixture.info},
+            futures=fixture.strategy.futures, instruments=fixture.ids, index_key="000852",
+            index_id="000852.XSHG", trading_days=fixture.days, options_by_day={},
+            feeds={"fixture": NS()}, feed_by_key={key: "fixture" for key in keys})
+        periods = {key: "5-MINUTE" if key == fixture.info.symbol else "1-MINUTE" for key in keys}
+        with patch("bomber.framework.trader.assembly.assemble_strategy") as assemble:
+            module.assemble_strategy_components(NS(), NS(client=NS(client_id="fixture")),
+                **args, bar_specs_by_key=periods)
+        bindings = assemble.call_args.kwargs["bindings"].data
+        self.assertEqual({row.data_key: row.bar_spec for row in bindings}, periods)
+        with self.assertRaisesRegex(ValueError, "行情周期须覆盖"):
+            module.assemble_strategy_components(NS(), NS(), **args,
+                bar_specs_by_key={fixture.info.symbol: "5-MINUTE"})
+
+    def test_m5_entry_then_m1_hedge_preserves_option_timestamp_and_never_reads_future_m5(self):
+        from tests.test_demo_option_vega import StrategyTests, ns
+        from bomber.framework.market.frames import FrameObservation, MinuteFrame
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        fixture = StrategyTests()
+        fixture.setUp()
+        strategy, signal = fixture.strategy, import_module("demos.08_option_vega.vega_signal")
+        strategy.config = replace(strategy.config, option_slot="14:00", hedge_slots=("14:01",))
+        stamp = ns("2026-08-13 14:00")
+        now = datetime.fromtimestamp(stamp // S, ZoneInfo("Asia/Shanghai"))
+        premium = signal.call_price(6500, 6600,
+            signal.source_years(now, strategy._remaining_days(now.date(), fixture.info.last_day)), .02, .25)
+        def publish(stamp, *, option=False):
+            values = {"IM2609": 6500, "000852": 6400}
+            if option:
+                values[fixture.info.symbol] = premium
+            strategy.on_market_frame(MinuteFrame(stamp, stamp + S, {
+                key: FrameObservation(Decimal(str(price)), "fixture", stamp, stamp)
+                for key, price in values.items()}))
+        publish(stamp - M)  # 没有提前看到14:00期权。
+        self.assertNotIn(fixture.info.symbol, strategy.latest)
+        self.assertEqual(strategy.entry_decisions, 0)
+        publish(stamp, option=True)
+        self.assertEqual(strategy.entry_decisions, 1)
+        self.assertLess(strategy.option_goals[fixture.info.symbol], 0)
+        fixture.ctx.actual[fixture.ids[fixture.info.symbol]] = Decimal(-2)
+        publish(stamp + M)  # 只有M1期货/指数也能触发14:01对冲。
+        self.assertEqual(strategy.last_decision["hedge"], "EVALUATED")
+        self.assertEqual(strategy.latest[fixture.info.symbol][0], stamp)
+        self.assertEqual(strategy.latest["IM2609"][0], stamp + M)
+
+    def test_feature_frames_keep_m1_clock_without_filling_m5_or_using_future_bar(self):
+        from tests.test_demo_option_vega import ns
+        stamp = ns("2026-08-13 14:00")
+        bundle, binding = features.index_bundle(DEFAULT_FEATURE_CONFIG, "index.minute", 1,
+            file_path=Path("fixture-index.csv"))
+        payload = binding.spec.payload_type(open=Decimal(6400), high=Decimal(6400),
+            low=Decimal(6400), close=Decimal(6400), volume=Decimal(0), turnover=Decimal(0),
+            prev_close=None, pct_change=None)
+        records = [ExternalDataRecord("index.minute", 1, "000852", payload,
+            stamp + i*M, stamp + i*M, stamp + i*M, 0, "fixture") for i in range(7)]
+        def bar(key, timestamp):
+            return NS(ts_event=timestamp, ts_init=timestamp,
+                bar_type=NS(instrument_id=NS(symbol=key)),
+                close=NS(as_decimal=lambda: Decimal(100)))
+        events = [bar("IM2609", stamp + i*M) for i in range(7)]
+        events += [bar("MO2609-C-6600", stamp + i*M) for i in (0, 5)]
+        outcomes, _ = replay.prepare_feature_frames(events, bundle, binding, records, "000852", 2*S)
+        self.assertEqual([row.event_ns for row in outcomes], [stamp + i*M for i in range(6)])
+        self.assertTrue(all(row.status == "READY" for row in outcomes))
+        for i, row in enumerate(outcomes):
+            self.assertEqual("MO2609-C-6600" in row.frame.market, i in (0, 5))
+
+
+class BacktestYamlConfigTests(unittest.TestCase):
+    def setUp(self):
+        self.entry = import_module("demos.08_option_vega.run_backtest")
+        self.config = Path(__file__).resolve().parents[1] / "demos/08_option_vega/config/strategy.yaml"
+
+    def test_example_yaml_starts_same_m5_case_without_long_cli_or_source_connections(self):
+        with patch.object(self.entry, "run_case") as run, patch("sys.argv", ["run_backtest.py",
+                "--config-file", str(self.config), "--config-id", "m5_index_blend"]):
+            self.entry.main()
+        args = run.call_args.args[0]
+        self.assertEqual(args.start_day, date(2026, 8, 13))
+        self.assertEqual(args.end_day, date(2026, 9, 30))
+        self.assertEqual(args.starting_balance, Decimal("40000000"))
+        self.assertEqual(args.index_code, "000852")
+        self.assertEqual(args.index_value_field, "index_blend")
+        self.assertEqual(args.index_feature_file, Path("demos/feature/index/index-blend.csv"))
+        self.assertEqual(args.opt_dir, Path("temp/data/to/opt"))
+        self.assertEqual((args.option_bar_minutes, args.option_slot, args.execution_timing),
+            (5, "14:00", "next_market"))
+        self.assertTrue(args.no_tearsheet)
+        self.assertTrue(args.require_fills)
+
+    def test_cli_overrides_yaml_field_and_domain_validation_still_runs(self):
+        from contextlib import redirect_stderr
+        import io
+        cli = ["run_backtest.py", "--config-file", str(self.config), "--config-id", "m5_index_blend"]
+        with patch.object(self.entry, "run_case") as run, patch("sys.argv", [*cli,
+                "--index-value-field", "ma20", "--opt-dir", "other-options"]):
+            self.entry.main()
+        self.assertEqual(run.call_args.args[0].index_value_field, "ma20")
+        self.assertEqual(run.call_args.args[0].opt_dir, Path("other-options"))
+        with patch.object(self.entry, "run_case") as run, patch("sys.argv", [*cli,
+                "--option-slot", "13:58"]), redirect_stderr(io.StringIO()), \
+                self.assertRaises(SystemExit) as error:
+            self.entry.main()
+        self.assertEqual(error.exception.code, 2)
+        run.assert_not_called()

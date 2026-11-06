@@ -1,6 +1,5 @@
 """期权Vega在线入口：行情来源、指数来源、执行渠道分别装配。"""
 from __future__ import annotations
-import argparse
 from datetime import datetime, timedelta
 from dataclasses import replace
 from decimal import Decimal
@@ -20,12 +19,13 @@ if __package__ in (None, ""):
 
 from bomber.framework.market.sources import (add_market_source_arguments, market_config_from_args,
     source_config, create_market_feed, assemble_minute_market)
+from bomber.framework.cli import ConfigArgumentParser
 from .vega_signal import OptionVegaConfig
 from .feature import add_index_feature_arguments, index_bundle
 
 
 def parse_args(argv=None):
-    p = argparse.ArgumentParser(description=__doc__)
+    p = ConfigArgumentParser(description=__doc__)
     p.add_argument("--connect", action="store_true")
     p.add_argument("--log-level", choices=("DEBUG", "INFO", "WARNING", "ERROR"), default="INFO")
     p.add_argument("--mode", choices=("recording", "model", "simnow"), default="recording")
@@ -390,6 +390,8 @@ def build_runtime(args, *, account_routes=()):
     report = LiveRunReport(args.report_dir, prefix=f"option-vega-{args.mode}", describe=describe,
         metadata={"mode": args.mode, "market_config": source_config(args).identity, "market_source": args.market_source, "index_source": args.index_source,
             "index_code": args.index_code, "calendar_id": args.calendar_id,
+            "parameter_config": ({"file": str(args.config_file), "id": args.config_id}
+                if getattr(args, "config_file", None) is not None else None),
             "simnow_environment": args.simnow_environment, "state_file": str(args.state_file),
             "account_reconciliation": args.execution_policy.account_reconciliation.value,
             "strategy_position_source": args.execution_policy.position_source.value})
