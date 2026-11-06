@@ -567,5 +567,96 @@ class AssemblyTests(unittest.TestCase):
         self.assertEqual(orders[0].quantity, 2)
 
 
+class LiveYamlConfigTests(unittest.TestCase):
+    def setUp(self):
+        self.entry = import_module("demos.08_option_vega.run_live")
+        self.config = Path(__file__).resolve().parents[1] / "demos/08_option_vega/config/strategy.yaml"
+        self.temp = TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+
+    def argv(self, config_id, *extra):
+        return ["--config-file", str(self.config), "--config-id", config_id, *extra]
+
+    def modified(self, config_id, **changes):
+        import json
+        from bomber.framework.cli import load_config
+        values = load_config(self.config, config_id)
+        values.update(changes)
+        path = Path(self.temp.name) / "case.yaml"
+        path.write_text(json.dumps({"experiment_setups": {"case": values}}))
+        return ["--config-file", str(path), "--config-id", "case"]
+
+    def assert_invalid(self, argv, message):
+        from contextlib import redirect_stderr
+        from io import StringIO
+        output = StringIO()
+        with redirect_stderr(output), self.assertRaises(SystemExit) as error:
+            self.entry.parse_args(argv)
+        self.assertEqual(error.exception.code, 2)
+        self.assertIn(message, output.getvalue())
+
+    def test_shared_file_recording_keeps_live_minute_inputs_and_reports_config_identity(self):
+        args = self.entry.parse_args(self.argv("live_recording"))
+        self.assertEqual(args.mode, "recording")
+        self.assertTrue(args.connect)
+        self.assertEqual(args.market_source, "dolphindb")
+        self.assertEqual(args.market_bar_table, "stream_cffex_1min")
+        self.assertEqual(args.market_volume_mode, "cumulative")
+        self.assertEqual(args.index_dataset, "index.minute")
+        self.assertEqual(args.index_code, "000852")
+        self.assertEqual(args.option_slot, "14:00")
+        self.assertEqual(args.config.nav, Decimal("40000000"))
+        self.assertEqual(args.execution_policy.account_reconciliation.value, "off")
+        self.assertFalse(hasattr(args, "option_bar_minutes"))
+        live = self.entry.build_runtime(args)  # 仅装配，不启动，不访问网络。
+        self.assertEqual(live.report.metadata["parameter_config"],
+            {"file": str(self.config), "id": "live_recording"})
+        self.assertIsNone(live.inputs)
+        self.assertIsNone(live.report.path)
+
+    def test_cli_overrides_live_yaml_date_and_parameter_types(self):
+        args = self.entry.parse_args(self.argv("live_recording", "--expected-trading-day", "20261109",
+            "--seconds", "60", "--nav", "123456.78", "--index-poll-seconds", "2"))
+        self.assertEqual(args.expected_trading_day, "20261109")
+        self.assertEqual(args.valuation_day, "20261109")
+        self.assertEqual(args.seconds, 60)
+        self.assertEqual(args.config.nav, Decimal("123456.78"))
+        self.assertEqual(args.index_poll_seconds, 2)
+
+    def test_model_and_simnow_still_require_matching_state_and_explicit_resume(self):
+        for config_id, mode in (("live_model", "model"), ("live_simnow", "simnow")):
+            with self.subTest(mode=mode):
+                self.assert_invalid(self.argv(config_id), "新会话须独立新state-file")
+                state = Path(self.temp.name) / f"{mode}.json"
+                args = self.entry.parse_args(self.argv(config_id, "--state-file", str(state)))
+                self.assertEqual(args.mode, mode)
+                self.assertEqual(args.state_file, state)
+                self.assertFalse(args.resume)
+                state.write_text("{}")  # 仅测试存在性门禁，不声称检查点内容已恢复。
+                self.assert_invalid(self.argv(config_id, "--state-file", str(state)),
+                    "恢复须--resume")
+                resumed = self.entry.parse_args(self.argv(config_id, "--state-file", str(state), "--resume"))
+                self.assertTrue(resumed.resume)
+
+    def test_config_does_not_bypass_connect_execution_authorization_or_recording_rules(self):
+        state = str(Path(self.temp.name) / "simnow.json")
+        self.assert_invalid(self.modified("live_recording", connect=False), "须显式--connect")
+        self.assert_invalid(self.modified("live_recording", require_fills=True),
+            "Recording不接受报单")
+        for flag in ("enable_orders", "confirm_simnow"):
+            with self.subTest(flag=flag):
+                self.assert_invalid(self.modified("live_simnow", state_file=state, **{flag: False}),
+                    "SimNow报单须enable-orders和confirm-simnow")
+        self.assert_invalid(self.modified("live_model", state_file=state, enable_orders=True),
+            "Model不接受物理账户报单授权")
+
+    def test_config_selection_rejects_backtest_only_keys_and_invalid_live_dates(self):
+        self.assert_invalid(self.argv("m5_index_blend"), "未声明参数")
+        self.assert_invalid(self.modified("live_recording", expected_trading_day="2026-11-06"),
+            "does not match format")
+        self.assert_invalid(self.modified("live_recording", index_poll_seconds=0),
+            "指数查询间隔")
+
+
 if __name__ == "__main__":
     unittest.main()

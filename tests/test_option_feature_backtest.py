@@ -600,3 +600,42 @@ class MultiPeriodBacktestTests(unittest.TestCase):
         self.assertTrue(all(row.status == "READY" for row in outcomes))
         for i, row in enumerate(outcomes):
             self.assertEqual("MO2609-C-6600" in row.frame.market, i in (0, 5))
+
+
+class BacktestYamlConfigTests(unittest.TestCase):
+    def setUp(self):
+        self.entry = import_module("demos.08_option_vega.run_backtest")
+        self.config = Path(__file__).resolve().parents[1] / "demos/08_option_vega/config/strategy.yaml"
+
+    def test_example_yaml_starts_same_m5_case_without_long_cli_or_source_connections(self):
+        with patch.object(self.entry, "run_case") as run, patch("sys.argv", ["run_backtest.py",
+                "--config-file", str(self.config), "--config-id", "m5_index_blend"]):
+            self.entry.main()
+        args = run.call_args.args[0]
+        self.assertEqual(args.start_day, date(2026, 8, 13))
+        self.assertEqual(args.end_day, date(2026, 9, 30))
+        self.assertEqual(args.starting_balance, Decimal("40000000"))
+        self.assertEqual(args.index_code, "000852")
+        self.assertEqual(args.index_value_field, "index_blend")
+        self.assertEqual(args.index_feature_file, Path("demos/feature/index/index-blend.csv"))
+        self.assertEqual(args.opt_dir, Path("temp/data/to/opt"))
+        self.assertEqual((args.option_bar_minutes, args.option_slot, args.execution_timing),
+            (5, "14:00", "next_market"))
+        self.assertTrue(args.no_tearsheet)
+        self.assertTrue(args.require_fills)
+
+    def test_cli_overrides_yaml_field_and_domain_validation_still_runs(self):
+        from contextlib import redirect_stderr
+        import io
+        cli = ["run_backtest.py", "--config-file", str(self.config), "--config-id", "m5_index_blend"]
+        with patch.object(self.entry, "run_case") as run, patch("sys.argv", [*cli,
+                "--index-value-field", "ma20", "--opt-dir", "other-options"]):
+            self.entry.main()
+        self.assertEqual(run.call_args.args[0].index_value_field, "ma20")
+        self.assertEqual(run.call_args.args[0].opt_dir, Path("other-options"))
+        with patch.object(self.entry, "run_case") as run, patch("sys.argv", [*cli,
+                "--option-slot", "13:58"]), redirect_stderr(io.StringIO()), \
+                self.assertRaises(SystemExit) as error:
+            self.entry.main()
+        self.assertEqual(error.exception.code, 2)
+        run.assert_not_called()

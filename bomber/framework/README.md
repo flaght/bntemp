@@ -30,10 +30,17 @@ Bomber Framework在Nautilus数据模型、指标和回测内核之上，把行�
 | [trader/runtime](trader/runtime) | 历史／Live运行、就绪、预热、恢复提交、授权、停止及窗口常驻 | 自动修复未知交易事实或补造业务输入 |
 | [trader/execution](trader/execution) | 模拟Backend、CTP与BN执行适配、LXGBN后端、共享账户与IPC、OMS／归属／风险 | 把模型成交当成真实柜台成交 |
 | [fees.py](fees.py) | 期货费用单位、标准金额、系数和逐笔计算契约 | 自动推断未提供的费率或把普通手续费当交割费 |
+| [cli.py](cli.py) | `ConfigArgumentParser`与`load_config`，把YAML实验参数接入原有argparse校验 | 策略计算、组件实例化、柜台连接或参数值自动打印 |
 | [dolphindb.py](dolphindb.py) | DolphinDB连接配置与market／reference用途区分 | 在策略算法内隐式访问数据库 |
 | [lxgbn.py](lxgbn.py) | Windows宿主调用的SDK门面、绑定／命令／值快照及HostPort | 创建第二个交易环境、额外网络桥或另一份厂商SDK |
 
 Python负责协议、装配和调度；原生行情对象、数值构造与部分交易日历使用Cython／原生扩展。导入完整trader或运行模拟内核需要相应安装依赖；轻量LXGBN契约门面采用延迟加载，不能据此认定整个framework均不需要原生模块。
+
+### 公共启动参数配置
+
+应用可用`from bomber.framework.cli import ConfigArgumentParser`替换`argparse.ArgumentParser`，其余`add_argument()`和`parse_args()`保持不变。通过`--config-file 文件.yaml --config-id 配置ID`选择`experiment_setups`下的一组参数；优先级为显式CLI、配置文件、原有默认值。配置必须使用已声明的选项，保留type、choices、required及互斥组校验，`description`仅为说明。命令行覆盖可重复参数时替换整组配置值；选择互斥组中的另一选项时覆盖配置中的原选择。YAML中的`null`表示沿用默认值，`true/false`用于开关，参数值不自动打印。
+
+配置是独立参数集合，不增加实验继承、批量调度或组件工厂。相对路径按进程运行目录解析。首次读取YAML需安装`requirements-config.txt`中的PyYAML；不使用文件配置时不导入该依赖。08回测与Live共用一个文件：[strategy.yaml](../../demos/08_option_vega/config/strategy.yaml)，各入口按配置ID读取自身参数，继续执行原有业务校验。
 
 ## 3. 一条主链，分别选择运行与执行
 

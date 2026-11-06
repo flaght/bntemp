@@ -1,7 +1,6 @@
 """当前统一策略框架的期权Vega卖方/期货Delta对冲离线入口。"""
 from __future__ import annotations
 
-import argparse
 from collections import defaultdict
 from datetime import date, time, timedelta
 from decimal import Decimal
@@ -17,6 +16,7 @@ if __package__ in (None, ""):
 
 from bomber.framework.market.sources import (MarketSourceConfig, create_market_feed,
     add_market_source_arguments, market_config_from_args)
+from bomber.framework.cli import ConfigArgumentParser
 from importlib import import_module
 _signal = import_module("demos.08_option_vega.vega_signal")
 Contract, OptionVegaConfig = _signal.Contract, _signal.OptionVegaConfig
@@ -343,6 +343,8 @@ def run_case(args):
                 "requested": [str(args.start_day), str(args.end_day)],
                 "actual": [str(days[0]), str(days[-1])], "trading_days": len(days),
                 "calendar_source": calendar_source,
+                "parameter_config": ({"file": str(args.config_file), "id": args.config_id}
+                    if getattr(args, "config_file", None) is not None else None),
                 "skipped_unavailable_hedges": skipped_hedges,
                 "calendar_range": [str(calendar[0]), str(calendar[-1])],
                 "option_product": args.option_product, "future_product": args.future_product,
@@ -392,7 +394,7 @@ def run_case(args):
 @input_session
 def main():
     """解析期权组合、数据路径及风险限制后启动回测。"""
-    parser = argparse.ArgumentParser(description="认购期权卖方Vega预算与同月期货Delta对冲")
+    parser = ConfigArgumentParser(description="认购期权卖方Vega预算与同月期货Delta对冲")
     add_commission_arguments(parser)
     add_option_settlement_arguments(parser)
     add_market_source_arguments(parser, backtest=True)
