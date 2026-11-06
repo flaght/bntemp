@@ -415,7 +415,7 @@ def run_case(args):
                 "simulation": "NETTING/BAR/CONFIGURED_FEE/PREMIUM_PERCENT_MARGIN; OPTION_CASH_SETTLEMENT",
                 "backend": str(result.backend_result)}
             (output / "feature_frames.json").write_text(json.dumps(runner.frame_audit, ensure_ascii=False, indent=2) + "\n")
-            parameters = import_module("demos.08_option_vega.configuration").effective_parameters(args, config)
+            parameters = import_module("demos.08_option_vega.vega_signal").effective_parameters(args, config)
             (output / "strategy_parameters.json").write_text(
                 json.dumps(parameters, ensure_ascii=False, indent=2, default=str) + "\n", encoding="utf-8")
             (output / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2, default=str) + "\n")
@@ -449,7 +449,7 @@ def run_case(args):
 def main():
     """解析期权组合、数据路径及风险限制后启动回测。"""
     parser = ConfigArgumentParser(description="认购期权卖方Vega预算与同月期货Delta对冲")
-    import_module("demos.08_option_vega.configuration").add_strategy_config_argument(parser)
+    import_module("demos.08_option_vega.vega_signal").add_strategy_config_argument(parser)
     add_commission_arguments(parser)
     add_option_settlement_arguments(parser)
     add_market_source_arguments(parser, backtest=True)

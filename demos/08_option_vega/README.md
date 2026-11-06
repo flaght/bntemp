@@ -10,18 +10,17 @@
 | `run_live.py` | 在线参数、行情/参考/执行渠道选择、期权时段接线及公共常驻调度启动 |
 | `feature/` | 特征生成/导出、声明加载、标准文件读取及回测分钟帧适配 |
 | `strategy.py` | 策略决策、实际自有仓位管理、公共装配绑定与限额 |
-| `vega_signal.py` | 配置、原数值算法、合约关系及可独立恢复的信号状态 |
+| `vega_signal.py` | 策略配置、共享JSON参数声明、生效参数快照、原数值算法与信号状态 |
 | `live.py` | Live分钟帧适配、健康检查、公共执行装配与只读诊断 |
 | `recovery.py` | 应用恢复/跨日约束、Recording窗口状态续接，调用公共账户与持久化能力 |
 | `config/strategy.yaml` | 启动模式、数据路径、交易日、输出目录与依赖JSON路径 |
 | `config/vega_backtest.json`、`config/vega_live.json` | Vega预算、选约/对冲时点和风险参数 |
 | `config/market_dolphindb.json` | 公共行情源配置：流表、时间标签、量口径和时效 |
-| `configuration.py` | 注册策略JSON允许字段，复用公共参数解析，不自建配置工厂 |
 | `reports.py` | 复用公共交易日报告，追加08信号及保存只读策略快照 |
 
 解析、结算、模拟撮合、目标差额、OMS、归属、风险、日历及共享账户复用[框架](../../bomber/framework/README.md)。探针/验收在[scripts/integration/options](../../scripts/integration/options)，测试在[tests](../../tests)。目录不保留旧模块的转发壳。
 
-同步到服务器时须同步本次删除项，不能只覆盖新增文件。根目录`features.py`已迁入`feature/`包；策略目录下的`continuous.py`已合并到`run_live.py`与`recovery.py`，须删除服务器上的这些旧文件，不保留转发壳。持续运行由公共`bomber/framework/trader/runtime/live/continuous.py`维护。旧辅助模块导入路径已由工厂、脚本和测试统一替换；两个运行入口及JSON检查点格式保持不变。
+同步到服务器时须同步本次删除项，不能只覆盖新增文件。根目录`features.py`已迁入`feature/`包；策略目录下的`continuous.py`已合并到`run_live.py`与`recovery.py`，`configuration.py`的两个共享函数已合并到`vega_signal.py`，须删除服务器上的这些旧文件，不保留转发壳。持续运行由公共`bomber/framework/trader/runtime/live/continuous.py`维护，YAML/JSON解析由公共`bomber/framework/cli.py`维护。旧辅助模块导入路径已由工厂、脚本和测试统一替换；两个运行入口及JSON检查点格式保持不变。
 
 ## 1. 回测
 
