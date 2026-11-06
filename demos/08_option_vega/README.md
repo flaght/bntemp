@@ -33,7 +33,7 @@ python -u demos/08_option_vega/run_backtest.py \
   --log-level WARNING --no-tearsheet --require-fills
 ```
 
-`--data-root`按公共路径规则推导交易腿与基础条款，也可逐项传`--fut-dir --opt-dir --fut-basic --opt-basic`。不读取`.env`补文件路径。完整参数见`python demos/08_option_vega/run_backtest.py --help`。
+`--data-root`按公共路径规则推导交易腿与基础条款；期货与资料可逐项传`--fut-dir --fut-basic --opt-basic`。期权M1固定使用`data_root/kline/opt`，自定义`--opt-dir`仅用于M5。不读取`.env`补文件路径。完整参数见`python demos/08_option_vega/run_backtest.py --help`。
 
 ### YAML启动参数
 
@@ -69,6 +69,8 @@ python -u demos/08_option_vega/run_backtest.py \
 - 每日期权交易时点默认13:58，对冲默认10:00/11:00/13:30/14:00/14:55。每日新增目标累加，持仓使用成交归属数量；总量与单腿限额仍生效。
 - 最后回测日默认14:50清仓，指数还须至少覆盖之后两分钟，交易腿也需真实后续报价完成撮合。`remaining_positions_or_working`和`report_errors`必须为空。
 
+日历日期不代表文件已覆盖该日期。按日预检会一次检查全部请求交易日，分别记录`MISSING_OPTION_CHAIN`与`MISSING_INDEX_FEATURE`：前者同时给出与条款匹配的认购文件数和上市期内候选数，后者给出当日指数特征分钟数。失败日志展示前10个缺失日期及实际期权目录、条款与特征路径；全部缺失项写入本次`<report-dir>/input_failed_*/input_issues.json`。预检不会跳过缺失交易日或自动缩短回测区间。若M5目录只覆盖部分日期，修改开始日期不能补齐区间内的缺口。
+
 ### 使用期权M5、期货M1行情
 
 默认仍为期权M1。若已有真实五分钟期权Feather，在原回测命令中增加：
@@ -80,6 +82,19 @@ python -u demos/08_option_vega/run_backtest.py \
 --options-bar-timestamp end \
 --execution-timing next_market
 ```
+
+路径随期权周期选择：`--option-bar-minutes 1`必须提供`--data-root`，读取其`kline/opt`，即使YAML仍保留M5的`opt_dir`也不会使用；`--option-bar-minutes 5`必须显式配置`opt_dir`或传`--opt-dir`，不回退读取默认M1目录。启动日志打印最终周期与实际目录。
+
+因此同一配置切回M1只需：
+
+```bash
+python -u demos/08_option_vega/run_backtest.py \
+  --config-file demos/08_option_vega/config/strategy.yaml \
+  --config-id m5_index_blend \
+  --option-bar-minutes 1
+```
+
+这只切换期权周期和数据目录；配置中的14:00开仓时点仍保留，需要改回13:58时再显式传`--option-slot 13:58`。
 
 读取规格、策略订阅和引擎回放分别声明期权`5-MINUTE`、期货`1-MINUTE`；指数自定义特征仍为一分钟。复用公共`BarReadSpec`和撮合网关，与12示例使用相同多周期能力，不转换或填充期权M5为M1。这个参数声明源文件已经是M5，不能用来修复M1文件缺口，也不自动聚合M1。
 

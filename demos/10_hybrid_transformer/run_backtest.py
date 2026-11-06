@@ -42,7 +42,7 @@ def run_case(*, product: str, start_day: date, end_day: date,
              report_dir: Path, calendar: SessionCalendar, factors_path: Path | None = None,
              factor_availability: str = "aligned",
              bar_timestamp: str = "end", value_column: str = "value",
-             open_interest_column: str = "openint", max_contracts: int = 1,
+             open_interest_column: str = "openint", max_contracts: int = 1, entry_contracts: int = 1,
              rebalance_minutes: int = 1, hold_bars: int | None = None, history_bars: int = 1500,
              min_raw_bars: int = 300, device: str = "auto",
              max_notional: Decimal = Decimal("1000000"),
@@ -52,6 +52,9 @@ def run_case(*, product: str, start_day: date, end_day: date,
     fees = commission_config if commission_config is not None else CommissionConfig(commission_source="metadata")
     if not isinstance(fees, CommissionConfig) or fees.commission_source != "metadata":
         raise ValueError("Hybrid 回测手续费须来自 fut_basic，请使用 commission_source='metadata'")
+    if (type(entry_contracts) is not int or type(max_contracts) is not int
+            or not 1 <= entry_contracts <= max_contracts):
+        raise ValueError("每次开仓手数须为1至总持仓上限之间的整数")
     product = product.strip().upper()
     if calendar.product.upper() != product:
         raise ValueError("持仓交易日历与回测品种不一致")
@@ -116,6 +119,8 @@ def run_case(*, product: str, start_day: date, end_day: date,
             trader_id=TraderId(f"{product}-HYBRID-001"),
             logging=LoggingConfig(log_level="WARNING"), run_analysis=True,
         ),
+        # 信号生成后等待本合约下一根完整Bar，再使用其收盘盘口撮合。
+        execution_timing="next_market", execution_delay_bars=1,
     )
 
     profile = CtpFuturesBasicProfile(
@@ -146,7 +151,7 @@ def run_case(*, product: str, start_day: date, end_day: date,
     config = HybridTransformerConfig(
         product=product, venue=str(venue), signal_id=signal_id,
         max_contracts=max_contracts, hold_bars=hold_bars, rebalance_minutes=rebalance_minutes,
-        contract_multiplier=multiplier, record_signals=True)
+        contract_multiplier=multiplier, record_signals=True, max_entry_contracts=entry_contracts)
 
     spec = BarReadSpec(timestamp_label=bar_timestamp)
 
@@ -257,8 +262,12 @@ def run_case(*, product: str, start_day: date, end_day: date,
             "start_day": str(days[0]), "end_day": str(days[-1]),
             "calendar": calendar.provenance,
             "bar_timestamp": bar_timestamp, "bars_used": strategy.bars_used,
+            "execution_timing": backend.execution_timing,
+            "execution_delay_bars": backend.execution_delay_bars,
             "signals": sum(row["predicted_z"] is not None for row in strategy.signal_records),
             "holding_bars": config.hold_bars,
+            "max_contracts": config.max_contracts,
+            "entry_contracts": config.max_entry_contracts,
             "signal_method": selected.signal_method,
             "signal_params": dict(selected.signal_params),
             "signal_config": str(signal_config),

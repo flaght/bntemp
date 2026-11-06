@@ -25,11 +25,11 @@ from bomber.framework.dataprep.bars import add_prepared_bar_source
 from bomber.framework.dataprep.calendar import infer_market_calendar, load_calendar
 from bomber.framework.calendars import NativeCalendarProvider
 from bomber.framework.dataprep.catalog import inventory
-from bomber.framework.dataprep.contracts import BarFileKey, BarReadSpec
+from bomber.framework.dataprep.contracts import BarFileKey, BarReadSpec, InputIssue
 from bomber.framework.dataprep.metadata import load_cffex_futures, load_options_basic, positive
 from bomber.framework.dataprep.paths import resolve_option_args
 from bomber.framework.dataprep.scenarios.option_chain import plan_option_chain, prepare_option_chain
-from bomber.framework.dataprep.session import input_session, write_input_reports
+from bomber.framework.dataprep.session import input_session, record_issue, write_input_reports
 from bomber.framework.dataprep.commissions import add_commission_arguments, commission_config_from_args
 from bomber.framework.dataprep.option_settlements import (add_option_settlement_arguments,
     load_option_settlements)
@@ -93,6 +93,56 @@ def backtest_bar_specs(args):
     }
 
 
+def resolve_backtest_paths(args):
+    """M1固定使用data_root默认目录；自定义opt_dir仅用于真实M5期权。"""
+    minutes = getattr(args, "option_bar_minutes", 1)
+    if minutes == 1:
+        if getattr(args, "data_root", None) is None:
+            raise ValueError("期权M1使用默认路径，须提供--data-root（读取kline/opt）")
+        # 切换周期时不能让YAML中保留的M5目录覆盖M1默认来源。
+        args.opt_dir = None
+    elif minutes == 5:
+        if getattr(args, "opt_dir", None) is None:
+            raise ValueError("期权M5须通过--opt-dir或配置opt_dir指定真实M5目录")
+    else:
+        raise ValueError("option-bar-minutes须为1或5")
+    return resolve_option_args(args, require_futures=True, require_index=False, use_environment=False)
+
+
+def check_day_coverage(args, days, opt_paths, contracts, index_minutes):
+    """一次核对全部请求交易日，分别记录期权链与指数特征缺失。"""
+    files_by_day = defaultdict(list)
+    for day, key in opt_paths:
+        files_by_day[day].append(key)
+    candidates_by_day, missing = {}, []
+    for day in days:
+        candidates = tuple(sorted(key for key in files_by_day[day]
+            if contracts[key].list_day <= day <= contracts[key].last_day))
+        candidates_by_day[day] = candidates
+        index_count = len(index_minutes.get(day, ()))
+        row = {"date": str(day), "matched_option_files": len(files_by_day[day]),
+            "listed_option_candidates": len(candidates), "index_minutes": index_count, "missing": []}
+        if not candidates:
+            row["missing"].append("OPTION_CHAIN")
+            record_issue(InputIssue("MISSING_OPTION_CHAIN",
+                f"与条款匹配的{args.option_product}认购文件={len(files_by_day[day])}，"
+                f"上市期内候选=0；基础资料={args.opt_basic}", source=str(args.opt_dir), trading_day=day))
+        if not index_count:
+            row["missing"].append("INDEX_FEATURE")
+            record_issue(InputIssue("MISSING_INDEX_FEATURE", f"当日指数{args.index_code}特征分钟=0",
+                source=str(args.index_feature_file), symbol=args.index_code, trading_day=day))
+        if row["missing"]:
+            missing.append(row)
+    if missing:
+        raise FileNotFoundError(
+            f"回测输入按日覆盖不足，不截断回测；缺失交易日={len(missing)}；"
+            f"前10日明细={json.dumps(missing[:10], ensure_ascii=False)}；"
+            f"实际期权目录={args.opt_dir}；期权基础资料={args.opt_basic}；"
+            f"指数特征文件={Path(args.index_feature_file).expanduser().resolve()}；"
+            f"完整明细见{args.report_dir}/input_failed_*/input_issues.json")
+    return candidates_by_day
+
+
 @input_session
 def run_case(args):
     """准备期权链、同月期货和指数行情，运行卖方与实际持仓对冲回测。"""
@@ -110,8 +160,9 @@ def run_case(args):
 
     started = perf_counter()
     phase = _start_phase("输入路径解析与配置校验")
-    args = resolve_option_args(args, require_futures=True, require_index=False, use_environment=False)
+    args = resolve_backtest_paths(args)
     bar_specs = backtest_bar_specs(args)
+    print(f"期权行情周期={bar_specs['option'].bar_spec} 实际目录={args.opt_dir}", flush=True)
     features = import_module("demos.08_option_vega.feature")
     index_bundle, index_binding, index_records, index_identity = features.read_index_features(args,
         int(pd.Timestamp(args.start_day, tz="Asia/Shanghai").value),
@@ -152,14 +203,12 @@ def run_case(args):
     for record in index_records:
         minute = pd.Timestamp(record.ts_event, tz="UTC").tz_convert("Asia/Shanghai")
         index_minutes[minute.date()].add(minute)
+    candidates_by_day = check_day_coverage(args, days, opt_paths, contracts, index_minutes)
     needed = {}
     options_by_day = {}
     skipped_hedges = []
     for day in days:
-        candidates = tuple(sorted(key for candidate_day, key in opt_paths
-            if candidate_day == day and contracts[key].list_day <= day <= contracts[key].last_day))
-        if not candidates or not index_minutes[day]:
-            raise FileNotFoundError(f"{day}: 缺少{args.option_product}认购链或指数{args.index_code}，不截断回测")
+        candidates = candidates_by_day[day]
         candidates, skipped = filter_hedgeable_options(candidates, contracts, future_rows, day)
         for key in skipped:
             row = future_rows.get(key)
@@ -402,8 +451,10 @@ def main():
     parser.add_argument("--end-day", type=date.fromisoformat, required=True)
     parser.add_argument("--data-root", type=Path,
         help="显式文件根目录；或逐项指定交易腿和基础资料路径，不从环境变量补齐")
-    for name in ("fut-dir", "opt-dir", "fut-basic", "opt-basic"):
+    for name in ("fut-dir", "fut-basic", "opt-basic"):
         parser.add_argument("--" + name, type=Path)
+    parser.add_argument("--opt-dir", type=Path,
+        help="仅用于期权M5的自定义目录；期权M1固定读取data-root/kline/opt")
     import_module("demos.08_option_vega.feature").add_index_feature_arguments(parser)
     parser.add_argument("--index-feature-file", type=Path, required=True,
         help="标准指数特征CSV/Parquet及同名.manifest.json；保留版本和可见时间")
@@ -421,7 +472,7 @@ def main():
     parser.add_argument("--bar-timestamp", choices=("start", "end"), default="end",
                         help="源分钟标签，默认 end；开始标签数据需显式选择 start")
     parser.add_argument("--option-bar-minutes", type=int, choices=(1, 5), default=1,
-        help="真实期权Bar周期；期货和指数保持M1，不把M5补成M1")
+        help="真实期权Bar周期；M1使用data-root默认目录，M5须指定opt-dir；期货和指数保持M1")
     parser.add_argument("--options-bar-timestamp", choices=("start", "end"),
         help="单独指定期权源时间标签；省略时沿用--bar-timestamp，M5开始标签按5分钟右移")
     parser.add_argument("--execution-timing", choices=("native", "next_market"), default="native",
