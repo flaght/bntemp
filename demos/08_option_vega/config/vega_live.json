@@ -1,0 +1,20 @@
+{
+  "description": "08Live策略与风险参数，保留原有小手数限制",
+  "nav": "40000000",
+  "vega_budget": 1.25,
+  "delta_targets": [0.2, 0.25, 0.3, 0.35],
+  "option_slot": "14:00",
+  "hedge_slots": ["10:00", "11:00", "13:30", "14:00", "14:55"],
+  "flatten_slot": "14:50",
+  "min_remaining_days": 5,
+  "close_remaining_days": 2,
+  "rate": 0.02,
+  "min_time_value": 5,
+  "max_market_age_seconds": 300,
+  "max_iv_age_seconds": 300,
+  "max_option_lots": 1,
+  "max_total_option_lots": 2,
+  "max_future_lots": 1,
+  "max_notional": "2000000",
+  "limit_offset_ticks": 1
+}

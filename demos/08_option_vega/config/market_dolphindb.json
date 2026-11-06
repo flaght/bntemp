@@ -1,0 +1,7 @@
+{
+  "source": "dolphindb",
+  "table": "stream_cffex_1min",
+  "timestamp_label": "end",
+  "volume_mode": "cumulative",
+  "max_age_seconds": 120
+}

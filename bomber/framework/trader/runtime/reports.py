@@ -99,6 +99,17 @@ class TradingDayLiveReport(LiveRunReport):
             self._sync(stream)
         self._cursors[name] = cursor + len(fresh)
 
+    def record_jsonl(self, name, rows):
+        """追加异构业务记录，保留交易日/会话号及逐文件游标。"""
+        cursor, fresh = self._new_rows(name, rows)
+        if fresh:
+            with (self.path / name).open("a", encoding="utf-8") as stream:
+                for row in fresh:
+                    stream.write(json.dumps({**row, "trading_day": self.trading_day,
+                        "run_id": self.run_id}, ensure_ascii=False, default=str, allow_nan=False) + "\n")
+                self._sync(stream)
+            self._cursors[name] = cursor + len(fresh)
+
     def write(self, *, status, fields, session, events):
         # 收尾再采集一次，包括shutdown期间产生的成交/撤单回报。
         self.record_events(events)

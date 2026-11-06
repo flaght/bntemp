@@ -640,6 +640,19 @@ class BacktestYamlConfigTests(unittest.TestCase):
         self.assertEqual(error.exception.code, 2)
         run.assert_not_called()
 
+    def test_startup_yaml_keeps_strategy_fields_in_json_dependencies(self):
+        from dataclasses import fields
+        from bomber.framework.cli import load_config
+        names = {field.name for field in fields(self.entry.OptionVegaConfig)} | {"max_notional", "limit_offset_ticks"}
+        for config_id in ("m5_index_blend", "live_recording", "live_model", "live_simnow"):
+            selected = load_config(self.config, config_id)
+            self.assertFalse(names & selected.keys())
+            parameters = json.loads(Path(selected["strategy_config"]).read_text())
+            self.assertIn("option_slot", parameters)
+            self.assertEqual(parameters["option_slot"], "14:00")
+            self.assertIsInstance(parameters["delta_targets"], list)
+            self.assertIsInstance(parameters["hedge_slots"], list)
+
 
 class BacktestOptionPathTests(unittest.TestCase):
     def setUp(self):

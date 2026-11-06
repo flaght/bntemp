@@ -168,6 +168,51 @@ class ConfigArgumentsTests(unittest.TestCase):
         parser.parse_args(self.config('    period: 5\n'))
         self.assertEqual(parser.parse_args(argv[:-2]).period, 1)
 
+    def test_json_parameters_use_cli_types_and_cli_can_override_selected_dependency(self):
+        import json
+        parser = self.parser()
+        parser.add_json_config_argument("--strategy-config", fields=("nav", "period", "delta_targets"),
+            sequences=("delta_targets",))
+        parser.add_argument("--delta-targets", default="0.2")
+        parameters = Path(self.temp.name) / "parameters.json"
+        parameters.write_text(json.dumps({"nav": "123.4567890123456789", "period": 5,
+            "delta_targets": [0.2, 0.3]}))
+        argv = self.config(f'    strategy_config: "{parameters}"\n')
+        args = parser.parse_args(argv)
+        self.assertEqual(args.nav, Decimal("123.4567890123456789"))
+        self.assertEqual(args.period, 5)
+        self.assertEqual(args.delta_targets, "0.2,0.3")
+        other = Path(self.temp.name) / "other.json"
+        other.write_text('{"period": 1}')
+        args = parser.parse_args([*argv, "--strategy-config", str(other)])
+        self.assertEqual(args.period, 1)
+        self.assertEqual(args.nav, Decimal(100))
+        self.assertEqual(args.strategy_config, other)
+        self.assertEqual(parser.parse_args([*argv, "--period", "1"]).period, 1)
+        argv = self.config(f'    strategy_config: "{parameters}"\n    period: null\n')
+        self.assertEqual(parser.parse_args(argv).period, 5)
+
+    def test_json_only_needs_no_yaml_and_rejects_invalid_or_undeclared_fields(self):
+        parser = self.parser()
+        parser.add_json_config_argument("--strategy-config", fields=("period",))
+        path = Path(self.temp.name) / "parameters.json"
+        argv = ["--strategy-config", str(path), "--start-day", "2026-08-13", "--data-root", "data"]
+        path.write_text('{"period": 5}')
+        with patch.dict("sys.modules", {"yaml": None}):
+            self.assertEqual(parser.parse_args(argv).period, 5)
+        for content, message in (
+            ('{"connect": true}', "未允许字段"),
+            ('{"period": 2}', "invalid choice"),
+            ('{"period": 1, "period": 5}', "重复键"),
+            ('[]', "须为参数映射"),
+            ('{', "JSON参数解析失败"),
+        ):
+            with self.subTest(content=content):
+                path.write_text(content)
+                self.assert_invalid(parser, argv, message)
+        path.unlink()
+        self.assert_invalid(parser, argv, "不可读取")
+
 
 if __name__ == "__main__":
     unittest.main()

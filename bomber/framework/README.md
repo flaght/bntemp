@@ -42,6 +42,8 @@ Python负责协议、装配和调度；原生行情对象、数值构造与部�
 
 配置是独立参数集合，不增加实验继承、批量调度或组件工厂。相对路径按进程运行目录解析。首次读取YAML需安装`requirements-config.txt`中的PyYAML；不使用文件配置时不导入该依赖。08回测与Live共用一个文件：[strategy.yaml](../../demos/08_option_vega/config/strategy.yaml)，各入口按配置ID读取自身参数，继续执行原有业务校验。
 
+应用可用`parser.add_json_config_argument("--strategy-config", fields=允许字段, sequences=逗号列表字段)`注册受限JSON参数文件，由YAML或CLI指定路径。JSON为参数映射，`description`仅为说明；重复键、非法JSON或未允许字段会报错。`sequences`把JSON列表适配到已有逗号列表选项，其余复用原CLI的type、choices及互斥校验。优先级为显式CLI、YAML、JSON、默认值；JSON不能自行增加启动参数或控制连接/授权，具体字段由应用显式声明。08的策略JSON与行情JSON示例在`demos/08_option_vega/config/`。
+
 ## 3. 一条主链，分别选择运行与执行
 
 ```mermaid

@@ -608,7 +608,8 @@ class LiveYamlConfigTests(unittest.TestCase):
         self.assertEqual(args.config.nav, Decimal("40000000"))
         self.assertEqual(args.execution_policy.account_reconciliation.value, "off")
         self.assertFalse(hasattr(args, "option_bar_minutes"))
-        live = self.entry.build_runtime(args)  # 仅装配，不启动，不访问网络。
+        context = NS(trading_day="20261106", resume=False, max_session_orders=None)
+        live = self.entry.build_runtime(args, window_context=context)  # 仅装配，不启动，不访问网络。
         self.assertEqual(live.report.metadata["parameter_config"],
             {"file": str(self.config), "id": "live_recording"})
         self.assertIsNone(live.inputs)
@@ -656,6 +657,16 @@ class LiveYamlConfigTests(unittest.TestCase):
             "does not match format")
         self.assert_invalid(self.modified("live_recording", index_poll_seconds=0),
             "指数查询间隔")
+
+    def test_strategy_json_cannot_set_authorization_and_still_checks_business_values(self):
+        import json
+        path = Path(self.temp.name) / "strategy.json"
+        for values, message in (({"connect": True}, "未允许字段"),
+                                ({"vega_budget": 0}, "vega_budget必须"),
+                                ({"max_option_lots": 0}, "max_option_lots必须")):
+            with self.subTest(values=values):
+                path.write_text(json.dumps(values))
+                self.assert_invalid(self.argv("live_recording", "--strategy-config", str(path)), message)
 
 
 if __name__ == "__main__":

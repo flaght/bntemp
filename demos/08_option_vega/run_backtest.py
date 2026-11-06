@@ -34,7 +34,7 @@ from bomber.framework.dataprep.commissions import add_commission_arguments, comm
 from bomber.framework.dataprep.option_settlements import (add_option_settlement_arguments,
     load_option_settlements)
 
-DEFAULT_REPORT_DIR = Path(__file__).resolve().parent / "results"
+DEFAULT_REPORT_DIR = Path(__file__).resolve().parent / "results" / "backtest"
 
 
 def _start_phase(name):
@@ -372,7 +372,8 @@ def run_case(args):
             account_report = trader.generate_account_report(Venue("CFFEX"))
             _finish_phase("交易报表与残留持仓检查资料生成", phase)
             phase = _start_phase("报表写出与最终结果校验")
-            output = Path(args.report_dir) / str(result.backend_result.run_id)
+            output = (Path(args.report_dir) / args.option_product /
+                f"{args.start_day:%Y%m%d}-{args.end_day:%Y%m%d}" / str(result.backend_result.run_id))
             output.mkdir(parents=True, exist_ok=True)
             write_input_reports(output)
             backend.write_commission_report(output)
@@ -394,6 +395,7 @@ def run_case(args):
                 "calendar_source": calendar_source,
                 "parameter_config": ({"file": str(args.config_file), "id": args.config_id}
                     if getattr(args, "config_file", None) is not None else None),
+                "strategy_config": str(args.strategy_config) if getattr(args, "strategy_config", None) else None,
                 "skipped_unavailable_hedges": skipped_hedges,
                 "calendar_range": [str(calendar[0]), str(calendar[-1])],
                 "option_product": args.option_product, "future_product": args.future_product,
@@ -413,6 +415,9 @@ def run_case(args):
                 "simulation": "NETTING/BAR/CONFIGURED_FEE/PREMIUM_PERCENT_MARGIN; OPTION_CASH_SETTLEMENT",
                 "backend": str(result.backend_result)}
             (output / "feature_frames.json").write_text(json.dumps(runner.frame_audit, ensure_ascii=False, indent=2) + "\n")
+            parameters = import_module("demos.08_option_vega.configuration").effective_parameters(args, config)
+            (output / "strategy_parameters.json").write_text(
+                json.dumps(parameters, ensure_ascii=False, indent=2, default=str) + "\n", encoding="utf-8")
             (output / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2, default=str) + "\n")
             print(f"frames={strategy.frames} entries={strategy.entry_decisions} orders={len(orders)} fills={len(fills)} 报表={output}")
             if remaining or errors or not strategy.flatten_requested:
@@ -444,6 +449,7 @@ def run_case(args):
 def main():
     """解析期权组合、数据路径及风险限制后启动回测。"""
     parser = ConfigArgumentParser(description="认购期权卖方Vega预算与同月期货Delta对冲")
+    import_module("demos.08_option_vega.configuration").add_strategy_config_argument(parser)
     add_commission_arguments(parser)
     add_option_settlement_arguments(parser)
     add_market_source_arguments(parser, backtest=True)
