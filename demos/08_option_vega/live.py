@@ -125,6 +125,8 @@ class OptionSessionRunner(UnifiedStrategyRunner):
                     del self._feature_log_states[next(iter(self._feature_log_states))]
 
     def poll_live_inputs(self):
+        if self.pause_requested():
+            return
         self.poll_features()
         if self.accept_bars:
             now = self.clock_ns()
@@ -151,6 +153,8 @@ class OptionSessionRunner(UnifiedStrategyRunner):
 
     def begin_bars(self):
         with self._frame_lock:
+            if self.pause_requested():
+                return
             self.frames = MinuteFrameBuffer(self.sources, grace_seconds=self.grace_seconds)
             self.warm_started_ns = self.clock_ns()
             self.accept_bars = True
@@ -160,10 +164,19 @@ class OptionSessionRunner(UnifiedStrategyRunner):
         self.failure = reason
         raise RuntimeError(reason)
 
+    def pause_requested(self):
+        window = getattr(self, "window_context", None)
+        if window is not None and window.stop_requested():
+            window.pause_runner(self, self.client)
+            return True
+        return False
+
     def publish(self, feed_id, event):
         if not isinstance(event, Bar):
             return
         with self._frame_lock:
+            if self.pause_requested():
+                return
             try:
                 key = self.key_by_instrument.get(event.bar_type.instrument_id)
                 if key is None or self.sources[key] != feed_id:
@@ -254,7 +267,7 @@ class OptionSessionRunner(UnifiedStrategyRunner):
 
     def flush_frames(self):
         with self._frame_lock:
-            if not self.accept_bars:
+            if self.pause_requested() or not self.accept_bars:
                 return
             try:
                 # 控制线程已刷新参考；帧锁内仅检查快照，避免数据库读取阻塞行情。
@@ -398,6 +411,10 @@ def assemble(args, inputs, driver=None, *, account_routes=(), shared_service=Non
         recovery_binding=binding, position_scope=scope, upstream=inputs.ctp_upstream,
         bar_feed=inputs.ctp_bar_feed, manager=None, feeds=feeds, execution=execution,
         source_identity=inputs.source_identity)
+    session.signal_checkpoint = OptionVegaCheckpoint(strategy)
+    if args.mode == "recording":
+        from .recovery import RecordingWindowState
+        session.window_components = {"recording": RecordingWindowState(session)}
     if args.state_file is not None:
         import json
         identity = {"strategy_id": sid, "config": vars(args.config),
@@ -411,7 +428,6 @@ def assemble(args, inputs, driver=None, *, account_routes=(), shared_service=Non
             "max_notional": args.max_notional, "frame_wait_seconds": args.frame_wait_seconds,
             "limit_offset_ticks": args.limit_offset_ticks, "ctp_price_type": args.ctp_price_type}
         session.session_identity = json.loads(json.dumps(identity, default=str))
-        session.signal_checkpoint = OptionVegaCheckpoint(strategy)
         if shared_service is not None:
             # 账户账本由共享服务保存；这里只提供应用的信号/参考身份。
             session.strategy.restored = True

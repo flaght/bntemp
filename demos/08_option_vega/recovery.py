@@ -23,6 +23,9 @@ class OptionControl:
     def check_frames(self, session):
         if session.runner.failure or getattr(session.client, "report_errors", ()):
             raise RuntimeError(session.runner.failure or "执行回报冲突")
+        from bomber.framework.trader.runtime.live.lifecycle import pause_requested
+        if pause_requested(session):
+            return
         session.references.refresh()
         session.runner.poll_features()
         if not session.runner.session_ready():
@@ -35,7 +38,7 @@ class OptionControl:
     def verify(self, session):
         if session.runner.failure or getattr(session.client, "report_errors", ()):
             raise RuntimeError(session.runner.failure or "执行回报冲突")
-        if session.strategy.frames == 0:
+        if session.strategy.frames == 0 and not getattr(session.runner, "scheduled_pause", False):
             raise RuntimeError("没有取得封闭分钟帧")
         if self.require_fills and session.strategy.fills_received == 0:
             raise RuntimeError("本次未取得归属成交，不能通过成交验收")
@@ -65,6 +68,12 @@ class OptionLocalLifecycle(OptionControl, LocalExecutionLifecycle):
     @property
     def event_label(self):
         return "Recording目标" if self.mode == "recording" else "模型执行回报"
+
+    def restore_session(self, session, context):
+        saved = session.manager.repository.load()
+        if saved is None or saved.payload["component_states"]["session_identity"]["identity"]["td_day"] == context.trading_day:
+            return super().restore_session(session, context)
+        return session.manager.restore(payload_transform=lambda payload: model_payload_for_day(session, payload))
 
     def poll(self, session):
         self.check_frames(session)
@@ -157,11 +166,11 @@ def source_identity_with_legacy_metadata(sources):
     return result
 
 
-def validate_identity(old, new):
+def validate_identity(old, new, *, mode="simnow"):
     allowed = {"td_day", "valuation_day", "calendar", "calendar_manifest", "reference_fingerprint", "contracts"}
-    if old.get("mode") != "simnow" or old.get("environment") != "realtime" or new.get("environment") != "realtime":
-        raise ValueError("08跨日自动恢复仅支持实时SimNow")
-    if old.get("policy") != {"version": 1, "account_reconciliation": "strict", "position_source": "fills"}:
+    if old.get("mode") != mode or new.get("mode") != mode or old.get("environment") != "realtime" or new.get("environment") != "realtime":
+        raise ValueError("08跨日自动恢复须使用相同实时执行模式")
+    if mode == "simnow" and old.get("policy") != {"version": 1, "account_reconciliation": "strict", "position_source": "fills"}:
         raise ValueError("08跨日恢复须使用strict及真实成交归属")
     if not old["td_day"] < new["td_day"] or new["valuation_day"].replace("-", "") != new["td_day"]:
         raise ValueError("08恢复须向前跨日并使用当日估值日")
@@ -197,10 +206,30 @@ def restore_signal(session, state):
     session.signal_checkpoint.restore_state(signal)
 
 
-def payload_for_day(session, payload, *, driver, transport, day):
+class RecordingWindowState:
+    """仅续接内存中的目标与每日选约标记；Recording始终没有真实成交仓位。"""
+    def __init__(self, session):
+        self.session = session
+
+    def snapshot_state(self):
+        return self.session.signal_checkpoint.snapshot_state()
+
+    def restore_state(self, saved):
+        signal = deepcopy(saved)
+        # 已下架的观察目标不属于真实持仓，下一窗口不再订阅或记录该目标。
+        for name, keys in (("option_goals", self.session.strategy.contracts),
+                           ("future_goals", self.session.strategy.futures)):
+            signal[name] = {key: value for key, value in signal[name].items() if key in keys}
+        restore_signal(self.session, signal)
+        self.session.strategy.restore_target_revision(saved["submissions"])
+        # Recording只有目标记录，没有成交；不能以零成交事实覆盖已记录目标。
+        self.session.strategy.restored = False
+
+
+def rollover_routes(session, payload, *, mode="simnow"):
     new = session.session_identity
     old = payload["component_states"]["session_identity"]["identity"]
-    validate_identity(old, new)
+    validate_identity(old, new, mode=mode)
     sid = session.strategy.strategy_id
     owned = {row["target_key"]: Decimal(row["quantity"]) for row in payload["positions"]["strategy_positions"]
              if row["strategy_id"] == sid}
@@ -217,15 +246,37 @@ def payload_for_day(session, payload, *, driver, transport, day):
         raise ValueError("08原目标账本策略身份无效")
     if any(Decimal(q) for key, q in targets[0]["targets"].items() if key not in routes):
         raise ValueError("08移除合约仍有未完成旧目标")
+    return owned, routes
+
+
+def payload_for_day(session, payload, *, driver, transport, day):
+    owned, routes = rollover_routes(session, payload)
+    ids = session.references.instrument_ids
     multipliers = {instrument: session.references.contracts[key].multiplier if key in session.references.contracts
                    else session.references.futures[key]["contMultNum"] for key, instrument in ids.items()}
     session.rollover_audit = observe_rollover(payload, driver=driver, transport=transport, day=day,
         multipliers=multipliers, scope=session.position_scope)
+    return rebind_rollover(session, payload, owned, routes, driver.driver_id)
+
+
+def model_payload_for_day(session, payload):
+    """模型仓位仍来自原成交账本；只更新当日路由和信号，不登录CTP。"""
+    from bomber.framework.trader.persistence import _decode_orders
+    if payload["ctp_ledgers"] or payload["ctp_drivers"] or any(
+            not row.state.status.is_terminal for rows in payload["orders"].values() for row in _decode_orders(rows)):
+        raise ValueError("模型跨日须无物理账户账本及未终结订单")
+    owned, routes = rollover_routes(session, payload, mode="model")
+    return rebind_rollover(session, payload, owned, routes, session.client.client_id)
+
+
+def rebind_rollover(session, payload, owned, routes, client_id):
+    sid, ids, new = session.strategy.strategy_id, session.references.instrument_ids, session.session_identity
+    targets = payload["targets"]
     values = {key: str(owned.get(key, Decimal(0))) for key in sorted(routes)}
     targets[0]["targets"] = values
     payload["portfolio"]["contributions"][sid] = [
-        {"key": {"client_id": driver.driver_id, "instrument_id": key}, "quantity": q} for key, q in values.items()]
-    payload["portfolio"]["known_keys"] = [{"client_id": driver.driver_id, "instrument_id": key} for key in sorted(routes)]
+        {"key": {"client_id": client_id, "instrument_id": key}, "quantity": q} for key, q in values.items()]
+    payload["portfolio"]["known_keys"] = [{"client_id": client_id, "instrument_id": key} for key in sorted(routes)]
     for name in ("strategy_positions", "strategy_revisions"):
         payload["positions"][name] = [row for row in payload["positions"][name] if row["target_key"] in routes]
     payload["positions"]["attribution"]["owned"] = [row for row in payload["positions"]["attribution"]["owned"]

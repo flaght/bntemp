@@ -1,7 +1,9 @@
 """期权Vega在线入口：行情来源、指数来源、执行渠道分别装配。"""
 from __future__ import annotations
+from argparse import BooleanOptionalAction
 from datetime import datetime, timedelta
 from dataclasses import replace
+from copy import copy
 from decimal import Decimal
 import json
 import logging
@@ -22,10 +24,33 @@ from bomber.framework.market.sources import (add_market_source_arguments, market
 from bomber.framework.cli import ConfigArgumentParser
 from .vega_signal import OptionVegaConfig
 from .feature import add_index_feature_arguments, index_bundle
+from .configuration import add_strategy_config_argument, effective_parameters
+
+
+def session_inputs(args):
+    """常驻使用本期权品种的交易时段，日历与时段读取交给公共Provider。"""
+    from bomber.framework.dataprep.session_inputs import session_inputs_from_args
+    inputs = replace(session_inputs_from_args(args, product=args.option_product, exchange="CFFEX"),
+                     asset_type="OPTION")
+    if inputs.backend == "dolphindb":
+        inputs = replace(inputs,
+            database=args.trading_hours_database or os.getenv("DDB_TRADING_HOURS_DATABASE") or "dfs://bomber_static",
+            hours_table=args.trading_hours_table or os.getenv("DDB_TRADING_HOURS_TABLE") or "fut_trading_session")
+    return inputs
+
+
+def validate_calendar(calendar, product):
+    # 08当前按CFFEX期权自然日估值，不把IM时段或商品夜盘套到期权上。
+    if calendar.binding.asset_type != "OPTION" or calendar.binding.hours_code != product:
+        raise ValueError("08常驻须使用本期权品种的交易时段（MO/IO/HO），不能使用期货时段")
+    segments = [*calendar.segments, *(s for o in calendar.overrides for s in o.segments)]
+    if any(s.date_anchor != "TRADING_DAY" or s.start_day_offset or s.end_day_offset for s in segments):
+        raise ValueError("08当前只支持期权当日日盘窗口")
 
 
 def parse_args(argv=None):
     p = ConfigArgumentParser(description=__doc__)
+    add_strategy_config_argument(p)
     p.add_argument("--connect", action="store_true")
     p.add_argument("--log-level", choices=("DEBUG", "INFO", "WARNING", "ERROR"), default="INFO")
     p.add_argument("--mode", choices=("recording", "model", "simnow"), default="recording")
@@ -54,9 +79,13 @@ def parse_args(argv=None):
     p.add_argument("--replay-md-trading-day")
     p.add_argument("--replay-test-start-time", help="08工程测试：将第一份完成Bar映射到估值日HH:MM")
     p.add_argument("--replay-test-source-time", help="可选显式源HH:MM；例如16:00映射到start-time=09:00")
-    p.add_argument("--expected-trading-day", required=True, help="执行/参考会话交易日YYYYMMDD")
+    p.add_argument("--expected-trading-day", help="定时模式必填；常驻模式可选，仅核对首个窗口YYYYMMDD")
     p.add_argument("--valuation-day", help="行情估值日；replay默认MD日，realtime默认会话交易日")
-    p.add_argument("--calendar-id", default="china.cffex", help="公共编译日历身份；Live不读取日历文件")
+    from bomber.framework.dataprep.session_inputs import add_session_arguments
+    add_session_arguments(p)
+    p.set_defaults(calendar_id="china.cffex")
+    p.add_argument("--run-forever", action=BooleanOptionalAction, default=False,
+        help="按期权交易日历常驻；休市保存等待，Ctrl+C退出；no-run-forever恢复定时运行")
     p.add_argument("--option-product", default="MO")
     p.add_argument("--future-product", default="IM")
     p.add_argument("--index-code", default="000852")
@@ -97,7 +126,7 @@ def parse_args(argv=None):
     p.add_argument("--state-file", type=Path)
     p.add_argument("--resume", action="store_true")
     p.add_argument("--require-fills", action="store_true", help="必须有本次归属成交才通过验收")
-    p.add_argument("--report-dir", type=Path, default=Path(__file__).with_name("results"))
+    p.add_argument("--report-dir", type=Path, default=Path(__file__).with_name("results") / "live")
     args = p.parse_args(argv)
     try:
         market_config_from_args(args, domestic_contracts=True)
@@ -108,6 +137,15 @@ def parse_args(argv=None):
     try:
         from bomber.framework.calendars import NativeCalendarProvider
         args.calendar_id = NativeCalendarProvider(args.calendar_id).calendar_id
+        if not args.run_forever and not args.expected_trading_day:
+            raise ValueError("定时模式须声明expected-trading-day；常驻使用--run-forever")
+        if args.trading_calendar:
+            raise ValueError("08 Live使用公共原生日历及交易时段Provider，不读取旧日历JSON")
+        if args.run_forever:
+            from bomber.framework.dataprep.session_inputs import validate_session_inputs
+            validate_session_inputs(session_inputs(args))
+            if args.simnow_environment != "realtime":
+                raise ValueError("常驻模式只支持realtime，不重新映射Replay行情日期")
         for name in ("expected_trading_day", "replay_md_trading_day", "valuation_day"):
             value = getattr(args, name)
             if value and datetime.strptime(value, "%Y%m%d").strftime("%Y%m%d") != value:
@@ -362,13 +400,19 @@ def describe(session):
         "execution_origin": {"model": "model", "simnow": "ctp_native", "recording": "recording"}[session.mode]}
 
 
-def build_runtime(args, *, account_routes=()):
+def build_runtime(args, *, account_routes=(), window_context=None):
     from bomber.framework.trader.runtime.live.runtime import ManagedLiveRuntime
-    from bomber.framework.trader.runtime.reports import LiveRunReport
+    from .reports import OptionLiveReport
     from bomber.framework.trader.runtime.live.channels.ctp import required, build_simnow_transport
     from bomber.framework.trader.runtime.live.channels.ctp_market import CtpMarketCredentials
     from .recovery import OptionLocalLifecycle, OptionCtpLifecycle
     from .live import CLIENT_ID, assemble
+    if window_context is not None:
+        args = copy(args)
+        args.expected_trading_day = args.valuation_day = window_context.trading_day
+        args.resume = window_context.resume
+        if window_context.max_session_orders is not None:
+            args.max_session_orders = window_context.max_session_orders
     if args.mode == "simnow":
         from bomber.framework.trader.execution.ctp import CtpTdApiTransport
         transport = build_simnow_transport(CtpTdApiTransport, client_id=CLIENT_ID,
@@ -387,18 +431,23 @@ def build_runtime(args, *, account_routes=()):
         lifecycle.md_front = required("CTP_MD_ADDRESS")
         lifecycle.md_credentials = CtpMarketCredentials(os.getenv("CTP_BROKER_ID", "9999"), required("CTP_ACCOUNT_ID"),
             required("CTP_PASSWORD"), os.getenv("CTP_PRODUCTION_MODE", "true").lower() in {"1", "true", "yes", "on"})
-    report = LiveRunReport(args.report_dir, prefix=f"option-vega-{args.mode}", describe=describe,
+    report = OptionLiveReport(Path(args.report_dir) / args.option_product,
+        prefix=f"option-vega-{args.mode}-{args.option_product}", trading_day=args.expected_trading_day,
+        describe=describe,
         metadata={"mode": args.mode, "market_config": source_config(args).identity, "market_source": args.market_source, "index_source": args.index_source,
             "index_code": args.index_code, "calendar_id": args.calendar_id,
             "parameter_config": ({"file": str(args.config_file), "id": args.config_id}
                 if getattr(args, "config_file", None) is not None else None),
+            "strategy_config": str(args.strategy_config) if getattr(args, "strategy_config", None) else None,
+            "strategy_parameters": effective_parameters(args, args.config),
             "simnow_environment": args.simnow_environment, "state_file": str(args.state_file),
             "account_reconciliation": args.execution_policy.account_reconciliation.value,
             "strategy_position_source": args.execution_policy.position_source.value})
     return ManagedLiveRuntime(CLIENT_ID, controller=lifecycle,
         prepare_inputs=lambda context: prepare_inputs(args, context, lifecycle),
         assemble_session=lambda inputs, context: assemble(args, inputs, getattr(lifecycle, "driver", None),
-            account_routes=account_routes), report=report, seconds=args.seconds)
+            account_routes=account_routes), report=report, seconds=args.seconds,
+        progress=lambda session: report.record(session, lifecycle.events(session)), window_context=window_context)
 
 
 def main(argv=None):
@@ -407,6 +456,15 @@ def main(argv=None):
     args = parse_args(argv)
     logging.basicConfig(level=getattr(logging, args.log_level),
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+    if args.run_forever:
+        from bomber.framework.dataprep.session_inputs import load_session_inputs
+        from bomber.framework.trader.runtime.live.continuous import run_continuous
+        calendar = load_session_inputs(session_inputs(args))
+        validate_calendar(calendar, args.option_product)
+        return run_continuous(lambda **kwargs: build_runtime(args, **kwargs), calendar=calendar,
+            state_file=args.state_file, expected_trading_day=args.expected_trading_day,
+            max_session_orders=args.max_session_orders if args.mode == "simnow" else None,
+            order_limit_policy="wait")
     runtime = build_runtime(args)
     try:
         runtime.run()

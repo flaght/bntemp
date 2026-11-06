@@ -1,22 +1,27 @@
 # 08：期权Vega策略
 
-以**回测、Live、自定义特征**为三条主线。两个入口使用相同的策略、风险限额和特征契约，执行与仓位由`bomber/framework`负责。默认MO认购、同月IM和000852指数；IV与Delta使用同月期货价格，选约/增仓/退出/对冲保持原strategy1逻辑。
+以**回测、Live、自定义特征**为三条主线。两个入口使用相同的策略、风险校验机制和特征契约，执行与仓位由`bomber/framework`负责。默认MO认购、同月IM和000852指数；IV与Delta使用同月期货价格，选约/增仓/退出/对冲保持原strategy1逻辑。
 
 ## 目录
 
 | 文件 | 职责 |
 | --- | --- |
 | `run_backtest.py` | 文件准备、公共模拟Backend/结算接线及回测报告 |
-| `run_live.py` | 在线参数、行情/参考/执行渠道选择及公共Live生命周期启动 |
+| `run_live.py` | 在线参数、行情/参考/执行渠道选择、期权时段接线及公共常驻调度启动 |
 | `feature/` | 特征生成/导出、声明加载、标准文件读取及回测分钟帧适配 |
 | `strategy.py` | 策略决策、实际自有仓位管理、公共装配绑定与限额 |
 | `vega_signal.py` | 配置、原数值算法、合约关系及可独立恢复的信号状态 |
 | `live.py` | Live分钟帧适配、健康检查、公共执行装配与只读诊断 |
-| `recovery.py` | 应用恢复/跨日约束，调用公共账户与持久化能力 |
+| `recovery.py` | 应用恢复/跨日约束、Recording窗口状态续接，调用公共账户与持久化能力 |
+| `config/strategy.yaml` | 启动模式、数据路径、交易日、输出目录与依赖JSON路径 |
+| `config/vega_backtest.json`、`config/vega_live.json` | Vega预算、选约/对冲时点和风险参数 |
+| `config/market_dolphindb.json` | 公共行情源配置：流表、时间标签、量口径和时效 |
+| `configuration.py` | 注册策略JSON允许字段，复用公共参数解析，不自建配置工厂 |
+| `reports.py` | 复用公共交易日报告，追加08信号及保存只读策略快照 |
 
 解析、结算、模拟撮合、目标差额、OMS、归属、风险、日历及共享账户复用[框架](../../bomber/framework/README.md)。探针/验收在[scripts/integration/options](../../scripts/integration/options)，测试在[tests](../../tests)。目录不保留旧模块的转发壳。
 
-同步到服务器时须同步本次删除项，不能只覆盖新增文件。根目录`features.py`已迁入`feature/`包，须删除服务器上的旧文件；不保留转发壳。旧辅助模块导入路径已由工厂、脚本和测试统一替换；两个运行入口及JSON检查点格式保持不变。
+同步到服务器时须同步本次删除项，不能只覆盖新增文件。根目录`features.py`已迁入`feature/`包；策略目录下的`continuous.py`已合并到`run_live.py`与`recovery.py`，须删除服务器上的这些旧文件，不保留转发壳。持续运行由公共`bomber/framework/trader/runtime/live/continuous.py`维护。旧辅助模块导入路径已由工厂、脚本和测试统一替换；两个运行入口及JSON检查点格式保持不变。
 
 ## 1. 回测
 
@@ -35,7 +40,7 @@ python -u demos/08_option_vega/run_backtest.py \
 
 `--data-root`按公共路径规则推导交易腿与基础条款；期货与资料可逐项传`--fut-dir --fut-basic --opt-basic`。期权M1固定使用`data_root/kline/opt`，自定义`--opt-dir`仅用于M5。不读取`.env`补文件路径。完整参数见`python demos/08_option_vega/run_backtest.py --help`。
 
-### YAML启动参数
+### YAML启动参数与JSON策略参数
 
 回测和Live入口均复用公共`bomber.framework.cli.ConfigArgumentParser`，共用[config/strategy.yaml](config/strategy.yaml)，通过不同配置ID选择各自参数。安装YAML读取依赖后，可直接启动回测：
 
@@ -48,7 +53,11 @@ python -u demos/08_option_vega/run_backtest.py \
 
 配置采用`experiment_setups -> 配置ID -> 参数名/值`，`description`仅作为说明。`m5_index_blend`与M5启动命令一致：期权M5、期货/指数M1、14:00开仓、原生日历、`index_blend`列以及`next_market`撮合；`opt_dir`须指向真实M5文件。`live_recording`、`live_model`、`live_simnow`分别用于三个Live执行模式。各入口只加载选中的配置，不混入其他ID的参数；把回测ID传给Live会报未知参数。复制一组参数即可添加实验，不需要修改Python。
 
-优先级为**命令行显式参数 > 选中的YAML配置 > 默认值**。例如同一数据集改用MA20：
+启动YAML引用`strategy_config: demos/08_option_vega/config/vega_backtest.json`或`vega_live.json`；策略JSON保存`nav/vega_budget/delta_targets/option_slot/hedge_slots`和持仓、名义本金等限额。回测与Live保留各自原有手数上限，不把回测100手配置直接用于Live。`delta_targets/hedge_slots`在JSON中使用列表，仍复用原有CLI类型和`OptionVegaConfig`业务校验。
+
+Live启动YAML通过`market_config`引用`config/market_dolphindb.json`，原始指数Schema仍在`feature/index.json`。账户凭据继续从用途专属环境变量读取，不放入JSON。日期、模式、状态文件、连接/报单授权和运行时长放YAML，策略JSON不允许这些字段。
+
+优先级为**显式CLI > 启动YAML > 策略JSON > 原有默认值**；YAML中的`null`沿用下一层。现有CLI或旧YAML内的策略参数仍可作为显式覆盖，不自动改写用户文件。仅使用CLI时也可传`--strategy-config /路径/参数.json`，无需YAML依赖。例如同一数据集改用MA20：
 
 ```bash
 python -u demos/08_option_vega/run_backtest.py \
@@ -58,7 +67,7 @@ python -u demos/08_option_vega/run_backtest.py \
   --report-dir tests/results/backtest/option-vega-m5-ma20
 ```
 
-配置键使用`start_day`、`index_value_field`等参数名，也接受`start-day`形式；`--config_file/--config_id`保留下划线别名。日期、时点和指数代码应加引号，如`"2026-08-13"`、`"14:00"`、`"000852"`；布尔开关写`true/false`，逗号列表参数仍写字符串，可重复参数（如`commission_product_multiplier`）使用YAML列表。相对数据路径与普通CLI一致，按运行目录解析，示例应在`pro`根目录启动。
+配置键使用`start_day`、`index_value_field`等参数名，也接受`start-day`形式；`--config_file/--config_id`保留下划线别名。日期、时点和指数代码应加引号，如`"2026-08-13"`、`"14:00"`、`"000852"`；布尔开关写`true/false`，可重复参数（如`commission_product_multiplier`）使用YAML列表。所有相对路径（包括YAML引用的JSON）与普通CLI一致，按运行目录解析，示例应在`pro`根目录启动。
 
 文件不存在、ID不存在、重复键、未知参数、类型/枚举或互斥选项错误均停止启动；配置不会新增任意Namespace属性，也不会绕过M5对齐、数据覆盖或特征可见时间检查。回测与Live报告的`parameter_config`均记录文件路径与配置ID。普通CLI和`--help`无需PyYAML，也不强制使用配置文件。原`config/backtest.yaml`已统一更名为`config/strategy.yaml`，同步时删除旧文件并更新启动路径。
 
@@ -117,7 +126,7 @@ python -u demos/08_option_vega/run_backtest.py \
 
 普通成交费用由公共FeeModel处理，结算费用单独记录。模拟仍使用基础NETTING/Bar撮合与比例保证金，不代表完整卖方保证金、期货交割或实物行权。
 
-报告保存在`results/<run-id>/`：`summary.json`、`orders/fills/positions/account.csv`、`signals.csv`、`settlements.csv`、`feature_frames.json`、输入诊断和费用报告。
+回测默认保存在`results/backtest/<期权品种>/<开始日>-<结束日>/<run-id>/`：`summary.json`、`orders/fills/positions/account.csv`、`signals.csv`、`settlements.csv`、`feature_frames.json`、`strategy_parameters.json`、输入诊断和费用报告。`--report-dir`替换根目录；运行编号保留，重复回测不覆盖此前结果。准备失败仍使用公共`<report-dir>/input_failed_*`诊断目录。
 
 ## 2. Live
 
@@ -129,14 +138,37 @@ Live分别配置交易腿行情、指数特征、参考条款和执行渠道。`
 python -u -m demos.08_option_vega.run_live \
   --config-file demos/08_option_vega/config/strategy.yaml \
   --config-id live_recording \
-  --expected-trading-day 20261106
+  --run-forever
 ```
 
-日期须按实际会话交易日修改YAML或用CLI覆盖，不能按本机自然日期自动猜测。三个Live示例使用DolphinDB完成分钟流与原始指数Bar投影，期权仍为M1；本次配置接入没有增加Live M5或MA列选择能力。流表名、时间标签及累计量口径须与实际来源一致。
+三个Live示例默认`run_forever: true`，交易日由公共会话日历的窗口提供，`expected_trading_day: null`不固定日期。可显式传`--expected-trading-day YYYYMMDD`核对首个窗口；后续窗口随日历推进。三个Live示例使用DolphinDB完成分钟流与原始指数Bar投影，期权仍为M1；流表名、时间标签及累计量口径在`config/market_dolphindb.json`中声明，须与实际来源一致。
 
 使用`live_model`或`live_simnow`前，在同一YAML中填写对应的`state_file`：新会话使用独立新文件，恢复已有会话同时设置`resume: true`。模板保留`null`，未填写时原有检查点校验会阻止启动，不自动创建空状态接管已有仓位。`live_simnow`已明确设置`enable_orders/confirm_simnow: true`；任一授权缺失、Recording带报单参数或Model带物理发单授权仍报错。恢复时仍需通过原有身份与仓位核验，不能把共享账户检查点直接交给独立`run_live`入口。
 
-本配置接入面向`run_live.py`；下面的`shared --run-forever`持续共享管理入口仍沿用原调用方式和检查点。Live示例默认运行900秒，可修改`seconds`；一次运行结束或按Ctrl+C停止仍沿用原有资源清理与保存逻辑。
+常驻复用公共`run_continuous`，不用另写循环。交易时段从`dfs://bomber_static/fut_trading_session`读取**期权品种MO**的规则（IO/HO对应各自规则），不能套用IM/IF/IH期货时段。当前MO规则为09:30–11:30、13:00–14:57；`no_session_overrides: true`表示部署已明确没有额外日期例外，有例外时应配置公共例外表并关闭此声明。
+
+盘前启动先等待开盘，不在9:10启动行情就绪倒计时；午休、收盘按窗口关闭决策，Model/SimNow撤销未完成委托并保存检查点，保留成交仓位，进程继续等待。下一窗口重新加载当日资料；Model/SimNow恢复原归属账本并校验持仓条款，Recording只续接内存中的每日选约标记和目标，不伪造成交。Recording重启进程后是新观察会话；持仓合约从当日资料消失、来源身份变化或停机对账失败仍会报错，不丢弃原仓或盲目重启。SimNow当日报单额度累计包含午休前和重启前的订单，额度用完等待下一交易日。
+
+常驻期间`seconds`不作为退出条件。按Ctrl+C或SIGTERM正常清理后退出；若需原900秒验收，使用`--no-run-forever --expected-trading-day YYYYMMDD --seconds 900`。该入口不绕过公共账户锁：已有Hybrid占用同一CTP账户时可并行启动08 **Recording**；08独立SimNow不能作为第二个账户写入进程启动。多策略实盘仍使用共享账户服务。下面的`shared --run-forever`入口和检查点保持原调用方式。
+
+### 按交易日归档
+
+默认目录示例：
+
+```text
+results/
+  live/MO/option-vega-recording-MO-20261106/
+    summary.json              # 最新会话摘要
+    sessions.jsonl            # 当天各次会话摘要，追加
+    signals.jsonl             # 实时策略信号，追加
+    events.txt                # 执行事件，追加；停机再次收集迟到回报
+    strategy_parameters.json  # 最新会话实际生效参数
+    strategy_state.json       # 最新自有仓位/目标/决策，只读报告快照
+    feature_frames.json       # 最近最多256帧诊断，非完整日历史
+  backtest/MO/20260813-20260930/<run-id>/
+```
+
+`report_dir`为可指定的输出根目录，品种、执行模式及会话交易日决定子目录；同交易日重启继续追加明细，下一交易日另建目录。日期使用显式会话交易日并由原生命周期核验，不使用本机自然日期。报告不迁移旧纳秒目录，也不改变原`state_file`、归属账本或恢复格式；`strategy_state.json`不能替代正式检查点。特征生成仍按显式`--output-dir`与原始事件日期区间导出，不把研究快照改写为当天行情。
 
 例如，以DolphinDB分钟推送和DFS指数记录实时目标（日期按柜台实际交易日替换）：
 

@@ -1,4 +1,4 @@
-"""公共YAML启动参数：显式CLI > experiment_setups中的配置 > argparse默认值。
+"""公共启动参数：显式CLI > YAML启动配置 > 受限JSON参数文件 > argparse默认值。
 
 ConfigArgumentParser沿用标准argparse声明，不加载行情、账户或策略。
 配置键使用参数dest（如start_day），也接受start-day；相对路径仍按运行目录解析。
@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 from copy import deepcopy
+import json
 from pathlib import Path
 import sys
 
@@ -64,6 +65,38 @@ def _value_token(value):
     return str(value)
 
 
+def _parameters(values):
+    result = {}
+    for key, value in values.items():
+        if key == "description":
+            continue
+        name = key.replace("-", "_")
+        if name in result:
+            raise ValueError(f"配置参数重复: {name}")
+        result[name] = value
+    return result
+
+
+def _json_parameters(path):
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError(f"JSON配置存在重复键: {key}")
+            result[key] = value
+        return result
+    try:
+        with Path(path).expanduser().open(encoding="utf-8") as stream:
+            values = json.load(stream, object_pairs_hook=unique)
+    except (OSError, UnicodeError):
+        raise ValueError(f"JSON参数文件不可读取: {path}") from None
+    except json.JSONDecodeError as error:
+        raise ValueError(f"JSON参数解析失败: {path}，第{error.lineno}行") from None
+    if not isinstance(values, dict):
+        raise ValueError("JSON参数配置须为参数映射")
+    return _parameters(values)
+
+
 def _config_tokens(parser, action, value):
     """转成CLI输入，由同一argparse执行type/choices/nargs/required校验。"""
     option = next((item for item in action.option_strings if item.startswith("--")), None)
@@ -107,9 +140,16 @@ class ConfigArgumentParser(argparse.ArgumentParser):
     """可直接替换ArgumentParser；普通CLI使用方式不变，不自动打印参数值。"""
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self._json_configs = {}
         self.add_argument("--config-file", "--config_file", type=Path,
             help="YAML启动参数文件；相对路径按当前运行目录解析")
         self.add_argument("--config-id", "--config_id", help="experiment_setups中的配置ID")
+
+    def add_json_config_argument(self, option, *, fields, sequences=(), **kwargs):
+        """声明一个JSON参数依赖；仅允许指定字段，复用原CLI类型与校验。"""
+        action = self.add_argument(option, type=Path, **kwargs)
+        self._json_configs[action.dest] = (frozenset(fields), frozenset(sequences))
+        return action
 
     def parse_args(self, args=None, namespace=None):
         argv = list(sys.argv[1:] if args is None else args)
@@ -126,30 +166,40 @@ class ConfigArgumentParser(argparse.ArgumentParser):
             group.required = False
         explicit, _ = probe.parse_known_args(argv)
         file_name, config_id = getattr(explicit, "config_file", None), getattr(explicit, "config_id", None)
-        if file_name is None and config_id is None:
+        if file_name is None and config_id is None and not self._json_configs:
             return super().parse_args(argv, namespace)
-        if file_name is None or config_id is None:
+        if (file_name is None) != (config_id is None):
             self.error("--config-file与--config-id须同时指定")
         try:
-            selected = load_config(file_name, config_id)
+            selected = _parameters(load_config(file_name, config_id)) if file_name is not None else {}
             working = deepcopy(self)
             actions = {action.dest: action for action in working._actions if action.option_strings}
+            inherited = {}
+            for name, (allowed, sequences) in self._json_configs.items():
+                path = getattr(explicit, name, selected.get(name, actions[name].default))
+                if path is None:
+                    continue
+                parameters = _json_parameters(path)
+                if set(parameters) - allowed:
+                    raise ValueError(f"JSON参数文件包含未允许字段: {', '.join(sorted(set(parameters) - allowed))}")
+                if inherited.keys() & parameters.keys():
+                    raise ValueError("多个JSON参数文件重复声明同一参数")
+                for key in sequences & parameters.keys():
+                    if not isinstance(parameters[key], list):
+                        raise ValueError(f"JSON参数{key}须使用列表")
+                    parameters[key] = ",".join(_value_token(item) for item in parameters[key])
+                inherited.update(parameters)
+            selected = {**inherited, **{name: value for name, value in selected.items() if value is not None}}
             overridden = set(vars(explicit))
             # CLI选择另一互斥选项时，覆盖配置中的整组选择。
             for group in working._mutually_exclusive_groups:
                 members = {action.dest for action in group._group_actions}
                 if members & overridden:
                     overridden.update(members)
-            tokens, seen = [], set()
-            for key, value in selected.items():
-                if key == "description":
-                    continue
-                name = key.replace("-", "_")
-                if name in seen:
-                    raise ValueError(f"配置参数重复: {name}")
-                seen.add(name)
+            tokens = []
+            for name, value in selected.items():
                 if name not in actions or name in {"help", "config_file", "config_id"}:
-                    raise ValueError(f"配置包含未声明参数: {key}")
+                    raise ValueError(f"配置包含未声明参数: {name}")
                 if name not in overridden and value is not None:
                     tokens.extend(_config_tokens(working, actions[name], value))
         except ValueError as error:
