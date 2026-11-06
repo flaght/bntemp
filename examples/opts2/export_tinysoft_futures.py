@@ -9,11 +9,17 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 
 OUTPUT_COLUMNS = (
     "vt_symbol", "symbol", "exchange", "open", "high", "low", "close",
     "date", "time", "datetime", "volume", "value", "open_interest", "vwap",
 )
+INDEX_PRODUCTS = ("IF", "IH", "IC", "IM")
+INDEX_CODE_PATTERN = r"(?:IF|IH|IC|IM)\d{2}(?:0[1-9]|1[0-2])"
 EXCHANGES = {
     "上海期货交易所": "XSGE", "SHFE": "XSGE", "XSGE": "XSGE",
     "大连商品交易所": "XDCE", "DCE": "XDCE", "XDCE": "XDCE",
@@ -167,12 +173,47 @@ def prepare_bars(frame, *, day, spec, source_timezone="Asia/Shanghai",
     return bars.loc[:, list(OUTPUT_COLUMNS)]
 
 
+def write_cumulative_diagnostic(frame, path, *, source_timezone="Asia/Shanghai",
+                                volume_column="volumeAccumulate",
+                                turnover_column="turnoverAccumulate",
+                                first_row_policy="error"):
+    """保存失败合约的完整原始记录及当前排序、差分结果，不修正行情。"""
+    diagnostic = frame.copy()
+    diagnostic["diagnostic_source_row"] = np.arange(len(diagnostic))
+    times = pd.to_datetime(diagnostic["ActTime"], errors="coerce")
+    if times.dt.tz is None:
+        times = times.dt.tz_localize(source_timezone)
+    diagnostic["diagnostic_datetime"] = times.dt.tz_convert("Asia/Shanghai").dt.tz_localize(None)
+    diagnostic = diagnostic.sort_values("diagnostic_datetime").reset_index(drop=True)
+    diagnostic["diagnostic_volume_column"] = volume_column
+    diagnostic["diagnostic_turnover_column"] = turnover_column
+    diagnostic["diagnostic_first_row_policy"] = first_row_policy
+    diagnostic["diagnostic_is_first_row"] = diagnostic.index == 0
+    for name, column in (("volume", volume_column), ("turnover", turnover_column)):
+        values = pd.to_numeric(diagnostic[column], errors="coerce").astype("float64")
+        increments = values.diff()
+        diagnostic[f"diagnostic_{name}_diff"] = increments
+        diagnostic[f"diagnostic_{name}_rollback"] = increments.lt(0)
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(".csv.partial")
+    try:
+        diagnostic.to_csv(temporary, index=False, encoding="utf-8-sig")
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return path
+
+
 def export_day(session, *, day, output_dir, overwrite=False,
-               metadata_fallback="product", **conversion_options):
+               metadata_fallback="product", diagnose_cumulative=False,
+               index_only=False, **conversion_options):
     day = pd.Timestamp(day).date()
+    product_filter = (' and productID in ["IF", "IH", "IC", "IM"]'
+                      if index_only else "")
     frame = session.run(f'''
         select * from loadTable("dfs://JC_MKT_MIN", "fut_1min_patch")
-        where TradeDate = {day:%Y.%m.%d} order by Code, ActTime
+        where TradeDate = {day:%Y.%m.%d}{product_filter} order by Code, ActTime
     ''')
     if frame.empty:
         print(f"{day}: 无数据，跳过")
@@ -182,19 +223,30 @@ def export_day(session, *, day, output_dir, overwrite=False,
         raise ValueError("Code 存在空值")
     frame = frame.copy()
     frame["Code"] = frame["Code"].astype(str).str.strip().str.upper()
+    if index_only:
+        # 再按完整合约代码检查，排除期权、后缀合约、连续代码等混合记录。
+        selected = frame["Code"].str.fullmatch(INDEX_CODE_PATTERN)
+        excluded = len(frame) - int(selected.sum())
+        if excluded:
+            print(f"{day}: 股指模式排除 {excluded} 条非 IF/IH/IC/IM 月份合约记录")
+        frame = frame.loc[selected].copy()
+        if frame.empty:
+            print(f"{day}: 无 IF/IH/IC/IM 股指期货数据，跳过")
+            return 0, 0
     info = session.run(f'''
         select max(TradeDate) as TradeDate,
                atImax(TradeDate, exchange) as exchange,
                atImax(TradeDate, multiplier) as multiplier
         from loadTable("dfs://JC_MKT_MIN", "fut_instrument_base_info")
-        where TradeDate <= {day:%Y.%m.%d} group by Code
+        where TradeDate <= {day:%Y.%m.%d}{product_filter} group by Code
     ''')
     directory = Path(output_dir).expanduser() / f"{day:%Y%m%d}"
     errors = []
 
-    def record_error(code, stage, exc):
+    def record_error(code, stage, exc, diagnostic_file="", diagnostic_error=""):
         errors.append(dict(trade_date=str(day), Code=code, stage=stage,
-                           error_type=type(exc).__name__, error=str(exc)))
+                           error_type=type(exc).__name__, error=str(exc),
+                           diagnostic_file=diagnostic_file, diagnostic_error=diagnostic_error))
         print(f"{day}/{code}: 跳过 [{stage}] {type(exc).__name__}: {exc}")
 
     # 把资料映射的失败也限定到单个合约，避免在进入分钟转换前整日中断。
@@ -238,7 +290,20 @@ def export_day(session, *, day, output_dir, overwrite=False,
             finally:
                 temporary.unlink(missing_ok=True)
         except Exception as exc:
-            record_error(code, stage, exc)
+            diagnostic_file = diagnostic_error = ""
+            if diagnose_cumulative and stage == "conversion":
+                diagnostic_path = directory / "cumulative_diagnostics" / (path.stem + ".csv")
+                try:
+                    diagnostic_options = {name: conversion_options[name] for name in (
+                        "source_timezone", "volume_column", "turnover_column", "first_row_policy",
+                    ) if name in conversion_options}
+                    write_cumulative_diagnostic(group, diagnostic_path, **diagnostic_options)
+                    diagnostic_file = str(diagnostic_path)
+                    print(f"{day}/{code}: 累计诊断已保存至 {diagnostic_path}")
+                except Exception as diagnostic_exc:
+                    diagnostic_error = f"{type(diagnostic_exc).__name__}: {diagnostic_exc}"
+                    print(f"{day}/{code}: 诊断文件保存失败：{diagnostic_error}")
+            record_error(code, stage, exc, diagnostic_file, diagnostic_error)
             continue
         files += 1
         rows += len(bars)
@@ -254,6 +319,20 @@ def export_day(session, *, day, output_dir, overwrite=False,
     return files, rows
 
 
+def connect_session(session):
+    """优先读取 DDB_REFERENCE_*，兼容原有 DDB_*；仅在连接返回假值时失败。"""
+    host = os.environ.get("DDB_REFERENCE_HOST") or os.environ.get("DDB_HOST", "10.168.51.20")
+    port = int(os.environ.get("DDB_REFERENCE_PORT") or os.environ.get("DDB_PORT", "8912"))
+    userid = (os.environ.get("DDB_REFERENCE_USERNAME")
+              or os.environ.get("DDB_USER", "laok"))
+    password = os.environ.get("DDB_REFERENCE_PASSWORD") or os.environ.get("DDB_PASSWORD")
+    if not password:
+        raise ValueError("请设置 DDB_REFERENCE_PASSWORD 或 DDB_PASSWORD")
+    connected = session.connect(host=host, port=port, userid=userid, password=password)
+    if not connected:
+        raise ConnectionError(f"DolphinDB 连接失败：{host}:{port}，用户={userid}")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--start-day", type=date.fromisoformat, required=True)
@@ -267,20 +346,24 @@ def main():
     parser.add_argument("--metadata-fallback", choices=("product", "error"), default="product",
                         help="缺少精确合约资料时，默认使用最近同品种的一致交易所和乘数")
     parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument("--diagnose-cumulative", action="store_true",
+                        help="转换失败时保存该合约完整原始记录、实际累计列名及差分诊断 CSV")
+    parser.add_argument("--index-only", action="store_true",
+                        help="仅导出股指期货 IF、IH、IC、IM")
     args = parser.parse_args()
     if args.start_day > args.end_day:
         parser.error("开始日期不能晚于结束日期")
-    if not os.environ.get("DDB_PASSWORD"):
-        parser.error("请设置环境变量 DDB_PASSWORD")
+    if not (os.environ.get("DDB_REFERENCE_PASSWORD") or os.environ.get("DDB_PASSWORD")):
+        parser.error("请设置环境变量 DDB_REFERENCE_PASSWORD 或 DDB_PASSWORD")
+    print(f"累计输入列：成交量={args.volume_column}，成交额={args.turnover_column}；"
+          f"按 ActTime 排序后各差分一次，首条策略={args.first_row_policy}")
+    if args.index_only:
+        print(f"仅导出股指期货：{', '.join(INDEX_PRODUCTS)}")
     import dolphindb as ddb
     session = ddb.session()
     total_files = total_rows = 0
     try:
-        if not session.connect(host=os.environ.get("DDB_HOST", "10.168.51.20"),
-                               port=int(os.environ.get("DDB_PORT", "8912")),
-                               userid=os.environ.get("DDB_USER", "laok"),
-                               password=os.environ["DDB_PASSWORD"]):
-            raise ConnectionError("DolphinDB 连接失败")
+        connect_session(session)
         day = args.start_day
         while day <= args.end_day:
             files, rows = export_day(
@@ -288,6 +371,8 @@ def main():
                 source_timezone=args.source_timezone, first_row_policy=args.first_row_policy,
                 vwap_mode=args.vwap_mode, volume_column=args.volume_column,
                 turnover_column=args.turnover_column, metadata_fallback=args.metadata_fallback,
+                diagnose_cumulative=args.diagnose_cumulative,
+                index_only=args.index_only,
             )
             total_files += files
             total_rows += rows

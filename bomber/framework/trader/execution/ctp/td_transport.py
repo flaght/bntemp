@@ -33,6 +33,9 @@ class _Pending:
     timed_out: bool = False
     started: float = field(default_factory=time.monotonic)
     timeout_seconds: float = 0.0
+    response_count: int = 0
+    row_count: int = 0
+    last_response_at: float | None = None
 
 
 class CtpTdApiTransport:
@@ -344,7 +347,10 @@ class CtpTdApiTransport:
         """调用方持有_cv；不记录查询字段、凭据或资金数据。"""
         row = {"event": event, "kind": pending.kind, "request_id": pending.reqid,
                "elapsed_seconds": round(time.monotonic()-pending.started, 6),
-               "timeout_seconds": pending.timeout_seconds, **detail}
+               "timeout_seconds": pending.timeout_seconds, "ts_ns": time.time_ns(),
+               "response_count": pending.response_count, "row_count": pending.row_count,
+               "last_response_age_seconds": (None if pending.last_response_at is None
+                    else round(time.monotonic()-pending.last_response_at, 6)), **detail}
         self._query_audit.append(row)
         level = (logging.WARNING if event in {"timeout", "drain_timeout", "rejected", "send_exception"}
                  else logging.INFO if event in {"wait_previous", "late_final", "drained"}
@@ -356,7 +362,10 @@ class CtpTdApiTransport:
             pending = self._pending
             return {"timeout_seconds": self.timeout_seconds, "pending": None if pending is None else {
                 "kind": pending.kind, "request_id": pending.reqid, "timed_out": pending.timed_out,
-                "final_received": pending.done, "timeout_seconds": pending.timeout_seconds},
+                "final_received": pending.done, "timeout_seconds": pending.timeout_seconds,
+                "response_count": pending.response_count, "row_count": pending.row_count,
+                "last_response_age_seconds": (None if pending.last_response_at is None
+                    else round(time.monotonic()-pending.last_response_at, 6))},
                 "recent": [dict(row) for row in self._query_audit]}
 
     def _front_up(self) -> None:
@@ -379,6 +388,9 @@ class CtpTdApiTransport:
             if pending is None or pending.kind != kind or pending.reqid != reqid:
                 # 超时请求的迟到回报不能冒充下一次查询。
                 return
+            pending.response_count += 1
+            pending.row_count += bool(data)
+            pending.last_response_at = time.monotonic()
             error_info = error or {}
             error_id = int(error_info.get("ErrorID", 0))
             if error_id:

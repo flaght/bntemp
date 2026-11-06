@@ -1,6 +1,6 @@
 """期权条款、配置、数值算法与可独立恢复的策略信号状态。"""
 from bisect import bisect_right
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from datetime import date, datetime, time
 from decimal import Decimal
 from math import erf, exp, isfinite, log, pi, sqrt
@@ -65,6 +65,18 @@ class OptionVegaConfig:
         # 数值函数的敏感度按波动率变化1计算，预算对应规模基准乘预算参数再除以100。
         # 波动率变化一个百分点时的现金预算还需除以100，即规模基准乘参数除以10000。
         return float(self.nav) * self.vega_budget / 100
+
+
+def add_strategy_config_argument(parser):
+    """回测与Live共享JSON参数范围；解析与CLI优先级由公共框架负责。"""
+    parser.add_json_config_argument("--strategy-config",
+        fields={field.name for field in fields(OptionVegaConfig)} | {"max_notional", "limit_offset_ticks"},
+        sequences=("delta_targets", "hedge_slots"), help="策略与风险参数JSON；显式CLI优先")
+
+
+def effective_parameters(args, config):
+    return {**vars(config), **{name: getattr(args, name) for name in
+        ("max_notional", "limit_offset_ticks") if hasattr(args, name)}}
 
 
 def tau(now: datetime, last_day: date) -> float:

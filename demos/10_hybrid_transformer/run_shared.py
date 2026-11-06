@@ -60,7 +60,7 @@ def run_same_process(config, window, stop, *, resume, remaining, clock=None):
     report = TradingDayLiveReport(config['report_dir'], prefix='hybrid-shared-account',
         trading_day=window.trading_day, metadata={'process_layout': 'same-process'})
     report.begin()
-    host, failure, status = None, None, 'failed'
+    host, failure, shutdown_failure, status = None, None, None, 'failed'
     stop_at = window.end - timedelta(seconds=SESSION_STOP_SECONDS)
     def stop_requested():
         return stop.is_set() or clock() >= stop_at
@@ -99,10 +99,13 @@ def run_same_process(config, window, stop, *, resume, remaining, clock=None):
                 host.stop()
         except BaseException as error:
             status = 'failed'
-            failure = failure or str(error)
+            shutdown_failure = str(error)
+            if failure is not None:
+                raise RuntimeError(f'{failure}；停机未完成: {shutdown_failure}') from error
+            failure = shutdown_failure
             raise
         finally:
-            report.write(status=status, fields={'failure': failure,
+            report.write(status=status, fields={'failure': failure, 'shutdown_failure': shutdown_failure,
                 **(host.snapshot() if host else {})}, session=host,
                 events=host.account.execution.backend.reports if host else ())
     return {'status': status}

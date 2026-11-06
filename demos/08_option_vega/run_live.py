@@ -22,9 +22,8 @@ if __package__ in (None, ""):
 from bomber.framework.market.sources import (add_market_source_arguments, market_config_from_args,
     source_config, create_market_feed, assemble_minute_market)
 from bomber.framework.cli import ConfigArgumentParser
-from .vega_signal import OptionVegaConfig
+from .vega_signal import OptionVegaConfig, add_strategy_config_argument, effective_parameters
 from .feature import add_index_feature_arguments, index_bundle
-from .configuration import add_strategy_config_argument, effective_parameters
 
 
 def session_inputs(args):

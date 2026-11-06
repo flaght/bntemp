@@ -11,3 +11,7 @@ class CtpQueryRejected(RuntimeError):
 
 class CtpQueryInterrupted(TimeoutError):
     """调度要求停止等待；已受理的查询仍须等待原最终回报，不能覆盖。"""
+
+
+class CtpStopReconciliationRequired(RuntimeError):
+    """TD断线后无法确认撤单和仓位；保留检查点及锁，不标记正常停机。"""

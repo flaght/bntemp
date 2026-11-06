@@ -4,18 +4,51 @@ from datetime import date
 from pathlib import Path
 import tempfile
 import unittest
+import os
 from unittest.mock import patch
 
 import pandas as pd
 
 from examples.opts2.export_tinysoft_futures import (
-    OUTPUT_COLUMNS, build_specs, export_day, prepare_bars,
+    OUTPUT_COLUMNS, build_specs, connect_session, export_day, prepare_bars,
+    write_cumulative_diagnostic,
 )
 
 
 class TinysoftFuturesTests(unittest.TestCase):
     day = date(2026, 1, 5)
     spec = dict(symbol="a2601", exchange="XDCE", multiplier=10.0)
+
+    def test_connection_success_does_not_raise_and_prefers_reference_config(self):
+        class Session:
+            def connect(self, **kwargs):
+                self.config = kwargs
+                return True
+
+        env = dict(DDB_REFERENCE_HOST="reference.example", DDB_REFERENCE_PORT="12345",
+                   DDB_REFERENCE_USERNAME="reference_user", DDB_REFERENCE_PASSWORD="test-only",
+                   DDB_HOST="legacy.example", DDB_PORT="9999", DDB_USER="legacy_user",
+                   DDB_PASSWORD="legacy-test-only")
+        session = Session()
+        with patch.dict(os.environ, env, clear=True):
+            connect_session(session)
+        self.assertEqual(session.config, dict(host="reference.example", port=12345,
+                                              userid="reference_user", password="test-only"))
+
+    def test_connection_false_raises_and_legacy_config_still_works(self):
+        class Session:
+            def connect(self, **kwargs):
+                self.config = kwargs
+                return False
+
+        env = dict(DDB_HOST="legacy.example", DDB_PORT="9999", DDB_USER="legacy_user",
+                   DDB_PASSWORD="test-only")
+        session = Session()
+        with patch.dict(os.environ, env, clear=True):
+            with self.assertRaisesRegex(ConnectionError, "legacy.example:9999") as caught:
+                connect_session(session)
+        self.assertEqual(session.config["userid"], "legacy_user")
+        self.assertNotIn("test-only", str(caught.exception))
 
     def frame(self, code="A2601"):
         return pd.DataFrame({
@@ -270,6 +303,120 @@ class TinysoftFuturesTests(unittest.TestCase):
             self.assertFalse((root / "a2601_20260105.feather").exists())
             self.assertTrue((root / "rb2601_20260105.feather").exists())
             self.assertEqual(pd.read_csv(root / "export_errors.csv").stage.tolist(), ["write"])
+
+    def test_diagnostic_preserves_source_and_identifies_cumulative_rollback(self):
+        source = self.frame().assign(volume=[100, 101, 102],
+                                     volumeAccumulate=[0, 5, 2],
+                                     turnoverAccumulate=[0, 210350, 84140]).iloc[::-1]
+        original = source.copy(deep=True)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "diagnostic.csv"
+            write_cumulative_diagnostic(source, path)
+            diagnostic = pd.read_csv(path)
+            self.assertEqual(diagnostic.volume.tolist(), [100, 101, 102])
+            self.assertEqual(diagnostic.volumeAccumulate.tolist(), [0, 5, 2])
+            self.assertEqual(diagnostic.diagnostic_source_row.tolist(), [2, 1, 0])
+            self.assertEqual(diagnostic.diagnostic_volume_diff.iloc[1:].tolist(), [5., -3.])
+            self.assertEqual(diagnostic.diagnostic_volume_rollback.tolist(), [False, False, True])
+            self.assertEqual(diagnostic.diagnostic_turnover_rollback.tolist(), [False, False, True])
+            self.assertEqual(diagnostic.diagnostic_volume_column.tolist(), ["volumeAccumulate"] * 3)
+            pd.testing.assert_frame_equal(source, original)
+
+    def test_diagnostic_respects_custom_columns_and_records_first_row(self):
+        source = self.frame().assign(volume=[2, 3, 4], turnover=[200, 300, 400])
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "diagnostic.csv"
+            write_cumulative_diagnostic(source, path, volume_column="volume",
+                                         turnover_column="turnover", first_row_policy="error")
+            diagnostic = pd.read_csv(path)
+            self.assertEqual(diagnostic.diagnostic_volume_column.tolist(), ["volume"] * 3)
+            self.assertEqual(diagnostic.diagnostic_turnover_column.tolist(), ["turnover"] * 3)
+            self.assertEqual(diagnostic.diagnostic_volume_diff.iloc[1:].tolist(), [1., 1.])
+            self.assertEqual(diagnostic.diagnostic_is_first_row.tolist(), [True, False, False])
+            self.assertEqual(diagnostic.volume.iloc[0], 2)
+
+    def test_diagnostic_flag_saves_failed_contract_without_changing_export(self):
+        source = pd.concat([self.frame().assign(volumeAccumulate=[0, 5, 2]),
+                            self.frame("RB2601")], ignore_index=True)
+        info = pd.DataFrame({"Code": ["A2601", "RB2601"],
+                             "TradeDate": [pd.Timestamp(self.day)] * 2,
+                             "exchange": ["DCE", "SHFE"], "multiplier": [10., 10.]})
+        with tempfile.TemporaryDirectory() as directory:
+            for enabled in (False, True):
+                output = Path(directory) / str(enabled)
+                result = export_day(self.session(source, info), day=self.day,
+                                    output_dir=output, diagnose_cumulative=enabled)
+                self.assertEqual(result, (1, 3))
+                root = output / "20260105"
+                self.assertTrue((root / "rb2601_20260105.feather").exists())
+                self.assertFalse((root / "a2601_20260105.feather").exists())
+                diagnostics = list(root.rglob("cumulative_diagnostics/*.csv"))
+                self.assertEqual(len(diagnostics), int(enabled))
+                if enabled:
+                    report = pd.read_csv(root / "export_errors.csv")
+                    self.assertEqual(report.diagnostic_file.iloc[0], str(diagnostics[0]))
+                    self.assertTrue(pd.read_csv(diagnostics[0]).diagnostic_volume_rollback.any())
+
+    def test_diagnostic_failure_does_not_interrupt_other_contracts(self):
+        source = pd.concat([self.frame().assign(volumeAccumulate=[0, 5, 2]),
+                            self.frame("RB2601")], ignore_index=True)
+        info = pd.DataFrame({"Code": ["A2601", "RB2601"],
+                             "TradeDate": [pd.Timestamp(self.day)] * 2,
+                             "exchange": ["DCE", "SHFE"], "multiplier": [10., 10.]})
+        with tempfile.TemporaryDirectory() as directory:
+            with patch("examples.opts2.export_tinysoft_futures.write_cumulative_diagnostic",
+                       side_effect=OSError("模拟诊断写入失败")):
+                result = export_day(self.session(source, info), day=self.day,
+                                    output_dir=directory, diagnose_cumulative=True)
+            self.assertEqual(result, (1, 3))
+            errors = pd.read_csv(Path(directory) / "20260105" / "export_errors.csv")
+            self.assertIn("累计值回退", errors.error.iloc[0])
+            self.assertIn("模拟诊断写入失败", errors.diagnostic_error.iloc[0])
+
+    def test_index_only_exports_four_products_and_filters_both_queries(self):
+        wanted = ["IF2601", "IH2601", "IC2601", "IM2601"]
+        excluded = ["A2601", "RB2601", "T2601", "TL2601", "IF2601-C-3500",
+                    "IF0000", "IF9999", "IF2601F"]
+        source = pd.concat([self.frame(code) for code in wanted + excluded], ignore_index=True)
+        info = pd.DataFrame({"Code": wanted, "TradeDate": [pd.Timestamp(self.day)] * 4,
+                             "exchange": ["CFFEX"] * 4, "multiplier": [10.] * 4})
+
+        class Session:
+            def __init__(self):
+                self.queries = []
+
+            def run(self, sql):
+                self.queries.append(sql)
+                return info if "fut_instrument_base_info" in sql else source
+
+        session = Session()
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertEqual(export_day(session, day=self.day, output_dir=directory,
+                                        index_only=True), (4, 12))
+            root = Path(directory) / "20260105"
+            self.assertEqual({p.stem for p in root.glob("*.feather")},
+                             {code + "_20260105" for code in wanted})
+            self.assertFalse((root / "export_errors.csv").exists())
+            for code in wanted:
+                bars = pd.read_feather(root / f"{code}_20260105.feather")
+                self.assertEqual(bars.vt_symbol.tolist(), [code + ".CCFX"] * 3)
+            self.assertEqual(len(session.queries), 2)
+            for query in session.queries:
+                self.assertIn('productID in ["IF", "IH", "IC", "IM"]', query)
+
+    def test_index_only_empty_selection_skips_metadata_and_output(self):
+        source = self.frame("RB2601")
+
+        class Session:
+            def run(self, sql):
+                if "fut_instrument_base_info" in sql:
+                    raise AssertionError("无股指数据时不应读取合约资料")
+                return source
+
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertEqual(export_day(Session(), day=self.day, output_dir=directory,
+                                        index_only=True), (0, 0))
+            self.assertEqual(list(Path(directory).iterdir()), [])
 
 
 if __name__ == "__main__":
