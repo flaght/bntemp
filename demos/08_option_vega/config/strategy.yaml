@@ -3,7 +3,7 @@ experiment_setups:
   m5_index_blend:
     description: "MO期权M5、IM期货M1，使用MA20与MA60均值作为指数信号"
     data_root: /workspace/data/temp_bomber1/ctp
-    # 指向12示例已转换完成的真实M5期权目录，可通过CLI覆盖。
+    # 仅M5使用此目录；切换option_bar_minutes为1后读取data_root/kline/opt。
     opt_dir: temp/data/to/opt
     calendar_id: china.cffex
     option_bar_minutes: 5

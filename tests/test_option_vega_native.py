@@ -79,7 +79,7 @@ class VegaNativeSettlementTests(unittest.TestCase):
         cli.extend(["--option-bar-minutes", str(option_bar_minutes),
             "--execution-timing", execution_timing])
         if option_bar_minutes == 5:
-            cli.extend(["--option-slot", "14:00"])
+            cli.extend(["--option-slot", "14:00", "--opt-dir", str(root / "kline/opt")])
         if terminal is not None:
             cli.extend(["--option-settlements", str(settlements)])
         with patch.object(module, "run_case") as capture, patch("sys.argv", cli):

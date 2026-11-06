@@ -33,7 +33,7 @@ FEATURE_DEPLOYMENT_GROUPS = frozenset(("feature-datahub", "feature-query-live", 
 # 补充原生/08被测文件摘要；入口摘要由独立GAP08入口持有，不在此处自引用。
 RETIRED_OPTION_SOURCES = ('demos/08_option_vega/features.py', 'demos/08_option_vega/acceptance.py', 'demos/08_option_vega/assembly.py', 'demos/08_option_vega/backtest_runtime.py', 'demos/08_option_vega/check_backtest_data.py', 'demos/08_option_vega/checkpoint.py', 'demos/08_option_vega/execution_audit.py', 'demos/08_option_vega/live_runtime.py', 'demos/08_option_vega/minute_diagnostics.py', 'demos/08_option_vega/replay_test.py', 'demos/08_option_vega/rollover.py', 'demos/08_option_vega/config/backtest.yaml')
 FEATURE_RUNTIME_HASHES = {'tests/test_cli_config.py': '4a0747020c93def44d401fe5d4526e9ef1a5ba2ee5f8827be610beead5f44e9c',
- 'demos/08_option_vega/config/strategy.yaml': '72c875d5783fdaaf7bc52a863d91107bd814a0cffa33e88f39845fe0c2283df8',
+ 'demos/08_option_vega/config/strategy.yaml': 'c49559048dba44568830aa50dde105f9113a7b2fc67525cb19d2aae216989903',
  'bomber/framework/__init__.py': 'fcaca2c174a5e6b91f0aa28c17b2a4ded3b0e3aedd33925ed984cb5f43d8c2e7',
  'bomber/framework/requirements-config.txt': '865bbefc83398c2d53d4d494e8c0ad2302c93e657b78b860a1eba3ac71044309',
  'bomber/framework/cli.py': '0d70820a243e6bfcedf935a61460711c66847443bfa9c40ab3f1f01d82562711',
@@ -118,9 +118,9 @@ FEATURE_RUNTIME_HASHES = {'tests/test_cli_config.py': '4a0747020c93def44d401fe5d
  'bomber/framework/calendars/hours.py': '273d4ab3bb0da4dd28fc805d4bc8c50790b328309461a7ee36383dc935facda7',
  'demos/08_option_vega/vega_signal.py': '5dccae3a51183d94062c288044cfe28f1776ca44b9b792c9d1d8b8c6b0304cc9',
  'demos/08_option_vega/feature/__init__.py': '4346c583915c67812676b8e2d520e669ae5b26aebbda05976f44f9f5a5b8bb40',
- 'demos/08_option_vega/run_backtest.py': '14196bd72fbe725650e1965d01c7316947d728a36b7470cfa30d83861426211d',
+ 'demos/08_option_vega/run_backtest.py': '79adc04064f0361cf951ac6dc9738bbedc375b52dfa102608965a942ad2fd90f',
  'scripts/integration/options/check_backtest_data.py': '75c1140f623f14ac08a4e7f337066462dfcea337d8b69cd99186df5a6f7fbbaa',
- 'tests/test_option_feature_backtest.py': 'dce2d9005630a3a8927dec3196545e57cb8a79b57f413d7b063128b0b070de4a'}
+ 'tests/test_option_feature_backtest.py': '39f4fb5fdbd00cbfe66341cd863c84621ceb791dc9c570666900cc1daf07dcdd'}
 
 
 def inspect_feature_deployment(root, expected, retired=()):

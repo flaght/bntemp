@@ -639,3 +639,99 @@ class BacktestYamlConfigTests(unittest.TestCase):
             self.entry.main()
         self.assertEqual(error.exception.code, 2)
         run.assert_not_called()
+
+
+class BacktestOptionPathTests(unittest.TestCase):
+    def setUp(self):
+        self.entry = import_module("demos.08_option_vega.run_backtest")
+        self.temp = TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name).resolve()
+        for name in ("kline/opt", "kline/fut", "role", "m5"):
+            (self.root / name).mkdir(parents=True)
+        # 这里只验证公共路径选择及文件存在性，不读取条款内容。
+        for name in ("opt_basic.feather", "fut_basic.feather"):
+            (self.root / "role" / name).touch()
+
+    def test_cli_switch_to_m1_ignores_yaml_m5_directory_and_uses_default_root(self):
+        config = Path(__file__).resolve().parents[1] / "demos/08_option_vega/config/strategy.yaml"
+        with patch.object(self.entry, "run_case") as run, patch("sys.argv", ["run_backtest.py",
+                "--config-file", str(config), "--config-id", "m5_index_blend",
+                "--option-bar-minutes", "1", "--data-root", str(self.root)]):
+            self.entry.main()
+        args = self.entry.resolve_backtest_paths(run.call_args.args[0])
+        self.assertEqual(args.opt_dir, self.root / "kline/opt")
+        self.assertEqual(args.fut_dir, self.root / "kline/fut")
+        self.assertEqual(args.option_slot, "14:00")
+
+    def test_m5_requires_custom_directory_and_never_falls_back_to_m1(self):
+        args = NS(data_root=self.root, option_bar_minutes=5, opt_dir=None)
+        with self.assertRaisesRegex(ValueError, "M5须.*指定真实M5目录"):
+            self.entry.resolve_backtest_paths(args)
+        args.opt_dir = self.root / "m5"
+        resolved = self.entry.resolve_backtest_paths(args)
+        self.assertEqual(resolved.opt_dir, self.root / "m5")
+        self.assertEqual(resolved.fut_dir, self.root / "kline/fut")
+
+    def test_m1_requires_root_even_if_old_custom_option_path_is_supplied(self):
+        with self.assertRaisesRegex(ValueError, "M1使用默认路径.*data-root"):
+            self.entry.resolve_backtest_paths(NS(data_root=None, option_bar_minutes=1,
+                opt_dir=self.root / "m5"))
+
+
+class BacktestDayCoverageTests(unittest.TestCase):
+    def setUp(self):
+        self.entry = import_module("demos.08_option_vega.run_backtest")
+        self.day = date(2026, 9, 10)
+        self.key = "MO2610-C-6600"
+        self.contracts = {self.key: NS(list_day=date(2026, 6, 1), last_day=date(2026, 10, 16))}
+        self.args = NS(option_product="MO", index_code="000852", opt_dir=Path("m5-options"),
+            opt_basic=Path("role/opt_basic.feather"), index_feature_file=Path("index-blend.csv"),
+            report_dir=Path("reports"))
+
+    def test_missing_option_chain_is_distinct_from_present_index(self):
+        from bomber.framework.dataprep.session import InputSession
+        with InputSession() as session, self.assertRaises(FileNotFoundError) as error:
+            self.entry.check_day_coverage(self.args, (self.day,), {}, self.contracts, {self.day: {1}})
+        self.assertEqual([issue.code for issue in session.issues], ["MISSING_OPTION_CHAIN"])
+        self.assertIn('"index_minutes": 1', str(error.exception))
+        self.assertIn("m5-options", str(error.exception))
+        self.assertIn("opt_basic.feather", str(error.exception))
+
+    def test_missing_index_is_distinct_from_present_listed_option(self):
+        from bomber.framework.dataprep.session import InputSession
+        paths = {(self.day, self.key): Path("option.feather")}
+        with InputSession() as session, self.assertRaises(FileNotFoundError) as error:
+            self.entry.check_day_coverage(self.args, (self.day,), paths, self.contracts, {})
+        self.assertEqual([issue.code for issue in session.issues], ["MISSING_INDEX_FEATURE"])
+        self.assertEqual(session.issues[0].source, "index-blend.csv")
+        self.assertIn('"listed_option_candidates": 1', str(error.exception))
+
+    def test_all_requested_missing_days_are_recorded_without_truncating_calendar(self):
+        from datetime import timedelta
+        from bomber.framework.dataprep.session import InputSession
+        days = tuple(self.day + timedelta(days=i) for i in range(12))
+        with InputSession() as session, self.assertRaises(FileNotFoundError) as error:
+            self.entry.check_day_coverage(self.args, days, {}, self.contracts, {})
+        self.assertEqual(len(session.issues), 24)
+        self.assertEqual({issue.trading_day for issue in session.issues}, set(days))
+        self.assertIn("缺失交易日=12", str(error.exception))
+        self.assertIn("input_issues.json", str(error.exception))
+
+    def test_existing_but_unlisted_contract_is_not_reported_as_a_missing_file(self):
+        from bomber.framework.dataprep.session import InputSession
+        self.contracts[self.key].list_day = date(2026, 9, 11)
+        with InputSession() as session, self.assertRaises(FileNotFoundError) as error:
+            self.entry.check_day_coverage(self.args, (self.day,),
+                {(self.day, self.key): Path("option.feather")}, self.contracts, {self.day: {1}})
+        self.assertIn("认购文件=1", session.issues[0].message)
+        self.assertIn('"listed_option_candidates": 0', str(error.exception))
+
+    def test_complete_inputs_keep_same_candidates_and_do_not_fill_missing_minutes(self):
+        from bomber.framework.dataprep.session import InputSession
+        paths, minutes = {(self.day, self.key): Path("option.feather")}, {self.day: {1}}
+        with InputSession() as session:
+            selected = self.entry.check_day_coverage(self.args, (self.day,), paths, self.contracts, minutes)
+        self.assertEqual(selected, {self.day: (self.key,)})
+        self.assertEqual(minutes, {self.day: {1}})
+        self.assertEqual(session.issues, [])

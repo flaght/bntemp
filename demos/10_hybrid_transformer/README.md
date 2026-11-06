@@ -104,6 +104,14 @@ Runner 用 `DataBinding(..., DataType.CUSTOM_BAR, "1-MINUTE")` 接收模型事�
 
 ## 历史模拟运行
 
+回测采用公共`next_market`模式，`execution_delay_bars=1`：产生信号的Bar不用于撮合该信号新建的委托，
+等待订单自身合约严格更晚的下一根完整Bar，再按该Bar处理后的收盘盘口撮合；最终价格仍受原生撮合及滑点规则影响。
+其他合约的行情和同时间戳重复事件不会提前放行。没有后续有效行情时，不伪造开盘价或成交。
+`summary.json`记录实际`execution_timing`和`execution_delay_bars`。五个交易分钟批次及Live柜台执行规则继续沿用原实现。
+
+回测显式使用`max_contracts`设置总持仓上限、`entry_contracts`设置每个信号的手数预算，默认均为1。
+例如`max_contracts=2, entry_contracts=2`，不再按五个持仓周期把2手拆成分槽预算；连续信号仍按每批预算量化。
+
 当前入口是 `run_backtest.run_case(...)` 函数。除原有行情、模型和信号参数外，必须显式传入 `calendar=product_session_calendar`，没有序号模式或默认品种日历回退。日历须覆盖回测行情及最后一批的完整到期范围；不足时明确报错。
 
 行情文件读取后、送入回放 Feed 前，入口调用 `dataprep.bars.filter_session_bars(prepared, calendar)`，只保留整个 Bar 区间落在文件所属交易日会话内的数据。起点标签先由 `read_bar_frame` 转为结束边界再判断，因此终点标签的收盘 Bar 会保留；午休、盘后及被例外取消的夜盘同时从撮合 `BAR` 和模型 `CUSTOM_BAR` 中剔除。原始 `source_timestamp/trade_time` 不改，`input_issues.json` 记录剔除数量及时间样例，`input_coverage.json` 的 `session_filters` 记录输入/保留/剔除行数与日历摘要。全部被剔除或日历覆盖不足时明确报错。交易时段内的零成交量、无效成交额仍由原有数值校验拒绝，不作为盘外数据静默忽略。
