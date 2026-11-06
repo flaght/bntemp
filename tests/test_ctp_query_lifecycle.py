@@ -31,6 +31,37 @@ class CtpQueryLifecycleTests(unittest.TestCase):
         self.addCleanup(transport.close)
         return transport
 
+    def test_timeout_audit_counts_partial_and_late_responses_without_using_incomplete_rows(self):
+        def partial(api, reqid):
+            api.onRspQryTradingAccount({'Balance':123}, {}, reqid, False)
+            return 0
+        t=self.transport(partial)
+        with self.assertRaises(TimeoutError):t.query_account()
+        pending=t.query_diagnostics()['pending']
+        self.assertEqual(pending['response_count'],1)
+        self.assertEqual(pending['row_count'],1)
+        self.assertIsNotNone(pending['last_response_age_seconds'])
+        self.assertFalse(pending['final_received'])
+        self.assertFalse(t._pending.rows)
+        timeout=t.query_diagnostics()['recent'][-1]
+        self.assertEqual(timeout['event'],'timeout')
+        self.assertGreater(timeout['ts_ns'],0)
+        self.assertEqual(timeout['response_count'],1)
+        t._api.onRspQryTradingAccount({'Balance':456},{},pending['request_id'],True)
+        late=t.query_diagnostics()['recent'][-1]
+        self.assertEqual(late['event'],'late_final')
+        self.assertEqual(late['response_count'],2)
+        self.assertEqual(late['row_count'],2)
+        self.assertFalse(t._pending.rows)  # 超时后的真实回报只诊断，不冒充完整快照。
+
+    def test_no_response_timeout_is_distinct_from_partial_response(self):
+        t=self.transport(lambda api,reqid:0)
+        with self.assertRaises(TimeoutError):t.query_account()
+        pending=t.query_diagnostics()['pending']
+        self.assertEqual(pending['response_count'],0)
+        self.assertEqual(pending['row_count'],0)
+        self.assertIsNone(pending['last_response_age_seconds'])
+
     def test_trade_query_preserves_real_execution_details(self):
         t = self.transport()
         def query(fields, reqid):

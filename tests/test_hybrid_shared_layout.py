@@ -1007,6 +1007,27 @@ class HybridLayoutConfigTests(unittest.TestCase):
                     resume=False,remaining=100,clock=lambda:window.start)
         host.stop.assert_called_once()
 
+    def test_query_failure_is_retained_when_disconnected_stop_also_fails(self):
+        from unittest.mock import Mock
+        import threading
+        window=hybrid_fixture.TradingWindow(trading_day='20261013',segment_id='am',
+            start=hybrid_fixture.dt('2026-10-13 09:00'),end=hybrid_fixture.dt('2026-10-13 11:30'))
+        host=Mock()
+        host.strategies={'rb':NS(active=True,session=NS(runner=NS()))}
+        host.snapshot.return_value={}
+        host.account.execution.backend.reports=()
+        host.poll.side_effect=TimeoutError('orders timeout request_id=989')
+        host.stop.side_effect=RuntimeError('TD接收心跳超时8193，最终仓位未核验')
+        with patch('scripts.integration.shared_account.run.build_host',return_value=host), \
+                patch('bomber.framework.trader.runtime.reports.TradingDayLiveReport') as report:
+            with self.assertRaisesRegex(RuntimeError,'orders timeout request_id=989.*停机未完成.*8193'):
+                launcher.run_same_process(self.config,window,threading.Event(),
+                    resume=True,remaining=100,clock=lambda:window.start)
+            fields=report.return_value.write.call_args.kwargs['fields']
+            self.assertEqual(fields['failure'],'orders timeout request_id=989')
+            self.assertIn('8193',fields['shutdown_failure'])
+            self.assertEqual(report.return_value.write.call_args.kwargs['status'],'failed')
+
     def test_same_process_scheduled_query_interruption_is_normal_stop(self):
         from datetime import timedelta
         from unittest.mock import Mock

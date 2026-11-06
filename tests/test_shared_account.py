@@ -684,6 +684,50 @@ class SharedAccountTests(unittest.TestCase):
             self.assertTrue(all(not row.active for row in rows))
             self.assertFalse(host.snapshot()["strategies"]["one"]["execution_events"]["pending_fills"])
 
+    def test_disconnected_host_stop_preserves_files_bindings_and_original_working_order(self):
+        from unittest.mock import Mock
+        self.native_modules()
+        errors = import_module('bomber.framework.trader.execution.ctp.query_errors')
+        for working in (False, True):
+            with self.subTest(working=working), TemporaryDirectory() as directory:
+                host, transport, rows = self.callback_host(Path(directory))
+                account, service = host.account, host.service
+                self.addCleanup(account.driver.stop)
+                if working:
+                    self.submit(rows[0].session.client, 2)
+                else:
+                    self.submit(rows[0].session.client, 1)
+                    transport.fill(transport.sent[-1]['OrderRef'])
+                    rows[0].session.client.drain_events()
+                    rows[0].save(service)
+                path = Path(directory)/'account.json'
+                before = {p:p.read_bytes() for p in (path,*(row.state_file for row in rows))}
+                original = service.position_manager.snapshot()
+                account.query_failure = '等待CTP orders最终回报超时 (request_id=989)'
+                transport.cancel_order = Mock(side_effect=AssertionError('断线不应发送撤单'))
+                account.driver.on_disconnect(8193)
+                account.client.mark_disconnected('ctp_front_disconnected:8193')
+                with self.assertRaisesRegex(errors.CtpStopReconciliationRequired, '保留最后有效.*8193.*989'):
+                    host.stop()
+                self.assertTrue(all(not row.session.runner.accept_bars for row in rows))
+                self.assertTrue(all(row.active and row.session.strategy.is_started for row in rows))
+                self.assertFalse(host._stopped)
+                self.assertFalse(account.client.is_armed)
+                self.assertTrue(service.position_manager.is_recovery_required(service.client_id))
+                self.assertEqual(account.stop_query_attempts, 0)
+                self.assertIsNone(account.final_active_orders)
+                transport.cancel_order.assert_not_called()
+                self.assertEqual(original.strategy_positions,service.position_manager.snapshot().strategy_positions)
+                self.assertEqual(original.working_quantities,service.position_manager.snapshot().working_quantities)
+                for p,raw in before.items():self.assertEqual(p.read_bytes(),raw)
+                state=host.snapshot()['stop_reconciliation']
+                self.assertEqual(state['disconnect']['reason'],8193)
+                self.assertIn('989',state['failure'])
+                with self.assertRaisesRegex(RuntimeError,'CTP会话已断开或未登录.*8193'):
+                    account.driver.checkpoint()
+                with self.assertRaises(errors.CtpStopReconciliationRequired):account.stop()
+                for p,raw in before.items():self.assertEqual(p.read_bytes(),raw)
+
     def test_funds_query_timeout_can_finish_stop_without_client_reauthorization(self):
         modules = self.native_modules()
         with TemporaryDirectory() as directory:

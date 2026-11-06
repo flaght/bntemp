@@ -4,11 +4,13 @@ from datetime import date
 from pathlib import Path
 import tempfile
 import unittest
+import os
+from unittest.mock import patch
 
 import pandas as pd
 
 from examples.opts2.export_tinysoft_options import (
-    export_day, fill_previous_close, fill_previous_prices, prepare_bars,
+    connect_session, export_day, fill_previous_close, fill_previous_prices, prepare_bars,
 )
 
 
@@ -311,8 +313,7 @@ class TinysoftOptionExportTests(unittest.TestCase):
                 path = root / f"{symbol.strip()}_20260105.feather"
                 actual = pd.read_feather(path)
                 pd.testing.assert_frame_equal(actual, prepare_bars(group, day=self.day))
-            with self.assertRaises(FileExistsError):
-                export_day(session, day=self.day, output_dir=directory)
+            self.assertEqual(export_day(session, day=self.day, output_dir=directory), (0, 0))
             self.assertEqual(export_day(session, day=self.day, output_dir=directory,
                                         overwrite=True), (3, 12))
             self.assertEqual(list(root.glob("*.partial")), [])
@@ -369,6 +370,73 @@ class TinysoftOptionExportTests(unittest.TestCase):
             self.assertEqual(export_day(Session(), day=self.day, output_dir=output),
                              (0, 0))
             self.assertFalse(output.exists())
+
+    def test_bad_contracts_skipped_and_daily_references_still_batched(self):
+        source = pd.concat([
+            self.frame().assign(volume=-1),
+            self.frame().assign(Code="OP10009633"),
+            self.frame().assign(Code="invalid-code"),
+            self.frame().assign(Code=None),
+        ], ignore_index=True)
+        session = DailyReferenceSession(pd.DataFrame(), pd.DataFrame(),
+                                         previous_day=None, minute_frame=source)
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertEqual(export_day(session, day=self.day, output_dir=directory), (1, 4))
+            root = Path(directory) / "20260105"
+            self.assertEqual([p.name for p in root.glob("*.feather")],
+                             ["OP10009633_20260105.feather"])
+            errors = pd.read_csv(root / "export_errors.csv", keep_default_na=False)
+            self.assertEqual(set(errors.Code), {"HO2601-C-2650", "invalid-code", "<NA>"})
+            self.assertEqual(set(errors.stage), {"conversion"})
+            queries = [q for q in session.queries if "preSettlePrice" in q]
+            self.assertEqual(len(queries), 1)
+
+    def test_failed_option_write_cleans_partial_and_other_contract_continues(self):
+        source = pd.concat([self.frame(), self.frame().assign(Code="OP10009633")],
+                           ignore_index=True)
+        session = DailyReferenceSession(pd.DataFrame(), pd.DataFrame(),
+                                         previous_day=None, minute_frame=source)
+        real_write = pd.DataFrame.to_feather
+
+        def write(frame, path, **kwargs):
+            if frame.symbol.iloc[0] == "HO2601-C-2650":
+                Path(path).write_bytes(b"partial")
+                raise OSError("模拟期权写入失败")
+            return real_write(frame, path, **kwargs)
+
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.object(pd.DataFrame, "to_feather", write):
+                result = export_day(session, day=self.day, output_dir=directory)
+            self.assertEqual(result, (1, 4))
+            root = Path(directory) / "20260105"
+            self.assertEqual(list(root.glob("*.partial")), [])
+            self.assertFalse((root / "HO2601-C-2650_20260105.feather").exists())
+            self.assertTrue((root / "OP10009633_20260105.feather").exists())
+            self.assertEqual(pd.read_csv(root / "export_errors.csv").stage.tolist(), ["write"])
+
+    def test_reference_and_legacy_connections_check_result_once(self):
+        class Session:
+            connected = True
+
+            def connect(self, **kwargs):
+                self.config = kwargs
+                return self.connected
+
+        session = Session()
+        reference = dict(DDB_REFERENCE_HOST="reference.example", DDB_REFERENCE_PORT="12345",
+                         DDB_REFERENCE_USERNAME="reference_user", DDB_REFERENCE_PASSWORD="test-only",
+                         DDB_HOST="legacy.example", DDB_PASSWORD="legacy-test")
+        with patch.dict(os.environ, reference, clear=True):
+            connect_session(session)
+        self.assertEqual(session.config, dict(host="reference.example", port=12345,
+                                              userid="reference_user", password="test-only"))
+        legacy = dict(DDB_HOST="legacy.example", DDB_PORT="9999", DDB_USER="legacy_user",
+                      DDB_PASSWORD="test-only")
+        session.connected = False
+        with patch.dict(os.environ, legacy, clear=True):
+            with self.assertRaisesRegex(ConnectionError, "legacy.example:9999") as caught:
+                connect_session(session)
+        self.assertNotIn("test-only", str(caught.exception))
 
 
 if __name__ == "__main__":

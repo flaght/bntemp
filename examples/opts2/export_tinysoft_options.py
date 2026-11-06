@@ -7,6 +7,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from dotenv import load_dotenv
 
 
 OUTPUT_COLUMNS = (
@@ -288,16 +289,39 @@ def export_day(session, *, day, output_dir, overwrite=False,
         print(f"{day}: 无数据，跳过")
         return 0, 0
 
-    frame = prepare_bars(frame, day=day, source_timezone=source_timezone)
-    frame = fill_previous_prices(session, frame, day=day)
     day_dir = Path(output_dir).expanduser() / day.strftime("%Y%m%d")
+    if not frame.columns.is_unique or "Code" not in frame:
+        raise ValueError(f"{day}: 查询结果包含重复列名或缺少 Code")
+    frame = frame.copy()
+    frame["Code"] = frame["Code"].astype("string").str.strip()
+    errors = []
+    existing = 0
+    prepared = []
 
-    # 先检查当天所有目标文件，避免导出到一半才发现已有文件。
-    if not overwrite:
-        for symbol in frame["symbol"].unique():
-            path = day_dir / f"{symbol}_{day:%Y%m%d}.feather"
-            if path.exists():
-                raise FileExistsError(f"文件已存在：{path}；需要覆盖时传入 --overwrite")
+    def record_error(symbol, stage, exc):
+        errors.append(dict(trade_date=str(day), Code=str(symbol), stage=stage,
+                           error_type=type(exc).__name__, error=str(exc)))
+        print(f"{day}/{symbol}: 跳过 [{stage}] {type(exc).__name__}: {exc}")
+
+    for symbol, group in frame.groupby("Code", sort=True, dropna=False):
+        try:
+            bars = prepare_bars(group, day=day, source_timezone=source_timezone)
+        except Exception as exc:
+            record_error(symbol, "conversion", exc)
+            continue
+        path = day_dir / f"{symbol}_{day:%Y%m%d}.feather"
+        if path.exists() and not overwrite:
+            existing += 1
+            print(f"{day}/{symbol}: 文件已存在，跳过；覆盖请传入 --overwrite")
+            continue
+        prepared.append(bars)
+
+    # 合并有效合约后统一补昨值，避免每个期权重复查询日行情。
+    if prepared:
+        frame = pd.concat(prepared, ignore_index=True)
+        frame = fill_previous_prices(session, frame, day=day)
+    else:
+        frame = pd.DataFrame(columns=OUTPUT_COLUMNS)
     day_dir.mkdir(parents=True, exist_ok=True)
 
     files = rows = 0
@@ -306,18 +330,43 @@ def export_day(session, *, day, output_dir, overwrite=False,
         path = day_dir / f"{symbol}_{day:%Y%m%d}.feather"
         temporary = path.with_suffix(".feather.partial")
         try:
-            bars.to_feather(temporary, compression="zstd")
-            temporary.replace(path)
-        finally:
-            temporary.unlink(missing_ok=True)
+            try:
+                bars.to_feather(temporary, compression="zstd")
+                temporary.replace(path)
+            finally:
+                temporary.unlink(missing_ok=True)
+        except Exception as exc:
+            record_error(symbol, "write", exc)
+            continue
         files += 1
         rows += len(bars)
 
-    print(f"{day}: 导出 {files} 个合约文件，{rows} 条记录")
+    report = day_dir / "export_errors.csv"
+    if errors:
+        pd.DataFrame(errors).to_csv(report, index=False, encoding="utf-8-sig")
+        print(f"{day}: 跳过明细已保存至 {report}")
+    else:
+        report.unlink(missing_ok=True)
+    print(f"{day}: 导出 {files} 个合约文件，{rows} 条记录；"
+          f"异常跳过 {len(errors)} 个合约，已有文件跳过 {existing} 个")
     return files, rows
 
 
+def connect_session(session):
+    """优先读取 DDB_REFERENCE_*，兼容旧 DDB_* 配置。"""
+    host = os.environ.get("DDB_REFERENCE_HOST") or os.environ.get("DDB_HOST", "10.168.51.20")
+    port = int(os.environ.get("DDB_REFERENCE_PORT") or os.environ.get("DDB_PORT", "8912"))
+    userid = os.environ.get("DDB_REFERENCE_USERNAME") or os.environ.get("DDB_USER", "laok")
+    password = os.environ.get("DDB_REFERENCE_PASSWORD") or os.environ.get("DDB_PASSWORD")
+    if not password:
+        raise ValueError("请设置 DDB_REFERENCE_PASSWORD 或 DDB_PASSWORD")
+    connected = session.connect(host=host, port=port, userid=userid, password=password)
+    if not connected:
+        raise ConnectionError(f"DolphinDB 连接失败：{host}:{port}，用户={userid}")
+
+
 def main():
+    load_dotenv()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--start-day", type=date.fromisoformat, default=date(2026, 1, 5))
     parser.add_argument("--end-day", type=date.fromisoformat, default=date(2026, 4, 29))
@@ -327,22 +376,15 @@ def main():
     args = parser.parse_args()
     if args.start_day > args.end_day:
         parser.error("开始日期不能晚于结束日期")
-    if not os.environ.get("DDB_PASSWORD"):
-        parser.error("请先设置环境变量 DDB_PASSWORD")
+    if not (os.environ.get("DDB_REFERENCE_PASSWORD") or os.environ.get("DDB_PASSWORD")):
+        parser.error("请设置环境变量 DDB_REFERENCE_PASSWORD 或 DDB_PASSWORD")
 
     import dolphindb as ddb
 
     session = ddb.session()
     total_files = total_rows = 0
     try:
-        connected = session.connect(
-            host=os.environ.get("DDB_HOST", "10.168.51.20"),
-            port=int(os.environ.get("DDB_PORT", "8912")),
-            userid=os.environ.get("DDB_USER", "laok"),
-            password=os.environ["DDB_PASSWORD"],
-        )
-        if not connected:
-            raise ConnectionError("DolphinDB 连接失败")
+        connect_session(session)
 
         print("保留五分钟频率；prev_close / prev_settlement 优先从 opt_eod_patch 补充；"
               "昨收可回退到前一交易日五分钟行情，仍缺失的值保留 NaN")

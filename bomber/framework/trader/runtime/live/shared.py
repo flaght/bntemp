@@ -237,15 +237,22 @@ class SharedAccountLiveHost:
             else:
                 self.service.suspend_strategy(strategy_id)
 
+    def _validate_stop_connection(self):
+        check = getattr(self.account, "validate_stop_connection", None)
+        if callable(check):
+            check()
+
     def stop_strategy(self, strategy_id, *, reason="operator"):
         item = self.strategies[strategy_id]
         if not item.active:
             return
+        self._validate_stop_connection()
         self._begin_stop_strategy(strategy_id, reason=reason)
         runner, port = item.session.runner, item.session.client
         if self._prepared:
             deadline = time.monotonic() + getattr(self.account, "cancel_seconds", 15)
             while True:
+                self._validate_stop_connection()
                 self.service.poll_stopping()
                 port.drain_events()
                 if port.finish_stop_events():
@@ -338,6 +345,11 @@ class SharedAccountLiveHost:
     def stop(self):
         if self._stopped:
             return
+        # 不依赖账户连接先关闭所有策略决策；断线后保留绑定、文件和锁供权威恢复。
+        for item in self.strategies.values():
+            with item.session.runner._submit_lock:
+                item.session.runner.accept_bars = False
+        self._validate_stop_connection()
         errors, pending = [], {}
         # 先向所有策略关闭新目标并发起撤单，不能等完第一个才停第二个。
         for item in self.strategies.values():
@@ -395,6 +407,8 @@ class SharedAccountLiveHost:
                 for (sid, key), q in positions.strategy_positions.items()],
             "execution_positions": {str(key.instrument_id): str(q) for key, q in positions.account_positions.items()},
             "stop_reconciliation": {"query_failure": getattr(account, "query_failure", None),
+                "failure": getattr(account, "stop_failure_reason", None),
+                "disconnect": getattr(getattr(account, "driver", None), "last_disconnect", None),
                 "attempts": getattr(account, "stop_query_attempts", 0),
                 "errors": list(getattr(account, "stop_query_errors", ())),
                 "queries": query_diagnostics() if callable(query_diagnostics) else None},

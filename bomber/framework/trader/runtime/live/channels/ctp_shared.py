@@ -8,7 +8,7 @@ from decimal import Decimal
 
 from bomber.framework.trader.persistence import JsonStateStore, RuntimeStateManager
 from bomber.framework.trader.portfolio import TargetStore
-from bomber.framework.trader.execution.ctp.query_errors import CtpQueryRejected
+from bomber.framework.trader.execution.ctp.query_errors import CtpQueryRejected, CtpStopReconciliationRequired
 from ..recovery import SessionIdentityCheckpoint
 from ...ownership import AccountWriterIdentity, account_writer_lease
 from ...ctp_account import position_buckets
@@ -53,6 +53,7 @@ class CtpSharedAccountLifecycle:
         self._ready = False
         self.final_gross = self.final_active_orders = None
         self.query_failure = None
+        self.stop_failure_reason = None
         self.stop_query_attempts = 0
         self.stop_query_errors = []
 
@@ -407,6 +408,18 @@ class CtpSharedAccountLifecycle:
                 raise
             self._next_check = time.monotonic() + self.reconcile_seconds
 
+    def validate_stop_connection(self):
+        """断线时关闭决策，但不把未核验内存写成新的恢复基准。"""
+        if self._started and self._ready and (
+                not self.driver.is_simnow_session or self.driver.trading_day != self.expected_day):
+            self.client.disarm("stop_requires_authoritative_reconciliation")
+            self.execution.positions.mark_recovery_required(self.service.client_id)
+            self.stop_failure_reason = ("CTP连接失效，停机撤单和最终仓位未核验；"
+                "保留最后有效账户/策略检查点及锁，重新连接权威对账后才能恢复；"
+                f"disconnect={getattr(self.driver, 'last_disconnect', None)}；"
+                f"original_query_failure={self.query_failure}")
+            raise CtpStopReconciliationRequired(self.stop_failure_reason)
+
     def stop(self):
         # 停机仍须等待旧最终回报并完成权威核验，不能再被运行窗口的停止信号中断。
         self.transport.query_stop_requested = None
@@ -420,14 +433,17 @@ class CtpSharedAccountLifecycle:
             self.driver.stop()
             self._started = False
             return
+        self.validate_stop_connection()
         self.client.set_risk_mode("HALTED", cancel_active_orders=True)
         deadline = time.monotonic() + self.cancel_seconds
         # 等本地已知订单的终态，不因每0.2秒查全账户而产生查询风暴。
         while self.service._active_instruments():
+            self.validate_stop_connection()
             if time.monotonic() > deadline:
                 raise RuntimeError("共享账户停机撤单未确认，账户锁保留")
             self.service.poll_stopping()
             time.sleep(0.2)
+        self.validate_stop_connection()
         self.service.poll_stopping()
         for attempt in range(2):
             self.stop_query_attempts = attempt + 1
@@ -464,6 +480,7 @@ class CtpSharedAccountLifecycle:
         drain = getattr(self, "drain_stop_events", None)
         if drain is not None:
             drain()
+        self.validate_stop_connection()
         self.manager.validate_components()
         self.manager.save()
         self.final_gross = gross
