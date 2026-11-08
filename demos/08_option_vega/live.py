@@ -9,9 +9,11 @@ import time
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
-from bomber.framework.market.basic.base import Bar, InstrumentId
+from bomber.framework.market.basic.base import Bar, DataType, InstrumentId
 from bomber.framework.market.frames import MinuteFrameBuffer, minute_close_ns
 from bomber.framework.trader import RuntimeMode, UnifiedStrategyRunner
+from bomber.framework.trader.assembly import StrategyBindings, assemble_strategy
+from bomber.framework.trader.contracts import DataBinding, ExecutionRoute
 from bomber.framework.trader.execution.builders import (ExecutionComponents, build_model_execution,
     build_ctp_portfolio_execution, attach_execution_persistence, attach_ctp_persistence, build_fanout_execution)
 from bomber.framework.trader.execution.recording import RecordingExecutionClient
@@ -25,8 +27,8 @@ from bomber.framework.trader.runtime.live.local import LocalExecutionChannel
 from bomber.framework.trader.runtime.live.channels.ctp import (CtpLiveProfile, CtpMarketChannel,
     CtpExecutionChannel, InstrumentHealthGate)
 from bomber.framework.trader.runtime.live.channels.dolphin import DolphinMarketChannel
-from .strategy import assemble_strategy_components, risk_limits
-from .vega_signal import Contract, OptionVegaCheckpoint
+from .strategy import OptionVegaStrategy
+from .vega_signal import Contract, OptionVegaCheckpoint, risk_limits
 
 CLIENT_ID = "option-vega-live"
 logger = logging.getLogger("OptionMarketInputs")
@@ -367,7 +369,6 @@ def assemble(args, inputs, driver=None, *, account_routes=(), shared_service=Non
         execution.client.backend = audit
         execution = replace(execution, backend=audit)
         if inputs.ctp_upstream is not None:
-            from bomber.framework.market.basic.base import DataType
             inputs.ctp_upstream.register_quote_tick_handler(audit.observe_quote)
             for instrument in ids.values():
                 inputs.ctp_upstream.subscribe(instrument, DataType.QUOTE_TICK)
@@ -399,11 +400,15 @@ def assemble(args, inputs, driver=None, *, account_routes=(), shared_service=Non
             getattr(execution.client, "is_started", False))),
             channel="recording" if args.mode == "recording" else "model"))
     readiness = runner.readiness = SessionReadiness(*channels)
-    strategy = assemble_strategy_components(runner, execution, config=args.config,
-        contracts=refs.contracts, futures=refs.futures, instruments=ids,
-        index_key=args.index_code, index_id=inputs.index_id, trading_days=refs.calendar,
-        options_by_day=refs.options_by_day, feeds=feeds, feed_by_key=inputs.sources,
-        final_day=args.flatten_day, strategy_id=sid)
+    all_ids = {**ids, args.index_code: inputs.index_id}
+    if set(inputs.sources) != set(all_ids):
+        raise ValueError("行情绑定须覆盖期权、期货及指数")
+    strategy = OptionVegaStrategy(sid, args.config, refs.contracts, refs.futures, ids,
+        args.index_code, refs.calendar, args.flatten_day, refs.options_by_day)
+    assemble_strategy(runner, strategy, feeds=feeds, execution=execution, bindings=StrategyBindings(
+        data=tuple(DataBinding(key, inputs.sources[key], item, DataType.BAR, "1-MINUTE")
+            for key, item in all_ids.items()),
+        execution=tuple(ExecutionRoute(str(item), execution.client.client_id, item) for item in ids.values())))
     runner.strategy = strategy
     binding = StrategyPositionBinding(sid, execution.client.client_id, {str(i): i for i in ids.values()})
     session = SimpleNamespace(mode=args.mode, runner=runner, strategy=strategy, client=execution.client,

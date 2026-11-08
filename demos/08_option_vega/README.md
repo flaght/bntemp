@@ -2,6 +2,15 @@
 
 以**回测、Live、自定义特征**为三条主线。两个入口使用相同的策略、风险校验机制和特征契约，执行与仓位由`bomber/framework`负责。默认MO认购、同月IM和000852指数；IV与Delta使用同月期货价格，选约/增仓/退出/对冲保持原strategy1逻辑。
 
+本文对应当前代码与随附配置，历史交付文档中的命令不作为当前默认值。阅读入口：
+
+- [策略逻辑与计算公式](#1-策略逻辑)
+- [回测启动与数据要求](#2-回测)
+- [Live启动、恢复与持续管理](#3-live)
+- [自定义特征生成与使用](#4-自定义特征)
+- [启动参数、策略参数与默认值](#5-参数参考)
+- [验证、日志及常见错误](#6-验证与诊断)
+
 ## 目录
 
 | 文件 | 职责 |
@@ -9,8 +18,8 @@
 | `run_backtest.py` | 文件准备、公共模拟Backend/结算接线及回测报告 |
 | `run_live.py` | 在线参数、行情/参考/执行渠道选择、期权时段接线及公共常驻调度启动 |
 | `feature/` | 特征生成/导出、声明加载、标准文件读取及回测分钟帧适配 |
-| `strategy.py` | 策略决策、实际自有仓位管理、公共装配绑定与限额 |
-| `vega_signal.py` | 策略配置、共享JSON参数声明、生效参数快照、原数值算法与信号状态 |
+| `strategy.py` | 策略决策、实际自有仓位管理与执行回报处理 |
+| `vega_signal.py` | 策略配置、共享JSON参数声明、风控限额转换、数值算法与信号状态 |
 | `live.py` | Live分钟帧适配、健康检查、公共执行装配与只读诊断 |
 | `recovery.py` | 应用恢复/跨日约束、Recording窗口状态续接，调用公共账户与持久化能力 |
 | `config/strategy.yaml` | 启动模式、数据路径、交易日、输出目录与依赖JSON路径 |
@@ -20,9 +29,138 @@
 
 解析、结算、模拟撮合、目标差额、OMS、归属、风险、日历及共享账户复用[框架](../../bomber/framework/README.md)。探针/验收在[scripts/integration/options](../../scripts/integration/options)，测试在[tests](../../tests)。目录不保留旧模块的转发壳。
 
+回测在`run_backtest.py`、Live在`live.py`创建`OptionVegaStrategy`，声明各自的行情周期、来源及执行路由，并直接调用公共`assemble_strategy()`；策略文件不负责运行环境装配。
+
 同步到服务器时须同步本次删除项，不能只覆盖新增文件。根目录`features.py`已迁入`feature/`包；策略目录下的`continuous.py`已合并到`run_live.py`与`recovery.py`，`configuration.py`的两个共享函数已合并到`vega_signal.py`，须删除服务器上的这些旧文件，不保留转发壳。持续运行由公共`bomber/framework/trader/runtime/live/continuous.py`维护，YAML/JSON解析由公共`bomber/framework/cli.py`维护。旧辅助模块导入路径已由工厂、脚本和测试统一替换；两个运行入口及JSON检查点格式保持不变。
 
-## 1. 回测
+## 1. 策略逻辑
+
+实现见[strategy.py](strategy.py)，数值公式与配置见[vega_signal.py](vega_signal.py)。本节描述当前执行行为，公式例子不是实际回测或成交结果。
+
+### 1.1 组合目标、输入和数量含义
+
+策略每天在指定时点新增认购期权空头，用Vega预算决定新增手数，在若干对冲时点用同月期货调整已成交期权的Delta敞口。当前没有均线交叉、指数突破或“IV高于历史波动率”才开仓的条件。
+
+| 输入/数量 | 用途 |
+| --- | --- |
+| 指数特征值`I` | 作为执行价过滤基准，要求`K > I`；可以是原始指数、MA20或价格量纲的组合特征 |
+| 同月期货收盘价`F` | 反解IV、计算Greeks、评估退出，不能直接用主力合约或指数特征替代 |
+| 期权收盘价`C`、执行价`K` | 定价、时间价值过滤及退出指标 |
+| 期权/期货条款及交易日历 | 上市期、到期月、剩余交易日、乘数和合约映射 |
+| `actual` / 日志`positions` | 框架已经记账的**本策略**净仓，负数为空头；不是全账户总仓 |
+| `working` | 本策略仍在途的带方向委托数量 |
+| `option_goals` / `future_goals` | 希望达到的目标净仓，不是本次买卖增量，也不证明已成交 |
+
+Recording只记录目标，没有成交持仓；Model的持仓来自模型成交；SimNow来自归属到本策略的柜台成交。多个策略可以持有同一合约，持仓所有权由公共归属账本与策略ID确定，不采用“每个品种只能由一个策略管理”的约束；同一物理账户的执行写入仍需通过共享账户服务协调。
+
+### 1.2 每个Bar是否都会交易
+
+当前帧路径以`valuation_ns`作为估值时点，以`request_ns`记录实际消费/请求时点，按上海时间判断日内时点。上游封闭帧后不再补入迟到数据；封闭不代表所有候选都齐全。
+
+每帧按以下顺序处理：
+
+1. 读取实际仓位和在途数量，保护已停止交易、待现金结算的期权。
+2. 恢复后等待持仓依赖获得新场次行情，未齐返回`RESUME_WAIT`，超时按实际缺失原因报错。
+3. 到达显式最终清仓日/时点时优先清仓，并返回。
+4. 到达当日`option_slot`时选约、增仓，再评估期权退出。
+5. 到达`hedge_slots`时评估期货Delta对冲。
+6. 业务目标有变化才提交完整组合，执行端根据实际仓位及在途计算订单差额。
+
+不是每分钟都会下单；错过`option_slot`不会在之后任意分钟补开。M5期权之间可由M1期货/指数继续推进决策，旧期权报价保留其真实时间并接受时效检查，不读取未来M5价格。
+
+### 1.3 选月与选执行价
+
+只有当前时点等于`option_slot`、当天尚未处理选约，并且没有期权在途委托时，才尝试选约。当前JSON模板设为14:00；不加载模板的原始CLI默认是13:58。
+
+从外部提供的当日认购链筛选：
+
+1. 合约仍在上市区间，尚未达到停止交易时点。
+2. `K > I`，剩余交易日不少于`min_remaining_days`。
+3. 期权、对应同月期货、指数特征的缓存时点都等于本帧时点。
+4. 在以上合格合约中取最近的最后交易日，再计算该月份的Greeks。
+5. 每个`delta_targets`档取Delta距离最小的候选；同一合约可命中多个档。
+
+这里使用的是多头认购正Delta；卖出后风险方向由负手数体现。选择最近合格月不等于读取主力标记换月；所选月IV全部不可用时，不自动再选下一月。无候选、整手配仓为零或累计限额拒绝后，当日机会也视为已处理。存在期权在途而跳过时，不会自动延后到另一个配置外时点。
+
+### 1.4 IV、Greeks与缓存
+
+`source_iv`使用同月期货价反解Black76认购IV，搜索区间为`[0.0001, 5.0]`，二分64次，保留源代码的价格边界和迭代行为。设波动率为`sigma`、交易年期限为`T`：
+
+```text
+d1 = (ln(F/K) + sigma² × T / 2) / (sigma × sqrt(T))
+d2 = d1 − sigma × sqrt(T)
+C  = exp(−r × T) × (F × N(d1) − K × N(d2))
+```
+
+`N`为标准正态累计分布，`phi`为密度。当前Greeks沿用源口径：
+
+```text
+Delta = N(d1)
+Gamma = phi(d1) / (F × sigma × sqrt(T))
+Vega  = phi(d1) × F × sqrt(T) × exp(−r × Tc)
+```
+
+剩余交易日`Ndays`不含当日、包含最后交易日。开仓`T=Ndays/252`；对冲另外加当日剩余分钟`R/(240×252)`。`Tc`为到最后交易日的自然日差/365，用于Vega折现。定价函数保留源代码全天240分钟、15:00结束的期限口径；Live是否在14:57暂停由外部期权日历决定，两者职责不同。
+
+只有`C − max(F−K, 0) >= min_time_value`才尝试新IV。新计算不可用时，可使用`max_iv_age_seconds`内的旧IV，并用当前价格和期限重算Greeks；不会刷新旧IV时间。没有可用IV返回空值，但缺少新鲜期权/期货价格仍报错，不能靠IV缓存绕过行情检查。当前IV算法不额外做搜索区间可达性及最终重定价误差检查。
+
+### 1.5 Vega预算与新增手数
+
+`nav`是策略的配置本金，不自动跟随账户净值复利变化。每日新增配仓共享预算：
+
+```text
+B = nav × vega_budget / 100
+每个选中Delta档j：
+    w_j = 1 / (Gamma_j × 期权乘数m_j)
+    D   = sum(w_j × Vega_j × m_j)
+    a_j = B × w_j / D
+```
+
+取整前理想条件下`sum(a_j × Vega_j × m_j)=B`，且各档的现金Gamma贡献相等，并非各档手数或Vega相等。重复命中同一合约先合并`a_j`，不会让每档分别再用一份预算。
+
+`Vega`按`sigma`变化1.0计量。例如`nav=40,000,000`、`vega_budget=1.25`，`B=500,000`，对应波动率上升1个百分点的线性现金敏感度尺度为5,000。预算参数不是保证金比例或1.25倍本金。
+
+合并后依次Python `round`取整、应用单合约增量上限、总量超限时同比缩放并`int`向下取整、去掉0手，最后转成负数空头增量。`round`为半偶舍入；缩放后的余数不再分配。因此实际配仓可能低于预算或为零，不保证达到理论Vega额度。
+
+### 1.6 累加旧仓、常规退出与限额
+
+当日负增量累加到已有**目标**，保留未被选中的旧合约。例如原目标A=-1，当日新增B=-1，最终A=-1、B=-1；再次选中A则可能变成A=-2。若超过累计单合约或期权总手数上限，拒绝整批新增，保留原目标，记录`RISK_LIMIT`。
+
+每日分配使用新预算B，不先扣除旧仓Vega；累计风险不是通过“总组合Vega恰好等于B”控制，仍受手数和公共执行端限额约束。
+
+同一`option_slot`内先处理新增目标，再对所有非零、未停止交易的期权目标评估：
+
+```text
+退出指标E = C − (F − K)
+E <= 0 → 该期权目标设为0
+```
+
+这里没有`max(F−K,0)`，与IV筛选的时间价值口径不同。例：`F=7100,K=7000,C=100`时E=0，目标置零；`F=6800,K=7000,C=30`时E=230，不退出。`close_remaining_days`只是旧参数兼容，不是“剩2天必平”的现行规则。没有新候选时仍可评估旧目标退出；若有期权在途，本帧选约和常规退出均不执行。
+
+新增与退出在本帧合并后提交，不强制先开仓再平仓。目标置零之后仍需真实成交才能认为实际持仓已归零。
+
+### 1.7 Delta对冲与零期货仓
+
+只有到达`hedge_slots`、该日/时点尚未处理、所有期货腿无在途委托时才对冲。按期权的**已成交actual**分同月期货汇总：
+
+```text
+exposure_f    = sum(actual_option_lots_i × option_multiplier_i × Delta_i)
+future_goal_f = round(−exposure_f / future_multiplier_f)
+```
+
+例如空1手认购、乘数100、Delta=0.30、期货乘数200，计算`round(0.15)=0`；所以有期权持仓而没有期货仓位不必然异常。空10手时为`round(1.5)=2`。所需手数超过`max_future_lots`时报错，不静默截限。
+
+这是期货最终目标，不是新增买卖量。刚提交但未成交的期权新增不提前纳入；待平但未成交的期权仍属于敞口。普通`on_fill`不会即时触发对冲，通常等下一配置时点。某月任一期权缺少可用IV时，保留该月原期货目标；本次时点仍记为已评估，不在后续任意分钟重放。
+
+### 1.8 最终清仓、现金结算和恢复
+
+回测把最后一个交易日作为`final_day`；Live仅显式提供`--flatten-day YYYYMMDD`才指定主动清仓日。到当天`flatten_slot`及以后优先清仓，不再选约或对冲；有在途先等待，后续帧重新检查。`flatten_requested=true`只表示进入过清仓分支，不证明全部成交。
+
+正常午休、收盘或操作员停止是保存持仓的生命周期操作，与策略主动清仓不同。已停止交易的期权不再发送普通平仓，而由公共现金结算模块处理实际残仓；回测缺最终结算资料不能用最后close替代。Live成交事实来自柜台，模拟结算不会写成真实账户事实。
+
+Model/SimNow恢复后以已归属成交数量重建目标，不继续旧会话未完成开仓意图，等待持仓依赖更新。Recording只续接内存目标与每日选约标记，不把零成交当成旧目标被平掉；重启Recording进程是新的观察会话。
+
+## 2. 回测
 
 在安装Bomber原生扩展及依赖的环境中，从项目根目录运行：
 
@@ -51,6 +189,21 @@ python -u demos/08_option_vega/run_backtest.py \
 ```
 
 配置采用`experiment_setups -> 配置ID -> 参数名/值`，`description`仅作为说明。`m5_index_blend`与M5启动命令一致：期权M5、期货/指数M1、14:00开仓、原生日历、`index_blend`列以及`next_market`撮合；`opt_dir`须指向真实M5文件。`live_recording`、`live_model`、`live_simnow`分别用于三个Live执行模式。各入口只加载选中的配置，不混入其他ID的参数；把回测ID传给Live会报未知参数。复制一组参数即可添加实验，不需要修改Python。
+
+模板中的`data_root`、M5 `opt_dir`、特征文件路径和起止日期是部署示例，首次使用必须改成当前机器实际覆盖的数据。可直接覆盖路径和日期，无需修改代码：
+
+```bash
+python -u demos/08_option_vega/run_backtest.py \
+  --config-file demos/08_option_vega/config/strategy.yaml \
+  --config-id m5_index_blend \
+  --data-root /实际路径/数据根目录 \
+  --opt-dir /实际路径/M5期权目录 \
+  --index-feature-file /实际路径/index-blend.csv \
+  --index-feature-config /实际路径/index-blend.csv.dataset.json \
+  --start-day 2026-07-01 --end-day 2026-08-24
+```
+
+上述特征文件需真正覆盖所选日期、代码和历史可见时间。修改回测日期不会生成缺失特征或行情。
 
 启动YAML引用`strategy_config: demos/08_option_vega/config/vega_backtest.json`或`vega_live.json`；策略JSON保存`nav/vega_budget/delta_targets/option_slot/hedge_slots`和持仓、名义本金等限额。回测与Live保留各自原有手数上限，不把回测100手配置直接用于Live。`delta_targets/hedge_slots`在JSON中使用列表，仍复用原有CLI类型和`OptionVegaConfig`业务校验。
 
@@ -127,9 +280,50 @@ python -u demos/08_option_vega/run_backtest.py \
 
 回测默认保存在`results/backtest/<期权品种>/<开始日>-<结束日>/<run-id>/`：`summary.json`、`orders/fills/positions/account.csv`、`signals.csv`、`settlements.csv`、`feature_frames.json`、`strategy_parameters.json`、输入诊断和费用报告。`--report-dir`替换根目录；运行编号保留，重复回测不覆盖此前结果。准备失败仍使用公共`<report-dir>/input_failed_*`诊断目录。
 
-## 2. Live
+## 3. Live
 
 Live分别配置交易腿行情、指数特征、参考条款和执行渠道。`recording`只记录目标；`model`使用参考价模型；`simnow`需要显式发单授权。连接凭证使用部署环境或项目`.env`，不写入命令与报告。
+
+| 配置ID | 执行行为 | 检查点 | 同账户已有Hybrid写入进程时 |
+| --- | --- | --- | --- |
+| `live_recording` | 实时判断并记录目标，不连接TD报单，不产生成交仓位 | 不接受`state_file/resume` | 可作为独立行情观察进程运行 |
+| `live_model` | 按参考价格模型执行，模型持仓不是柜台仓位 | 独立模型检查点 | 不占用TD；本文命令未配置账户跟随端 |
+| `live_simnow` | 使用CTP SimNow成交回报管理自有仓位 | 与独立Live身份匹配的交易检查点 | 不另启同账户写入进程，应接入共享账户服务 |
+
+### 环境准备
+
+所有相对路径按项目根目录解析。用**实际启动的同一个Python**安装配置依赖，避免安装到另一个虚拟环境：
+
+```bash
+python -m pip install -r bomber/framework/requirements-config.txt
+```
+
+Live/特征生成需要用途专属DolphinDB环境变量：
+
+| 变量组 | 用途 |
+| --- | --- |
+| `DDB_MARKET_HOST/PORT/USERNAME/PASSWORD/ENABLE_SSL` | 期权/期货分钟流与指数DFS查询；数据表映射在JSON声明 |
+| `DDB_MARKET_STREAMING_PORT` | 分钟推送的本地订阅端口，例如`0`自动分配；不是数据库服务端口 |
+| `DDB_REFERENCE_HOST/PORT/USERNAME/PASSWORD/ENABLE_SSL` | 条款和交易时段参考来源，需与实际参考服务器一致 |
+| `DDB_REFERENCE_DATABASE` | 未显式传`reference_database`时的参考库；时段库可由YAML单独指定 |
+| `CTP_*` | 仅选择CTP行情或SimNow交易时需要；Recording+DolphinDB命令不需要CTP登录 |
+
+终端已`export`的值优先于当前`load_dotenv()`默认加载的`.env`。用途专属变量优先于兼容的旧`DDB_*`，只修改旧变量不会覆盖已有`DDB_MARKET_*`。例如切换行情服务器时，替换下方占位值后执行：
+
+```bash
+export DDB_MARKET_HOST='新的行情服务器地址'
+export DDB_MARKET_PORT='8902'
+export DDB_MARKET_USERNAME='实际用户名'
+export DDB_MARKET_PASSWORD='实际密码'
+export DDB_MARKET_ENABLE_SSL='false'
+export DDB_MARKET_STREAMING_PORT='0'
+```
+
+这不会自动切换参考服务器；按部署另行配置`DDB_REFERENCE_*`。期权/期货条款表名可由`DDB_OPT_BASIC_TABLE/DDB_FUT_BASIC_TABLE`指定，时段库表在YAML中显式声明。凭据不写入版本化YAML/JSON。
+
+SimNow交易需要`CTP_TD_ADDRESS/CTP_BROKER_ID/CTP_ACCOUNT_ID/CTP_PASSWORD`，本入口要求BrokerID为`9999`；`CTP_APP_ID/CTP_AUTH_CODE`按环境提供，`CTP_PRODUCTION_MODE`默认true。仅当交易腿行情选择CTP时还需要`CTP_MD_ADDRESS`；使用DolphinDB行情不会因此订阅CTP行情。`CTP_TD_FLOW_PATH/CTP_MD_FLOW_PATH`可覆盖连接流文件目录，仍不能绕过账户写入锁。
+
+### Recording常驻与定时验收
 
 同一配置文件选择Live Recording：
 
@@ -144,9 +338,58 @@ python -u -m demos.08_option_vega.run_live \
 
 使用`live_model`或`live_simnow`前，在同一YAML中填写对应的`state_file`：新会话使用独立新文件，恢复已有会话同时设置`resume: true`。模板保留`null`，未填写时原有检查点校验会阻止启动，不自动创建空状态接管已有仓位。`live_simnow`已明确设置`enable_orders/confirm_simnow: true`；任一授权缺失、Recording带报单参数或Model带物理发单授权仍报错。恢复时仍需通过原有身份与仓位核验，不能把共享账户检查点直接交给独立`run_live`入口。
 
-常驻复用公共`run_continuous`，不用另写循环。交易时段从`dfs://bomber_static/fut_trading_session`读取**期权品种MO**的规则（IO/HO对应各自规则），不能套用IM/IF/IH期货时段。当前MO规则为09:30–11:30、13:00–14:57；`no_session_overrides: true`表示部署已明确没有额外日期例外，有例外时应配置公共例外表并关闭此声明。
+关闭常驻、按指定交易日运行900秒：
 
-盘前启动先等待开盘，不在9:10启动行情就绪倒计时；午休、收盘按窗口关闭决策，Model/SimNow撤销未完成委托并保存检查点，保留成交仓位，进程继续等待。下一窗口重新加载当日资料；Model/SimNow恢复原归属账本并校验持仓条款，Recording只续接内存中的每日选约标记和目标，不伪造成交。Recording重启进程后是新观察会话；持仓合约从当日资料消失、来源身份变化或停机对账失败仍会报错，不丢弃原仓或盲目重启。SimNow当日报单额度累计包含午休前和重启前的订单，额度用完等待下一交易日。
+```bash
+python -u -m demos.08_option_vega.run_live \
+  --config-file demos/08_option_vega/config/strategy.yaml \
+  --config-id live_recording \
+  --no-run-forever --expected-trading-day 20261106 --seconds 900
+```
+
+日期须替换为实际会话交易日。定时模式不由常驻调度器等待开盘，盘前启动仍可能因没有行情而超过就绪期限；盘前/跨休市使用`--run-forever`。
+
+### Model新建与恢复
+
+选择一个不存在的模型检查点路径，启动新会话：
+
+```bash
+python -u -m demos.08_option_vega.run_live \
+  --config-file demos/08_option_vega/config/strategy.yaml \
+  --config-id live_model \
+  --state-file demos/08_option_vega/results/state/model.json \
+  --run-forever
+```
+
+重启恢复同一检查点，增加`--resume`：
+
+```bash
+python -u -m demos.08_option_vega.run_live \
+  --config-file demos/08_option_vega/config/strategy.yaml \
+  --config-id live_model \
+  --state-file demos/08_option_vega/results/state/model.json \
+  --resume --run-forever
+```
+
+这里的原仓位是模型成交账本，不会接管同账户的柜台持仓。检查点已存在却不传`resume`，或传了`resume`但文件不存在，均会报错。
+
+### 独立SimNow与共享账户入口
+
+当该账户没有其他写入进程、且需要恢复与独立入口身份匹配的原检查点时：
+
+```bash
+python -u -m demos.08_option_vega.run_live \
+  --config-file demos/08_option_vega/config/strategy.yaml \
+  --config-id live_simnow \
+  --state-file /实际路径/独立Live原检查点.json \
+  --resume --run-forever --enable-orders --confirm-simnow
+```
+
+新会话使用独立的新路径并省略`--resume`，须通过启动时账户/持仓核验，不能用空文件规避原仓归属。SimNow跨日自动恢复沿用当前`strict`和`fills`约束，不更改账户、策略、来源或风险参数来绕过身份校验。已有共享账户检查点使用后文的`scripts.integration.options.shared`，不与上述独立检查点互换。该命令也不支持把08热加入正在运行的Hybrid进程。
+
+常驻复用公共`run_continuous`，不用另写循环。交易时段从`dfs://bomber_static/fut_trading_session`读取**期权品种MO**的规则（IO/HO对应各自规则），不能套用IM/IF/IH期货时段。本文部署示例采用MO的09:30–11:30、13:00–14:57规则，实际以时段表为准；`no_session_overrides: true`表示部署已明确没有额外日期例外，有例外时应配置公共例外表并关闭此声明。
+
+盘前启动先等待开盘，不在9:10启动行情就绪倒计时；午休、收盘按窗口关闭决策，完成各模式的停机核验/检查点保存，SimNow处理撤单及最终对账，保留成交仓位，进程继续等待。下一窗口重新加载当日资料；Model/SimNow恢复原归属账本并校验持仓条款，Recording只续接内存中的每日选约标记和目标，不伪造成交。Recording重启进程后是新观察会话；持仓合约从当日资料消失、来源身份变化或停机对账失败仍会报错，不丢弃原仓或盲目重启。SimNow当日报单额度累计包含午休前和重启前的订单，额度用完等待下一交易日。
 
 常驻期间`seconds`不作为退出条件。按Ctrl+C或SIGTERM正常清理后退出；若需原900秒验收，使用`--no-run-forever --expected-trading-day YYYYMMDD --seconds 900`。该入口不绕过公共账户锁：已有Hybrid占用同一CTP账户时可并行启动08 **Recording**；08独立SimNow不能作为第二个账户写入进程启动。多策略实盘仍使用共享账户服务。下面的`shared --run-forever`入口和检查点保持原调用方式。
 
@@ -167,7 +410,7 @@ results/
   backtest/MO/20260813-20260930/<run-id>/
 ```
 
-`report_dir`为可指定的输出根目录，品种、执行模式及会话交易日决定子目录；同交易日重启继续追加明细，下一交易日另建目录。日期使用显式会话交易日并由原生命周期核验，不使用本机自然日期。报告不迁移旧纳秒目录，也不改变原`state_file`、归属账本或恢复格式；`strategy_state.json`不能替代正式检查点。特征生成仍按显式`--output-dir`与原始事件日期区间导出，不把研究快照改写为当天行情。
+`report_dir`为可指定的输出根目录，品种、执行模式及会话交易日决定子目录；同交易日重启继续追加明细，下一交易日另建目录。定时模式日期来自显式参数，常驻来自日历窗口，并由对应生命周期核验；Recording不登录TD，不能把其日期当成已核验的柜台日期。报告不迁移旧纳秒目录，也不改变原`state_file`、归属账本或恢复格式；`strategy_state.json`不能替代正式检查点。特征生成仍按显式`--output-dir`与原始事件日期区间导出，不把研究快照改写为当天行情。
 
 例如，以DolphinDB分钟推送和DFS指数记录实时目标（日期按柜台实际交易日替换）：
 
@@ -200,7 +443,7 @@ python -u -m scripts.integration.options.shared \
 
 关注`分钟行情汇总`、`分钟决策汇总`与心跳。迟到的新Bar可只更新健康，不回填旧决策；真实过期、断流或账户冲突仍停止。模拟现金结算不用于生成Live柜台事实。
 
-## 3. 自定义特征
+## 4. 自定义特征
 
 所有特征职责统一放在[feature/](feature/README.md)：查询一次DolphinDB，同时导出原始指数与MA20；加载声明、读取和回测分钟帧也在该包内，不依赖`scripts`。底层使用现有特征注册/Provider。
 
@@ -219,6 +462,22 @@ python -u -m demos.08_option_vega.feature.generate \
 ```
 
 默认声明是本目录`feature/index.json`，读取`dfs://min_bar/index_1min`。输出`index.csv`与`index-ma20.csv`，各自带`.manifest.json`和`.dataset.json`，以及`summary.json`；成功需看到`status=passed`及两套`file_roundtrip=passed`。已有文件、数据为空或无法完成MA预热时失败。底层注册、查询、编码和摘要均复用公共API，接口和完整输出说明见[例子](feature/README.md)。
+
+M5回测模板使用的`index_blend`由另一个DataFrame业务例子计算：
+
+```bash
+python -u -m demos.08_option_vega.feature.example_dolphindb \
+  --connect \
+  --config demos/08_option_vega/feature/index_close.json \
+  --dataset index.close.minute --schema-version 1 --key 000852 \
+  --start '2026-07-01T00:00:00+08:00' \
+  --end '2026-08-24T23:59:59+08:00' \
+  --output-dir demos/feature/index
+```
+
+此例生成`index-blend.csv`、同名manifest与dataset.json及summary.json，数据集为`research.index.ma20_ma60.minute`，字段为`close/ma20/ma60/index_blend`。公式为`(MA20+MA60)/2`，按实际输入行滚动，跨午休/跨日延续，前59行预热不输出，不等同于上一个连续分钟重置的单MA例子。输出目录已有文件时必须另选目录；需要起始日完整特征时，应查询更早数据作为预热。
+
+切换Tinysoft等库表时，在来源声明中显式映射库、表、键、时间列和close列，并用`--config`选择；源代码若为SH000852，再传`--source-key SH000852`，导出键仍为000852。close精简声明适用于这个DataFrame例子；`feature.generate`仍要求真实OHLCV和bar_projection，不能只改dataset名称混用入口。新生成的组合均线同样具有下面的研究快照可见时间限制，不能因为生成命令成功就直接作为过去逐分钟可用的证据。
 
 默认`observed`保留本次观测时间：能得到数据快照，不代表9月份当时已可见，不能直接用于9月份的时点回测。若数据源确认配置中的`updateTime`是该版本真实可用时刻，本例可显式加`--availability source-time`；如果只是后来补录的时间，仍不能提前使用。MA的可用时间仍是实际计算完成时间。先核对输出可见时间与实际`--frame-wait-seconds`，不要为了成交把时间改成Bar结束。
 
@@ -256,7 +515,170 @@ python -u -m demos.08_option_vega.feature.generate \
 
 离线测试覆盖20条输入计算MA20、声明与标准文件读回、原策略候选/目标变化，以及预热、缺口和迟到拒绝；这些是夹具验证，不是收益表现或原生成交回测结果。
 
-## 验证与诊断
+## 5. 参数参考
+
+本节区分**未加载配置的CLI默认值**和**仓库模板值**。使用`--config-file`后，模板YAML/JSON会覆盖CLI默认；最终以报告`strategy_parameters.json`和来源身份为准。
+
+### 5.1 配置选择和公共启动参数
+
+| CLI参数 | YAML键/示例值 | 说明 |
+| --- | --- | --- |
+| `--config-file` | `config_file`，CLI通常传`config/strategy.yaml`完整相对路径 | YAML启动文件；相对路径按当前工作目录解析 |
+| `--config-id` | `config_id`，如`m5_index_blend/live_recording` | 只加载一个`experiment_setups`条目；与文件参数成对提供 |
+| `--strategy-config` | `strategy_config`，`vega_backtest.json`或`vega_live.json` | 策略/风险参数JSON，不接受账户授权、日期、路径等启动字段 |
+| `--option-product` | `option_product: MO` | 期权品种，默认MO |
+| `--future-product` | `future_product: IM` | 对应期货品种，默认IM；更换期权品种时同时匹配期货、指数和资料 |
+| `--index-code` | `index_code: "000852"` | 指数特征业务键，Live须六位数字；YAML保留引号 |
+| `--market-config` | `market_config` | 公共行情源JSON，Live模板为`config/market_dolphindb.json` |
+| `--market-source` | 回测`file`；Live模板`dolphindb` | 回测只支持file；本策略Live支持ctp/dolphindb，虽然公共CLI列出bn-ws，国内合约会拒绝它 |
+| `--index-feature-config` | `index_feature_config` | 指数数据集声明，定义Schema、字段和来源；不是策略JSON |
+| `--index-dataset` | `index_dataset`，默认`index.minute` | 必须与所选声明/文件中的数据集ID一致 |
+| `--index-schema-version` | `index_schema_version`，默认1 | 必须与声明版本一致；旧Tinysoft完整声明若仍为3，须显式传3 |
+| `--frame-wait-seconds` | 回测模板5，Live模板20 | 未配置默认2秒，范围`[0,min(30,max_market_age_seconds)]`；按封帧期限接纳行情，超过期限不回填 |
+| `--log-level` | 回测模板/Live模板`INFO` | 未配置回测WARNING、Live INFO；可选ERROR/WARNING/INFO/DEBUG |
+| `--report-dir` | `report_dir` | 输出根目录；回测默认`demos/08_option_vega/results/backtest`，Live默认`.../results/live` |
+
+`--config_file/--config_id`兼容下划线写法；业务选项CLI通常用连字符，YAML通常用下划线。`description`只作说明。优先级为`显式CLI > YAML > 策略JSON > CLI默认值`，`null`表示继承下一层；字段、类型、互斥或重复配置错误会停止启动。布尔值写YAML的`true/false`；只有声明了负向选项的开关才可用CLI关闭，例如`--no-run-forever`。不要自行拼接`--no-resume`或`--no-require-fills`，关闭它们需修改YAML对应值。
+
+### 5.2 回测数据、周期和日历参数
+
+| CLI参数 | 默认/模板 | 作用及约束 |
+| --- | --- | --- |
+| `--start-day`、`--end-day` | 必填，可由YAML提供 | `YYYY-MM-DD`；按完整交易日区间检查数据，不按现有文件缩短回测 |
+| `--data-root` | 模板为部署示例路径 | 推导`kline/fut`、`kline/opt`、`role/fut_basic.feather`、`role/opt_basic.feather`；不从环境补路径 |
+| `--fut-dir` | 未提供则由data_root推导 | 真实同月期货M1文件目录 |
+| `--opt-dir` | M5必须显式提供 | 真正M5期权文件目录；M1忽略此值并固定读取data_root/kline/opt |
+| `--fut-basic`、`--opt-basic` | 未提供则由data_root推导 | 历史合约基础资料；须覆盖行情合约及上市/到期日 |
+| `--option-bar-minutes` | CLI 1，M5模板5 | 仅支持1或5；声明源文件周期，不聚合、不补齐 |
+| `--bar-timestamp` | `end` | 交易腿源标签start/end；start按各自真实周期右移到完成时点 |
+| `--options-bar-timestamp` | 继承bar_timestamp；M5模板end | 仅覆盖期权标签，M5起点标签右移5分钟 |
+| `--execution-timing` | CLI native，M5模板next_market | native保留原撮合；next_market等待本合约下一真实Bar，不承诺下一开盘价 |
+| `--index-feature-file` | 必填，可由YAML提供 | 标准CSV/Parquet及同名manifest；业务日期、代码、Schema、可见时间均须匹配 |
+| `--index-value-field` | CLI沿用Bar投影close；模板index_blend | 选择Schema内非空数值字段，可选close/ma20/ma60/index_blend等实际字段；仅回测支持 |
+| `--index-precision` | 4 | 指数注册价格精度，范围0–12 |
+| `--calendar-id` | 模板china.cffex | 使用公共NativeCalendarProvider，保留到维护末端的后续日期用于期限计算 |
+| `--calendar` | 未指定 | `date/is_trading_day`日历文件，与calendar_id互斥；两者均省略才从行情日期推导 |
+
+日期目录与文件名示例：`kline/opt/20260701/MO2609-C-6600_20260701.feather`，期货同理。扫描递归读取Feather，目录和文件日期须一致；合约代码需匹配基础资料。文件列为`datetime`或`timestamp`、`open/high/low/close/volume`，以及可核验的`symbol/trade_date`。价格需为有限正数，量非负且为整数，OHLC须满足高低价包围开收价；时间不得重复或偏离声明周期。M5文件用M1参数或反向声明均不是合法的周期转换。
+
+### 5.3 回测资金、费用、结算和验收
+
+| CLI参数 | CLI默认值 | 说明 |
+| --- | --- | --- |
+| `--starting-balance` | 40000000 | 模拟账户初始资金，独立于配置的策略nav |
+| `--commission` | 1 | 固定每手费用配置；实际期货费用还取决于commission_source和基础资料 |
+| `--commission-source` | auto | auto优先期货基础费用、缺失回退每手配置；metadata要求资料完整；fixed使用每手配置 |
+| `--commission-multiplier` | 1 | 普通交易费用系数 |
+| `--commission-product-multiplier PRODUCT=VALUE` | 空列表 | 按品种覆盖费用系数，可重复；YAML用列表 |
+| `--commission-contract-multiplier CONTRACT=VALUE` | 空列表 | 按具体合约覆盖费用系数，可重复；YAML用列表 |
+| `--delivery-fee-multiplier` | 1 | 公共交割费系数预留；普通成交不会因此产生交割费 |
+| `--margin-init`、`--margin-maint` | 0.15、0.12 | 期货初始/维持保证金比例 |
+| `--option-margin-init`、`--option-margin-maint` | 1、1 | 期权模拟保证金比例；不代表完整交易所卖方保证金模型 |
+| `--option-settlements` | 未指定 | 官方最终结算文件或按到期日保存的目录；实际残仓需要终值时必须提供 |
+| `--settlement-available-time` | 16:00 | 源结算记录未提供available_at时采用的本地可用时间 |
+| `--exercise-fee-per-contract` | 0 | 默认每手现金结算费用，文件的逐合约fee_per_contract优先 |
+| `--no-tearsheet` | false，模板true | 省略tearsheet输出，不关闭订单、成交或账户报告 |
+| `--require-fills` | false，模板true | 本次回测至少有成交才通过验收；不会为满足条件强制开仓 |
+
+若显式配置了`nav`，只修改starting_balance不会同步修改策略预算；比较不同资金规模时应分别核对两项。期权最后交易时点、最终结算资料和回测结束日需配合，结算可用时间在区间之外时应延长回测范围，不能提前结算。
+
+### 5.4 Live生命周期、账户和验收参数
+
+| CLI参数 | CLI默认/模板 | 说明 |
+| --- | --- | --- |
+| `--connect` | false，Live模板true | 显式连接授权，缺失即停止；不等于发单授权 |
+| `--mode` | recording | recording/model/simnow，需选择与配置ID、检查点一致的模式 |
+| `--run-forever`、`--no-run-forever` | CLI false，Live模板true | 公共日历常驻；关闭后恢复定时模式 |
+| `--seconds` | 900 | 仅定时会话的运行期限；常驻不以此到期退出 |
+| `--expected-trading-day` | CLI无，模板null | 定时必填`YYYYMMDD`；常驻可选，仅核对首个窗口 |
+| `--valuation-day` | 实时沿用交易日 | Replay沿用声明MD日；不能把历史行情改写到另一天 |
+| `--ready-timeout` | 90秒 | 会话启动后等待健康行情/参考/执行；分钟源装配可提升到至少market_bar_max_age_seconds，常驻休市等待不是此倒计时 |
+| `--state-file` | 未指定 | Model/SimNow必填；新建须不存在，恢复须原文件，Recording拒绝此参数 |
+| `--resume` | false | 使用已有匹配检查点；后续常驻窗口由公共运行时按保存状态续接 |
+| `--enable-orders`、`--confirm-simnow` | false，SimNow模板true | SimNow两项均必需；Recording和Model拒绝物理报单授权 |
+| `--max-session-orders` | 20 | SimNow订单预算；常驻按交易日累计，包含午休前/重启前订单，耗尽后等待下一日 |
+| `--query-timeout` | 30秒 | TD连接/查询超时，不是行情帧等待预算 |
+| `--account-reconciliation` | SimNow strict；Model/Recording off | strict/observe/off；SimNow跨日自动恢复要求strict，不能靠改成off解决归属差异 |
+| `--strategy-position-source` | Model model；其他fills | model仅随mode=model使用；真实账户持仓不能作为策略所有权推断来源 |
+| `--flatten-day` | 未指定 | 指定策略主动清仓日YYYYMMDD；省略则停机保留仓位，不代表每天flatten_slot平仓 |
+| `--require-fills` | false | 本次会话须收到归属成交；Recording拒绝。常驻会逐窗口验收，普通持续管理不要强制每窗口成交 |
+
+### 5.5 Live行情、指数和条款参数
+
+| CLI参数 | 默认/模板 | 说明 |
+| --- | --- | --- |
+| `--market-bar-table` | 模板stream_cffex_1min | DolphinDB共享分钟流表；不是DFS持久化表；可用DDB_OPTION_BAR_TABLE |
+| `--market-bar-timestamp` | 模板end | 推送Bar的源时间标签，start/end |
+| `--market-volume-mode` | 模板cumulative | per-bar为当分钟量，cumulative为累计量；按实际源口径声明 |
+| `--market-bar-max-age-seconds` | 模板120秒 | 推送Bar源/接收健康阈值，范围`(60,min(120,max_market_age_seconds)]` |
+| `--ctp-price-type` | last | CTP成交价聚合；mid为报价中间价Bar，零成交量，不证明可成交性 |
+| `--instrument-max-age-seconds` | 30秒 | CTP逐合约行情健康/执行报价时效，须为正且不超过120秒 |
+| `--index-source` | dolphindb-dfs | 默认特征Provider区间查询缓存；dolphindb为旧指数完成分钟流兼容入口 |
+| `--index-database`、`--index-table` | 沿用特征声明 | 显式覆盖DFS来源，例如dfs://min_bar、index_1min |
+| `--index-availability` | 沿用声明 | observed/source-time/update-time；update-time映射到source-time，只在源发布时间语义经确认后使用 |
+| `--index-poll-seconds` | CLI 0.2，模板1秒 | DFS轮询间隔，范围`(0,30]`；不是每分钟仅查一次 |
+| `--index-query-timeout` | 2秒 | 指数只读查询超时，范围1–30秒 |
+| `--index-price-precision`、`--index-size-precision` | 4、4 | 指数精度配置/来源身份字段，范围0–9 |
+| `--index-bar-table` | DDB_INDEX_BAR_TABLE或显式参数 | 旧指数推送流入口使用的共享表；默认DFS路径不使用此项 |
+| `--index-bar-timestamp` | DFS沿用声明，旧流默认end | 指数Bar源标签；不等于发布/可见时间 |
+| `--reference-source` | dolphindb | 合约条款来源；file仅用于显式测试 |
+| `--reference-database` | 环境参考库配置 | 期权/期货基础资料库；与行情库、时段库分别配置 |
+| `--reference-timeout` | 30秒 | 参考来源读取超时 |
+| `--reference-refresh-seconds` | 5秒 | 条款观测刷新间隔，可为0 |
+| `--reference-max-observation-seconds` | 30秒 | 条款最近观测有效时长，不等同于条款发布日期 |
+| `--allow-file-reference-test` | false | 选择file来源还需显式开启，并同时提供opt-basic与fut-basic |
+| `--opt-basic`、`--fut-basic` | 未指定 | Live文件测试条款路径；正式模板使用DolphinDB |
+
+Live仍使用M1交易腿和可投影的原始指数声明；`--option-bar-minutes`与`--index-value-field`是回测参数，不能直接传给Live。
+
+### 5.6 Live常驻会话日历参数
+
+| CLI参数 | 默认/模板 | 说明 |
+| --- | --- | --- |
+| `--calendar-id` | china.cffex | 公共原生日期日历，与期权时段规则共同生成交易窗口 |
+| `--hours-code` | 未指定时为option_product，模板MO | 使用期权自身MO/IO/HO规则，不能用IM/IF/IH时段代替 |
+| `--session-timezone` | Asia/Shanghai | 会话时区 |
+| `--trading-hours-database` | 模板dfs://bomber_static | 时段库；入口可回退DDB_TRADING_HOURS_DATABASE或默认静态库 |
+| `--trading-hours-table` | 模板fut_trading_session | 时段表；表名虽含fut，规则键仍为期权品种 |
+| `--trading-hours-file` | 未指定 | 文件时段来源测试入口；与数据库来源互斥 |
+| `--session-overrides-table` | 未指定/环境例外表 | 按日期覆盖、替换或取消时段的规则表 |
+| `--session-overrides-file` | 未指定 | 配合文件时段来源使用的例外文件 |
+| `--no-session-overrides` | false，模板true | 显式声明没有日期例外；与例外来源互斥，有例外应修改YAML而不是忽略 |
+| `--trading-calendar` | 不支持 | 虽由公共CLI注册，08 Live拒绝旧日历JSON入口 |
+
+窗口以实际参考资料为准，不在策略中硬编码收盘时间；目前只支持期权当日日盘窗口。日历超出维护范围、规则缺失或不匹配时明确失败，不能用工作日猜测休市。
+
+### 5.7 策略JSON参数对照
+
+配置来源：[vega_backtest.json](config/vega_backtest.json)、[vega_live.json](config/vega_live.json)。JSON键与CLI对应关系为下划线换成连字符，例如`vega_budget`对应`--vega-budget`。`delta_targets/hedge_slots`在JSON中使用数组，在CLI中使用逗号字符串。
+
+| JSON键 / CLI参数 | 无配置CLI默认（回测 / Live） | 回测JSON | Live JSON | 策略含义 |
+| --- | --- | --- | --- | --- |
+| `nav` / `--nav` | 未指定时用starting_balance / 40000000 | 40000000 | 40000000 | 固定配置本金，决定每日新增Vega预算，不自动按账户净值更新 |
+| `vega_budget` / `--vega-budget` | 1.25 / 1.25 | 1.25 | 1.25 | `B=nav×vega_budget/100`，单位波动率现金敏感度尺度 |
+| `delta_targets` / `--delta-targets` | `[0.2,0.25,0.3,0.35]` | 同左 | 同左 | 各档选择最近的多头认购Delta，允许重复选中同一合约 |
+| `option_slot` / `--option-slot` | 13:58 / 13:58 | 14:00 | 14:00 | 每日选约、增仓及常规退出检查时点；M5须对齐完成时刻 |
+| `hedge_slots` / `--hedge-slots` | `[10:00,11:00,13:30,14:00,14:55]` | 同左 | 同左 | 已成交期权的期货Delta对冲时点 |
+| `flatten_slot` / `--flatten-slot` | 14:50 / 14:50 | 14:50 | 14:50 | 仅在final_day/flatten_day达到时生效；不是每日固定平仓 |
+| `min_remaining_days` / `--min-remaining-days` | 5 / 5 | 5 | 5 | 新选合约的最小剩余交易日阈值 |
+| `close_remaining_days` / `--close-remaining-days` | 2 / 2 | 2 | 2 | 旧检查点兼容字段，当前不用于到期前强制退出 |
+| `rate` / `--rate` | 0.02 / 0.02 | 0.02 | 0.02 | 定价年化利率，小数口径 |
+| `min_time_value` / `--min-time-value` | 5 / 5 | 5 | 5 | 新IV尝试要求`C-max(F-K,0)`不小于此值；不是退出阈值 |
+| `max_market_age_seconds` / `--max-market-age-seconds` | 300 / 300 | 300 | 300 | 策略报价缓存相对估值时点的最大年龄，另受通道健康检查约束 |
+| `max_iv_age_seconds` / `--max-iv-age-seconds` | 300 / 300 | 300 | 300 | 可回退使用的IV缓存期限，不放宽行情价格时效 |
+| `max_option_lots` / `--max-option-lots` | 100 / 1 | 100 | 1 | 单张期权空头目标绝对手数上限，也用于新增配仓截限 |
+| `max_total_option_lots` / `--max-total-option-lots` | 200 / 2 | 200 | 2 | 累计期权目标绝对手数总和上限 |
+| `max_future_lots` / `--max-future-lots` | 100 / 1 | 100 | 1 | 每张期货目标绝对手数上限；所需对冲超过时停止，不静默截限 |
+| `max_notional` / `--max-notional` | 100000000 / 2000000 | 100000000 | 2000000 | 转成公共逐合约委托/仓位名义金额限额，不是现金Vega或保证金预算 |
+| `limit_offset_ticks` / `--limit-offset-ticks` | 回测无此CLI / 1 | 未配置 | 1 | Live CTP限价偏移跳数，非负整数；不是模拟滑点参数 |
+
+`nav`、手数和金额须为正；Delta档须在`(0,1)`；利率有限、最小时间价值非负；时点为HH:MM且option_slot早于flatten_slot；兼容字段仍要求`0 <= close_remaining_days < min_remaining_days`。改单个配置前同时核对累计手数和所需对冲手数。执行限额还会约束每笔最大数量，当前转换为对应单腿手数上限的2倍，以容纳方向切换的差额。
+
+### 5.8 Replay工程测试参数
+
+`--simnow-environment`默认realtime；replay须声明`--replay-md-trading-day YYYYMMDD`，并使用CTP行情。可选`--replay-test-start-time HH:MM`和`--replay-test-source-time HH:MM`用于显式工程时间映射，要求CTP Replay、DFS指数及新测试会话；source-time须同时声明start-time。常驻模式只支持realtime，不重映射历史日期；Replay不是通过改日期发送已下架合约的授权。
+
+## 6. 验证与诊断
 
 ```bash
 python tests/run_option_vega_offline.py
@@ -266,3 +688,47 @@ python -m scripts.integration.options.recording --help
 ```
 
 离线入口采用SDK/柜台夹具，原生测试须在安装真实Bomber扩展的独立进程运行。日志字段见[历史字段说明](../../doc/strategies/OPTION_VEGA_MINUTE_LOG_FIELDS.md)，历次报告与交付记录移至[历史文档](../../doc/strategies/OPTION_VEGA_HISTORY.md)，不作为当前启动指南。
+
+### 当前分钟日志怎样判断
+
+| 字段/状态 | 当前含义 |
+| --- | --- |
+| `分钟行情汇总.status=COMPLETE`、`missing_required=[]` | 本帧必需腿齐全；不表示全部候选都有行情或已经成交 |
+| `same_minute=true` | 对应必需腿属于本次估值时点；receive_delay_seconds另外描述接收延迟 |
+| `positions` | 本策略已成交净仓，负数为空头；以此判断当前自有持仓 |
+| `option_goals/future_goals` | 当前业务目标，需与实际仓位及working一起看 |
+| `WAIT_SLOT/ALREADY_SELECTED` | 未到当天选约时点/该日已处理，不表示停止持仓管理 |
+| `NO_VALID_ENTRY/ZERO_ALLOCATION/RISK_LIMIT` | 没有有效候选/配仓为零/新增累加超限；仍可能退出旧仓或调整对冲 |
+| `RESUME_WAIT` | 新场次依赖行情未齐，本帧提前返回 |
+| `hedge=NOT_DUE/EVALUATED/WAIT_WORKING_ORDERS` | 未到时点/已评估/有期货在途，不与entry混为一个维度 |
+| `NO_TARGET_CHANGE` | 本帧没有提交新目标，不代表没有持仓 |
+| `TARGET_SUBMITTED`、`target_submissions_total` | 已交完整目标及其次数，不是订单或成交数 |
+| `fills_received_total`、`order_updates_received_total` | 本会话收到的归属成交/订单状态回报数量，零值不否定恢复的旧仓 |
+| `此前缺失`后`指数分钟查询投影完成` | 同一个待查分钟先未查到、后已查到，不表示前一分钟必定缺失；是否入帧仍看接收期限 |
+| `HEALTH_ONLY_LATE` | 迟到新Bar只更新健康记录，不改已封闭帧、策略价格或历史决策 |
+
+### 输入和启动错误的定位顺序
+
+| 错误 | 检查对象 | 处理方式 |
+| --- | --- | --- |
+| `DolphinDB只读连接失败` | 实际Python、SDK、host/port/用户名/SSL、用途环境变量 | 尚未查询表；先核对连接，不能靠改字段映射解决 |
+| `清单未声明该数据集/版本` | 配置schema与dataset/schema-version | 保持请求和声明一致，例如close精简声明不是旧index.minute版本3 |
+| `manifest...校验失败` | 特征文件SHA256、Schema和时间规则 | 同步原始文件与manifest，保留LF/CRLF字节；不直接改摘要掩盖内容差异 |
+| `MISSING_OPTION_CHAIN` | 文件目录、命名、历史基础资料与日期覆盖 | matched_option_files是与条款匹配后的数量，不等于磁盘文件总数；看input_issues.json |
+| `MISSING_INDEX_FEATURE`或没有请求日期/代码记录 | 特征日期、键、版本、可见时间 | 文件中存在历史日期也不证明当时可用；按完整请求核对 |
+| `INVALID_OHLC` | 错误文件的open/high/low/close原值 | 高价须包围开/低/收、低价须包围开/高/收；核对导出与精度，不用补值掩盖 |
+| `option-slot...没有三腿同步行情` | 当日指定时点的期权、同月期货、指数 | 核对周期/标签/缺口；M5显式选择14:00等完成时点，不使用未来Bar |
+| `必需行情失效` | 持仓及其同月期货/指数的源时点、接收时点、健康阈值 | 区分缺帧、迟到和真实断流；不通过清空原仓或关闭校验绕过 |
+| 恢复身份、持仓或账户核验失败 | 原检查点、策略ID、条款、来源、真实归属与活动单 | 保留原文件，核对差异和权威回报，不手改JSON伪造恢复 |
+
+准备失败明细在`<report-dir>/input_failed_*/input_issues.json`；运行后看本次summary中的failure及cleanup字段。`status=passed`表示该执行模式的验收通过，Recording通过不等于取得真实SimNow成交。
+
+
+## 策略空仓后的维护
+
+期权与Hybrid共用公共CTP空仓维护流程。期权入口为`python -m demos.08_option_vega.reconcile_flat`，
+支持独立账户`--state-file`或共享账户`--config`及`--strategy-id`，并要求`--confirm-manual-flat`。
+普通对齐要求同日且本地订单已终结；后续交易日旧未决平仓单必须显式追加`--archive-unknown-close`。
+维护同时核验期权和期货对冲腿，保留选约日期、已处理对冲时点及其他策略/外部仓位，
+不调整配置、不补造成交。成功后单独按原Live命令恢复。
+完整流程、参数与备份说明见[公共CTP空仓维护](../../doc/functions/trader/CtpFlatMaintenance.md)。

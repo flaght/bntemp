@@ -156,10 +156,10 @@ class SharedFlatAlignmentTests(unittest.TestCase):
         self.assertEqual(saved.generation, self.original.generation+1)
         self.assertEqual(self.p_path.read_bytes(), self.p_bytes)
         self.assertEqual(self.signal_path.read_bytes(), self.rb_bytes)
-        backups=list(self.path.parent.glob('account.json.before-shared-flat-*.bak'))
+        backups=list(self.path.parent.glob('account.json.before-flat-alignment-*.bak'))
         self.assertEqual(len(backups),1)
         self.assertEqual(backups[0].read_bytes(),self.bytes)
-        audit=json.loads(next(self.path.parent.glob('account.json.shared-flat-*.json')).read_text())
+        audit=json.loads(next(self.path.parent.glob('account.json.flat-alignment-*.json')).read_text())
         self.assertEqual(audit['orders_submitted'],0)
         self.assertEqual(audit['old_order_terminal_status'],'UNKNOWN')
         self.assertEqual(audit['persisted_trading_day'],'20261013')
@@ -170,7 +170,7 @@ class SharedFlatAlignmentTests(unittest.TestCase):
         self.assertEqual(self.p_path.read_bytes(), self.p_bytes)
         self.assertEqual(self.signal_path.read_bytes(), self.rb_bytes)
         self.assertFalse(list(self.path.parent.glob('account.json.*.bak')))
-        self.assertFalse(list(self.path.parent.glob('account.json.shared-flat-*.json')))
+        self.assertFalse(list(self.path.parent.glob('account.json.flat-alignment-*.json')))
 
     def test_refuses_rb_nonzero_or_p_changed_or_managed_active_orders_without_writing(self):
         for gross, active in [({'rb2701.SHFE':(1,0),'p2701.DCE':(0,1)},()),
@@ -181,6 +181,20 @@ class SharedFlatAlignmentTests(unittest.TestCase):
                 self.broker.query_active_orders=lambda:NS(orders=active)
                 with self.assertRaises(RuntimeError): self.run_repair()
                 self.assert_unchanged()
+
+    def test_shared_manual_mode_keeps_terminal_order_and_supports_same_day(self):
+        f=self.fixture
+        f.transport.cancel_order(f.transport.sent[-1]['OrderRef'])
+        self.original=JsonStateStore(self.path).load()
+        self.broker.connect=lambda *_:NS(trading_day='20261013')
+        with patch('bomber.framework.trader.runtime.live.channels.ctp_shared.CtpSharedAccountLifecycle.acquire'),redirect_stdout(StringIO()):
+            saved=repair.reconcile(self.config,strategy_id='hybrid-rb',transport=self.broker,archive_unknown_close=False)
+        self.assertEqual(saved.payload['orders'],self.original.payload['orders'])
+        self.assertEqual({r['strategy_id']:r['quantity'] for r in saved.payload['positions']['strategy_positions']},
+            {'hybrid-rb':'0','hybrid-p':'-1'})
+        audit=json.loads(next(self.path.parent.glob('*.flat-alignment-*.json')).read_text())
+        self.assertEqual(audit['operation'],'manual_flat')
+        self.assertEqual(audit['archived_order_states'],[])
 
     def test_refuses_same_trading_day_or_failed_query_without_writing(self):
         self.broker.connect=lambda *_:NS(trading_day='20261013')
@@ -219,7 +233,7 @@ class SharedFlatAlignmentTests(unittest.TestCase):
         self.assertFalse(any(r['instrument_id']=='rb2701.SHFE'
             for r in saved.payload['ctp_ledgers']['account']['positions']))
         self.assertEqual(self.p_path.read_bytes(),self.p_bytes)
-        audit=json.loads(next(self.path.parent.glob('account.json.shared-flat-*.json')).read_text())
+        audit=json.loads(next(self.path.parent.glob('account.json.flat-alignment-*.json')).read_text())
         self.assertEqual(audit['preserved_external_gross'],{'rb2701.SHFE':['3','0']})
         self.assertEqual(audit['aligned_strategy_gross'],['0','0'])
 

@@ -49,6 +49,7 @@ Live公共化的完成状态、验证结果与剩余事项统一见[当前进度
 | [ExecutionPolicy](trader/ExecutionPolicy.md) | `bomber.framework.trader.execution.policy` | 声明账户对账与仓位来源组合，校验恢复一致性 | strict、observe、off、fills、model、snapshot_state |
 | [MarketSourceConfig](market/MarketSourceConfig.md) | `bomber.framework.market.sources` | 声明行情来源、分钟语义及来源身份 | file、CTP、DolphinDB、BN-WS、时效、identity |
 | [StrategyPositionSource](trader/StrategyPositionSource.md) | `bomber.framework.trader.execution.policy` | 枚举策略仓位的执行事实来源 | FILLS、MODEL、归属成交、参考价模拟、独立账本 |
+| [公共CTP空仓维护](trader/CtpFlatMaintenance.md) | `bomber.framework.trader.runtime.live.channels.ctp_maintenance` | 核验并对齐指定策略空仓基线，备份审计后提交 | 手工平仓、外部基线、旧未决平仓单、Hybrid、期权 |
 
 ## 目录约定
 

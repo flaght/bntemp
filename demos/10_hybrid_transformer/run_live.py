@@ -594,7 +594,8 @@ class HybridSessionLifecycle(CtpResumeLifecycle, CtpSessionLifecycle):
                 instruments.update(key.casefold() for key in managed_instruments(payload))
                 old_day = payload['component_states']['live_session']['identity']['trading_day']
                 original = payload['component_states']['hybrid']
-                payload = aligned_payload(payload, trading_day=old_day, target_config=current)
+                payload = aligned_payload(payload, trading_day=old_day)
+                payload = resize_flat_checkpoint(payload, current)
             else:
                 payload = resize_flat_checkpoint(payload, current)
             query_needed = resize or self.confirm_manual_flat

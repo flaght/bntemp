@@ -596,3 +596,12 @@ python -u -m demos.10_hybrid_transformer.recover_expired \
 不产生策略新单；开盘后重新检查参考、行情和账户，健康通过才授权并开放策略决策。
 盘前尚无新行情不会消耗开盘后的就绪超时。原启动命令不变，两种进程布局均适用；
 休盘前30秒开始正常撤单、保存和停机的规则仍保留。程序若在准备期内或开盘后才启动，立即准备。
+
+
+## 维护工具公共化
+
+`reconcile_manual_flat.py`和`reconcile_shared_flat.py`保留原命令入口，
+账户查询、执行账本、备份及提交改用公共CTP维护模块；`flat_state.py`只处理本策略批次与目标。
+独立维护命令不再默认将手数改成5/1，保留原配置；共享命令默认归档旧平仓单，
+追加`--manual-flat`可执行普通同日对齐。
+详见[公共CTP空仓维护](../../doc/functions/trader/CtpFlatMaintenance.md)。

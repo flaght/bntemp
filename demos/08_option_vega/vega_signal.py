@@ -62,6 +62,13 @@ class OptionVegaConfig:
 
     @property
     def vega_cash_per_unit(self):
+        """每日新增配仓的现金Vega尺度，口径为波动率sigma变化1.0。
+
+        nav=40,000,000、vega_budget=1.25时返回500,000；对应sigma变化
+        0.01的线性敏感度尺度为5,000。vega_budget不是本金的1.25倍或
+        保证金比例；此值用于allocate_short的手数归一化，不直接生成订单金额。
+        累计旧仓的Vega不会从这个B中扣除，累计手数另由策略外层限额检查。
+        """
         # 数值函数的敏感度按波动率变化1计算，预算对应规模基准乘预算参数再除以100。
         # 波动率变化一个百分点时的现金预算还需除以100，即规模基准乘参数除以10000。
         return float(self.nav) * self.vega_budget / 100
@@ -77,6 +84,17 @@ def add_strategy_config_argument(parser):
 def effective_parameters(args, config):
     return {**vars(config), **{name: getattr(args, name) for name in
         ("max_notional", "limit_offset_ticks") if hasattr(args, name)}}
+
+
+def risk_limits(config, contracts, instruments, multipliers, max_notional):
+    """将策略手数及金额配置转换为公共执行端的逐合约限额。"""
+    from bomber.framework.trader.execution.risk import RiskLimits
+    return {instrument: RiskLimits(
+        max_order_quantity=(config.max_option_lots if key in contracts else config.max_future_lots) * 2,
+        max_abs_position=config.max_option_lots if key in contracts else config.max_future_lots,
+        max_order_notional=max_notional, max_abs_position_notional=max_notional,
+        max_market_age_ns=config.max_market_age_seconds * 1_000_000_000,
+        contract_multiplier=multipliers[instrument]) for key, instrument in instruments.items()}
 
 
 def tau(now: datetime, last_day: date) -> float:
@@ -154,7 +172,16 @@ def implied_greeks(forward, strike, years, rate, premium):
 
 
 def source_iv(forward, strike, years, rate, premium):
-    """原strategy1.py的Black76二分反解（边界、区间和64次迭代保持一致）。"""
+    """用市场认购价格C反解Black76隐含波动率sigma，保持源代码计算口径。
+
+    F=同月期货价，K=执行价，T=source_years，r=年化利率：
+        C(sigma)=exp(-r*T)*(F*N(d1)-K*N(d2))
+        d1=(ln(F/K)+sigma**2*T/2)/(sigma*sqrt(T)), d2=d1-sigma*sqrt(T)
+    N是标准正态累计分布；理论价格随sigma增加而增加，适合二分查找。
+    非有限值、非正F/K/T/C、C低于折现内在价值或达到折现F上界时返回None。
+    搜索区间[0.0001, 5.0]，执行64轮；保留源代码行为，不额外做区间端点
+    可达性或最终重定价误差检查，故返回数值不代表所有输入都能精确重定价。
+    """
     if not all(isfinite(v) for v in (forward, strike, years, rate, premium)) or min(forward, strike, years, premium) <= 0:
         return None
     discount = exp(-rate*years)
@@ -171,7 +198,14 @@ def source_iv(forward, strike, years, rate, premium):
 
 
 def source_years(now, remaining_days, *, hedge=False):
-    """strategy1.py：开仓仅交易日/252；对冲另加当日剩余交易分钟。"""
+    """源代码的交易年期限：N不含当日、包含最后交易日。
+
+    开仓T=N/252；对冲T=N/252 + R/(240*252)，R为当日剩余交易分钟。
+    R按09:30–11:30、13:00–15:00及全天240分钟计算：09:30为240，
+    午休为120，14:00为60，15:00及以后为0。这里只按分钟数，不计秒。
+    这只是保留的源定价公式，不是常驻进程的开收盘规则；MO的14:57等
+    运行边界仍由外部交易日历负责，不能用这个公式决定连接何时结束。
+    """
     minute = now.hour * 60 + now.minute
     remaining = (240 if minute < 570 else 240-(minute-570) if minute < 690 else
                  120 if minute < 780 else 120-(minute-780) if minute < 900 else 0)
@@ -179,7 +213,18 @@ def source_years(now, remaining_days, *, hedge=False):
 
 
 def source_greeks(forward, strike, years, rate, iv, discount_years):
-    """strategy1.py的未折现Delta/Gamma及按自然日折现的Vega。"""
+    """按源口径返回认购Greeks，期权乘数在配仓和敞口汇总时另乘。
+
+    T为交易年期限、sigma为IV、Tc为到最后交易日的自然日差/365：
+        d1=(ln(F/K)+sigma**2*T/2)/(sigma*sqrt(T))
+        Delta=N(d1)
+        Gamma=phi(d1)/(F*sigma*sqrt(T))
+        Vega=phi(d1)*F*sqrt(T)*exp(-r*Tc)
+    phi是标准正态密度。Vega对sigma变化1.0计量，按1个百分点需再乘0.01。
+    Delta/Gamma没有折现项，Vega用Tc折现；这与所有Greeks都用同一个T和
+    同一折现因子的定义不同，当前策略沿用源代码，不能混接另一组Greeks。
+    返回的是多头认购敏感度，卖出后的方向由负的实际手数/增量体现。
+    """
     if min(forward, strike, years, iv) <= 0:
         return None
     root = sqrt(years)
@@ -190,9 +235,27 @@ def source_greeks(forward, strike, years, rate, iv, discount_years):
 
 
 def allocate_short(candidates, delta_targets, cash_vega_budget, max_lots, max_total):
-    """候选元组(symbol, Greeks, multiplier)；同一合约可对应多个Delta档。
+    """将每日现金Vega预算B分配到各Delta档，返回symbol→负的新增手数。
 
-    按源代码先合并重复合约，再四舍五入到整手；外层限额仍保留。
+    输入每项为(symbol, Greeks, multiplier)。依次对每个目标Delta取距离
+    最小候选，距离相同时沿用输入中先出现的候选，不保证各档选不同合约。
+
+    对选中档j：m_j为期权乘数，Gamma_j/Vega_j为多头认购敏感度：
+        w_j=1/(Gamma_j*m_j)
+        D=sum(w_j*Vega_j*m_j)
+        a_j=B*w_j/D
+    各档分担同一个B；未取整/截限时sum(a_j*Vega_j*m_j)=B。
+    这种权重让各档的a_j*Gamma_j*m_j相等，不等于每档手数或Vega相等。
+    同一symbol命中多个档时先累加a_j，故不会因为重复档而多用一份预算。
+
+    执行顺序不能互换：按symbol合并→Python round到整手→单合约max_lots
+    截限→总手数超max_total时按比例缩放并int向下取整→丢弃0手→取负数。
+    round为半偶舍入，如round(2.5)=2；缩放后不足总额度的余数不会再分配。
+    例如原始手数2.4/1.6先变2/2，若总上限3则分别int(2*3/4)=1，
+    最终只卖1/1手，总数2而不是补齐到3。返回空字典时没有新增目标。
+
+    本函数只控制当天增量手数，不扣除旧仓，也不检查增量叠加后的累计手数、
+    实际资金或委托状态；这些检查分别由策略_frame及公共执行风控完成。
     """
     if not candidates:
         return {}

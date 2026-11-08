@@ -119,7 +119,7 @@ PYTHONPATH=.:/workspace/worker/pj/KiChaos IMPLUSE_VERSION=all \
 查询失败或仓位不符时原文件不变。
 
 只改配置中`account_state_file`指向的账户文件（示例为`results/live/state/account_rb_p.json`）。
-同目录先生成`.before-shared-flat-*.bak`完整备份和`.shared-flat-*.json`审计。
+同目录先生成`.before-flat-alignment-*.bak`完整备份和`.flat-alignment-*.json`审计。
 旧委托及其冻结计划从活动恢复集合归档，真实终态标注为`UNKNOWN`，不补造成交、撤单、价格或盈亏。
 原终结订单、成交事件、去重记录及报单计数保留；历史盈亏可能缺失，审计注明未重建。
 
@@ -127,6 +127,10 @@ RB的旧信号文件不直接修改：账户留存更高版本的空仓业务副
 不会再次恢复旧RB批次。P信号文件及其仓位保持不变。对齐仍保存原交易日，后续正常启动
 继续通过既有跨日查询、今昨仓结转及一致性核验。看到“空仓基线对齐完成”后，单独运行原
 `run_shared`启动命令；不要在常驻启动流程中反复调用此维护入口。
+
+普通同日空仓对齐可在上述命令追加`--manual-flat`，此时要求旧订单均已终结；
+原默认命令仍使用后续交易日的显式归档模式。两种流程及期权适配见
+[公共CTP空仓维护](../functions/trader/CtpFlatMaintenance.md)。
 
 ## 报告
 

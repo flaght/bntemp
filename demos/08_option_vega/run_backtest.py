@@ -156,7 +156,9 @@ def run_case(args):
         NautilusMarketFeedAdapter, NautilusSimExecutionBackend,
         UnifiedHistoricalRuntime)
     from bomber.framework.trader.instrument_factory import day_ns, instrument_meta, make_future, make_option
-    assemble_strategy_components = import_module("demos.08_option_vega.strategy").assemble_strategy_components
+    from bomber.framework.trader.assembly import StrategyBindings, assemble_strategy
+    from bomber.framework.trader.contracts import DataBinding, ExecutionRoute
+    OptionVegaStrategy = import_module("demos.08_option_vega.strategy").OptionVegaStrategy
 
     started = perf_counter()
     phase = _start_phase("输入路径解析与配置校验")
@@ -338,7 +340,7 @@ def run_case(args):
         _finish_phase("已准备行情注册到回放源", phase)
         phase = _start_phase("策略、执行路由与风控装配")
         from bomber.framework.trader.execution.builders import build_simulation_execution
-        risk_limits = import_module("demos.08_option_vega.strategy").risk_limits
+        risk_limits = _signal.risk_limits
         execution = build_simulation_execution(backend, instrument_limits=risk_limits(
             config, contracts, instruments, multipliers, args.max_notional))
         positions, prices, client = execution.positions, execution.prices, execution.client
@@ -348,13 +350,13 @@ def run_case(args):
             index_key=args.index_code, wait_seconds=args.frame_wait_seconds,
             max_market_age_seconds=args.max_market_age_seconds,
             index_value_field=getattr(args, "index_value_field", None))
-        strategy = assemble_strategy_components(runner, execution, config=config,
-            contracts=contracts, futures=future_rows, instruments=instruments,
-            index_key=args.index_code, index_id=index_id, trading_days=calendar,
-            options_by_day=options_by_day, feeds={"option-bars": feed},
-            feed_by_key={key: "option-bars" for key in all_ids}, final_day=days[-1],
-            strategy_id="option-vega", option_last_trade_times=last_trade_times,
-            bar_specs_by_key=bar_specs_by_key)
+        strategy = OptionVegaStrategy("option-vega", config, contracts, future_rows, instruments,
+            args.index_code, calendar, days[-1], options_by_day, option_last_trade_times=last_trade_times)
+        assemble_strategy(runner, strategy, feeds={"option-bars": feed}, execution=execution,
+            bindings=StrategyBindings(
+                data=tuple(DataBinding(key, "option-bars", item, DataType.BAR, bar_specs_by_key[key])
+                    for key, item in all_ids.items()),
+                execution=tuple(ExecutionRoute(str(item), client.client_id, item) for item in instruments.values())))
         runner.strategy = strategy
         adapter = NautilusMarketFeedAdapter("option-vega-clock", feed, backend,
             tuple(MarketStreamBinding(item, DataType.BAR, bar_specs_by_key[key])
