@@ -145,7 +145,7 @@ class SizingRestoreTests(unittest.TestCase):
         self.restore()
         self.assertEqual(self.f.path.read_bytes(),self.before)
         self.assertFalse(self.session.strategy.holdings.active)
-        self.assertEqual(self.session.strategy.last_targets,{})
+        self.assertEqual(self.session.strategy.last_targets,{'rb2701':0})
         self.assertEqual(self.session.ledger.snapshot(self.session.references.instrument_id).short_total,0)
         self.assertEqual(self.session.manual_flat_sync['previous_targets'],{'rb2701':'-6'})
         self.assertEqual(self.session.manual_flat_sync['previous_batches'],3)
@@ -173,7 +173,7 @@ class SizingRestoreTests(unittest.TestCase):
         with redirect_stdout(StringIO()):
             self.lifecycle.restore_session(self.session,NS(trading_day='20261029'))
         self.assertFalse(self.session.strategy.holdings.active)
-        self.assertEqual(self.session.strategy.last_targets,{})
+        self.assertEqual(self.session.strategy.last_targets,{'rb2701':0})
         self.assertEqual(self.session.ledger.state().trading_day,'20261029')
         self.assertEqual(self.session.manual_flat_sync['previous_trading_day'],'20261028')
         self.assertEqual(self.session.manual_flat_sync['observed_trading_day'],'20261029')

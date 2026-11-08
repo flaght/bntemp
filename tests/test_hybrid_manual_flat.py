@@ -3,6 +3,7 @@ from contextlib import redirect_stdout
 from copy import deepcopy
 from importlib import import_module
 from io import StringIO
+from decimal import Decimal
 from types import SimpleNamespace as NS
 from unittest.mock import Mock, patch
 import json
@@ -51,19 +52,19 @@ class ManualFlatTests(unittest.TestCase):
         self.assertEqual(payload['positions']['attribution']['orders'],self.saved.payload['positions']['attribution']['orders'])
         self.assertEqual(orders_for_day(payload,'20261028'),1)
         self.assertEqual(updated.generation,self.saved.generation+1)
-        current,_,_=self.f.session(mode='simnow',policy='off')
+        current=self.fixture.assemble('simnow')
         current.manager.restore()
-        self.assertEqual(current.strategy.config.max_contracts,5)
-        self.assertEqual(current.strategy.config.max_entry_contracts,1)
-        self.assertEqual(current.strategy._revision,0)
+        self.assertEqual(current.strategy.config.max_contracts,10)
+        self.assertEqual(current.strategy.config.max_entry_contracts,None)
+        self.assertEqual(current.strategy._revision,1)
         self.assertFalse(current.strategy.holdings.active)
-        self.assertEqual(current.strategy.last_targets,{})
+        self.assertEqual(current.strategy.last_targets,{'rb2701':Decimal(0)})
         self.assertEqual(current.runner.position_manager.position(self.client,'rb_main'),0)
         self.assertEqual(current.ledger.snapshot(current.references.instrument_id).short_total,0)
         self.assertEqual(len(current.client.order_state_machine.checkpoints()),1)
         current.manager.state_components['hybrid'].validate_targets(current.runner.target_store)
-        backups=list(self.f.root.glob('*.before-manual-flat-*.bak'))
-        audits=list(self.f.root.glob('*.manual-flat-*.json'))
+        backups=list(self.f.root.glob('*.before-flat-alignment-*.bak'))
+        audits=list(self.f.root.glob('*.flat-alignment-*.json'))
         self.assertEqual(len(backups),1)
         self.assertEqual(backups[0].read_bytes(),self.before)
         audit=json.loads(audits[0].read_text())
@@ -110,9 +111,9 @@ class ManualFlatTests(unittest.TestCase):
             apis[0].request_names.append('activate')
         with patch.object(transport,'activate',side_effect=activate_and_mark),redirect_stdout(StringIO()):
             updated=maintenance.reconcile(state_file=self.f.path,transport=transport)
-        self.assertEqual(apis[0].request_names,['create','auth','login','settlement','activate','positions','orders'])
+        self.assertEqual(apis[0].request_names,['create','auth','login','settlement','activate','positions','orders','positions','orders'])
         self.assertTrue(apis[0].exited)
-        self.assertEqual(updated.payload['component_states']['hybrid']['config']['max_contracts'],5)
+        self.assertEqual(updated.payload['component_states']['hybrid']['config']['max_contracts'],10)
         self.assertFalse(transport._ready)
 
     def test_activation_failure_keeps_original_state_and_still_releases_connection(self):
@@ -122,18 +123,18 @@ class ManualFlatTests(unittest.TestCase):
         self.assertEqual(self.f.path.read_bytes(),self.before)
         self.transport.query_gross_positions.assert_not_called()
         self.transport.close.assert_called_once()
-        self.assertFalse(list(self.f.root.glob('*.before-manual-flat-*')))
+        self.assertFalse(list(self.f.root.glob('*.before-flat-alignment-*')))
 
     def test_nonzero_gross_even_when_net_is_zero_blocks_all_writes(self):
         self.transport.query_gross_positions.return_value={'rb2701.SHFE':(6,6)}
-        with self.assertRaisesRegex(RuntimeError,'RB合约柜台仍有多空总仓'):
+        with self.assertRaisesRegex(RuntimeError,'柜台多空总仓'):
             self.run_reconcile()
         self.assertEqual(self.f.path.read_bytes(),self.before)
-        self.assertFalse(list(self.f.root.glob('*.before-manual-flat-*')))
+        self.assertFalse(list(self.f.root.glob('*.before-flat-alignment-*')))
 
     def test_active_orders_block_writes_even_when_broker_is_flat(self):
         self.transport.query_active_orders.return_value=NS(orders=(NS(instrument_id='rb2701.SHFE'),))
-        with self.assertRaisesRegex(RuntimeError,'RB合约柜台仍有活动订单'):
+        with self.assertRaisesRegex(RuntimeError,'管理合约柜台仍有活动订单'):
             self.run_reconcile()
         self.assertEqual(self.f.path.read_bytes(),self.before)
 
@@ -143,9 +144,9 @@ class ManualFlatTests(unittest.TestCase):
         self.transport.query_gross_positions.return_value = external.copy()
         self.transport.query_active_orders.return_value = NS(orders=(NS(instrument_id='IF2611.CFFEX'),))
         updated = self.run_reconcile()
-        self.assertEqual(updated.payload['component_states']['hybrid']['last_targets'], {})
+        self.assertEqual(updated.payload['component_states']['hybrid']['last_targets'], {'rb2701':'0'})
         self.assertEqual(updated.payload['orders'], self.saved.payload['orders'])
-        audit = json.loads(next(self.f.root.glob('*.manual-flat-*.json')).read_text())
+        audit = json.loads(next(self.f.root.glob('*.flat-alignment-*.json')).read_text())
         self.assertEqual(audit['managed_instruments'], ['rb2701.SHFE'])
         self.assertEqual(audit['external_gross'], {key: [str(q) for q in value] for key, value in external.items()})
         self.assertEqual(audit['external_active_orders'], 1)
@@ -155,7 +156,7 @@ class ManualFlatTests(unittest.TestCase):
 
     def test_scope_is_exact_contract_and_broker_symbol_case_does_not_bypass_check(self):
         self.transport.query_gross_positions.return_value = {'rb2705.SHFE': (0, 2), 'RB2701.SHFE': (0, 1)}
-        with self.assertRaisesRegex(RuntimeError, 'RB2701.SHFE'):
+        with self.assertRaisesRegex(RuntimeError, 'rb2701.SHFE'):
             self.run_reconcile()
         self.assertEqual(self.f.path.read_bytes(), self.before)
         self.transport.query_gross_positions.return_value = {'rb2705.SHFE': (0, 2)}
@@ -169,7 +170,11 @@ class ManualFlatTests(unittest.TestCase):
             maintenance.aligned_payload(invalid, trading_day='20261028')
         empty = maintenance.aligned_payload(self.saved.payload, trading_day='20261028')
         empty['orders'][self.client] = []
-        with self.assertRaisesRegex(ValueError, '缺少具体RB合约'):
+        empty['component_states']['hybrid'].update(last_targets={},last_main=None)
+        empty['portfolio']['known_keys']=[]
+        for key in ('account_positions','working_quantities'): empty['positions'][key]=[]
+        empty['positions']['attribution']['owned']=[]
+        with self.assertRaisesRegex(ValueError, '缺少具体合约'):
             maintenance.managed_instruments(empty)
         self.assertEqual(self.f.path.read_bytes(), self.before)
 
@@ -191,6 +196,13 @@ class ManualFlatTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'未结束订单'):
             self.run_reconcile()
         self.assertEqual(self.f.path.read_bytes(),before)
+
+    def test_broker_changes_between_two_observations_does_not_commit(self):
+        self.transport.query_gross_positions.side_effect=[{}, {'rb2701.SHFE':(1,0)}]
+        with self.assertRaisesRegex(RuntimeError,'柜台多空总仓'):
+            self.run_reconcile()
+        self.assertEqual(self.f.path.read_bytes(),self.before)
+        self.assertFalse(list(self.f.root.glob('*.before-flat-alignment-*.bak')))
 
     def test_repeated_alignment_is_idempotent_and_does_not_reset_daily_order_count(self):
         first=self.run_reconcile()

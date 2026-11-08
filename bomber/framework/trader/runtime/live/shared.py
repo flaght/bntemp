@@ -66,8 +66,14 @@ class SharedStrategySession:
             if callable(restore):
                 if "signal" not in state:
                     raise ValueError("共享策略检查点缺少业务状态")
-                restore(state["signal"])
-                self.saved_signal = state["signal"]
+                signal = state["signal"]
+                alignment = source.get("metadata", {}).get("checkpoint_alignment") if source else None
+                if alignment is not None and state["revision"] < account_revision:
+                    if alignment.get("revision") != account_revision or "signal" not in alignment:
+                        raise ValueError("维护业务副本与账户目标版本不一致")
+                    signal = alignment["signal"]
+                restore(signal)
+                self.saved_signal = signal
             if state["identity"] != self.identity:
                 self.saved_revision = None
         self.session.strategy.restore_target_revision(account_revision)

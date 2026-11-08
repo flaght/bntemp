@@ -527,26 +527,6 @@ class MultiPeriodBacktestTests(unittest.TestCase):
             (5, "14:00", "next_market"))
         self.assertEqual(args.options_bar_timestamp, "start")
 
-    def test_strategy_subscriptions_use_each_real_bar_period(self):
-        from tests.test_demo_option_vega import StrategyTests
-        fixture = StrategyTests()
-        fixture.setUp()
-        module = import_module("demos.08_option_vega.strategy")
-        keys = (*fixture.ids, "000852")
-        args = dict(config=fixture.strategy.config, contracts={fixture.info.symbol: fixture.info},
-            futures=fixture.strategy.futures, instruments=fixture.ids, index_key="000852",
-            index_id="000852.XSHG", trading_days=fixture.days, options_by_day={},
-            feeds={"fixture": NS()}, feed_by_key={key: "fixture" for key in keys})
-        periods = {key: "5-MINUTE" if key == fixture.info.symbol else "1-MINUTE" for key in keys}
-        with patch("bomber.framework.trader.assembly.assemble_strategy") as assemble:
-            module.assemble_strategy_components(NS(), NS(client=NS(client_id="fixture")),
-                **args, bar_specs_by_key=periods)
-        bindings = assemble.call_args.kwargs["bindings"].data
-        self.assertEqual({row.data_key: row.bar_spec for row in bindings}, periods)
-        with self.assertRaisesRegex(ValueError, "行情周期须覆盖"):
-            module.assemble_strategy_components(NS(), NS(), **args,
-                bar_specs_by_key={fixture.info.symbol: "5-MINUTE"})
-
     def test_m5_entry_then_m1_hedge_preserves_option_timestamp_and_never_reads_future_m5(self):
         from tests.test_demo_option_vega import StrategyTests, ns
         from bomber.framework.market.frames import FrameObservation, MinuteFrame

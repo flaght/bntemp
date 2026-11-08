@@ -113,7 +113,16 @@ class VegaNativeSettlementTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             module, args = self.fixture(Path(directory), Decimal(0),
                 option_bar_minutes=5, execution_timing="next_market")
-            output = module.run_case(args)
+            from bomber.framework.trader.assembly import assemble_strategy
+            with patch("bomber.framework.trader.assembly.assemble_strategy", wraps=assemble_strategy) as assemble:
+                output = module.run_case(args)
+            assemble.assert_called_once()
+            bindings = assemble.call_args.kwargs["bindings"]
+            self.assertEqual({binding.data_key: binding.bar_spec for binding in bindings.data}, {
+                "MO2609-C-7000": "5-MINUTE", "MO2610-C-7000": "5-MINUTE",
+                "IM2609": "1-MINUTE", "IM2610": "1-MINUTE", "000852": "1-MINUTE"})
+            self.assertEqual({route.target_key for route in bindings.execution}, {
+                "MO2609-C-7000.CFFEX", "MO2610-C-7000.CFFEX", "IM2609.CFFEX", "IM2610.CFFEX"})
             summary = json.loads((output / "summary.json").read_text())
             self.assertEqual(summary["bar_specs"]["option"]["bar_spec"], "5-MINUTE")
             self.assertEqual(summary["bar_specs"]["future"]["bar_spec"], "1-MINUTE")

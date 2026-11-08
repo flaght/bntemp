@@ -140,7 +140,8 @@ class AssemblyTests(unittest.TestCase):
                 session.runner.poll_features()
         self.assertIn("指数DFS查询或投影失败", logs.output[0])
 
-    def build(self, *, resume=False, mode="model", config=None, dfs_index=False, test_clock=False):
+    def build(self, *, resume=False, mode="model", config=None, dfs_index=False, test_clock=False,
+              source_mapping=None):
         service = ReferenceService()
         calendar = tuple(date(2026, 8, 13) + timedelta(days=n) for n in range(50)
             if (date(2026, 8, 13) + timedelta(days=n)).weekday() < 5)
@@ -179,6 +180,8 @@ class AssemblyTests(unittest.TestCase):
             index_id=index_id, sources={**{key: "market" for key in refs.instrument_ids}, "000852": "index"},
             ctp_upstream=None, ctp_bar_feed=market if test_clock else None, dolphin_feeds=[], feature_query_feeds=(query_index,) if query_index else (),
             source_identity={"fixture": "memory"})
+        if source_mapping is not None:
+            inputs.sources = source_mapping
         session = runtime.assemble(args, inputs)
         session.runner.clock_ns = lambda: self.now
         if query_index:
@@ -347,6 +350,25 @@ class AssemblyTests(unittest.TestCase):
 
     def start(self, session, lifecycle):
         lifecycle.start(session, LiveRunContext("20261009", ExitStack(), session.references))
+
+    def test_live_assembly_registers_m1_sources_and_tradable_routes_without_index_execution(self):
+        session, _ = self.build(mode="recording")
+        registration = session.runner._registrations[session.strategy.strategy_id]
+        self.assertEqual({binding.data_key: (binding.feed_id, binding.bar_spec)
+            for binding in registration.data_bindings}, {
+                "MO2609-C-6600": ("market", "1-MINUTE"),
+                "IM2609": ("market", "1-MINUTE"), "000852": ("index", "1-MINUTE")})
+        self.assertEqual({route.target_key: (route.client_id, route.instrument_id)
+            for route in registration.execution_routes.values()}, {
+                str(item): (session.client.client_id, item)
+                for item in session.references.instrument_ids.values()})
+        self.assertIs(registration.strategy, session.strategy)
+
+    def test_live_assembly_rejects_missing_or_extra_market_source_before_registration(self):
+        for sources in ({"MO2609-C-6600": "market", "IM2609": "market"},
+                {"MO2609-C-6600": "market", "IM2609": "market", "000852": "index", "other": "market"}):
+            with self.subTest(sources=sources), self.assertRaisesRegex(ValueError, "行情绑定须覆盖"):
+                self.build(mode="recording", source_mapping=sources)
 
     def test_model_owns_option_fills_then_hedges_actual_position(self):
         s, lifecycle = self.build()
