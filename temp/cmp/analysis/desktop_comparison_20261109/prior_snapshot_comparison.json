@@ -1,0 +1,20 @@
+[
+  {
+    "group": "CTA新版",
+    "files": 13,
+    "identical": 13,
+    "not_identical": []
+  },
+  {
+    "group": "CTA老版",
+    "files": 12,
+    "identical": 12,
+    "not_identical": []
+  },
+  {
+    "group": "期权老版",
+    "files": 12,
+    "identical": 12,
+    "not_identical": []
+  }
+]

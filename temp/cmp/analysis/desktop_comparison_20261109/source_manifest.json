@@ -1,0 +1,711 @@
+[
+  {
+    "path": "/Users/kerry/Desktop/cmp/kd/cta/88aa2527-c47d-4bca-994d-cb3e0e299740/account.csv",
+    "relative_path": "kd/cta/88aa2527-c47d-4bca-994d-cb3e0e299740/account.csv",
+    "bytes": 419146,
+    "sha256": "a53e33b41ed70a4d8d067056952d3006fd84877cbce0d84025ce9e40b8df3128",
+    "rows": 977,
+    "columns": [
+      "",
+      "total",
+      "locked",
+      "free",
+      "currency",
+      "account_id",
+      "account_type",
+      "base_currency",
+      "margins",
+      "reported",
+      "info"
+    ]
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/kd/cta/88aa2527-c47d-4bca-994d-cb3e0e299740/commission_config.json",
+    "relative_path": "kd/cta/88aa2527-c47d-4bca-994d-cb3e0e299740/commission_config.json",
+    "bytes": 264,
+    "sha256": "67033e494552693cfb96387df84bdc184decd8fdc7d5022b4c8d1fb882cf1130"
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/kd/cta/88aa2527-c47d-4bca-994d-cb3e0e299740/commissions.csv",
+    "relative_path": "kd/cta/88aa2527-c47d-4bca-994d-cb3e0e299740/commissions.csv",
+    "bytes": 59694,
+    "sha256": "1e4214853cb74b1b38e1ff19e700a10f2f8897eb3025cfc3b511ce762d705830",
+    "rows": 488,
+    "columns": [
+      "instrument_id",
+      "client_order_id",
+      "quantity",
+      "fill_price",
+      "contract_multiplier",
+      "source",
+      "source_value",
+      "source_unit",
+      "per_contract",
+      "rate",
+      "standard_commission",
+      "commission_multiplier",
+      "actual_commission"
+    ]
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/kd/cta/88aa2527-c47d-4bca-994d-cb3e0e299740/fills.csv",
+    "relative_path": "kd/cta/88aa2527-c47d-4bca-994d-cb3e0e299740/fills.csv",
+    "bytes": 150152,
+    "sha256": "7c2dc5c728aec5107192fb2ac3400c277b64fa03f034b37e60db942dcb5431cc",
+    "rows": 488,
+    "columns": [
+      "client_order_id",
+      "trader_id",
+      "strategy_id",
+      "instrument_id",
+      "venue_order_id",
+      "account_id",
+      "trade_id",
+      "position_id",
+      "order_side",
+      "order_type",
+      "last_qty",
+      "last_px",
+      "currency",
+      "commission",
+      "liquidity_side",
+      "event_id",
+      "ts_event",
+      "ts_init",
+      "info",
+      "reconciliation"
+    ]
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/kd/cta/88aa2527-c47d-4bca-994d-cb3e0e299740/fills_output.csv",
+    "relative_path": "kd/cta/88aa2527-c47d-4bca-994d-cb3e0e299740/fills_output.csv",
+    "bytes": 40606,
+    "sha256": "d5629fe77e05a904b216e980c74be2430db255b50fd17793f9cc5c191cd51815",
+    "rows": 488,
+    "columns": [
+      "timestamp",
+      "instrument_id",
+      "order_id",
+      "side",
+      "qty",
+      "price",
+      "commission"
+    ]
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/kd/cta/88aa2527-c47d-4bca-994d-cb3e0e299740/input_coverage.json",
+    "relative_path": "kd/cta/88aa2527-c47d-4bca-994d-cb3e0e299740/input_coverage.json",
+    "bytes": 977078,
+    "sha256": "26cf7addbd1681a8f706bf23e23bf279518daf725373ba2f8de4aed8c0c00e15"
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/kd/cta/88aa2527-c47d-4bca-994d-cb3e0e299740/input_issues.json",
+    "relative_path": "kd/cta/88aa2527-c47d-4bca-994d-cb3e0e299740/input_issues.json",
+    "bytes": 3,
+    "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/kd/cta/88aa2527-c47d-4bca-994d-cb3e0e299740/input_manifest.json",
+    "relative_path": "kd/cta/88aa2527-c47d-4bca-994d-cb3e0e299740/input_manifest.json",
+    "bytes": 164777,
+    "sha256": "c1fa90a0ddeb6e0402abc2478036d30cf48756aa1593eb0a69fd9b7cf4f04655"
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/kd/cta/88aa2527-c47d-4bca-994d-cb3e0e299740/orders.csv",
+    "relative_path": "kd/cta/88aa2527-c47d-4bca-994d-cb3e0e299740/orders.csv",
+    "bytes": 170100,
+    "sha256": "a9ce581542b2a07fc0f75eb4046efa923137e5c4b4470126852864521bd0af36",
+    "rows": 488,
+    "columns": [
+      "client_order_id",
+      "trader_id",
+      "strategy_id",
+      "instrument_id",
+      "venue_order_id",
+      "position_id",
+      "account_id",
+      "last_trade_id",
+      "type",
+      "side",
+      "quantity",
+      "time_in_force",
+      "is_reduce_only",
+      "is_quote_quantity",
+      "filled_qty",
+      "liquidity_side",
+      "avg_px",
+      "slippage",
+      "commissions",
+      "emulation_trigger",
+      "status",
+      "contingency_type",
+      "order_list_id",
+      "linked_order_ids",
+      "parent_order_id",
+      "exec_algorithm_id",
+      "exec_algorithm_params",
+      "exec_spawn_id",
+      "tags",
+      "init_id",
+      "ts_init",
+      "ts_last"
+    ]
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/kd/cta/88aa2527-c47d-4bca-994d-cb3e0e299740/positions.csv",
+    "relative_path": "kd/cta/88aa2527-c47d-4bca-994d-cb3e0e299740/positions.csv",
+    "bytes": 82194,
+    "sha256": "4bca312201b4a4b70995ad551e5cd19c37fc9c1476fda914df83a23356c5df66",
+    "rows": 219,
+    "columns": [
+      "position_id",
+      "trader_id",
+      "strategy_id",
+      "instrument_id",
+      "account_id",
+      "opening_order_id",
+      "closing_order_id",
+      "entry",
+      "side",
+      "quantity",
+      "peak_qty",
+      "ts_init",
+      "ts_opened",
+      "ts_last",
+      "ts_closed",
+      "duration_ns",
+      "avg_px_open",
+      "avg_px_close",
+      "commissions",
+      "realized_return",
+      "realized_pnl",
+      "is_snapshot"
+    ]
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/kd/cta/88aa2527-c47d-4bca-994d-cb3e0e299740/signals.csv",
+    "relative_path": "kd/cta/88aa2527-c47d-4bca-994d-cb3e0e299740/signals.csv",
+    "bytes": 17797,
+    "sha256": "e2ecf6a3426ae3b7a6d4c387bed49bc2198589452eb96ebca193010c0a1daf91",
+    "rows": 440,
+    "columns": [
+      "ts_event",
+      "trading_day",
+      "instrument_id",
+      "target_qty"
+    ]
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/kd/cta/88aa2527-c47d-4bca-994d-cb3e0e299740/summary.json",
+    "relative_path": "kd/cta/88aa2527-c47d-4bca-994d-cb3e0e299740/summary.json",
+    "bytes": 5714,
+    "sha256": "35459afa708f384597726f0878e0e8050547c6f23071d38e2ce84d919899869b"
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/kd/cta/88aa2527-c47d-4bca-994d-cb3e0e299740/tearsheet.html",
+    "relative_path": "kd/cta/88aa2527-c47d-4bca-994d-cb3e0e299740/tearsheet.html",
+    "bytes": 4883335,
+    "sha256": "8802e18145cd8a0b54624fc6b6b24ab8301993cf505bc28129a4024bfb56bcf5"
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/kd/fills_output.csv",
+    "relative_path": "kd/fills_output.csv",
+    "bytes": 40233,
+    "sha256": "f39dd50e99e2c0263342654e1be808889e6228da245c323903d02528244983f1",
+    "rows": 488,
+    "columns": [
+      "timestamp",
+      "instrument_id",
+      "order_id",
+      "side",
+      "qty",
+      "price",
+      "commission"
+    ]
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/kd/opt/e36c2e9f-a954-4228-a0b1-799110a23da7/account.csv",
+    "relative_path": "kd/opt/e36c2e9f-a954-4228-a0b1-799110a23da7/account.csv",
+    "bytes": 3527018,
+    "sha256": "79dfd5e44749caeae15c083ec2c48c21c3a5262ac220a97563c305c40450927a",
+    "rows": 1926,
+    "columns": [
+      "",
+      "total",
+      "locked",
+      "free",
+      "currency",
+      "account_id",
+      "account_type",
+      "base_currency",
+      "margins",
+      "reported",
+      "info"
+    ]
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/kd/opt/e36c2e9f-a954-4228-a0b1-799110a23da7/commission_config.json",
+    "relative_path": "kd/opt/e36c2e9f-a954-4228-a0b1-799110a23da7/commission_config.json",
+    "bytes": 388,
+    "sha256": "4160dd74b1e017a875d41208441b6c6c69d64ac592b1520763ce4e1290a318d9"
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/kd/opt/e36c2e9f-a954-4228-a0b1-799110a23da7/commissions.csv",
+    "relative_path": "kd/opt/e36c2e9f-a954-4228-a0b1-799110a23da7/commissions.csv",
+    "bytes": 108265,
+    "sha256": "3c2a08b9bc857e0fa9d8cac0831360ddb2f1a822d72dd3cfb65b1f58a67456a9",
+    "rows": 905,
+    "columns": [
+      "instrument_id",
+      "client_order_id",
+      "quantity",
+      "fill_price",
+      "contract_multiplier",
+      "source",
+      "source_value",
+      "source_unit",
+      "per_contract",
+      "rate",
+      "standard_commission",
+      "commission_multiplier",
+      "actual_commission"
+    ]
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/kd/opt/e36c2e9f-a954-4228-a0b1-799110a23da7/fills.csv",
+    "relative_path": "kd/opt/e36c2e9f-a954-4228-a0b1-799110a23da7/fills.csv",
+    "bytes": 306116,
+    "sha256": "51132fca324fb8cd0963e90c6e45a65f2e5a4ac9fee56c2a80e4a94b6593957c",
+    "rows": 961,
+    "columns": [
+      "client_order_id",
+      "trader_id",
+      "strategy_id",
+      "instrument_id",
+      "venue_order_id",
+      "account_id",
+      "trade_id",
+      "position_id",
+      "order_side",
+      "order_type",
+      "last_qty",
+      "last_px",
+      "currency",
+      "commission",
+      "liquidity_side",
+      "event_id",
+      "ts_event",
+      "ts_init",
+      "info",
+      "reconciliation"
+    ]
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/kd/opt/e36c2e9f-a954-4228-a0b1-799110a23da7/fills_output.csv",
+    "relative_path": "kd/opt/e36c2e9f-a954-4228-a0b1-799110a23da7/fills_output.csv",
+    "bytes": 82444,
+    "sha256": "1fb5dcf0b316d01f029f1d7a565736d6acd1069859331023c64fe8443e203a04",
+    "rows": 961,
+    "columns": [
+      "timestamp",
+      "instrument_id",
+      "order_id",
+      "side",
+      "qty",
+      "price",
+      "commission"
+    ]
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/kd/opt/e36c2e9f-a954-4228-a0b1-799110a23da7/input_coverage.json",
+    "relative_path": "kd/opt/e36c2e9f-a954-4228-a0b1-799110a23da7/input_coverage.json",
+    "bytes": 4097057,
+    "sha256": "4c11dc3e2a326fcddc9ea4894f1234a5e2d0dcd060001402cabb3d40bf53a628"
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/kd/opt/e36c2e9f-a954-4228-a0b1-799110a23da7/input_issues.json",
+    "relative_path": "kd/opt/e36c2e9f-a954-4228-a0b1-799110a23da7/input_issues.json",
+    "bytes": 3,
+    "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/kd/opt/e36c2e9f-a954-4228-a0b1-799110a23da7/input_manifest.json",
+    "relative_path": "kd/opt/e36c2e9f-a954-4228-a0b1-799110a23da7/input_manifest.json",
+    "bytes": 683914,
+    "sha256": "fdd9e2505590a709546ffe849b31be62322f3ff1e2c239c04cac8807e3d6153a"
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/kd/opt/e36c2e9f-a954-4228-a0b1-799110a23da7/orders.csv",
+    "relative_path": "kd/opt/e36c2e9f-a954-4228-a0b1-799110a23da7/orders.csv",
+    "bytes": 347921,
+    "sha256": "3e0be3533381248e51d5862ca50522486ae3ba7fb80d4e981dbe4e70a26304e0",
+    "rows": 964,
+    "columns": [
+      "client_order_id",
+      "trader_id",
+      "strategy_id",
+      "instrument_id",
+      "venue_order_id",
+      "position_id",
+      "account_id",
+      "last_trade_id",
+      "type",
+      "side",
+      "quantity",
+      "time_in_force",
+      "is_reduce_only",
+      "is_quote_quantity",
+      "filled_qty",
+      "liquidity_side",
+      "avg_px",
+      "slippage",
+      "commissions",
+      "emulation_trigger",
+      "status",
+      "contingency_type",
+      "order_list_id",
+      "linked_order_ids",
+      "parent_order_id",
+      "exec_algorithm_id",
+      "exec_algorithm_params",
+      "exec_spawn_id",
+      "tags",
+      "init_id",
+      "ts_init",
+      "ts_last"
+    ]
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/kd/opt/e36c2e9f-a954-4228-a0b1-799110a23da7/positions.csv",
+    "relative_path": "kd/opt/e36c2e9f-a954-4228-a0b1-799110a23da7/positions.csv",
+    "bytes": 27611,
+    "sha256": "fb40ffbdd86e19d8b5d2ec57e99c4a678e268e1f2a219ca6dd7d0589cf7d2257",
+    "rows": 78,
+    "columns": [
+      "position_id",
+      "trader_id",
+      "strategy_id",
+      "instrument_id",
+      "account_id",
+      "opening_order_id",
+      "closing_order_id",
+      "entry",
+      "side",
+      "quantity",
+      "peak_qty",
+      "ts_init",
+      "ts_opened",
+      "ts_last",
+      "ts_closed",
+      "duration_ns",
+      "avg_px_open",
+      "avg_px_close",
+      "commissions",
+      "realized_return",
+      "realized_pnl",
+      "is_snapshot"
+    ]
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/kd/opt/e36c2e9f-a954-4228-a0b1-799110a23da7/settlements.csv",
+    "relative_path": "kd/opt/e36c2e9f-a954-4228-a0b1-799110a23da7/settlements.csv",
+    "bytes": 12008,
+    "sha256": "71616e94e591c78eb440af7dd50419c06dddaf9a88414444ea6e007c36cae2a5",
+    "rows": 61,
+    "columns": [
+      "instrument_id",
+      "quantity",
+      "side",
+      "price",
+      "commission",
+      "ts_event",
+      "available_ns",
+      "last_trade_ns",
+      "client_order_id",
+      "source"
+    ]
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/kd/opt/e36c2e9f-a954-4228-a0b1-799110a23da7/signals.csv",
+    "relative_path": "kd/opt/e36c2e9f-a954-4228-a0b1-799110a23da7/signals.csv",
+    "bytes": 2692867,
+    "sha256": "6f1bc2b74afb75bcffb3b0218aca05881ecc154582a365bb746e2d1082fb7fac",
+    "rows": 48438,
+    "columns": [
+      "signal_ns",
+      "request_ns",
+      "instrument_id",
+      "target_qty"
+    ]
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/kd/opt/e36c2e9f-a954-4228-a0b1-799110a23da7/summary.json",
+    "relative_path": "kd/opt/e36c2e9f-a954-4228-a0b1-799110a23da7/summary.json",
+    "bytes": 9362,
+    "sha256": "1f80097463df190c18d3967f08ae3ddb4fcbdaf26304336da67d96bdc66b736b"
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/lxg/cta/output_20261101_103833/drawdown.png",
+    "relative_path": "lxg/cta/output_20261101_103833/drawdown.png",
+    "bytes": 133133,
+    "sha256": "d29afa2a9f7baf4f371373f42c5efd3f4a3dd00627bc16adb8ecc98037c979b9"
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/lxg/cta/output_20261101_103833/equity_curve.png",
+    "relative_path": "lxg/cta/output_20261101_103833/equity_curve.png",
+    "bytes": 88877,
+    "sha256": "06fd95da3667a1739e9a7736db411f092a51f78823b396d106164c59bef814cf"
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/lxg/cta/output_20261101_103833/fills_output.csv",
+    "relative_path": "lxg/cta/output_20261101_103833/fills_output.csv",
+    "bytes": 32418,
+    "sha256": "78aab997fdae16d9a3ef84f26e9a55f4866a264649ee0af846f189b3835de930",
+    "rows": 371,
+    "columns": [
+      "timestamp",
+      "instrument_id",
+      "order_id",
+      "side",
+      "qty",
+      "price",
+      "commission"
+    ]
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/lxg/cta/output_20261101_103833/margin_curves.png",
+    "relative_path": "lxg/cta/output_20261101_103833/margin_curves.png",
+    "bytes": 254971,
+    "sha256": "cae20442d10f49cec3396499cd1153d4b762394d3ae835e6de9b6088184b94d2"
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/lxg/cta/output_20261101_103833/metrics.txt",
+    "relative_path": "lxg/cta/output_20261101_103833/metrics.txt",
+    "bytes": 1816,
+    "sha256": "d0106e7a67a9067e98d732e48e4c9f5d607ed38544701aea973859742e68a1df"
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/lxg/cta/output_20261101_103833/monthly_returns.png",
+    "relative_path": "lxg/cta/output_20261101_103833/monthly_returns.png",
+    "bytes": 51478,
+    "sha256": "0c14079d87176c514593c65ae21eda0632710bf6c869c3cd79e0f431b9801d79"
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/lxg/cta/output_20261101_103833/net_value.csv",
+    "relative_path": "lxg/cta/output_20261101_103833/net_value.csv",
+    "bytes": 4535,
+    "sha256": "992dd30494e75875e0fecd0da3b77871f1b448b9b39cf332737143b257bece0a",
+    "rows": 180,
+    "columns": [
+      "date",
+      "equity"
+    ]
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/lxg/cta/output_20261101_103833/pnl.png",
+    "relative_path": "lxg/cta/output_20261101_103833/pnl.png",
+    "bytes": 150291,
+    "sha256": "002b8bf0ff77e9f593f5a29db5c7edd39c173f90c0ebb6c9edd3c2daa40eb8fa"
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/lxg/cta/output_20261101_103833/positions_output.csv",
+    "relative_path": "lxg/cta/output_20261101_103833/positions_output.csv",
+    "bytes": 28453,
+    "sha256": "70cbd0ef45e3b22c0921e59eeef7e43332eba453638573d6a6d747206993d510",
+    "rows": 640,
+    "columns": [
+      "timestamp",
+      "instrument_id",
+      "qty",
+      "price"
+    ]
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/lxg/cta/output_20261101_103833/risk_metrics.csv",
+    "relative_path": "lxg/cta/output_20261101_103833/risk_metrics.csv",
+    "bytes": 13189,
+    "sha256": "6aba4870e720a2f686ad418f7b9d6128069e15c46c89c1504f48459e4aff131d",
+    "rows": 118,
+    "columns": [
+      "date",
+      "long_exposure",
+      "short_exposure",
+      "eod_exposure",
+      "eod_margin",
+      "intraday_max_exposure",
+      "intraday_max_exposure_time",
+      "intraday_max_margin",
+      "intraday_max_margin_time"
+    ]
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/lxg/cta/output_20261101_103833/trades.csv",
+    "relative_path": "lxg/cta/output_20261101_103833/trades.csv",
+    "bytes": 22600,
+    "sha256": "215aba68305b05ee8bf8b2e08c5a52fb68da2c7784ffb4ed551fd01f6f795ac9",
+    "rows": 371,
+    "columns": [
+      "datetime",
+      "instrument",
+      "side",
+      "qty",
+      "price",
+      "pnl"
+    ]
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/lxg/cta/output_20261101_103833/yearly_metrics.csv",
+    "relative_path": "lxg/cta/output_20261101_103833/yearly_metrics.csv",
+    "bytes": 152,
+    "sha256": "c2bb3c444ffe858f769595361ecbcec2fad6f91d92dba1cac3326f3ce416e291",
+    "rows": 1,
+    "columns": [
+      "year",
+      "return",
+      "turnover",
+      "max_drawdown",
+      "sharpe",
+      "calmar"
+    ]
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/lxg/fills_output.csv",
+    "relative_path": "lxg/fills_output.csv",
+    "bytes": 32418,
+    "sha256": "78aab997fdae16d9a3ef84f26e9a55f4866a264649ee0af846f189b3835de930",
+    "rows": 371,
+    "columns": [
+      "timestamp",
+      "instrument_id",
+      "order_id",
+      "side",
+      "qty",
+      "price",
+      "commission"
+    ]
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/lxg/opt/output_20261102_145127/drawdown.png",
+    "relative_path": "lxg/opt/output_20261102_145127/drawdown.png",
+    "bytes": 146969,
+    "sha256": "7377675a276b2fdc37e99d2deb010b4d05b2beeae5535ca79137c6ae8d049fd5"
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/lxg/opt/output_20261102_145127/equity_curve.png",
+    "relative_path": "lxg/opt/output_20261102_145127/equity_curve.png",
+    "bytes": 90763,
+    "sha256": "1567fe64ed826c9a16f99f96368a2a7f7737eb6682cea37393ef6c244161c138"
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/lxg/opt/output_20261102_145127/fills_output.csv",
+    "relative_path": "lxg/opt/output_20261102_145127/fills_output.csv",
+    "bytes": 88186,
+    "sha256": "59b24c7926d1bf68d3ea18ad9c558612e028fbb6c773fd1df0b1fee36de6ec43",
+    "rows": 972,
+    "columns": [
+      "timestamp",
+      "instrument_id",
+      "order_id",
+      "side",
+      "qty",
+      "price",
+      "commission"
+    ]
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/lxg/opt/output_20261102_145127/margin_curves.png",
+    "relative_path": "lxg/opt/output_20261102_145127/margin_curves.png",
+    "bytes": 262346,
+    "sha256": "f2cc1c3746b5aaf5a297fb4d2f48b1280396365ab5dd3559aa57e6f028307e8b"
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/lxg/opt/output_20261102_145127/metrics.txt",
+    "relative_path": "lxg/opt/output_20261102_145127/metrics.txt",
+    "bytes": 1952,
+    "sha256": "fc216458f1cc355870cc015e6824af03ae730a5e95b666c98eabc4717edbbc72"
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/lxg/opt/output_20261102_145127/monthly_returns.png",
+    "relative_path": "lxg/opt/output_20261102_145127/monthly_returns.png",
+    "bytes": 53483,
+    "sha256": "758b1f9ce6c20f3a0472c0440b3ee859726603fc913e2b855860150ccccb7815"
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/lxg/opt/output_20261102_145127/net_value.csv",
+    "relative_path": "lxg/opt/output_20261102_145127/net_value.csv",
+    "bytes": 5460,
+    "sha256": "c04d3df178429d7ca0803326fc000df8fed37a50db94e25e831318a812f58344",
+    "rows": 194,
+    "columns": [
+      "date",
+      "equity"
+    ]
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/lxg/opt/output_20261102_145127/pnl.png",
+    "relative_path": "lxg/opt/output_20261102_145127/pnl.png",
+    "bytes": 158209,
+    "sha256": "3858a313e9e249df5e231634fc1bf3af9c9444c53b0ee0518e70bc214ddc23c4"
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/lxg/opt/output_20261102_145127/positions_output.csv",
+    "relative_path": "lxg/opt/output_20261102_145127/positions_output.csv",
+    "bytes": 348477,
+    "sha256": "f4ddb957109c24fce59d6e7690c16ab7152073129d761d01e0406a0b82f986d6",
+    "rows": 6998,
+    "columns": [
+      "timestamp",
+      "instrument_id",
+      "qty",
+      "price"
+    ]
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/lxg/opt/output_20261102_145127/risk_metrics.csv",
+    "relative_path": "lxg/opt/output_20261102_145127/risk_metrics.csv",
+    "bytes": 24437,
+    "sha256": "9da3add86aa6e44a801cf6a24312da196571f051a77f99feebc7f7d1986458d4",
+    "rows": 236,
+    "columns": [
+      "date",
+      "long_exposure",
+      "short_exposure",
+      "eod_exposure",
+      "eod_margin",
+      "intraday_max_exposure",
+      "intraday_max_exposure_time",
+      "intraday_max_margin",
+      "intraday_max_margin_time"
+    ]
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/lxg/opt/output_20261102_145127/trades.csv",
+    "relative_path": "lxg/opt/output_20261102_145127/trades.csv",
+    "bytes": 57914,
+    "sha256": "fddb147e287a4344e99ae9d5b5efb6b04a02445cadfd6854962fa921967440d4",
+    "rows": 972,
+    "columns": [
+      "datetime",
+      "instrument",
+      "side",
+      "qty",
+      "price",
+      "pnl"
+    ]
+  },
+  {
+    "path": "/Users/kerry/Desktop/cmp/lxg/opt/output_20261102_145127/yearly_metrics.csv",
+    "relative_path": "lxg/opt/output_20261102_145127/yearly_metrics.csv",
+    "bytes": 153,
+    "sha256": "f46cc170cf748171ffa19085853e9f800eb215f344a416753a42a8f9f449a0df",
+    "rows": 1,
+    "columns": [
+      "year",
+      "return",
+      "turnover",
+      "max_drawdown",
+      "sharpe",
+      "calmar"
+    ]
+  }
+]

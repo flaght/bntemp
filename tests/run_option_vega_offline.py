@@ -124,7 +124,8 @@ if args.market_sources:
  names = ['tests.test_market_sources']
 else:
  names = ['tests.test_cli_config', 'tests.test_option_continuous', 'tests.test_option_daily_report', 'tests.test_option_feature_backtest', 'tests.test_option_feature_example', 'tests.test_option_feature_dataframe', 'tests.test_option_dolphindb_dataframe_example', 'tests.test_option_vega_settlement', 'tests.test_option_vega_assembly', 'tests.test_position_attribution', 'tests.test_index_query_feed',
-  'tests.test_option_replay_test', 'tests.test_option_execution_audit', 'tests.test_option_dolphin_stream']
+  'tests.test_option_replay_test', 'tests.test_option_execution_audit', 'tests.test_option_dolphin_stream',
+  'tests.test_future_settlements']
 suite=unittest.defaultTestLoader.loadTestsFromNames(names)
 result=unittest.TextTestRunner(verbosity=2).run(suite)
 sys.exit(not result.wasSuccessful())

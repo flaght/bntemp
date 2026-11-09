@@ -59,7 +59,7 @@ class NativeOptionByPosTests(unittest.TestCase):
                     settlements = root / "daily" / "opt"
                     settlements.mkdir(parents=True)
                     pd.DataFrame(dict(trade_date=pd.to_datetime(["2026-06-19"]), code=[option],
-                        exchangeCD=["CCFX"], settlPrice=[float(terminal)], closePrice=[80.0])).to_feather(
+                        exchangeCD=["CCFX"], settlePrice=[float(terminal)], closePrice=[80.0])).to_feather(
                             settlements / "2026-06-19.feather")
                 elif terminal is not None:
                     settlements.write_text("symbol,last_trade_date,settlement_price,available_at\n"

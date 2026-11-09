@@ -23,16 +23,24 @@ def load_option_settlements(path, options, *, start_day, end_day,
     """支持标准结算文件，或 YYYY-MM-DD.feather 原始期权日行情目录。
 
     标准列：symbol, settlement_price, last_trade_date；available_at 可选。
-    日行情目录列：code, trade_date, settlPrice；仅读取基础条款指定的到期日。
+    日行情目录列：code, trade_date, settlePrice；仅读取基础条款指定的到期日。
     缺少 available_at 时调用方显式声明本地结算可用时刻（默认当日16:00）。
     这里只接入官方最终结算价，不根据日内价格猜测结算值。
     """
+    return _load_settlements(path, options, start_day=start_day, end_day=end_day,
+        available_time=available_time, fee_per_contract=fee_per_contract)
+
+
+def _load_settlements(path, options, *, start_day, end_day, available_time, fee_per_contract,
+                      asset_kind="option"):
+    """期权与现金交割股指期货复用文件解析，类型及终值校验由资产契约负责。"""
     import pandas as pd
 
     path = Path(path).expanduser().resolve()
     if path.is_dir():
         return _load_daily_directory(path, options, start_day=start_day, end_day=end_day,
-            available_time=available_time, fee_per_contract=fee_per_contract)
+            available_time=available_time, fee_per_contract=fee_per_contract,
+            asset_kind=asset_kind)
     session = current_session()
     if session is not None:
         session.fingerprint(path)
@@ -45,16 +53,18 @@ def load_option_settlements(path, options, *, start_day, end_day,
     else:
         raise ValueError("Settlement file must be CSV, Feather or Parquet")
     return _prepare_settlements(frame, path, options, start_day=start_day, end_day=end_day,
-        available_time=available_time, fee_per_contract=fee_per_contract)
+        available_time=available_time, fee_per_contract=fee_per_contract, asset_kind=asset_kind)
 
 
 def _symbol(value):
     return str(value).strip().upper().removesuffix(".CFFEX")
 
 
-def _load_daily_directory(directory, options, *, start_day, end_day, available_time, fee_per_contract):
+def _load_daily_directory(directory, options, *, start_day, end_day, available_time, fee_per_contract,
+                          asset_kind="option"):
     import pandas as pd
 
+    daily_columns = ("code", "trade_date", "settlePrice")
     by_day = {}
     for symbol, info in options.items():
         if start_day <= info.last_trade <= end_day:
@@ -63,36 +73,39 @@ def _load_daily_directory(directory, options, *, start_day, end_day, available_t
     for day, expected in sorted(by_day.items()):
         path = directory / f"{day.isoformat()}.feather"
         if not path.is_file():
-            record_issue(InputIssue("OPTION_SETTLEMENT_DAY_MISSING",
+            record_issue(InputIssue(f"{asset_kind.upper()}_SETTLEMENT_DAY_MISSING",
                 "Missing expiry-day daily file; final value is required only for actual remaining positions",
                 "WARNING", str(path), trading_day=day))
             continue
         frame = read_feather(path)
-        required = {"code", "trade_date", "settlPrice"}
+        required = set(daily_columns)
         if not frame.columns.is_unique or required - set(frame):
-            raise ValueError(f"{path}: option daily data requires unique columns: {sorted(required)}")
+            raise ValueError(f"{path}: {asset_kind} daily data requires unique columns: {sorted(required)}")
+        auxiliary = [name for name in ("exchangeCD", "available_at", "fee_per_contract") if name in frame]
+        frame = frame[[*daily_columns, *auxiliary]]
         if not pd.to_datetime(frame.trade_date, errors="raise").dt.date.eq(day).all():
             raise ValueError(f"{path}: trade_date differs from daily filename")
         symbols = frame.code.map(_symbol)
         selected = frame.loc[symbols.isin(expected)].copy()
         if "exchangeCD" in selected and not selected.exchangeCD.map(
                 lambda value: str(value).strip().upper() in {"CCFX", "CFFEX"}).all():
-            raise ValueError(f"{path}: selected option must belong to CFFEX")
-        selected = selected.rename(columns={"code": "symbol", "settlPrice": "settlement_price"})
+            raise ValueError(f"{path}: selected {asset_kind} must belong to CFFEX")
+        selected = selected.rename(columns={"code": "symbol", "settlePrice": "settlement_price"})
         selected["last_trade_date"] = day
         loaded = _prepare_settlements(selected, path, expected, start_day=start_day, end_day=end_day,
-            available_time=available_time, fee_per_contract=fee_per_contract)
+            available_time=available_time, fee_per_contract=fee_per_contract, asset_kind=asset_kind)
         for symbol in sorted(set(expected) - set(loaded)):
-            record_issue(InputIssue("OPTION_SETTLEMENT_CONTRACT_MISSING",
-                "Expiry-day daily file has no final value for this option",
+            record_issue(InputIssue(f"{asset_kind.upper()}_SETTLEMENT_CONTRACT_MISSING",
+                f"Expiry-day daily file has no final value for this {asset_kind}",
                 "WARNING", str(path), symbol, day))
         result.update(loaded)
     return result
 
 
-def _prepare_settlements(frame, path, options, *, start_day, end_day, available_time, fee_per_contract):
+def _prepare_settlements(frame, path, options, *, start_day, end_day, available_time, fee_per_contract,
+                         asset_kind="option"):
     import pandas as pd
-    from bomber.framework.trader.execution.option_settlement import OptionSettlement
+    from bomber.framework.trader.execution.option_settlement import OptionSettlement, FutureSettlement
     from bomber.framework.trader.instrument_factory import day_ns
 
     aliases = {"tradeID": "symbol", "lastTradingDate": "last_trade_date", "settlePrice": "settlement_price"}
@@ -116,7 +129,8 @@ def _prepare_settlements(frame, path, options, *, start_day, end_day, available_
         if not start_day <= info.last_trade <= end_day:
             continue
         if row["last_trade_date"] != info.last_trade:
-            raise ValueError(f"{path}:{number}: {symbol} settlement date conflicts with opt_basic")
+            basic = "opt_basic" if asset_kind == "option" else "fut_basic"
+            raise ValueError(f"{path}:{number}: {symbol} settlement date conflicts with {basic}")
         available = row.get("available_at")
         if available is None or pd.isna(available):
             available_ns = day_ns(info.last_trade, available_time)
@@ -128,7 +142,8 @@ def _prepare_settlements(frame, path, options, *, start_day, end_day, available_
         if fee is None or pd.isna(fee):
             fee = fee_per_contract
         try:
-            item = OptionSettlement(symbol + ".CFFEX", day_ns(info.last_trade, "15:00"),
+            settlement_type = OptionSettlement if asset_kind == "option" else FutureSettlement
+            item = settlement_type(symbol + ".CFFEX", day_ns(info.last_trade, "15:00"),
                 available_ns, row["settlement_price"], fee, str(path))
         except (ValueError, TypeError, ArithmeticError) as error:
             raise ValueError(f"{path}:{number}: {symbol}: {error}") from error

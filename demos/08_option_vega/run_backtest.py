@@ -33,6 +33,8 @@ from bomber.framework.dataprep.session import input_session, record_issue, write
 from bomber.framework.dataprep.commissions import add_commission_arguments, commission_config_from_args
 from bomber.framework.dataprep.option_settlements import (add_option_settlement_arguments,
     load_option_settlements)
+from bomber.framework.dataprep.future_settlements import (add_future_settlement_arguments,
+    load_future_settlements)
 
 DEFAULT_REPORT_DIR = Path(__file__).resolve().parent / "results" / "backtest"
 
@@ -292,10 +294,20 @@ def run_case(args):
         available_time=getattr(args, "settlement_available_time", "16:00"),
         fee_per_contract=getattr(args, "exercise_fee_per_contract", Decimal(0)))
         if settlement_path else {})
+    future_settlement_path = getattr(args, "future_settlements", None)
+    future_settlements = (load_future_settlements(future_settlement_path,
+        {key: SimpleNamespace(last_trade=row["lastTradeDate"]) for key, row in future_rows.items()},
+        start_day=args.start_day, end_day=args.end_day,
+        available_time=getattr(args, "settlement_available_time", "16:00"),
+        fee_per_contract=getattr(args, "future_settlement_fee_per_contract", Decimal(0)))
+        if future_settlement_path else {})
     period_end_ns = day_ns(args.end_day + timedelta(days=1)) - 1
-    if any(item.available_ns > period_end_ns for item in settlements.values()):
+    if any(item.available_ns > period_end_ns for item in (*settlements.values(), *future_settlements.values())):
         raise ValueError("结算可用时刻超过回测结束；请延长 --end-day")
     last_trade_times = {key: day_ns(info.last_day, "15:00") for key, info in contracts.items()}
+    future_last_trade_times = {key: day_ns(row["lastTradeDate"], "15:00") for key, row in future_rows.items()}
+    print(f"到期结算资料: option_source={settlement_path} loaded={len(settlements)} "
+          f"future_source={future_settlement_path} loaded={len(future_settlements)}", flush=True)
     _finish_phase("期权到期与最终结算资料准备", phase)
     phase = _start_phase("模拟账户与真实合约注册")
     backend = NautilusSimExecutionBackend("option-vega-sim", BacktestEngineConfig(
@@ -311,6 +323,8 @@ def run_case(args):
         backend.add_profile(profile,
             option_settlements={item.instrument_id: item for item in settlements.values()},
             option_last_trade_times={key + ".CFFEX": stamp for key, stamp in last_trade_times.items()},
+            future_settlements={item.instrument_id: item for item in future_settlements.values()},
+            future_last_trade_times={key + ".CFFEX": stamp for key, stamp in future_last_trade_times.items()},
             settlement_end_ns=period_end_ns)
         for key, info in contracts.items():
             contract = make_option(info, args.option_margin_init, args.option_margin_maint, args.index_code,
@@ -320,7 +334,7 @@ def run_case(args):
             backend.add_instrument(contract)
             feed.register_instrument(instrument_meta(contract))
         for key, row in future_rows.items():
-            contract = make_future(key, row, args.margin_init, args.margin_maint)
+            contract = make_future(key, row, args.margin_init, args.margin_maint, expiry_policy="CASH_SETTLEMENT")
             instruments[key] = contract.id
             multipliers[contract.id] = row["contMultNum"]
             backend.add_instrument(contract)
@@ -351,7 +365,8 @@ def run_case(args):
             max_market_age_seconds=args.max_market_age_seconds,
             index_value_field=getattr(args, "index_value_field", None))
         strategy = OptionVegaStrategy("option-vega", config, contracts, future_rows, instruments,
-            args.index_code, calendar, days[-1], options_by_day, option_last_trade_times=last_trade_times)
+            args.index_code, calendar, days[-1], options_by_day, option_last_trade_times=last_trade_times,
+            future_last_trade_times=future_last_trade_times)
         assemble_strategy(runner, strategy, feeds={"option-bars": feed}, execution=execution,
             bindings=StrategyBindings(
                 data=tuple(DataBinding(key, "option-bars", item, DataType.BAR, bar_specs_by_key[key])
@@ -387,6 +402,9 @@ def run_case(args):
             pd.DataFrame(backend.option_settlement_records, columns=("instrument_id", "quantity", "side",
                 "price", "commission", "ts_event", "available_ns", "last_trade_ns", "client_order_id",
                 "source")).to_csv(output / "settlements.csv", index=False)
+            pd.DataFrame(backend.future_settlement_records, columns=("instrument_id", "quantity", "side",
+                "price", "commission", "ts_event", "available_ns", "last_trade_ns", "client_order_id",
+                "source")).to_csv(output / "future_settlements.csv", index=False)
             remaining = {key: str(strategy.position(str(item))) for key, item in instruments.items()
                          if strategy.position(str(item)) or strategy.strategy_working_quantity(str(item))}
             errors = [str(value) for value in client.report_errors]
@@ -412,9 +430,12 @@ def run_case(args):
                 "option_settlements": str(settlement_path) if settlement_path else None,
                 "settlement_prices_loaded": len(settlements),
                 "settlements": len(backend.option_settlement_records),
+                "future_settlements": str(future_settlement_path) if future_settlement_path else None,
+                "future_settlement_prices_loaded": len(future_settlements),
+                "future_settlement_count": len(backend.future_settlement_records),
                 "orders": len(orders), "fills": len(fills), "remaining_positions_or_working": remaining,
                 "report_errors": errors, "config": vars(config),
-                "simulation": "NETTING/BAR/CONFIGURED_FEE/PREMIUM_PERCENT_MARGIN; OPTION_CASH_SETTLEMENT",
+                "simulation": "NETTING/BAR/CONFIGURED_FEE/PREMIUM_PERCENT_MARGIN; OPTION_AND_INDEX_FUTURE_CASH_SETTLEMENT",
                 "backend": str(result.backend_result)}
             (output / "feature_frames.json").write_text(json.dumps(runner.frame_audit, ensure_ascii=False, indent=2) + "\n")
             parameters = import_module("demos.08_option_vega.vega_signal").effective_parameters(args, config)
@@ -454,6 +475,7 @@ def main():
     import_module("demos.08_option_vega.vega_signal").add_strategy_config_argument(parser)
     add_commission_arguments(parser)
     add_option_settlement_arguments(parser)
+    add_future_settlement_arguments(parser)
     add_market_source_arguments(parser, backtest=True)
     parser.add_argument("--start-day", type=date.fromisoformat, required=True)
     parser.add_argument("--end-day", type=date.fromisoformat, required=True)

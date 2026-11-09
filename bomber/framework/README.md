@@ -97,6 +97,7 @@ flowchart LR
 - GenericVenueProfile组合撮合、费用、保证金、延迟等模型。CtpFuturesBasicProfile为基础NETTING模拟；CTP双向／今昨高保真记账使用对应Ledger／HedgingProfile，不能从基础Profile推断所有柜台规则已实现。
 - [FuturesFee／CommissionConfig](fees.py)支持元／手、成交金额百分比与全局／品种／合约系数；按实际成交量价计算，输出标准费用及实际扣费。[费用说明](../../doc/data/FUTURES_FEES.md)记录优先级、固定费兼容及验收范围。
 - [OptionCashSettlementModule](trader/execution/simulation/option_expiry.py)支持显式期权到期现金结算，结合[最终结算资料加载](dataprep/option_settlements.py)与[结算契约](trader/execution/option_settlement.py)处理实际残仓、撤销到期委托和原生账户入账。须显式配置CASH_SETTLEMENT及真实最终价；不以最后一根行情close猜终值，也不等同所有市场的实物交割／自动行权均已支持。
+- 同一公共流程的`FutureCashSettlementModule`支持显式IF/IH/IM到期现金交割，使用[期货最终结算资料加载](dataprep/future_settlements.py)及`FutureSettlement`正终值契约。到期回报通过原生账户和共享归属账本了结真实残仓，业务再清理对应期货目标；不把旧月仓位直接记到新合约，不处理商品实物交割。08可在启动YAML中分别设置option_settlements与future_settlements。
 
 ### 标准Bar与完整期货分钟
 

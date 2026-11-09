@@ -1,0 +1,27 @@
+{
+  "format_version": 1,
+  "datasets": [
+    {
+      "schema": {
+        "dataset_id": "index.close.minute",
+        "schema_version": 1,
+        "computation_version": "raw-tinysoft-index-close-minute-v1",
+        "frequency": {"period_ns": 60000000000, "timezone": "Asia/Shanghai"},
+        "alignment": "EXACT",
+        "fields": [
+          {"name": "close", "kind": "decimal", "minimum": "0", "exclusive_minimum": true}
+        ]
+      },
+      "source": {
+        "backend": "dolphindb-raw",
+        "database": "dfs://JC_MKT_MIN",
+        "table": "idx_1min_tiny",
+        "key_column": "stockID",
+        "partition_date": "TradeDate",
+        "event_time": {"column": "ActTime", "timezone": "Asia/Shanghai", "label": "end"},
+        "availability": "observed",
+        "payload_columns": {"close": "closePrice"}
+      }
+    }
+  ]
+}

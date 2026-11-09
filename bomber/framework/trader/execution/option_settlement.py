@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 SETTLEMENT_ORIGIN = "option_expiry"
+FUTURE_SETTLEMENT_ORIGIN = "future_expiry"
+CASH_SETTLEMENT_ORIGINS = frozenset((SETTLEMENT_ORIGIN, FUTURE_SETTLEMENT_ORIGIN))
 
 
 def decimal_value(value, name, *, positive=False):
@@ -26,7 +28,7 @@ def option_settlement_price(kind, strike, index_settlement):
 
 
 @dataclass(frozen=True)
-class OptionSettlement:
+class CashSettlement:
     instrument_id: str
     last_trade_ns: int
     available_ns: int
@@ -45,6 +47,19 @@ class OptionSettlement:
             raise ValueError("settlement cannot be available before last trading time")
         object.__setattr__(self, "price", decimal_value(self.price, "settlement price"))
         object.__setattr__(self, "fee_per_contract", decimal_value(self.fee_per_contract, "settlement fee"))
+
+
+@dataclass(frozen=True)
+class OptionSettlement(CashSettlement):
+    """期权官方到期终值，允许零。"""
+
+
+@dataclass(frozen=True)
+class FutureSettlement(CashSettlement):
+    """现金交割期货的官方最终交割结算价，必须为正。"""
+    def __post_init__(self):
+        super().__post_init__()
+        decimal_value(self.price, "future final settlement price", positive=True)
 
 
 def settlement_pnl(quantity, entry_price, settlement_price, multiplier, fee_per_contract=0):

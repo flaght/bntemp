@@ -25,6 +25,12 @@ experiment_setups:
     starting_balance: "40000000"
     log_level: INFO
     report_dir: demos/08_option_vega/results/backtest
+    # 按部署填写官方到期结算资料；有到期残仓时必须提供对应资产的终值。
+    option_settlements: null
+    future_settlements: null
+    settlement_available_time: "16:00"
+    # 期权/期货日行情统一读取code、trade_date、settlePrice，无须配置列名。
+    future_settlement_fee_per_contract: "0"
     no_tearsheet: true
     require_fills: true
 

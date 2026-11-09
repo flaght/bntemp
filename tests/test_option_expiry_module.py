@@ -147,5 +147,46 @@ class ExpiryModuleTests(unittest.TestCase):
         self.assertIn(self.code, obj.settled)
         self.assertEqual(self.reports, [])
 
+    def create_future(self, *, missing=False):
+        self.code = "IM2605.CFFEX"
+        self.position.instrument_id = Identity(self.code)
+        self.position.quantity, self.position.is_long = Decimal(7), True
+        item = self.env.calculation.FutureSettlement(self.code, 150, 160, "6900.13", "1.2", "fixture")
+        obj = self.module.FutureCashSettlementModule("sim", {self.code: 150},
+            {} if missing else {self.code: item}, self.reports.append, self.cancelled.append)
+        obj.register_venue(self.exchange)
+        return obj
+
+    def test_future_seven_lots_wait_for_publication_then_close_once(self):
+        obj = self.create_future()
+        obj.process(159)
+        self.assertEqual(self.position.quantity, 7)
+        self.assertEqual(self.native_events, [])
+        obj.process(160)
+        obj.process(170)
+        self.assertTrue(self.position.is_closed)
+        self.assertEqual(len(self.reports), 1)
+        report = self.reports[0]
+        self.assertEqual(report.metadata["execution_origin"], "future_expiry")
+        self.assertEqual(report.order_side.value, "SELL")
+        self.assertEqual(report.filled_quantity, 7)
+        self.assertEqual(report.fill_price, Decimal("6900.13"))
+        self.assertEqual(Decimal(report.metadata["commission"]), Decimal("8.4"))
+        self.assertEqual(self.orders[0].tags, ["FUTURE_CASH_SETTLEMENT"])
+        self.assertTrue(str(self.native_events[-1].trade_id).startswith("FS-"))
+        self.assertEqual([row["alert_time_ns"] for row in obj.alerts], [151, 160])
+
+    def test_future_missing_final_value_keeps_real_position(self):
+        obj = self.create_future(missing=True)
+        with self.assertRaisesRegex(RuntimeError, "held future IM2605.*LONG 7.*--future-settlements"):
+            obj.process(151)
+        self.assertEqual(self.position.quantity, 7)
+        self.assertEqual(self.reports, [])
+
+    def test_future_final_price_must_be_positive(self):
+        for price in (0, -1, "NaN"):
+            with self.subTest(price=price), self.assertRaises(ValueError):
+                self.env.calculation.FutureSettlement("IM2605.CFFEX", 150, 160, price)
+
 
 if __name__ == "__main__": unittest.main()

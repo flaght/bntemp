@@ -17,7 +17,7 @@ from bomber.model.objects import Money, Price
 from bomber.model.orders import MarketOrder
 
 from ..contracts import ExecutionReport, ExecutionReportType, OrderSide, PositionEffect
-from ..option_settlement import SETTLEMENT_ORIGIN
+from ..option_settlement import SETTLEMENT_ORIGIN, FUTURE_SETTLEMENT_ORIGIN
 
 
 class SettlementClock(Data):
@@ -38,12 +38,15 @@ def settlement_clock(timestamp_ns):
     return CustomData(DataType(SettlementClock), SettlementClock(timestamp_ns))
 
 
-class OptionCashSettlementModule(SimulationModule):
-    """显式管理期权生命周期，现金结算真实残仓，允许零终值。
+class CashSettlementModule(SimulationModule):
+    """期权与现金交割期货共用的到期撤单、原生成交及归属回报流程。
 
-    合约需由 make_option(expiry_policy='CASH_SETTLEMENT') 创建，避免内核同时
+    合约需由 make_option/make_future(expiry_policy='CASH_SETTLEMENT') 创建，避免内核同时
     执行另一套到期处理。原生订单/成交和ExecEngine仍负责资金及Position入账。
     """
+    asset_kind = "option"
+    origin = SETTLEMENT_ORIGIN
+
     def __init__(self, backend_id, last_trade_times, settlements, report_sink, cancel_pending):
         super().__init__(SimulationModuleConfig())
         self.backend_id = backend_id
@@ -51,11 +54,13 @@ class OptionCashSettlementModule(SimulationModule):
         self.settlements = dict(settlements)
         for code, stamp in self.last_trade_times.items():
             if not isinstance(stamp, int) or isinstance(stamp, bool) or stamp < 0:
-                raise ValueError(f"Invalid option last trading time: {code}")
+                raise ValueError(f"Invalid {self.asset_kind} last trading time: {code}")
             InstrumentId.from_str(code)
         for code, item in self.settlements.items():
             if code != item.instrument_id or self.last_trade_times.get(code) != item.last_trade_ns:
-                raise ValueError(f"Settlement lifecycle differs from registered option: {code}")
+                raise ValueError(f"Settlement lifecycle differs from registered {self.asset_kind}: {code}")
+            if self.asset_kind == "future" and item.price <= 0:
+                raise ValueError(f"Future final settlement price must be positive: {code}")
         # 15:00 的已完成 Bar 属于最后交易区间。延后 1ns 封闭生命周期，
         # 让所有合约同一时刻的最后一根 Bar 先完成撮合，消除合约遍历顺序影响。
         self._cutoffs = [(stamp + 1, code) for code, stamp in self.last_trade_times.items()]
@@ -72,7 +77,7 @@ class OptionCashSettlementModule(SimulationModule):
             max(item.available_ns, item.last_trade_ns + 1) for item in self.settlements.values()}
         for stamp in sorted(times):
             if stamp >= self.clock.timestamp_ns():
-                self.clock.set_time_alert_ns(name=f"OPTION-SETTLEMENT:{self.backend_id}:{stamp}",
+                self.clock.set_time_alert_ns(name=f"{self.asset_kind.upper()}-SETTLEMENT:{self.backend_id}:{stamp}",
                     alert_time_ns=stamp, callback=self._on_clock)
 
     def _on_clock(self, event):
@@ -90,7 +95,7 @@ class OptionCashSettlementModule(SimulationModule):
             self.cancel_pending(instrument_id)
             matching = self.exchange.get_matching_engine(instrument_id)
             if matching is None:
-                raise RuntimeError(f"Missing matching engine for expiring option {code}")
+                raise RuntimeError(f"Missing matching engine for expiring {self.asset_kind} {code}")
             for order in tuple(matching.get_open_orders()):
                 matching.cancel_order(order)
 
@@ -106,9 +111,10 @@ class OptionCashSettlementModule(SimulationModule):
                     remaining = ", ".join(
                         f"{'LONG' if position.is_long else 'SHORT'} {position.quantity}"
                         for position in positions)
-                    raise RuntimeError(f"Missing final settlement for held option {code}: "
-                        f"到期仍有残仓 [{remaining}]；请通过 --option-settlements 提供该合约的最终结算价。"
-                        "opt_basic 只提供条款，不包含最终结算价。")
+                    basic = "opt_basic" if self.asset_kind == "option" else "fut_basic"
+                    raise RuntimeError(f"Missing final settlement for held {self.asset_kind} {code}: "
+                        f"到期仍有残仓 [{remaining}]；请通过 --{self.asset_kind}-settlements 提供该合约的最终结算价。"
+                        f"{basic} 只提供条款，不包含最终结算价。")
                 self.settled.add(code)
                 continue
             if now < item.available_ns:
@@ -123,13 +129,13 @@ class OptionCashSettlementModule(SimulationModule):
         contract = cache.instrument(position.instrument_id)
         side = NativeSide.SELL if position.is_long else NativeSide.BUY
         # 原生 TradeId 最长 36 字符；保留完整 UUID 随机部分，共 35 字符。
-        token = f"OS-{uuid4().hex}"
+        token = f"{'OS' if self.asset_kind == 'option' else 'FS'}-{uuid4().hex}"
         # 写入缓存、发送受理事件之前先验证所有原生标识。
         client_id, venue_id, trade_id = ClientOrderId(token), VenueOrderId(token), TradeId(token)
         order = MarketOrder(trader_id=position.trader_id, strategy_id=position.strategy_id,
             instrument_id=position.instrument_id, client_order_id=client_id, order_side=side,
             quantity=position.quantity, init_id=UUID4(), ts_init=now, reduce_only=True,
-            tags=["OPTION_CASH_SETTLEMENT"])
+            tags=[f"{self.asset_kind.upper()}_CASH_SETTLEMENT"])
         # account_id 是原生Order的只读属性，通过合法状态事件设置。
         order.apply(OrderSubmitted(trader_id=position.trader_id, strategy_id=position.strategy_id,
             instrument_id=position.instrument_id, client_order_id=client_id,
@@ -157,7 +163,7 @@ class OptionCashSettlementModule(SimulationModule):
             ExecutionReportType.FILLED, now, quantity, item.price,
             OrderSide.SELL if side == NativeSide.SELL else OrderSide.BUY, quantity,
             PositionEffect.CLOSE, report_id=token, sequence=1,
-            metadata={"execution_origin": SETTLEMENT_ORIGIN, "trade_id": token,
+            metadata={"execution_origin": self.origin, "trade_id": token,
                 "venue_order_id": token, "commission": str(fee),
                 "commission_currency": str(contract.quote_currency), "settlement_source": item.source,
                 "last_trade_ns": item.last_trade_ns, "available_ns": item.available_ns}))
@@ -167,7 +173,7 @@ class OptionCashSettlementModule(SimulationModule):
             last_trade_ns=item.last_trade_ns, client_order_id=token, source=item.source))
 
     def log_diagnostics(self, logger):
-        logger.info(f"Option cash settlements: {len(self.records)}")
+        logger.info(f"{self.asset_kind.capitalize()} cash settlements: {len(self.records)}")
 
     def reset(self):
         self.expired.clear()
@@ -175,3 +181,13 @@ class OptionCashSettlementModule(SimulationModule):
         self.records.clear()
         self._cutoffs = [(stamp + 1, code) for code, stamp in self.last_trade_times.items()]
         heapify(self._cutoffs)
+
+
+class OptionCashSettlementModule(CashSettlementModule):
+    """期权现金结算，兼容原有公共接口。"""
+
+
+class FutureCashSettlementModule(CashSettlementModule):
+    """现金交割期货到期残仓结算；仅由显式生命周期注册启用。"""
+    asset_kind = "future"
+    origin = FUTURE_SETTLEMENT_ORIGIN

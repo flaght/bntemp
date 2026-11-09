@@ -8,6 +8,7 @@ from typing import Callable
 from bomber.framework.trader.contracts import ExecutionRequest
 from bomber.framework.trader.execution.attribution import AttributionError
 from bomber.framework.trader.execution.contracts import ExecutionReport, OrderSide
+from bomber.framework.trader.execution.option_settlement import CASH_SETTLEMENT_ORIGINS
 from bomber.framework.trader.execution.events import FillEvent, OrderUpdateEvent, map_applied_report
 from bomber.framework.trader.execution.order_state import (
     OrderReportStateMachine,
@@ -166,7 +167,7 @@ class SimulationExecutionClient:
             self._apply_report(report)
 
     def _apply_report(self, report: ExecutionReport) -> None:
-        settlement = report.metadata.get("execution_origin") == "option_expiry"
+        settlement = report.metadata.get("execution_origin") in CASH_SETTLEMENT_ORIGINS
         self.position_manager.attribution.associate_report(report)
         previous = self._order_states.state(report.client_order_id)
         try:
