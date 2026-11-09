@@ -61,11 +61,16 @@ def make_option(info, margin_init, margin_maint, index_code, *, kind="C", profil
         activation_ns=day_ns(info.list_day),
         expiration_ns=(2**63 - 1 if expiry_policy == "CASH_SETTLEMENT" else day_ns(info.last_day, "15:00")),
         margin_init=margin_init, margin_maint=margin_maint, ts_event=0, ts_init=0, exchange="CFFEX",
-        info={"profile": profile_id, "expiry_policy": expiry_policy,
+        info={"profile": profile_id, "expiry_policy": expiry_policy, "settlement_asset": "option",
               "last_trade_ns": day_ns(info.last_day, "15:00")})
 
 
-def make_future(symbol, row, margin_init, margin_maint):
+def make_future(symbol, row, margin_init, margin_maint, *, expiry_policy="NATIVE"):
+    """默认保留原生到期行为；CASH_SETTLEMENT须由外部注册公共现金交割生命周期。"""
+    if expiry_policy not in {"NATIVE", "CASH_SETTLEMENT"}:
+        raise ValueError("Unknown future expiry policy")
+    if expiry_policy == "CASH_SETTLEMENT" and str(row["code"]).upper() not in {"IF", "IH", "IM"}:
+        raise ValueError("当前期货现金交割仅显式支持CFFEX股指IF/IH/IM")
     from bomber.model import Price, Quantity, Symbol
     from bomber.model.currencies import CNY
     from bomber.model.enums import AssetClass
@@ -77,9 +82,11 @@ def make_future(symbol, row, margin_init, margin_maint):
         price_precision=precision(tick), price_increment=Price.from_str(format(tick.normalize(), "f")),
         multiplier=Quantity.from_str(format(row["contMultNum"].normalize(), "f")),
         lot_size=Quantity.from_int(1), underlying=str(row["code"]).upper(),
-        activation_ns=day_ns(row["listDate"]), expiration_ns=day_ns(row["lastTradeDate"], "15:00"),
+        activation_ns=day_ns(row["listDate"]),
+        expiration_ns=(2**63-1 if expiry_policy == "CASH_SETTLEMENT" else day_ns(row["lastTradeDate"], "15:00")),
         margin_init=margin_init, margin_maint=margin_maint, ts_event=0, ts_init=0, exchange="CFFEX",
-        info=futures_fee_info(row))
+        info={**futures_fee_info(row), **({"expiry_policy": expiry_policy, "settlement_asset": "future",
+            "last_trade_ns": day_ns(row["lastTradeDate"], "15:00")} if expiry_policy == "CASH_SETTLEMENT" else {})})
 
 
 def futures_fee_info(row):

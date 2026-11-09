@@ -1,5 +1,7 @@
 """08回测特征适配：按可见时间封闭分钟帧，交给原策略决策。"""
 from collections import defaultdict
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from bomber.framework.datahub import DataHub
 from bomber.framework.datahub.features import (FeatureError, FeatureHub, FeatureRequirement,
@@ -60,6 +62,18 @@ def build_backtest_runner(**kwargs):
         def run_replay(self):
             outcomes, self.deadlines = prepare_feature_frames(self.feed.load_events(), self.bundle,
                 self.binding, self.records, self.index_key, self.wait_ns, self.max_age_ns)
+            if not outcomes:
+                raise FeatureError("回测没有可封闭的分钟帧，行情范围不足以推进帧接收期限")
+            if not any(row.status == "READY" for row in outcomes):
+                zone = ZoneInfo(self.binding.spec.frequency.timezone)
+                first = datetime.fromtimestamp(outcomes[0].event_ns//1_000_000_000, zone).isoformat()
+                visible = min((row.visible_ns for row in self.records), default=None)
+                visible = None if visible is None else datetime.fromtimestamp(visible//1_000_000_000, zone).isoformat()
+                raise FeatureError("全部历史分钟帧均未取得可用指数特征，拒绝空跑回测；"
+                    f"dataset={self.binding.spec.dataset_id} key={self.index_key} frames={len(outcomes)} "
+                    f"first_minute={first} earliest_feature_visible={visible} reason={outcomes[0].reason}；"
+                    "检查日期/代码、available_ns/received_ns与frame-wait-seconds；"
+                    "当前计算快照不能直接用于历史时点回测")
             self.outcomes = {row.event_ns: row for row in outcomes}
             result = super().run_replay()
             if self.failure is not None:

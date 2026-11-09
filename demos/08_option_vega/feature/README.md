@@ -16,6 +16,7 @@
 | `backtest.py` | 特征可见时钟、分钟帧与原回测策略适配 |
 | `index.json` | 本地来源及Schema声明示例 |
 | `index_close.json` | 只读取close的精简来源声明，数据集为`index.close.minute` |
+| `index_tinysoft.json` | Tinysoft的`idx_1min_tiny`来源映射，只读取close |
 
 回测与Live均从`demos.08_option_vega.feature`导入声明/读取接口。
 生成命令保持`python -m demos.08_option_vega.feature.generate`；原`python -m demos.08_option_vega.features`入口移除。
@@ -189,8 +190,73 @@ python -u -m demos.08_option_vega.feature.example_dolphindb \
 前59行预热，不足60行时不会生成空包。这与`generate.py`默认的连续分钟分段MA例子是两个明确不同的业务口径。
 成功需看到`status=passed`、`synthetic=false`和`file_roundtrip=passed`，记录数由真实数据覆盖决定。
 
-此例保留当前计算快照语义：输出可用时间是本次计算完成时间，不能直接当作9月份当时已发布的特征。
+此例默认保留当前计算快照语义：输出可用时间是本次计算完成时间，不能直接当作9月份当时已发布的特征。
 已有原始查询错误仍须先定位源配置/库表；示例不把查询失败解释为空数据。
+
+### Tinysoft历史研究回测
+
+`index_tinysoft.json`对应`dfs://JC_MKT_MIN/idx_1min_tiny`，映射`stockID/TradeDate/ActTime/closePrice`。
+该配置按ActTime包含完整日期时间、以分钟终点标记读取；若实际类型只有TIME，须在`event_time`
+中加`"date_column": "TradeDate"`。没有真实历史发布时间时保留`availability: observed`，不将ActTime冒充发布时间。
+
+为当前下载的历史快照显式选择研究假设，在项目根目录执行：
+
+```bash
+PYTHONPATH=. python -u -m demos.08_option_vega.feature.example_dolphindb \
+  --connect \
+  --config demos/08_option_vega/feature/index_tinysoft.json \
+  --dataset index.close.minute --schema-version 1 \
+  --key 000852 --source-key SH000852 \
+  --start '2026-01-05T00:00:00+08:00' \
+  --end '2026-08-24T23:59:59+08:00' \
+  --output-time-mode historical-research --assumed-delay-seconds 1 \
+  --output-dir demos/feature/index-research-20260105-20260824
+```
+
+这里的1秒是显式研究假设：完整分钟结束后1秒可供策略使用，包含输入/计算/接收延迟，不是测得的Tinysoft延迟。
+该模式仅适用observed原表快照；若来源已声明真实历史发布时间，应另行按当时可见修订计算，不能覆盖成该假设。
+`--assumed-delay-seconds`必填，可为0或精确到纳秒的非负秒数；不填、负值、非有限值或小于纳秒的精度均拒绝。
+已存在文件的目录拒绝覆盖；不要手工修改旧CSV或manifest，换新输出目录重新生成。
+
+公式仍是按行滚动的`(MA20+MA60)/2`，前59行预热，跨午休/跨日延续。
+输出每条记录的`available_ns`和`received_ns`均为该条`ts_event+delay`，真实源观测范围、导出完成时间和
+输入摘要另存`summary.json`。研究假设及延迟进入`computation_version`和来源标识，CSV/manifest/声明仍用公共接口生成。
+`historical_publication_verified: false`明确表示没有重建历史发布与修订；当前快照可能含历史修订，收益结论受此假设限制。
+默认`--output-time-mode snapshot`仍记录实际计算时间，不接受假设延迟，也不改变Live观测时间。
+
+生成后让08读取新文件，沿用部署环境的YAML行情目录和策略JSON：
+
+```bash
+PYTHONPATH=. python -u demos/08_option_vega/run_backtest.py \
+  --config-file demos/08_option_vega/config/strategy.yaml --config-id m5_index_blend \
+  --start-day 2026-01-05 --end-day 2026-08-24 --option-bar-minutes 5 \
+  --index-feature-file demos/feature/index-research-20260105-20260824/index-blend.csv \
+  --index-feature-config demos/feature/index-research-20260105-20260824/index-blend.csv.dataset.json \
+  --index-dataset research.index.ma20_ma60.minute --index-schema-version 1 \
+  --index-value-field index_blend
+```
+
+YAML的`frame_wait_seconds: 5`可接纳本例假设的1秒延迟；超过期限仍按原规则跳过。
+回测原生回放前检查特征帧；全部帧不可用时直接报错，提示首帧、最早特征可见时间及原因，避免长时间空跑。
+部分预热/缺失帧仍记录为SKIPPED，有可用帧才继续；这项检查不保证开仓时点行情完整或一定产生成交。
+
+Python调用同一入口，无需复制转换器或另写`generate1.py`：
+
+```python
+example.run_example(
+    start_ns=example.timestamp("2026-01-05T00:00:00+08:00"),
+    end_ns=example.timestamp("2026-08-24T23:59:59+08:00"),
+    output_dir="demos/feature/index-research-20260105-20260824",
+    connection=connection,
+    config="demos/08_option_vega/feature/index_tinysoft.json",
+    dataset="index.close.minute", schema_version=1,
+    key="000852", source_key="SH000852",
+    output_time_mode="historical-research", assumed_delay_seconds="1",
+)
+```
+
+`example`为`import_module("demos.08_option_vega.feature.example_dolphindb")`；`connection`仍由
+`DolphinDbConnectionConfig.from_env(purpose="market", read_timeout_seconds=30)`提供。
 
 新增独立模块`dataframe.py`，接口为：
 
@@ -310,8 +376,9 @@ MA20使用20根连续、已完成的一分钟收盘价，包含当前Bar，采�
 只有确认`updateTime`是该版本真实发布时间时，原表才可加`--availability source-time`；
 这不会把MA改成历史发布时间，也不会把全量最新修订选择变成历史时点计算。
 
-因此本例可验证生成、声明、读取和标准文件往返；今天生成9月份的研究快照，
-不能直接当作9月份的时点回测输入。真实历史对照仍需历史可见记录或按当时可见版本推进的计算流程。
+因此默认快照模式可验证生成、声明、读取和标准文件往返；今天生成9月份的研究快照，
+不能直接当作9月份的时点回测输入。上面的historical-research是独立显式的研究假设；
+真实历史对照仍需历史可见记录或按当时可见版本推进的计算流程。`generate.py`的默认单MA快照模式不受此选项影响。
 
 ## 08读取及驱动决策
 

@@ -28,7 +28,7 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from bomber.framework.trader.template import StrategyTemplate
-from bomber.framework.trader.execution.option_settlement import SETTLEMENT_ORIGIN
+from bomber.framework.trader.execution.option_settlement import SETTLEMENT_ORIGIN, FUTURE_SETTLEMENT_ORIGIN
 from .vega_signal import remaining_trading_days, allocate_short, source_iv, source_years, source_greeks
 
 
@@ -127,7 +127,7 @@ class OptionVegaStrategy(StrategyTemplate):
     """
     def __init__(self, strategy_id, config, contracts, futures, instruments,
                  index_id, trading_days, final_day=None, options_by_day=None, *,
-                 option_last_trade_times=None):
+                 option_last_trade_times=None, future_last_trade_times=None):
         """接收外部准备的条款、路由和日历，不在策略内读取文件或猜测合约。
 
         contracts：symbol→Contract，含执行价、乘数、上市/最后交易日及同月future。
@@ -139,6 +139,7 @@ class OptionVegaStrategy(StrategyTemplate):
         options_by_day：每日候选symbol集合，外部已完成文件/条款/对冲资格准备。
         option_last_trade_times：可选的期权停止交易纳秒时点，须覆盖全部期权；
             使用request_ns判断是否已越过截止时点，防止迟到信号产生到期后订单。
+        future_last_trade_times：回测现金交割期货的停止交易时点；仅由外部装配启用。
         """
         super().__init__(strategy_id)
         self.config = config
@@ -153,6 +154,10 @@ class OptionVegaStrategy(StrategyTemplate):
         if ((option_last_trade_times is not None and set(self.option_last_trade_times) != set(self.contracts))
                 or any(type(stamp) is not int or stamp < 0 for stamp in self.option_last_trade_times.values())):
             raise ValueError("现金结算生命周期须覆盖全部期权，时间须为非负整数纳秒")
+        self.future_last_trade_times = dict(future_last_trade_times or {})
+        if ((future_last_trade_times is not None and set(self.future_last_trade_times) != set(self.futures))
+                or any(type(stamp) is not int or stamp < 0 for stamp in self.future_last_trade_times.values())):
+            raise ValueError("现金结算生命周期须覆盖全部期货，时间须为非负整数纳秒")
         # 生命周期标记由外部恢复/停机流程维护；restored在首个帧中消费一次。
         self.restored = False
         self.stopping = False
@@ -245,8 +250,8 @@ class OptionVegaStrategy(StrategyTemplate):
     def on_fill(self, event):
         """成交归属已由框架记账，此回调统计成交，并清理权威结算后的业务状态。
 
-        普通成交无需在这里手动修改actual，避免重复记账。现金结算事件必须
-        晚于声明的停止交易时点，且该期权的本策略净持仓已经由框架归零。
+        普通成交无需在这里手动修改actual，避免重复记账。期权/期货现金结算
+        事件须晚于其停止交易时点，且该合约的本策略净持仓已经由框架归零。
         """
         self.fills_received += 1
         if event.metadata.get("execution_origin") == SETTLEMENT_ORIGIN:
@@ -262,6 +267,18 @@ class OptionVegaStrategy(StrategyTemplate):
             self.latest.pop(key, None)
             self.signals.append({"signal_ns": event.ts_event, "request_ns": event.ts_event,
                 "action": "OPTION_CASH_SETTLEMENT", "instrument": key,
+                "quantity": str(event.quantity), "price": str(event.price)})
+        elif event.metadata.get("execution_origin") == FUTURE_SETTLEMENT_ORIGIN:
+            key = next((key for key, instrument in self.instruments.items()
+                        if str(instrument) == event.identity.instrument_id), None)
+            if key not in self.future_last_trade_times:
+                raise RuntimeError("收到未声明现金结算生命周期的期货成交")
+            if event.ts_event < self.future_last_trade_times[key] or self.position(str(self.instruments[key])):
+                raise RuntimeError("期货现金结算尚未权威了结本策略仓位")
+            self.future_goals[key] = Decimal(0)
+            self.latest.pop(key, None)
+            self.signals.append({"signal_ns": event.ts_event, "request_ns": event.ts_event,
+                "action": "FUTURE_CASH_SETTLEMENT", "instrument": key,
                 "quantity": str(event.quantity), "price": str(event.price)})
 
     def _remaining_days(self, day, last_day, threshold=None):
@@ -332,7 +349,7 @@ class OptionVegaStrategy(StrategyTemplate):
     def _frame(self, signal_ns, request_ns):
         """每个封闭时点的主决策，顺序保持源策略及执行约束。
 
-        1. 读取本策略actual/working，保护已截止交易的期权。
+        1. 读取本策略actual/working，保护已截止交易的期权和期货。
         2. 恢复后等相关腿获得新场次价格；未齐时返回RESUME_WAIT。
         3. 若是指定最终清仓日，优先处理清仓并返回，不再增加仓位。
         4. option_slot：最近合格到期月选约、按Vega预算增仓，再检查退出。
@@ -345,9 +362,13 @@ class OptionVegaStrategy(StrategyTemplate):
         actual = {key: self.position(str(instrument)) for key, instrument in self.instruments.items()}
         working = {key: self.strategy_working_quantity(str(instrument)) for key, instrument in self.instruments.items()}
         expired = {key for key, stamp in self.option_last_trade_times.items() if request_ns >= stamp}
+        expired_futures = {key for key, stamp in self.future_last_trade_times.items() if request_ns >= stamp}
+        expired_all = expired | expired_futures
         # 已停止交易的残仓交给公共结算模块。保留真实数量，不能发普通平仓或重开单。
         for key in expired:
             self.option_goals[key] = actual[key]
+        for key in expired_futures:
+            self.future_goals[key] = actual[key]
         self.last_decision = decision = {
             "logic_version": "strategy1-noddb-v1", "status": "EVALUATING", "positions": {k: str(v) for k, v in actual.items() if v},
             "working": {k: str(v) for k, v in working.items() if v},
@@ -356,7 +377,7 @@ class OptionVegaStrategy(StrategyTemplate):
                      "DUE" if slot == self.config.option_slot else
                      "WAIT_SLOT" if slot < self.config.option_slot else "SLOT_PASSED",
             "hedge": "NOT_EVALUATED", "exit_checks": [],
-            "awaiting_settlement": sorted(key for key in expired if actual[key])}
+            "awaiting_settlement": sorted(key for key in expired_all if actual[key])}
         # entry/hedge/status是三个维度：本帧可WAIT_SLOT但对冲，也可无新候选但退出旧仓。
         # 实际持仓以positions为准，working表示在途；不能只看status判断是否持仓。
 
@@ -364,7 +385,7 @@ class OptionVegaStrategy(StrategyTemplate):
             # 隔夜/午休恢复时，各腿首Bar可相差一分钟；等待更新，不用上一场次报价。
             required = {key for key in self.instruments if actual[key] or working[key]
                         or self.option_goals.get(key) or self.future_goals.get(key)}
-            required.difference_update(expired)
+            required.difference_update(expired_all)
             held_options = required.intersection(self.contracts)
             if held_options:
                 required.add(self.index_id)
@@ -387,14 +408,14 @@ class OptionVegaStrategy(StrategyTemplate):
             self.flatten_requested = True
             if not any(working.values()):
                 # 有在途先等待回报，避免重复发平仓；后续帧会重新检查。
-                if (any(q for key, q in actual.items() if key not in expired)
+                if (any(q for key, q in actual.items() if key not in expired_all)
                         or any(q for key, q in self.option_goals.items() if key not in expired)
-                        or any(self.future_goals.values())):
+                        or any(q for key, q in self.future_goals.items() if key not in expired_futures)):
                     for key, position in actual.items():
-                        if position and key not in expired:
+                        if position and key not in expired_all:
                             self._price(key, signal_ns)
                     self.option_goals = {key: actual[key] if key in expired else Decimal(0) for key in self.contracts}
-                    self.future_goals = {key: Decimal(0) for key in self.futures}
+                    self.future_goals = {key: actual[key] if key in expired_futures else Decimal(0) for key in self.futures}
                     targets = {str(self.instruments[key]): value for key, value in
                                {**self.option_goals, **self.future_goals}.items()}
                     self._submit(targets, request_ns, signal_ns, "FINAL_FLAT")
@@ -422,7 +443,8 @@ class OptionVegaStrategy(StrategyTemplate):
                 # 执行价大于所加载的指数特征值，且剩余交易日达标；期权、同月
                 # 期货和指数必须是当前估值时点。自定义指数值在这里影响执行价筛选。
                 eligible = [key for key in self.options_by_day.get(day, ())
-                    if key not in expired and self.contracts[key].list_day <= day <= self.contracts[key].last_day
+                    if key not in expired and self.contracts[key].future not in expired_futures
+                    and self.contracts[key].list_day <= day <= self.contracts[key].last_day
                     and self.contracts[key].strike > index
                     and self._remaining_days(day, self.contracts[key].last_day) >= self.config.min_remaining_days
                     and all(self.latest.get(name, (None,))[0] == signal_ns
@@ -523,6 +545,9 @@ class OptionVegaStrategy(StrategyTemplate):
                 totals[info.future] += float(actual[key]) * float(info.multiplier) * greeks.delta
             goals = {}
             for key, exposure in totals.items():
+                if key in expired_futures:
+                    goals[key] = actual[key]  # 待公共结算回报了结，不能发送普通平仓或重开单。
+                    continue
                 if key in closing_without_iv:
                     # 该月份任一期权缺IV，整月保留原期货目标，避免将未知敞口当零。
                     # 这里不会额外触发期权平仓；后续由正常退出和对冲时点继续处理。
@@ -568,11 +593,11 @@ class OptionVegaStrategy(StrategyTemplate):
 
         REJECTED始终报错；正常运行中CANCELED/EXPIRED也报错，避免组合只成交
         一部分而继续运行。外部已设置stopping时允许停机撤单；声明到期截止之后
-        的期权取消/过期同样允许，因为由公共结算生命周期接管。其余状态只计数。
+        的期权/期货取消或过期同样允许，因为由公共结算生命周期接管。其余状态只计数。
         """
         self.order_updates_received += 1
         status = getattr(event.status, "value", str(event.status))
-        cutoff = next((stamp for key, stamp in self.option_last_trade_times.items()
+        cutoff = next((stamp for key, stamp in {**self.option_last_trade_times, **self.future_last_trade_times}.items()
                        if str(self.instruments[key]) == event.identity.instrument_id), None)
         if status in ("CANCELED", "EXPIRED") and cutoff is not None and event.ts_event >= cutoff:
             return  # 公共生命周期撤销到期余单；拒单仍是硬错误。

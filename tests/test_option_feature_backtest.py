@@ -148,6 +148,31 @@ class FeatureBacktestTests(unittest.TestCase):
         self.assertEqual(delivered[0].request_ns, END+2*S+1)
         self.assertEqual(delivered[0].observations["000852"].received_ns, END+S)
 
+    def test_all_invisible_features_fail_before_native_replay(self):
+        for records in ([self.record(visible=END+100*M)],
+                [self.record(received=END+100*M)], [self.record(event=END-M)]):
+            with self.subTest(records=records):
+                runner = replay.build_backtest_runner(positions=None,
+                    feed=NS(load_events=lambda: [self.bar(), self.bar(END+M)]), backend=None,
+                    bundle=self.bundle, binding=self.binding, records=records, index_key="000852", wait_seconds=2)
+                with patch.object(type(runner).__mro__[1], "run_replay") as native:
+                    with self.assertRaisesRegex(FeatureError, "全部历史分钟帧.*available_ns/received_ns"):
+                        runner.run_replay()
+                    native.assert_not_called()
+
+    def test_partial_missing_features_keep_warmup_skips_and_ready_frames(self):
+        runner = replay.build_backtest_runner(positions=None,
+            feed=NS(load_events=lambda: [self.bar(), self.bar(END+M), self.bar(END+2*M)]), backend=None,
+            bundle=self.bundle, binding=self.binding, records=[self.record(event=END+M)],
+            index_key="000852", wait_seconds=2)
+        def native_replay():
+            runner.frame_audit = [dict(status=row.status) for row in runner.outcomes.values()]
+            return "completed"
+        with patch.object(type(runner).__mro__[1], "run_replay", side_effect=native_replay) as native:
+            self.assertEqual(runner.run_replay(), "completed")
+            native.assert_called_once()
+        self.assertEqual([row["status"] for row in runner.frame_audit], ["SKIPPED", "READY"])
+
 
 class FeatureGenerationTests(unittest.TestCase):
     def setUp(self):

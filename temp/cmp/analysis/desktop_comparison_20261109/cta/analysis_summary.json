@@ -1,0 +1,123 @@
+{
+  "common_period": [
+    "2026-01-05",
+    "2026-07-03"
+  ],
+  "initial_capital": 15000000,
+  "new_run": "/Users/kerry/Desktop/cmp/kd/cta/88aa2527-c47d-4bca-994d-cb3e0e299740",
+  "old_run": "/Users/kerry/Desktop/cmp/lxg/cta/output_20261101_103833",
+  "counts": {
+    "new_common": {
+      "rows": 476,
+      "qty": 665.0,
+      "fees": 93381.44,
+      "first": "2026-01-05 09:41:00",
+      "last": "2026-07-03 09:41:00"
+    },
+    "old_common": {
+      "rows": 371,
+      "qty": 665.0,
+      "fees": 93374.8,
+      "first": "2026-01-05 09:41:00",
+      "last": "2026-07-03 09:41:00"
+    },
+    "new_full": {
+      "rows": 488,
+      "qty": 682.0,
+      "fees": 95981.39,
+      "first": "2026-01-05 09:41:00",
+      "last": "2026-07-09 09:41:00"
+    }
+  },
+  "stats": {
+    "old": {
+      "ending_equity": 16387945.199999994,
+      "profit": 1387945.1999999937,
+      "total_return": 0.0925296799999995,
+      "maximum_drawdown": -0.03510257275977491,
+      "sharpe_252_calendar": 1.5931460636309462,
+      "annual_vol_252_calendar": 0.07976453181496901
+    },
+    "new_common_valuation": {
+      "ending_equity": 16492178.56,
+      "profit": 1492178.5600000005,
+      "total_return": 0.09947857066666677,
+      "maximum_drawdown": -0.03141067812435461,
+      "sharpe_252_calendar": 1.7738718386272825,
+      "annual_vol_252_calendar": 0.07650509944049334
+    }
+  },
+  "matched_groups": 369,
+  "matched_price_different_groups": 365,
+  "unmatched_groups": 4,
+  "price_effect_aligned": 72920.00000001048,
+  "price_effect_different_dates": 31319.999999995576,
+  "price_effect_total": 104240.00000000605,
+  "fee_delta": 6.639999999999418,
+  "net_difference": 104233.36000000605,
+  "position_different_days": [
+    {
+      "date": "2026-05-29 00:00:00",
+      "instrument_id": "IH2606.CFFEX",
+      "new_minus_old_qty": -1.0
+    },
+    {
+      "date": "2026-05-29 00:00:00",
+      "instrument_id": "IM2606.CFFEX",
+      "new_minus_old_qty": -1.0
+    },
+    {
+      "date": "2026-05-30 00:00:00",
+      "instrument_id": "IH2606.CFFEX",
+      "new_minus_old_qty": -1.0
+    },
+    {
+      "date": "2026-05-30 00:00:00",
+      "instrument_id": "IM2606.CFFEX",
+      "new_minus_old_qty": -1.0
+    },
+    {
+      "date": "2026-05-31 00:00:00",
+      "instrument_id": "IH2606.CFFEX",
+      "new_minus_old_qty": -1.0
+    },
+    {
+      "date": "2026-05-31 00:00:00",
+      "instrument_id": "IM2606.CFFEX",
+      "new_minus_old_qty": -1.0
+    }
+  ],
+  "realized_net_new_common": 1471878.559999999,
+  "realized_net_old_common": 1370985.1999999979,
+  "new_cash_common": 16471878.56,
+  "new_cash_full": 16523318.61,
+  "new_cash_reconstruction_residual": 0.0,
+  "old_mark_reconciled_dates": 179,
+  "old_mark_total_dates": 180,
+  "old_mark_last_day_residual": -17080.0,
+  "actual_effective_fees": {
+    "new_rate_bps": 1,
+    "old_rate_bps": 1
+  },
+  "root_file_check": {
+    "old_root_equals_full": true,
+    "new_root_equals_full": false,
+    "new_root_common": {
+      "rows": 476,
+      "qty": 665.0,
+      "fees": 21476.300000000003,
+      "first": "2026-01-05 09:40:00",
+      "last": "2026-07-03 09:40:00"
+    },
+    "root_rate_bps_min": 0.22994175122134533,
+    "root_rate_bps_max": 0.23005673266180388,
+    "root_time_counts": {
+      "09:40": 476
+    },
+    "main_time_counts": {
+      "09:41": 476
+    },
+    "root_vs_main_price_cashflow": -56000.00000000396,
+    "root_vs_main_fee_advantage": 71905.14
+  }
+}

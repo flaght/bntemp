@@ -267,18 +267,43 @@ python -u demos/08_option_vega/run_backtest.py \
 
 ### 到期现金结算
 
-使用公共`OptionCashSettlementModule`，到期有实际残仓时追加：
+期权使用公共`OptionCashSettlementModule`，IF/IH/IM期货对冲仓使用同一公共流程的`FutureCashSettlementModule`。
+YAML启动参数可分别配置两个来源，以下为部署路径示例，须按实际目录填写：
+
+```yaml
+    option_settlements: /root/bbnt/data/daily/opt
+    future_settlements: /root/bbnt/data/daily/fut
+    settlement_available_time: "16:00"
+```
+
+也可在回测命令中追加：
 
 ```bash
 --option-settlements /实际路径/官方期权日行情目录 \
+--future-settlements /实际路径/官方股指期货日行情目录 \
 --settlement-available-time 16:00 --exercise-fee-per-contract 0
 ```
 
-目录为`YYYY-MM-DD.feather`，含`code,trade_date,settlPrice`；也可传标准CSV/Parquet/Feather，列为`symbol,last_trade_date,settlement_price`，可选`available_at,fee_per_contract`。只按真实条款指定的到期日读取；允许零终值。没有实际残仓可不提供终值，有残仓缺终值则失败，不使用最后close猜结算价。
+期权、期货目录内文件均为`YYYY-MM-DD.feather`，统一固定读取`code,trade_date,settlePrice`，只需指定目录，不配置列名。
+日行情使用已确认的固定格式：`trade_date,code,secShortName,exchangeCD,preSettlePrice,preClosePrice,openPrice,highestPrice,lowestPrice,closePrice,settlePrice,turnoverVol,turnoverValue,openInt`。
+额外行情列不参与结算校验；只按opt_basic/fut_basic指定的到期日读取本次合约，code须为真实合约，例如IM2605。
+此前结算价列名拼写有误，读取器现统一使用`settlePrice`；旧的三个`future_settlement_*_column`配置项已移除，应从启动YAML中删除。
+
+也可传标准CSV/Parquet/Feather结算文件，列为`symbol,last_trade_date,settlement_price`，可选`available_at,fee_per_contract`。
+期权允许零终值；期货最终交割结算价必须为有限正数。没有实际残仓可不提供终值，有残仓缺终值则失败。
+来源应保证所选到期日价格字段确为最终结算价，不使用分钟close或其他月份价格代替。
+`settlement_available_time`共用于两个来源，逐行`available_at`优先；16:00是配置假设，不是对来源实际发布时间的证明。
+期货结算费按每手配置或文件`fee_per_contract`收取，不重复套用普通成交费及`delivery_fee_multiplier`。
+
+期货最后交易日来自fut_basic，期权来自opt_basic；截止后撤销未终结委托，并停止普通交易。
+公共结算模块按权威终值生成了结成交，更新原生账户、持仓和各策略归属；08收到回报后清零对应目标。
+因此旧月IM在结算后不会再成为下一交易日恢复所需的行情腿。结算回报前保留实际残仓，不能仅将字典置零冒充了结。
+缺少持有合约的终值时，分别明确提示`--option-settlements`或`--future-settlements`，不等到跨日行情过期才失败。
+该接线仅用于文件回测的IF/IH/IM现金交割，不扩展商品期货实物交割，也不替代Live柜台的权威结算和仓位核对。
 
 普通成交费用由公共FeeModel处理，结算费用单独记录。模拟仍使用基础NETTING/Bar撮合与比例保证金，不代表完整卖方保证金、期货交割或实物行权。
 
-回测默认保存在`results/backtest/<期权品种>/<开始日>-<结束日>/<run-id>/`：`summary.json`、`orders/fills/positions/account.csv`、`signals.csv`、`settlements.csv`、`feature_frames.json`、`strategy_parameters.json`、输入诊断和费用报告。`--report-dir`替换根目录；运行编号保留，重复回测不覆盖此前结果。准备失败仍使用公共`<report-dir>/input_failed_*`诊断目录。
+回测默认保存在`results/backtest/<期权品种>/<开始日>-<结束日>/<run-id>/`：`summary.json`、`orders/fills/positions/account.csv`、`signals.csv`、期权`settlements.csv`、期货`future_settlements.csv`、`feature_frames.json`、`strategy_parameters.json`、输入诊断和费用报告。summary分别记录两个结算来源、已加载终值数量和实际结算次数；启动时也打印两个来源与已加载数量。`--report-dir`替换根目录；运行编号保留，重复回测不覆盖此前结果。准备失败仍使用公共`<report-dir>/input_failed_*`诊断目录。
 
 ## 3. Live
 
@@ -477,7 +502,9 @@ python -u -m demos.08_option_vega.feature.example_dolphindb \
 
 此例生成`index-blend.csv`、同名manifest与dataset.json及summary.json，数据集为`research.index.ma20_ma60.minute`，字段为`close/ma20/ma60/index_blend`。公式为`(MA20+MA60)/2`，按实际输入行滚动，跨午休/跨日延续，前59行预热不输出，不等同于上一个连续分钟重置的单MA例子。输出目录已有文件时必须另选目录；需要起始日完整特征时，应查询更早数据作为预热。
 
-切换Tinysoft等库表时，在来源声明中显式映射库、表、键、时间列和close列，并用`--config`选择；源代码若为SH000852，再传`--source-key SH000852`，导出键仍为000852。close精简声明适用于这个DataFrame例子；`feature.generate`仍要求真实OHLCV和bar_projection，不能只改dataset名称混用入口。新生成的组合均线同样具有下面的研究快照可见时间限制，不能因为生成命令成功就直接作为过去逐分钟可用的证据。
+切换Tinysoft等库表时，在来源声明中显式映射库、表、键、时间列和close列，并用`--config`选择；源代码若为SH000852，再传`--source-key SH000852`，导出键仍为000852。已提供`feature/index_tinysoft.json`，对应`dfs://JC_MKT_MIN/idx_1min_tiny`。close精简声明适用于这个DataFrame例子；`feature.generate`仍要求真实OHLCV和bar_projection，不能只改dataset名称混用入口。默认生成的组合均线具有下面的快照可见时间限制，不能因为生成命令成功就直接作为过去逐分钟可用的证据。
+
+需要用当前历史快照进行研究回测时，显式传`--output-time-mode historical-research --assumed-delay-seconds 1`，假设完整分钟结束1秒后特征可用；来源声明仍保持observed。输出使用独立的计算版本，保留实际观测/导出时间并注明未验证历史发布/修订。完整Tinysoft生成及2026-01-05至2026-08-24回测命令见[特征包说明](feature/README.md#tinysoft历史研究回测)。该选项属于DataFrame生成示例，不改变策略公式、Live时间或公共可见性规则。
 
 默认`observed`保留本次观测时间：能得到数据快照，不代表9月份当时已可见，不能直接用于9月份的时点回测。若数据源确认配置中的`updateTime`是该版本真实可用时刻，本例可显式加`--availability source-time`；如果只是后来补录的时间，仍不能提前使用。MA的可用时间仍是实际计算完成时间。先核对输出可见时间与实际`--frame-wait-seconds`，不要为了成交把时间改成Bar结束。
 
@@ -511,7 +538,7 @@ python -u -m demos.08_option_vega.feature.example_dolphindb \
 
 同一文件改用`--index-value-field close`，可对比相同分钟、相同可见时间下的原始值与MA20；保持交易腿、日期、资金、风险及等待时间参数一致。报告`index_feature.value_field`和可用帧的`value_field`记录实际选用字段。新参数仅用于回测，Live仍沿用原投影路径。
 
-注意本例是**当前计算的研究快照**，可用时间是本次计算完成时间。今天导出9月份的MA20，可以核验计算与读写，却不能直接参加9月份的时点回测；需要保留历史已发布MA记录，或另行实现按输入当时可见版本逐分钟计算的历史回放。不能把当前计算时间改成历史Bar时间。超过帧期限的MA不会进入已封闭决策。
+注意`feature.generate`及DataFrame示例的默认模式是**当前计算的研究快照**，可用时间是本次计算完成时间。今天导出9月份的MA20，可以核验计算与读写，却不能直接参加9月份的时点回测；真实历史回放需要保留历史已发布MA记录，或按输入当时可见版本逐分钟计算。DataFrame示例可显式选择上面的历史研究假设，但不能将其当作真实历史发布时间。超过帧期限的MA不会进入已封闭决策；全部历史帧均无可用指数特征时，在原生回放前报错，避免长时间运行后才发现没有决策。
 
 离线测试覆盖20条输入计算MA20、声明与标准文件读回、原策略候选/目标变化，以及预热、缺口和迟到拒绝；这些是夹具验证，不是收益表现或原生成交回测结果。
 
@@ -575,12 +602,14 @@ python -u -m demos.08_option_vega.feature.example_dolphindb \
 | `--margin-init`、`--margin-maint` | 0.15、0.12 | 期货初始/维持保证金比例 |
 | `--option-margin-init`、`--option-margin-maint` | 1、1 | 期权模拟保证金比例；不代表完整交易所卖方保证金模型 |
 | `--option-settlements` | 未指定 | 官方最终结算文件或按到期日保存的目录；实际残仓需要终值时必须提供 |
+| `--future-settlements` | 未指定 | IF/IH/IM期货官方最终交割结算文件或日行情目录；可与期权目录分别配置 |
+| `--future-settlement-fee-per-contract` | 0 | 期货每手结算费用；逐行fee_per_contract优先，不重复收取普通交易费 |
 | `--settlement-available-time` | 16:00 | 源结算记录未提供available_at时采用的本地可用时间 |
 | `--exercise-fee-per-contract` | 0 | 默认每手现金结算费用，文件的逐合约fee_per_contract优先 |
 | `--no-tearsheet` | false，模板true | 省略tearsheet输出，不关闭订单、成交或账户报告 |
 | `--require-fills` | false，模板true | 本次回测至少有成交才通过验收；不会为满足条件强制开仓 |
 
-若显式配置了`nav`，只修改starting_balance不会同步修改策略预算；比较不同资金规模时应分别核对两项。期权最后交易时点、最终结算资料和回测结束日需配合，结算可用时间在区间之外时应延长回测范围，不能提前结算。
+若显式配置了`nav`，只修改starting_balance不会同步修改策略预算；比较不同资金规模时应分别核对两项。期权/期货最后交易时点、最终结算资料和回测结束日需配合，结算可用时间在区间之外时应延长回测范围，不能提前结算。
 
 ### 5.4 Live生命周期、账户和验收参数
 

@@ -14,6 +14,7 @@ import time
 
 from bomber.framework.market.basic.base import InstrumentId
 from bomber.framework.trader.execution.contracts import OrderSide
+from bomber.framework.trader.execution.option_settlement import CASH_SETTLEMENT_ORIGINS
 
 
 class AttributionError(RuntimeError):
@@ -343,7 +344,7 @@ class PositionAttributionLedger:
             client, instrument = report.backend_id, report.instrument_id
             actual = self.positions.account_position(client, instrument)
             delta = update.fill_delta * (1 if update.state.side is OrderSide.BUY else -1)
-            if (report.metadata.get("execution_origin") != "option_expiry"
+            if (report.metadata.get("execution_origin") not in CASH_SETTLEMENT_ORIGINS
                     or delta != -actual or self.positions.working_quantity(client, instrument)):
                 raise AttributionError("结算必须恰好了结全部实际残仓，且不得存在在途委托")
             owned = {key: quantity for key, quantity in self._owned.items()

@@ -19,7 +19,8 @@ else:
 
 @unittest.skipIf(NATIVE_ERROR is not None, f"需要Bomber编译扩展: {NATIVE_ERROR}")
 class VegaNativeSettlementTests(unittest.TestCase):
-    def fixture(self, root, terminal, *, option_bar_minutes=1, execution_timing="native"):
+    def fixture(self, root, terminal, *, option_bar_minutes=1, execution_timing="native",
+                future_hedge=False, future_terminal=Decimal("6900.13")):
         module = import_module("demos.08_option_vega.run_backtest")
         features = import_module("demos.08_option_vega.feature")
         from bomber.framework.datahub.features import ExternalDataRecord
@@ -70,6 +71,10 @@ class VegaNativeSettlementTests(unittest.TestCase):
         if terminal is not None:
             settlements.write_text("symbol,last_trade_date,settlement_price,available_at,fee_per_contract\n"
                 f"{options[0]},2026-09-18,{terminal},2026-09-18T16:00:00+08:00,1.2\n")
+        future_settlements = root / "future-settlements.csv"
+        if future_hedge and future_terminal is not None:
+            future_settlements.write_text("symbol,last_trade_date,settlement_price,available_at,fee_per_contract\n"
+                f"IM2609,2026-09-18,{future_terminal},2026-09-18T16:00:00+08:00,0.5\n")
         cli = ["run_backtest.py", "--data-root", str(root), "--calendar", str(calendar),
             "--index-feature-file", str(index_path), "--start-day", days[0], "--end-day", days[-1],
             "--min-remaining-days", "1", "--close-remaining-days", "0", "--nav", "2000000",
@@ -82,6 +87,11 @@ class VegaNativeSettlementTests(unittest.TestCase):
             cli.extend(["--option-slot", "14:00", "--opt-dir", str(root / "kline/opt")])
         if terminal is not None:
             cli.extend(["--option-settlements", str(settlements)])
+        if future_hedge:
+            cli.extend(["--nav", "40000000", "--max-option-lots", "10", "--max-total-option-lots", "20",
+                "--hedge-slots", "14:50"])
+            if future_terminal is not None:
+                cli.extend(["--future-settlements", str(future_settlements)])
         with patch.object(module, "run_case") as capture, patch("sys.argv", cli):
             module.main()
         return module, capture.call_args.args[0]
@@ -135,6 +145,31 @@ class VegaNativeSettlementTests(unittest.TestCase):
             times = pd.to_datetime(option_fills.ts_event, utc=True).dt.tz_convert("Asia/Shanghai")
             self.assertTrue((times.dt.minute % 5 == 0).all())
             self.assertFalse(times.dt.strftime("%H:%M").eq("14:00").any())
+
+    def test_filled_future_hedge_cash_settles_and_next_day_runs_without_expired_quotes(self):
+        with TemporaryDirectory() as directory:
+            module, args = self.fixture(Path(directory), Decimal(0), option_bar_minutes=5,
+                execution_timing="next_market", future_hedge=True)
+            output = module.run_case(args)
+            summary = json.loads((output / "summary.json").read_text())
+            settled = pd.read_csv(output / "future_settlements.csv")
+            self.assertEqual(summary["future_settlement_count"], 1)
+            self.assertEqual(settled.instrument_id.tolist(), ["IM2609.CFFEX"])
+            self.assertGreater(Decimal(str(settled.quantity.iloc[0])), 0)
+            self.assertEqual(settled.side.iloc[0], "SELL")
+            self.assertEqual(Decimal(str(settled.price.iloc[0])), Decimal("6900.13"))
+            self.assertEqual(int(settled.ts_event.iloc[0]), int(pd.Timestamp("2026-09-18T16:00:00+08:00").value))
+            self.assertEqual(summary["remaining_positions_or_working"], {})
+            self.assertEqual(summary["report_errors"], [])
+            signals = pd.read_csv(output / "signals.csv")
+            self.assertEqual(sum(signals.action.eq("FUTURE_CASH_SETTLEMENT")), 1)
+
+    def test_filled_future_hedge_requires_official_final_price(self):
+        with TemporaryDirectory() as directory:
+            module, args = self.fixture(Path(directory), Decimal(0), option_bar_minutes=5,
+                execution_timing="next_market", future_hedge=True, future_terminal=None)
+            with self.assertRaisesRegex(RuntimeError, "Missing final settlement for held future IM2609"):
+                module.run_case(args)
 
 
 if __name__ == "__main__":

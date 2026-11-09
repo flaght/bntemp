@@ -1,0 +1,355 @@
+{
+  "generated_at": "2026-11-09T08:16:45.754621+08:00",
+  "source_root": "/Users/kerry/Desktop/cmp",
+  "prior_snapshot_comparison": [
+    {
+      "group": "CTA新版",
+      "files": 13,
+      "identical": 13,
+      "not_identical": []
+    },
+    {
+      "group": "CTA老版",
+      "files": 12,
+      "identical": 12,
+      "not_identical": []
+    },
+    {
+      "group": "期权老版",
+      "files": 12,
+      "identical": 12,
+      "not_identical": []
+    }
+  ],
+  "fee_audit": {
+    "run": "/Users/kerry/Desktop/cmp/kd/opt/e36c2e9f-a954-4228-a0b1-799110a23da7",
+    "calculation_mismatches": 0,
+    "checked_rows": 1927,
+    "commission_rows": 905,
+    "settlement_rows": 61,
+    "fill_rows": 961,
+    "totals": {
+      "future_trade": {
+        "rows": 493,
+        "qty": "1024",
+        "fee": "506775.15"
+      },
+      "option_trade": {
+        "rows": 407,
+        "qty": "1169",
+        "fee": "175.35"
+      },
+      "hidden_future_expiry": {
+        "rows": 5,
+        "qty": "90",
+        "fee": "46245.92"
+      },
+      "option_settlement": {
+        "rows": 61,
+        "qty": "1023",
+        "fee": "153.45"
+      }
+    },
+    "commission_record_sum": "553196.42",
+    "settlement_fee_sum": "153.45",
+    "fills_fee_sum": "507103.95",
+    "actual_fee_total": "553349.87",
+    "hidden_fee_total": "46245.92",
+    "first_future_example": {
+      "instrument_id": "IM2601.CFFEX",
+      "client_order_id": "O-20260105-020000-001-000-1",
+      "quantity": "30",
+      "fill_price": "7672.2",
+      "contract_multiplier": "200",
+      "source": "fut_basic",
+      "source_value": "0.0023",
+      "source_unit": "%",
+      "per_contract": "0",
+      "rate": "0.000023",
+      "standard_commission": "1058.7636000",
+      "commission_multiplier": "13.043478260869565",
+      "actual_commission": "13809.96"
+    }
+  },
+  "cta": {
+    "common_period": [
+      "2026-01-05",
+      "2026-07-03"
+    ],
+    "initial_capital": 15000000,
+    "new_run": "/Users/kerry/Desktop/cmp/kd/cta/88aa2527-c47d-4bca-994d-cb3e0e299740",
+    "old_run": "/Users/kerry/Desktop/cmp/lxg/cta/output_20261101_103833",
+    "counts": {
+      "new_common": {
+        "rows": 476,
+        "qty": 665.0,
+        "fees": 93381.44,
+        "first": "2026-01-05 09:41:00",
+        "last": "2026-07-03 09:41:00"
+      },
+      "old_common": {
+        "rows": 371,
+        "qty": 665.0,
+        "fees": 93374.8,
+        "first": "2026-01-05 09:41:00",
+        "last": "2026-07-03 09:41:00"
+      },
+      "new_full": {
+        "rows": 488,
+        "qty": 682.0,
+        "fees": 95981.39,
+        "first": "2026-01-05 09:41:00",
+        "last": "2026-07-09 09:41:00"
+      }
+    },
+    "stats": {
+      "old": {
+        "ending_equity": 16387945.199999994,
+        "profit": 1387945.1999999937,
+        "total_return": 0.0925296799999995,
+        "maximum_drawdown": -0.03510257275977491,
+        "sharpe_252_calendar": 1.5931460636309462,
+        "annual_vol_252_calendar": 0.07976453181496901
+      },
+      "new_common_valuation": {
+        "ending_equity": 16492178.56,
+        "profit": 1492178.5600000005,
+        "total_return": 0.09947857066666677,
+        "maximum_drawdown": -0.03141067812435461,
+        "sharpe_252_calendar": 1.7738718386272825,
+        "annual_vol_252_calendar": 0.07650509944049334
+      }
+    },
+    "matched_groups": 369,
+    "matched_price_different_groups": 365,
+    "unmatched_groups": 4,
+    "price_effect_aligned": 72920.00000001048,
+    "price_effect_different_dates": 31319.999999995576,
+    "price_effect_total": 104240.00000000605,
+    "fee_delta": 6.639999999999418,
+    "net_difference": 104233.36000000605,
+    "position_different_days": [
+      {
+        "date": "2026-05-29 00:00:00",
+        "instrument_id": "IH2606.CFFEX",
+        "new_minus_old_qty": -1.0
+      },
+      {
+        "date": "2026-05-29 00:00:00",
+        "instrument_id": "IM2606.CFFEX",
+        "new_minus_old_qty": -1.0
+      },
+      {
+        "date": "2026-05-30 00:00:00",
+        "instrument_id": "IH2606.CFFEX",
+        "new_minus_old_qty": -1.0
+      },
+      {
+        "date": "2026-05-30 00:00:00",
+        "instrument_id": "IM2606.CFFEX",
+        "new_minus_old_qty": -1.0
+      },
+      {
+        "date": "2026-05-31 00:00:00",
+        "instrument_id": "IH2606.CFFEX",
+        "new_minus_old_qty": -1.0
+      },
+      {
+        "date": "2026-05-31 00:00:00",
+        "instrument_id": "IM2606.CFFEX",
+        "new_minus_old_qty": -1.0
+      }
+    ],
+    "realized_net_new_common": 1471878.559999999,
+    "realized_net_old_common": 1370985.1999999979,
+    "new_cash_common": 16471878.56,
+    "new_cash_full": 16523318.61,
+    "new_cash_reconstruction_residual": 0.0,
+    "old_mark_reconciled_dates": 179,
+    "old_mark_total_dates": 180,
+    "old_mark_last_day_residual": -17080.0,
+    "actual_effective_fees": {
+      "new_rate_bps": 1,
+      "old_rate_bps": 1
+    },
+    "root_file_check": {
+      "old_root_equals_full": true,
+      "new_root_equals_full": false,
+      "new_root_common": {
+        "rows": 476,
+        "qty": 665.0,
+        "fees": 21476.300000000003,
+        "first": "2026-01-05 09:40:00",
+        "last": "2026-07-03 09:40:00"
+      },
+      "root_rate_bps_min": 0.22994175122134533,
+      "root_rate_bps_max": 0.23005673266180388,
+      "root_time_counts": {
+        "09:40": 476
+      },
+      "main_time_counts": {
+        "09:41": 476
+      },
+      "root_vs_main_price_cashflow": -56000.00000000396,
+      "root_vs_main_fee_advantage": 71905.14
+    }
+  },
+  "opt": {
+    "common_period": [
+      "2026-01-05",
+      "2026-07-09"
+    ],
+    "initial_capital": 40000000.0,
+    "new_run": "/Users/kerry/Desktop/cmp/kd/opt/e36c2e9f-a954-4228-a0b1-799110a23da7",
+    "old_run": "/Users/kerry/Desktop/cmp/lxg/opt/output_20261102_145127",
+    "actual": {
+      "new_fills": {
+        "FUTURE": {
+          "rows": 493,
+          "quantity": 1024,
+          "commission": 506775.15
+        },
+        "OPTION": {
+          "rows": 468,
+          "quantity": 2192,
+          "commission": 328.8
+        }
+      },
+      "old_fills_common": {
+        "FUTURE": {
+          "rows": 498,
+          "quantity": 1295.0,
+          "commission": 644132.112
+        },
+        "OPTION": {
+          "rows": 466,
+          "quantity": 2192.0,
+          "commission": 328.8
+        }
+      },
+      "old_fills_full": {
+        "FUTURE": {
+          "rows": 503,
+          "quantity": 1306.0,
+          "commission": 649603.32
+        },
+        "OPTION": {
+          "rows": 469,
+          "quantity": 2206.0,
+          "commission": 330.9
+        }
+      },
+      "new_fill_rows": 961,
+      "old_fill_rows_common": 964,
+      "old_fill_rows_full": 972,
+      "old_fills_after_cutoff": 8,
+      "new_cash_ending": 34536379.77,
+      "new_cash_change": -5463620.229999997,
+      "new_cash_is_not_net_asset_value": true,
+      "old_metrics_reported_profit": 2315774.19,
+      "old_metrics_profit_matches_cash_before_fees": true,
+      "old_net_value_common": 42078052.71000003,
+      "old_net_value_last": 42188972.51000003,
+      "old_last_net_value_date": "2026-07-17",
+      "old_metrics_profit_minus_last_curve_profit": 126801.67999997223,
+      "new_fees_in_fills": 507103.95,
+      "hidden_expiry_commission": 46245.92,
+      "expired_future_framework_quantity": 271.0,
+      "expired_future_native_quantity": 181.0,
+      "hidden_expiry_quantity": 90.0,
+      "initialized_expiry_orders": 5,
+      "settlement_count": 61,
+      "old_report_errors_absent": true,
+      "new_report_errors": [],
+      "old_risk_first_day": "2025-07-21",
+      "old_risk_last_day": "2026-07-10",
+      "old_risk_rows": 236,
+      "old_risk_zero_exposure_rows": 112,
+      "new_actual_fees_total": 553349.8699999999,
+      "new_commission_record_fees": 553196.4199999999,
+      "new_settlement_fees": 153.45
+    },
+    "attribution": {
+      "is_native_rerun": false,
+      "assumptions": [
+        "共同截止日为2026-07-09，排除旧版2026-07-10新增8笔成交及2026-07-17结算尾部",
+        "将新版缺少的5笔期货到期平仓按旧版实际价格及手数补入，移除原生隐藏部分成交的影响",
+        "旧版到期日的期权平仓价格按新版导出的官方终值替换，可将旧版费前净值复算至分",
+        "每日买卖量对齐后日终持仓一致，使用旧版净值的日终估值项",
+        "新版补入平仓按本轮3bp手续费计算；双方期权成交及结算均按0.15元/手"
+      ],
+      "matching_day_instrument_side_groups": 716,
+      "all_group_quantities_equal": true,
+      "gross_price_effect": -60332.70999998954,
+      "ordinary_future_price_effect": -83639.99999998952,
+      "ordinary_option_price_effect": 23307.289999999975,
+      "may29_three_future_trade_effect": -61039.99999999978,
+      "other_trade_effect": 707.2900000102381,
+      "old_terminal_price_adjustment": -11091.89000000049,
+      "old_fees_common": 644460.912,
+      "new_fees_with_added_closes": 644436.81,
+      "old_option_fees_common": 328.8,
+      "new_option_fees_common": 328.8,
+      "fee_advantage": 24.101999999995932,
+      "net_difference": -60308.607999989545,
+      "scenarios": {
+        "old_reported_gross_nav": {
+          "ending_equity": 42078052.71000003,
+          "profit": 2078052.7100000307,
+          "total_return": 0.051951317750000836,
+          "maximum_drawdown": -0.013630846300599964
+        },
+        "scenario_new_gross_nav": {
+          "ending_equity": 42017720.000000045,
+          "profit": 2017720.0000000447,
+          "total_return": 0.050443000000001126,
+          "maximum_drawdown": -0.013411888918398729
+        },
+        "old_nav_after_listed_fees": {
+          "ending_equity": 41433591.79800003,
+          "profit": 1433591.7980000302,
+          "total_return": 0.03583979495000067,
+          "maximum_drawdown": -0.01589742775410885
+        },
+        "scenario_new_net_nav": {
+          "ending_equity": 41373283.19000004,
+          "profit": 1373283.1900000423,
+          "total_return": 0.03433207975000108,
+          "maximum_drawdown": -0.015758779021316838
+        }
+      }
+    },
+    "reconciliation": {
+      "old_nav_reconstructed": 42078052.70999992,
+      "old_nav_residual": -1.1175870895385742e-07,
+      "new_cash_reconstructed": 34536379.7791021,
+      "new_cash_residual": 0.009102098643779755,
+      "old_metrics_cash_reconstructed": 42315774.19747092,
+      "native_position_pnl_and_cash_difference_explained_by_open_option_premium": 1179780.0
+    },
+    "limitations": [
+      "归因场景不是修复后的撮合重跑；不能将其作为新版有效业绩",
+      "缺少服务器原始行情及旧版运行配置原件，无法最终确认5月29日旧报价复用的来源",
+      "缺少两次positions.csv输入原件，无法做输入文件内容哈希对比",
+      "旧版最后一日净值和metrics.txt总收益为不同口径，不能混用"
+    ],
+    "rerun_comparison": {
+      "same_time_instrument_side_qty_price": true,
+      "fill_rows": 961,
+      "previous_run": "/Users/kerry/work/bomber1/pro/temp/cmp/opt_by_pos/kd/d14a7231-1535-443b-b354-1405ab8f795b",
+      "previous_actual_fees": 42573.439999999995,
+      "current_actual_fees": 553349.8699999999,
+      "previous_cash": 35047156.2,
+      "current_cash": 34536379.77,
+      "cash_change": -510776.4299999997,
+      "fee_increase": 510776.4299999999
+    }
+  },
+  "directory_verification": {
+    "checked_at": "2026-11-09 08:25:11（北京时间）",
+    "files": 52,
+    "added": 0,
+    "removed": 0,
+    "changed": 0
+  }
+}

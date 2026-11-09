@@ -33,7 +33,7 @@ class OptionDailySettlementTests(unittest.TestCase):
             exchangeCD=["CCFX"] * 3, preSettlePrice=[30.0, 40.0, 50.0],
             preClosePrice=[31.0, 41.0, 51.0], openPrice=[32.0, 42.0, 52.0],
             highestPrice=[35.0, 45.0, 55.0], lowestPrice=[30.0, 40.0, 50.0],
-            closePrice=[34.0, 44.0, 54.0], settlPrice=[99.0, 120.13, 0.0],
+            closePrice=[34.0, 44.0, 54.0], settlePrice=[99.0, 120.13, 0.0],
             turnoverVol=[4.0, 0.0, 0.0], turnoverValue=[169720.0, 0.0, 0.0], openInt=[27, 2, 2]),
             index=[0, 10, 20])
 
@@ -104,21 +104,31 @@ class OptionDailySettlementTests(unittest.TestCase):
         for value in (-1.0, float("nan"), float("inf")):
             with self.subTest(value=value):
                 frame = self.frame()
-                frame.loc[10, "settlPrice"] = value
+                frame.loc[10, "settlePrice"] = value
                 self.write(frame)
                 with self.assertRaisesRegex(ValueError, self.call):
                     self.read()
 
     def test_missing_settlement_column_cannot_fall_back_to_close(self):
-        self.write(self.frame().drop(columns="settlPrice"))
-        with self.assertRaisesRegex(ValueError, "settlPrice"):
+        self.write(self.frame().drop(columns="settlePrice"))
+        with self.assertRaisesRegex(ValueError, "settlePrice"):
+            self.read()
+
+    def test_correct_settle_price_is_required_and_misspelling_is_ignored(self):
+        frame = self.frame()
+        frame["settlPrice"] = 1.0
+        self.write(frame)
+        self.assertEqual(self.read()[self.call].price, Decimal("120.13"))
+        self.assertEqual(self.read()[self.put].price, Decimal(0))
+        self.write(frame.drop(columns="settlePrice"))
+        with self.assertRaisesRegex(ValueError, "settlePrice"):
             self.read()
 
     def test_duplicate_identical_prices_are_accepted_and_conflicts_are_rejected(self):
         frame = pd.concat([self.frame(), self.frame().loc[[10]]])
         self.write(frame)
         self.assertEqual(self.read()[self.call].price, Decimal("120.13"))
-        frame.iloc[-1, frame.columns.get_loc("settlPrice")] = 125.0
+        frame.iloc[-1, frame.columns.get_loc("settlePrice")] = 125.0
         self.write(frame)
         with self.assertRaisesRegex(ValueError, "Conflicting final settlements"):
             self.read()

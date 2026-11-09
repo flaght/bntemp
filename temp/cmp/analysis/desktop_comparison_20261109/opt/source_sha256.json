@@ -1,0 +1,22 @@
+{
+  "/Users/kerry/Desktop/cmp/kd/opt/e36c2e9f-a954-4228-a0b1-799110a23da7/account.csv": "79dfd5e44749caeae15c083ec2c48c21c3a5262ac220a97563c305c40450927a",
+  "/Users/kerry/Desktop/cmp/kd/opt/e36c2e9f-a954-4228-a0b1-799110a23da7/commission_config.json": "4160dd74b1e017a875d41208441b6c6c69d64ac592b1520763ce4e1290a318d9",
+  "/Users/kerry/Desktop/cmp/kd/opt/e36c2e9f-a954-4228-a0b1-799110a23da7/commissions.csv": "3c2a08b9bc857e0fa9d8cac0831360ddb2f1a822d72dd3cfb65b1f58a67456a9",
+  "/Users/kerry/Desktop/cmp/kd/opt/e36c2e9f-a954-4228-a0b1-799110a23da7/fills.csv": "51132fca324fb8cd0963e90c6e45a65f2e5a4ac9fee56c2a80e4a94b6593957c",
+  "/Users/kerry/Desktop/cmp/kd/opt/e36c2e9f-a954-4228-a0b1-799110a23da7/fills_output.csv": "1fb5dcf0b316d01f029f1d7a565736d6acd1069859331023c64fe8443e203a04",
+  "/Users/kerry/Desktop/cmp/kd/opt/e36c2e9f-a954-4228-a0b1-799110a23da7/input_coverage.json": "4c11dc3e2a326fcddc9ea4894f1234a5e2d0dcd060001402cabb3d40bf53a628",
+  "/Users/kerry/Desktop/cmp/kd/opt/e36c2e9f-a954-4228-a0b1-799110a23da7/input_issues.json": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+  "/Users/kerry/Desktop/cmp/kd/opt/e36c2e9f-a954-4228-a0b1-799110a23da7/input_manifest.json": "fdd9e2505590a709546ffe849b31be62322f3ff1e2c239c04cac8807e3d6153a",
+  "/Users/kerry/Desktop/cmp/kd/opt/e36c2e9f-a954-4228-a0b1-799110a23da7/orders.csv": "3e0be3533381248e51d5862ca50522486ae3ba7fb80d4e981dbe4e70a26304e0",
+  "/Users/kerry/Desktop/cmp/kd/opt/e36c2e9f-a954-4228-a0b1-799110a23da7/positions.csv": "fb40ffbdd86e19d8b5d2ec57e99c4a678e268e1f2a219ca6dd7d0589cf7d2257",
+  "/Users/kerry/Desktop/cmp/kd/opt/e36c2e9f-a954-4228-a0b1-799110a23da7/settlements.csv": "71616e94e591c78eb440af7dd50419c06dddaf9a88414444ea6e007c36cae2a5",
+  "/Users/kerry/Desktop/cmp/kd/opt/e36c2e9f-a954-4228-a0b1-799110a23da7/signals.csv": "6f1bc2b74afb75bcffb3b0218aca05881ecc154582a365bb746e2d1082fb7fac",
+  "/Users/kerry/Desktop/cmp/kd/opt/e36c2e9f-a954-4228-a0b1-799110a23da7/summary.json": "1f80097463df190c18d3967f08ae3ddb4fcbdaf26304336da67d96bdc66b736b",
+  "/Users/kerry/Desktop/cmp/lxg/opt/output_20261102_145127/fills_output.csv": "59b24c7926d1bf68d3ea18ad9c558612e028fbb6c773fd1df0b1fee36de6ec43",
+  "/Users/kerry/Desktop/cmp/lxg/opt/output_20261102_145127/metrics.txt": "fc216458f1cc355870cc015e6824af03ae730a5e95b666c98eabc4717edbbc72",
+  "/Users/kerry/Desktop/cmp/lxg/opt/output_20261102_145127/net_value.csv": "c04d3df178429d7ca0803326fc000df8fed37a50db94e25e831318a812f58344",
+  "/Users/kerry/Desktop/cmp/lxg/opt/output_20261102_145127/positions_output.csv": "f4ddb957109c24fce59d6e7690c16ab7152073129d761d01e0406a0b82f986d6",
+  "/Users/kerry/Desktop/cmp/lxg/opt/output_20261102_145127/risk_metrics.csv": "9da3add86aa6e44a801cf6a24312da196571f051a77f99feebc7f7d1986458d4",
+  "/Users/kerry/Desktop/cmp/lxg/opt/output_20261102_145127/trades.csv": "fddb147e287a4344e99ae9d5b5efb6b04a02445cadfd6854962fa921967440d4",
+  "/Users/kerry/Desktop/cmp/lxg/opt/output_20261102_145127/yearly_metrics.csv": "f46cc170cf748171ffa19085853e9f800eb215f344a416753a42a8f9f449a0df"
+}

@@ -249,9 +249,16 @@ fixed显式使用每手配置。交割费用和交割系数独立预留，普通
 
 `option_settlements.add_option_settlement_arguments(parser)` 为08/12文件回测共用CLI声明：`--option-settlements`（Path，可选）、`--settlement-available-time`（默认16:00）、`--exercise-fee-per-contract`（Decimal，默认0）。只声明参数，不连接数据源或加载文件。
 
-`load_option_settlements(path, options, *, start_day, end_day, available_time="16:00", fee_per_contract=0)` 中options为合约代码→含`last_trade`日期的标准条款，返回合约代码→执行层`OptionSettlement`值。输入可为标准CSV/Parquet/Feather，或`YYYY-MM-DD.feather`期权日行情目录；仅读取基础条款指定的到期日，普通交易日结算价不作为终值。标准列为`symbol,last_trade_date,settlement_price`，可选`available_at,fee_per_contract`；日行情列为`code,trade_date,settlPrice`。允许零终值，拒绝负数、非有限值、冲突重复和日期不一致。缺文件/合约时记录输入问题，实际是否必需由执行层到期残仓核验。
+`load_option_settlements(path, options, *, start_day, end_day, available_time="16:00", fee_per_contract=0)` 中options为合约代码→含`last_trade`日期的标准条款，返回合约代码→执行层`OptionSettlement`值。输入可为标准CSV/Parquet/Feather，或`YYYY-MM-DD.feather`期权日行情目录；仅读取基础条款指定的到期日，普通交易日结算价不作为终值。标准列为`symbol,last_trade_date,settlement_price`，可选`available_at,fee_per_contract`；日行情固定读取`code,trade_date,settlePrice`。允许零终值，拒绝负数、非有限值、冲突重复和日期不一致。缺文件/合约时记录输入问题，实际是否必需由执行层到期残仓核验。
 
 资料加载不改变仓位，也不计算逐日盯市。回测应用将返回值、真实最后交易时刻及回测终止时钟交给`NautilusSimExecutionBackend.add_profile`，并按`CASH_SETTLEMENT`构造期权；后续账户和策略归属由原生结算成交更新。
+
+`future_settlements.load_future_settlements(path, futures, *, start_day, end_day, available_time="16:00", fee_per_contract=0)`
+读取IF/IH/IM股指期货最终交割结算资料。futures为合约代码→含`last_trade`日期的标准条款；只读该日期，返回`FutureSettlement`。
+标准文件列与期权一致，日行情目录统一固定读取`code,trade_date,settlePrice`；只指定目录即可，不提供列名映射参数，其他行情列不参与结算。
+复用期权文件解析流程，但期货终值必须为有限正数；日期与fut_basic冲突、重复终值冲突和缺列均拒绝，不根据分钟close推算。
+CLI使用`add_future_settlement_arguments`声明`--future-settlements`和`--future-settlement-fee-per-contract`；发布时间复用`--settlement-available-time`，逐行available_at优先。
+Backend通过`future_settlements`和`future_last_trade_times`注册生命周期，合约由`make_future(..., expiry_policy="CASH_SETTLEMENT")`构造；缺省NATIVE的其他调用不改变。
 
 ## 日历和目标计划函数
 

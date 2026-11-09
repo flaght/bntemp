@@ -1,0 +1,21 @@
+{
+  "report": "/Users/kerry/work/bomber1/pro/temp/cmp/analysis/desktop_comparison_20261109/comparison_report.html",
+  "bytes": 56959,
+  "tables": 17,
+  "charts": 5,
+  "links_checked": 39,
+  "missing_links": [],
+  "source_files_unchanged": 52,
+  "external_dependencies": 0,
+  "fee_checks": 1927,
+  "fee_calculation_errors": 0,
+  "fee_total_identity": "passed",
+  "attribution_identity": "passed",
+  "directory_verification": {
+    "checked_at": "2026-11-09 08:25:11（北京时间）",
+    "files": 52,
+    "added": 0,
+    "removed": 0,
+    "changed": 0
+  }
+}

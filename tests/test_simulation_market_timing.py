@@ -318,6 +318,35 @@ class SimulationMarketTimingTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "past last trading time"):
             self.order()
 
+    def test_future_last_trading_cutoff_blocks_new_orders(self):
+        self.event("IF2603.CFFEX", 100)
+        self.backend._future_last_trade_times["IF2603.CFFEX"] = 150
+        self.engine.gateway.now = 150
+        with self.assertRaisesRegex(RuntimeError, "Future is past last trading time"):
+            self.order()
+
+    def test_cash_future_registration_requires_matching_lifecycle_and_keeps_asset_reports_separate(self):
+        venues, instruments = [], []
+        self.engine.add_venue = lambda **kwargs: venues.append(kwargs)
+        self.engine.add_instrument = instruments.append
+        def cash_module(kind):
+            return lambda *args: NS(kind=kind, times=args[1], records=[])
+        lifecycle = module("expiry", OptionCashSettlementModule=cash_module("option"),
+            FutureCashSettlementModule=cash_module("future"))
+        profile = NS(venue="CFFEX", build_backend_config=lambda: {})
+        with patch.dict(sys.modules, {PREFIX + ".simulation.option_expiry": lifecycle}):
+            self.backend.add_profile(profile, option_last_trade_times={"MO2605-C-7000.CFFEX": 150},
+                future_last_trade_times={"IM2605.CFFEX": 150}, settlement_end_ns=200)
+        self.assertEqual([item.kind for item in venues[0]["modules"]], ["option", "future"])
+        item = NS(id="IM2605.CFFEX", info={"expiry_policy": "CASH_SETTLEMENT", "settlement_asset": "future"})
+        self.backend.add_instrument(item)
+        self.assertEqual(instruments, [item])
+        with self.assertRaisesRegex(ValueError, "registered settlement lifecycle"):
+            self.backend.add_instrument(NS(id="IM2606.CFFEX", info=item.info))
+        venues[0]["modules"][1].records.append({"instrument_id": "IM2605.CFFEX"})
+        self.assertEqual(self.backend.future_settlement_records, ({"instrument_id": "IM2605.CFFEX"},))
+        self.assertEqual(self.backend.option_settlement_records, ())
+
     def test_native_is_the_backend_default_and_does_not_defer_submission(self):
         backend = self.sdk.backend.NautilusSimExecutionBackend("sim", engine=self.engine)
         backend.process_market_event(Bar("IC2603.CFFEX", 100))

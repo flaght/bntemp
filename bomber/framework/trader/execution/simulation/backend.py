@@ -74,6 +74,8 @@ class NautilusSimExecutionBackend:
         self._result: Any = None
         self._option_expiry_modules = []
         self._option_last_trade_times = {}
+        self._future_expiry_modules = []
+        self._future_last_trade_times = {}
         self._settlement_end_ns = None
         self._last_market_ns = 0
 
@@ -124,7 +126,8 @@ class NautilusSimExecutionBackend:
             json.dumps(configs, ensure_ascii=False, indent=2, default=str) + "\n", encoding="utf-8")
 
     def add_profile(self, profile: VenueSimulationProfilePort, *, option_settlements=None,
-                    option_last_trade_times=None, settlement_end_ns=None) -> None:
+                    option_last_trade_times=None, future_settlements=None,
+                    future_last_trade_times=None, settlement_end_ns=None) -> None:
         """注册交易场所Profile，并立即创建对应模拟Venue。"""
 
         self._ensure_configurable()
@@ -142,14 +145,26 @@ class NautilusSimExecutionBackend:
             self._option_expiry_modules.append(module)
             self._option_last_trade_times.update(option_last_trade_times)
             self._settlement_end_ns = settlement_end_ns
+        if future_last_trade_times is not None:
+            from .option_expiry import FutureCashSettlementModule
+            module = FutureCashSettlementModule(self.backend_id, future_last_trade_times,
+                future_settlements or {}, self._receive_report,
+                lambda instrument_id: self._ensure_gateway().cancel_pending_orders(
+                    instrument_id=instrument_id, reason="future reached last trading time"))
+            config["modules"] = [*(config.get("modules") or []), module]
+            self._future_expiry_modules.append(module)
+            self._future_last_trade_times.update(future_last_trade_times)
+            self._settlement_end_ns = settlement_end_ns
         self.engine.add_venue(**config)
         self._profiles[venue_key] = profile
 
     def add_instrument(self, instrument: Any) -> None:
         self._ensure_configurable()
         if (getattr(instrument, "info", None) or {}).get("expiry_policy") == "CASH_SETTLEMENT":
-            if str(instrument.id) not in self._option_last_trade_times:
-                raise ValueError("CASH_SETTLEMENT option requires a registered settlement lifecycle")
+            kind = instrument.info.get("settlement_asset", "option")
+            lifecycles = self._future_last_trade_times if kind == "future" else self._option_last_trade_times
+            if str(instrument.id) not in lifecycles:
+                raise ValueError(f"CASH_SETTLEMENT {kind} requires a registered settlement lifecycle")
         profile = self._profiles.get(str(instrument.id).rsplit(".", 1)[-1])
         validator = getattr(getattr(profile, "fee_model", None), "validate_instrument", None)
         if validator is not None:
@@ -219,11 +234,13 @@ class NautilusSimExecutionBackend:
             raise ValueError(
                 f"订单Backend不匹配: {order.backend_id} != {self.backend_id}",
             )
-        cutoff = self._option_last_trade_times.get(str(order.instrument_id))
+        cutoff = self._option_last_trade_times.get(str(order.instrument_id),
+            self._future_last_trade_times.get(str(order.instrument_id)))
         clock_ns = self._gateway.clock.timestamp_ns() if self._gateway is not None else 0
         if cutoff is not None and max(clock_ns, self._last_market_ns,
                                      int(order.metadata.get("request_ts", 0))) >= cutoff:
-            raise RuntimeError(f"Option is past last trading time: {order.instrument_id}")
+            kind = "Future" if str(order.instrument_id) in self._future_last_trade_times else "Option"
+            raise RuntimeError(f"{kind} is past last trading time: {order.instrument_id}")
         gateway = self._ensure_gateway()
         gateway.enqueue(order)
 
@@ -272,6 +289,10 @@ class NautilusSimExecutionBackend:
     @property
     def option_settlement_records(self):
         return tuple(record for module in self._option_expiry_modules for record in module.records)
+
+    @property
+    def future_settlement_records(self):
+        return tuple(record for module in self._future_expiry_modules for record in module.records)
 
     def stop(self) -> None:
         """结束流式运行并释放引擎；重复调用安全。"""

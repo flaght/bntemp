@@ -2,6 +2,8 @@
 import argparse
 from dataclasses import replace
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
+import hashlib
 import json
 from pathlib import Path
 import sys
@@ -15,7 +17,7 @@ if __package__ in (None, ""):
     __package__ = "demos.08_option_vega.feature"
 
 from bomber.framework.datahub.features import DatasetRegistry, FeatureError, dataset_from_definition
-from bomber.framework.dataprep.features import FeatureProviderFactory, FeatureRequest, export_features, load_feature_bundle
+from bomber.framework.dataprep.features import FeatureProviderFactory, FeatureRequest, encode_record, export_features, load_feature_bundle
 from bomber.framework.dataprep.sources.policy import DataSourcePurpose
 from .dataframe import dataframe_to_records
 
@@ -39,9 +41,31 @@ def calculate_features(frame):
     return result.dropna(subset=["ma20", "ma60", "index_blend"])
 
 
+def _output_delay_ns(mode, seconds):
+    """研究假设须显式选择、精确到纳秒；不修改原表Provider的observed语义。"""
+    if mode not in {"snapshot", "historical-research"}:
+        raise FeatureError("output-time-mode须为snapshot或historical-research")
+    if mode == "snapshot":
+        if seconds is not None:
+            raise FeatureError("assumed-delay-seconds仅用于historical-research")
+        return None
+    try:
+        value = Decimal(str(seconds))
+    except (InvalidOperation, ValueError):
+        raise FeatureError("历史研究模式须显式指定assumed-delay-seconds") from None
+    if not value.is_finite() or not 0 <= value <= Decimal("9223372036.854775807"):
+        raise FeatureError("假设延迟须为有限非负秒数，精度不得小于1纳秒")
+    numerator, denominator = value.as_integer_ratio()
+    delay_ns, remainder = divmod(numerator*1_000_000_000, denominator)
+    if remainder:
+        raise FeatureError("假设延迟须为有限非负秒数，精度不得小于1纳秒")
+    return delay_ns
+
+
 def run_example(*, start_ns, end_ns, output_dir, connection, config=CONFIG,
         dataset="index.minute", schema_version=1, key="000852", source_key=None,
-        max_rows=1_000_000, availability=None):
+        max_rows=1_000_000, availability=None, output_time_mode="snapshot", assumed_delay_seconds=None):
+    delay_ns = _output_delay_ns(output_time_mode, assumed_delay_seconds)
     output_dir = Path(output_dir).expanduser().resolve()
     output = output_dir / "index-blend.csv"
     declaration = Path(str(output) + ".dataset.json")
@@ -65,6 +89,8 @@ def run_example(*, start_ns, end_ns, output_dir, connection, config=CONFIG,
         if binding.backend != "dolphindb-raw" or availability not in {"observed", "source-time"}:
             raise FeatureError("可见时间覆盖仅支持原表observed或source-time")
         source_config = replace(source_config, availability=availability)
+    if delay_ns is not None and (binding.backend != "dolphindb-raw" or source_config.availability != "observed"):
+        raise FeatureError("本例历史研究模式仅接受observed原表快照，不覆盖已声明的历史发布时间")
     request = FeatureRequest(dataset, schema_version, (key if source_key is None else source_key,),
         start_ns, end_ns, cutoff, max_rows=max_rows)
     with FeatureProviderFactory.create_for(DataSourcePurpose.FEATURE_EXPORT,
@@ -101,6 +127,8 @@ def run_example(*, start_ns, end_ns, output_dir, connection, config=CONFIG,
         raise FeatureError("不足60根记录，计算结果为空，未生成文件")
     if completed_ns < max(raw["visible_ns"]):
         raise FeatureError("计算完成时间早于输入可见时间")
+    input_digest = hashlib.sha256(json.dumps([encode_record(record) for record in inputs],
+        sort_keys=True, separators=(",", ":"), allow_nan=False).encode()).hexdigest()
 
     # 4. 声明输出字段；版本名与上面的按行滚动口径保持一致。
     definition = {
@@ -111,6 +139,10 @@ def run_example(*, start_ns, end_ns, output_dir, connection, config=CONFIG,
         "fields": [{"name": name, "kind": "float", "minimum": "0", "exclusive_minimum": True}
             for name in ("close", "ma20", "ma60", "index_blend")],
     }
+    if delay_ns is not None:
+        # 这是当前下载的历史数据快照在研究假设下的回放，并非历史修订逐时点重建。
+        # 时间假设进入声明指纹，避免与真实计算快照混用。
+        definition["computation_version"] += f":historical-research:delay-ns-{delay_ns}"
     spec = dataset_from_definition(definition)
 
     # 5. 将每条结果依赖的最近60行源时间和质量传给通用转换器。
@@ -120,9 +152,18 @@ def run_example(*, start_ns, end_ns, output_dir, connection, config=CONFIG,
         raw["source_ns"].to_numpy(dtype=object), 60).max(axis=1), index=window_index, dtype=object)
     qualities = pd.Series(np.bitwise_or.reduce(np.lib.stride_tricks.sliding_window_view(
         raw["quality_flags"].to_numpy(dtype=object), 60), axis=1), index=window_index, dtype=object)
+    visible = completed_ns
+    source = f"derived:ma20-ma60:{batch.source_identity}:inputs:{input_digest}"
+    if delay_ns is not None:
+        # trailing rolling只依赖当前及之前59根完整Bar。统一假设这些输入在各自
+        # 分钟终点+delay可用，故窗口最晚可用时刻等于当前分钟终点+delay。
+        # 实际查询/计算时间另存summary，不作为历史接收时间送入回测。
+        visible = pd.Series([stamp.value+delay_ns for stamp in result.index], index=result.index, dtype=object)
+        if max(visible) > completed_ns:
+            raise FeatureError("假设可用时间仍在未来，缩小导出区间或等待该分钟完成")
+        source = f"research-assumption:minute-end-plus-{delay_ns}ns:{source}"
     records = dataframe_to_records(result, spec, key=key,
-        source=f"derived:ma20-ma60:{batch.source_identity}",
-        available_ns=completed_ns, received_ns=completed_ns,
+        source=source, available_ns=visible, received_ns=visible, revision=completed_ns,
         source_ns=source_times.reindex(result.index), quality_flags=qualities.reindex(result.index))
 
     # 6. 标准导出：CSV和manifest由公共接口一起生成。
@@ -144,10 +185,16 @@ def run_example(*, start_ns, end_ns, output_dir, connection, config=CONFIG,
         "input_rows": len(inputs), "feature_rows": len(records), "dataset_id": spec.dataset_id,
         "coverage": {"selected_input_rows": len(frame), "warmup_skipped": 59, "window_policy": "rows"},
         "input_source": batch.source_identity, "input_availability": getattr(source_config, "availability", "standard-envelope"),
+        "input_records_sha256": input_digest, "input_as_of_ns": cutoff,
+        "input_visible_range_ns": [min(record.visible_ns for record in inputs), max(record.visible_ns for record in inputs)],
+        "generated_at_ns": completed_ns, "output_time_mode": output_time_mode, "assumed_delay_ns": delay_ns,
+        "historical_publication_verified": False,
+        "first_available_ns": records[0].available_ns, "last_available_ns": records[-1].available_ns,
         "output": str(output), "manifest": str(manifest), "dataset_config": str(declaration),
         "file_roundtrip": "passed", "first_minute": result.index[0].isoformat(),
         "last_minute": result.index[-1].isoformat(), "first_value": records[0].payload.index_blend,
-        "visibility_note": "真实指数的当前计算快照，不是历史逐分钟可用性回放"}
+        "visibility_note": ("真实指数的当前计算快照，不是历史逐分钟可用性回放" if delay_ns is None else
+            "历史研究假设：当前下载的历史快照在分钟终点加指定延迟后可见；未重建历史发布/修订，非真实历史可用性证明")}
     with summary.open("x", encoding="utf-8") as stream:
         json.dump(report, stream, ensure_ascii=False, indent=2)
         stream.write("\n")
@@ -168,11 +215,18 @@ def main(argv=None):
     parser.add_argument("--query-timeout", type=int, default=30)
     parser.add_argument("--max-rows", type=int, default=1_000_000)
     parser.add_argument("--availability", choices=("observed", "source-time"))
+    parser.add_argument("--output-time-mode", choices=("snapshot", "historical-research"), default="snapshot",
+        help="snapshot保留实际计算时间；historical-research显式采用历史分钟可用性假设")
+    parser.add_argument("--assumed-delay-seconds", help="研究模式必填：完整分钟结束到特征可用的假设延迟，非真实发布时间")
     args = parser.parse_args(argv)
     if not args.connect:
         parser.error("读取DolphinDB须显式--connect，只读查询，不报单")
     if not 0 <= args.start <= args.end <= time.time_ns() or not 1 <= args.max_rows <= 1_000_000:
         parser.error("日期区间或max-rows无效")
+    try:
+        _output_delay_ns(args.output_time_mode, args.assumed_delay_seconds)
+    except FeatureError as error:
+        parser.error(str(error))
     from dotenv import load_dotenv
     from bomber.framework.dolphindb import DolphinDbConnectionConfig
     load_dotenv(Path(__file__).resolve().parents[3] / ".env")
@@ -180,7 +234,8 @@ def main(argv=None):
         connection = DolphinDbConnectionConfig.from_env(purpose="market", read_timeout_seconds=args.query_timeout)
         report = run_example(start_ns=args.start, end_ns=args.end, output_dir=args.output_dir,
             connection=connection, config=args.config, dataset=args.dataset, schema_version=args.schema_version,
-            key=args.key, source_key=args.source_key, max_rows=args.max_rows, availability=args.availability)
+            key=args.key, source_key=args.source_key, max_rows=args.max_rows, availability=args.availability,
+            output_time_mode=args.output_time_mode, assumed_delay_seconds=args.assumed_delay_seconds)
     except (ValueError, RuntimeError, OSError) as error:
         parser.error(str(error))
     print(json.dumps(report, ensure_ascii=False, indent=2), flush=True)

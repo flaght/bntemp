@@ -1,0 +1,50 @@
+{
+  "run": "/Users/kerry/Desktop/cmp/kd/opt/e36c2e9f-a954-4228-a0b1-799110a23da7",
+  "calculation_mismatches": 0,
+  "checked_rows": 1927,
+  "commission_rows": 905,
+  "settlement_rows": 61,
+  "fill_rows": 961,
+  "totals": {
+    "future_trade": {
+      "rows": 493,
+      "qty": "1024",
+      "fee": "506775.15"
+    },
+    "option_trade": {
+      "rows": 407,
+      "qty": "1169",
+      "fee": "175.35"
+    },
+    "hidden_future_expiry": {
+      "rows": 5,
+      "qty": "90",
+      "fee": "46245.92"
+    },
+    "option_settlement": {
+      "rows": 61,
+      "qty": "1023",
+      "fee": "153.45"
+    }
+  },
+  "commission_record_sum": "553196.42",
+  "settlement_fee_sum": "153.45",
+  "fills_fee_sum": "507103.95",
+  "actual_fee_total": "553349.87",
+  "hidden_fee_total": "46245.92",
+  "first_future_example": {
+    "instrument_id": "IM2601.CFFEX",
+    "client_order_id": "O-20260105-020000-001-000-1",
+    "quantity": "30",
+    "fill_price": "7672.2",
+    "contract_multiplier": "200",
+    "source": "fut_basic",
+    "source_value": "0.0023",
+    "source_unit": "%",
+    "per_contract": "0",
+    "rate": "0.000023",
+    "standard_commission": "1058.7636000",
+    "commission_multiplier": "13.043478260869565",
+    "actual_commission": "13809.96"
+  }
+}

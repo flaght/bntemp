@@ -65,7 +65,7 @@ python demos/12_option_by_pos/run_backtest.py \
   --option-settlements /workspace/data/temp_bomber1/ctp/daily/opt
 ```
 
-目录内文件按 `YYYY-MM-DD.feather` 命名，字段使用 `code,trade_date,settlPrice`。加载器按 `opt_basic.lastTradeDate` 只读取请求区间所需的到期日文件，并筛选本次策略合约；文件中的其他品种、普通交易日价格、`closePrice` 均不作为到期终值。`exchangeCD` 存在时校验为 `CCFX/CFFEX`，零成交量记录和零结算价保留，不乘合约乘数。文件交易日期必须与文件名一致，冲突重复终值及非有限、负结算价会报错。
+目录内文件按 `YYYY-MM-DD.feather` 命名，字段使用 `code,trade_date,settlePrice`。加载器按 `opt_basic.lastTradeDate` 只读取请求区间所需的到期日文件，并筛选本次策略合约；文件中的其他品种、普通交易日价格、`closePrice` 均不作为到期终值。`exchangeCD` 存在时校验为 `CCFX/CFFEX`，零成交量记录和零结算价保留，不乘合约乘数。文件交易日期必须与文件名一致，冲突重复终值及非有限、负结算价会报错。
 
 目录缺少某个到期日文件或合约时写入输入诊断，是否必须补齐仍由实际到期残仓决定。日数据不进入分钟 `on_bar`，结算触发时间继续使用 `available_at` 或下述默认可用时刻。
 
