@@ -30,6 +30,27 @@ def validate_source_configuration(payload, config):
     return identity
 
 
+def validate_option_signal(option, signal, strategy_id):
+    """原08信号须与原成交账本配套；仅报告身份字段路径及目标版本。"""
+    from bomber.framework.trader.runtime.live.recovery import identity_difference_paths
+    previous = option['component_states']['session_identity']['identity']
+    shared = option['component_states'].get('shared_account')
+    if shared is None or set(previous.get('strategies', {})) != {strategy_id}:
+        raise ValueError('请使用原08共享成交检查点；原生或模型文件不能隐式导入')
+    expected = previous['strategies'][strategy_id]
+    differences = []
+    if signal['identity'] != expected:
+        differences.append('身份差异字段='
+            + ', '.join(identity_difference_paths(expected, signal['identity'])))
+    revision = shared['strategy_revisions'].get(strategy_id, 0)
+    if signal['revision'] != revision:
+        show = lambda value: str(value) if type(value) is int else '<非整数>'
+        differences.append(f"账户revision={show(revision)}, 信号revision={show(signal['revision'])}")
+    if differences:
+        raise ValueError('原08信号与成交账户身份/来源版本不一致；'
+            + '；'.join(differences) + '；须使用配套信号文件，不修改检查点绕过核验')
+
+
 def quiescent(payload, client):
     from bomber.framework.trader.runtime.live.channels.ctp_owned import validate_saved_ownership
     ledger = validate_saved_ownership(payload, client)
@@ -158,9 +179,7 @@ def registration_payload(account, payload, option, option_signal, base_config, *
             raise ValueError('原08与worker策略、来源或风险参数不一致')
     else:
         recovery.validate_identity(reference, new_reference)
-    if (option_signal['identity'] != previous['strategies'][added]
-            or option_signal['revision'] != shared['strategy_revisions'].get(added, 0)):
-        raise ValueError('原08信号与成交账户身份/来源版本不一致；先核对原文件')
+    validate_option_signal(option, option_signal, added)
     if any(row['strategy_id'] != added for row in option['positions']['strategy_positions']):
         raise ValueError('原08包含其他策略归属')
     if (set(shared['sources']) - {added} or set(shared['strategy_revisions']) - {added}

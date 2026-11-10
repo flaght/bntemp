@@ -414,6 +414,46 @@ class AccountExecutionTests(unittest.TestCase):
 
 
 class AccountJoinMigrationTests(unittest.TestCase):
+    def test_signal_mismatch_fails_file_check_and_apply_before_connecting_without_changing_files(self):
+        from tests import test_option_workers as worker_fixtures
+        f = worker_fixtures.WorkerRegistrationTests('runTest')
+        f.setUp(); self.addCleanup(f.doCleanups)
+        root = f.f.root
+        settings = read_account_config(ROOT/'demos/shared_account/account.json')
+        settings.update(trading_day='20261013', account_state_file=str(root/'public-account.json'))
+        settings['account'] = deepcopy(f.current['account'])
+        original = deepcopy(f.base_config)
+        for row in original['strategies']:
+            row['state_file'] = str(root/(row['strategy_id']+'-signal.json'))
+            JsonStateStore(row['state_file']).save(dict(version=1, identity=f.previous[row['strategy_id']],
+                signal={'preserved_batch':row['strategy_id']}), expected_generation=0)
+        rows = [*original['strategies'], dict(strategy_id=f.sid, kind='option_vega', argv=[],
+            state_file=str(root/'option-worker-signal.json'))]
+        signal_path = root/'option-signal.json'
+        signal = deepcopy(f.signal)
+        signal['revision'] = 2
+        JsonStateStore(signal_path).save(signal, expected_generation=0)
+        combined = {**settings, 'account_state_file':str(root/'base.json'), 'strategies':rows}
+        paths = [root/'base.json', root/'option.json', signal_path,
+            *(Path(row['state_file']) for row in rows[:-1])]
+        before = {path:path.read_bytes() for path in paths}
+        config_path = root/'account-config.json'; config_path.write_text(json.dumps(settings))
+        args = ['--account-config',str(config_path), '--source-config','explicit-legacy.json',
+            '--trading-day','20261013', '--option-checkpoint',str(root/'option.json'),
+            '--option-signal',str(signal_path)]
+        with patch('scripts.integration.shared_account.run_workers.load_config',
+                return_value=(combined, {'base_config':'explicit-original.json'})), \
+                patch('scripts.integration.shared_account.config.read_config', return_value=original), \
+                patch('scripts.integration.shared_account.run.build_host') as builder:
+            for flags in ([], ['--connect','--apply']):
+                with self.subTest(flags=flags), self.assertRaisesRegex(ValueError,
+                        '账户revision=1, 信号revision=2') as caught:
+                    migrate_account.main(args+flags)
+                self.assertIn(str(signal_path), str(caught.exception))
+            builder.assert_not_called()
+        self.assertTrue(all(path.read_bytes() == content for path,content in before.items()))
+        self.assertFalse(Path(settings['account_state_file']).exists())
+
     def test_first_migration_merges_existing_hybrid_and_option_ownership_without_touching_sources(self):
         from tests import test_option_workers as worker_fixtures
         f = worker_fixtures.WorkerRegistrationTests('runTest')

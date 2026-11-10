@@ -52,7 +52,7 @@ def isolate_payload(payload, config, registry):
 def read_sources(account, source_launch, option_path=None, signal_path=None):
     from .run_workers import load_config
     from .config import read_config
-    from .register_worker import validate_source_configuration, quiescent
+    from .register_worker import validate_source_configuration, validate_option_signal, quiescent
     from bomber.framework.trader.persistence import JsonStateStore
     combined, sources = load_config(source_launch)
     if combined['account'] != account['account']:
@@ -106,6 +106,10 @@ def read_sources(account, source_launch, option_path=None, signal_path=None):
         if Path(incoming['state_file']).exists():
             raise ValueError('首次合入08的worker信号路径已占用，保留文件并核查')
         quiescent(option.payload, next(iter(option.payload['ctp_drivers'])))
+        try:
+            validate_option_signal(option.payload, signal.payload, incoming['strategy_id'])
+        except ValueError as error:
+            raise ValueError(f'{error}；成交账本={option_path}；信号文件={signal_path}') from error
         source_files.update({option_path:option_path.read_bytes(), signal_path:signal_path.read_bytes()})
     if destination in source_files or destination in {Path(row['state_file']) for row in rows.values()}:
         raise ValueError('目标账户不能覆盖任何来源或策略信号文件')

@@ -457,6 +457,24 @@ class WorkerRegistrationTests(unittest.TestCase):
                     register_worker.main(argv+flags)
                 build.assert_not_called()
 
+    def test_option_signal_mismatch_reports_identity_paths_and_revisions_without_mutation(self):
+        register_worker.validate_option_signal(self.option, self.signal, self.sid)
+        before = deepcopy((self.option, self.signal))
+        for identity_changed, revision_changed in ((True, False), (False, True), (True, True)):
+            signal = deepcopy(self.signal)
+            if identity_changed:
+                signal['identity']['reference']['td_day'] = 'private-identity-value'
+            if revision_changed:
+                signal['revision'] = 2
+            with self.subTest(identity=identity_changed, revision=revision_changed), \
+                    self.assertRaisesRegex(ValueError, '原08信号与成交账户') as caught:
+                register_worker.validate_option_signal(self.option, signal, self.sid)
+            message = str(caught.exception)
+            self.assertEqual('session.reference.td_day' in message, identity_changed)
+            self.assertEqual('账户revision=1, 信号revision=2' in message, revision_changed)
+            self.assertNotIn('private-identity-value', message)
+        self.assertEqual((self.option, self.signal), before)
+
     def test_unacknowledged_fills_and_different_ctp_account_are_rejected(self):
         broken=deepcopy(self.base)
         broken['component_states']['shared_account']['shared']['event_journal']['ack']['hybrid-rb']=0
