@@ -1,0 +1,86 @@
+{
+  "status": "offline_regressions_and_differential_checks_passed_server_validation_pending",
+  "scope": "pro/bomber/framework/dataprep/bars.py only production code",
+  "reference_sha256": "e87c8f08a59955280a4a8e08f61f4ebb04e33399347ad0e274bcec43ef7509f9",
+  "current_sha256": "e4047bd4dd680cf416d0b78fbb66d2a177b4c28e52a4340672882213fffdae77",
+  "tests": {
+    "input_multiperiod_performance": {
+      "passed": 59,
+      "new_contract_tests": 12
+    },
+    "feature_external_and_simulation_regressions": {
+      "passed": 127
+    },
+    "old_new_differential": {
+      "cases": 720,
+      "status": "passed",
+      "compared": [
+        "values",
+        "dtypes",
+        "timestamps",
+        "row_order",
+        "issues",
+        "coverage",
+        "errors"
+      ]
+    },
+    "compileall": "passed",
+    "diff_check": "passed"
+  },
+  "benchmark_environment": {
+    "python": "3.12.14",
+    "pandas": "3.0.6",
+    "numpy": "2.5.3"
+  },
+  "benchmarks": [
+    {
+      "source": "real_synthetic_feather_files",
+      "rows_per_file": 48,
+      "files": 300,
+      "rows": 14400,
+      "method": "one warmup then median of 3 alternating runs; fresh InputSession each run",
+      "before_seconds": 1.383048,
+      "after_seconds": 1.065693,
+      "reduction_percent": 22.95,
+      "disk_seconds_before": 0.196959,
+      "disk_seconds_after": 0.204606
+    },
+    {
+      "source": "real_synthetic_feather_files",
+      "rows_per_file": 240,
+      "files": 100,
+      "rows": 24000,
+      "method": "one warmup then median of 3 alternating runs; fresh InputSession each run",
+      "before_seconds": 0.514652,
+      "after_seconds": 0.400056,
+      "reduction_percent": 22.27,
+      "disk_seconds_before": 0.068505,
+      "disk_seconds_after": 0.077953
+    }
+  ],
+  "xy_current_engine_baseline_user_supplied": {
+    "engine_revision": "l1-indexed-validation-v1",
+    "run_case_seconds": 789.960931,
+    "bar_prepare_seconds": 323.712959,
+    "feather_read_seconds": 58.830459,
+    "events": 1488480,
+    "frames": 45839,
+    "entries": 179,
+    "orders": 1048,
+    "fills": 1060
+  },
+  "unchanged_contracts": [
+    "nanosecond_clock_and_visibility",
+    "price_and_quantity_precision",
+    "invalid_value_issue_order_and_row_numbers",
+    "ohlc_reject_and_sequential_repair",
+    "stable_arrival_order_and_reversed_event_rejection",
+    "public_cache_isolation"
+  ],
+  "limitations": [
+    "No full native strategy backtest locally",
+    "Synthetic small-file benchmark only",
+    "Server performance and full financial equivalence require XY verification",
+    "No kernel/wheel or nt-bomber/framework modifications"
+  ]
+}

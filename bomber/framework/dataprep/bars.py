@@ -19,6 +19,66 @@ def timestamps(values, timezone="Asia/Shanghai"):
             else stamps.dt.tz_convert(timezone))
 
 
+def _nanoseconds(values):
+    """Convert the whole datetime array, explicitly normalizing its storage unit.
+
+    Pandas can retain second/microsecond storage; asi8 alone would then silently
+    return the wrong unit. The older-Pandas fallback already stores nanoseconds.
+    """
+    import pandas as pd
+    array = values.array
+    if hasattr(array, "as_unit"):
+        try:
+            array = array.as_unit("ns")
+        except (OverflowError, ValueError):
+            # Keep the original scalar conversion's error for out-of-range dates.
+            return values.map(lambda stamp: int(stamp.value))
+    return pd.Series(array.asi8, index=values.index, name=values.name)
+
+
+def _reset_bar_index(frame):
+    """A normal Feather RangeIndex is already the index the reader promises."""
+    import pandas as pd
+    index = frame.index
+    if (isinstance(index, pd.RangeIndex) and index.start == 0 and index.stop == len(frame)
+            and index.step == 1 and index.name is None):
+        return frame
+    return frame.reset_index(drop=True)
+
+
+def _finite_values(values):
+    import numpy as np
+    import pandas as pd
+    dtype = values.dtype
+    if dtype.kind in "biu" or (dtype.kind == "f" and dtype.itemsize <= 8):
+        # Use float only for the finiteness mask; retain original integer columns
+        # for positivity/modulo checks (including quantities above 2**53).
+        return np.isfinite(values.to_numpy(dtype=np.float64, na_value=np.nan))
+    return values.map(lambda value: not pd.isna(value) and isfinite(float(value)))
+
+
+def _ohlc_check(frame):
+    """Check homogeneous numeric prices without constructing row-wise frames.
+
+    Mixed/nullable dtypes retain the original Pandas reductions, including its
+    dtype promotion and missing-value behavior for audited research inputs.
+    """
+    import numpy as np
+    import pandas as pd
+    names = ("open", "high", "low", "close")
+    dtype = frame["open"].dtype
+    if (isinstance(dtype, np.dtype) and dtype.kind in "biuf"
+            and all(frame[name].dtype == dtype for name in names[1:])):
+        opening, high, low, closing = (frame[name].to_numpy(copy=False) for name in names)
+        maximum = np.fmax(np.fmax(opening, closing), np.fmax(high, low))
+        minimum = np.fmin(np.fmin(opening, closing), np.fmin(high, low))
+        invalid = pd.Series((high < maximum) | (low > minimum), index=frame.index)
+        return invalid, pd.Series(maximum, index=frame.index)
+    invalid = (frame.high.lt(frame[["open", "low", "close"]].max(axis=1))
+        | frame.low.gt(frame[["open", "high", "close"]].min(axis=1)))
+    return invalid, None
+
+
 def timestamp_column(path):
     frame = read_feather(path)
     for name in ("datetime", "timestamp"):
@@ -57,9 +117,10 @@ def read_bar_frame(path, spec=None, key=None, *, copy_frame=True):
     frame = read_feather(path)
     if not frame.columns.is_unique or frame.empty:
         fail("INVALID_SCHEMA", "Empty file or duplicate columns", source=path)
-    frame = frame.reset_index(drop=True)
+    frame = _reset_bar_index(frame)
     mapping = dict(spec.field_mapping)
-    frame = frame.rename(columns={raw: canonical for canonical, raw in mapping.items()})
+    if mapping:
+        frame = frame.rename(columns={raw: canonical for canonical, raw in mapping.items()})
     if not frame.columns.is_unique:
         fail("INVALID_SCHEMA", "Field mapping produces duplicate columns", source=path)
     time_key = spec.timestamp_column or next((n for n in ("datetime", "timestamp") if n in frame), None)
@@ -86,7 +147,7 @@ def read_bar_frame(path, spec=None, key=None, *, copy_frame=True):
         if session is not None and "exchange_trading_day_trusted_from_file_identity" not in session.coverage.assumptions:
             session.coverage.assumptions += ("exchange_trading_day_trusted_from_file_identity",)
     event = raw + pd.Timedelta(seconds=spec.interval_seconds if spec.timestamp_label == "start" else 0)
-    ns = event.map(lambda stamp: int(stamp.value))
+    ns = _nanoseconds(event)
     if spec.require_minute_alignment and (ns % (spec.interval_seconds * 1_000_000_000)).any():
         fail("INVALID_TIMESTAMP", "分钟快照时间必须对齐整分钟", source=path)
     if ns.duplicated().any():
@@ -103,7 +164,7 @@ def read_bar_frame(path, spec=None, key=None, *, copy_frame=True):
     frame["trading_day"] = key.trading_day
     if spec.available_column:
         available = timestamps(available_values, spec.timezone)
-        frame["available_ns"] = available.map(lambda stamp: int(stamp.value))
+        frame["available_ns"] = _nanoseconds(available)
     else:
         frame["available_ns"] = ns
     if frame.available_ns.lt(ns).any():
@@ -121,7 +182,7 @@ def read_bar_frame(path, spec=None, key=None, *, copy_frame=True):
             frame = frame.loc[~zeros].copy()
     for name in spec.required_fields:
         frame[name] = pd.to_numeric(frame[name], errors="coerce")
-        finite = frame[name].map(lambda v: not pd.isna(v) and isfinite(float(v)))
+        finite = _finite_values(frame[name])
         valid = finite & (frame[name].ge(0) if name in {"volume", "open_interest"} else frame[name].gt(0))
         if name == "volume" and spec.require_integer_volume:
             valid &= frame[name].mod(1).eq(0)
@@ -135,7 +196,7 @@ def read_bar_frame(path, spec=None, key=None, *, copy_frame=True):
                 raise InputError(issue)
             issues.append(issue)
     if {"open", "high", "low", "close"} <= set(spec.required_fields):
-        invalid = frame.high.lt(frame[["open", "low", "close"]].max(axis=1)) | frame.low.gt(frame[["open", "high", "close"]].min(axis=1))
+        invalid, bounds = _ohlc_check(frame)
         if invalid.any():
             if spec.ohlc_policy == "reject":
                 fail("INVALID_OHLC", "OHLC relationship invalid", source=path,
@@ -147,7 +208,11 @@ def read_bar_frame(path, spec=None, key=None, *, copy_frame=True):
             issues.append(issue)
             record_issue(issue)
             frame["source_high"], frame["source_low"] = frame.high.copy(), frame.low.copy()
-            frame.loc[invalid, "high"] = frame.loc[invalid, ["open", "high", "low", "close"]].max(axis=1)
+            if bounds is None:
+                frame.loc[invalid, "high"] = frame.loc[invalid, ["open", "high", "low", "close"]].max(axis=1)
+            else:
+                frame.loc[invalid, "high"] = bounds.loc[invalid]
+            # Preserve the established repair order: low sees the repaired high.
             frame.loc[invalid, "low"] = frame.loc[invalid, ["open", "high", "low", "close"]].min(axis=1)
     if spec.value_policy == "research_audited":
         frame["input_quality"] = ""
@@ -157,7 +222,10 @@ def read_bar_frame(path, spec=None, key=None, *, copy_frame=True):
                 record_issue(issue)
     if "volume" in frame:
         frame["zero_volume_bar"] = frame.volume.eq(0)
-    frame = frame.sort_values(["available_ns", "event_ns"], kind="stable").reset_index(drop=True)
+    if frame.available_ns.is_monotonic_increasing and frame.event_ns.is_monotonic_increasing:
+        frame = _reset_bar_index(frame)
+    else:
+        frame = frame.sort_values(["available_ns", "event_ns"], kind="stable").reset_index(drop=True)
     if not frame.event_ns.is_monotonic_increasing:
         fail("UNSUPPORTED_CAPABILITY", "Out-of-order arrival needs stage-two late-frame handling", source=path)
     result = BarLoadResult(key, path, frame, spec, tuple(issues))
