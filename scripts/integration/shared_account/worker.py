@@ -8,6 +8,7 @@ from datetime import datetime
 from types import SimpleNamespace
 import json
 import time
+import logging
 
 from .config import read_config, strategy_report_dir
 
@@ -70,10 +71,13 @@ def _main(argv):
     parser.add_argument("--enable-orders", action="store_true")
     parser.add_argument("--confirm-simnow", action="store_true")
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument('--log-level', choices=('DEBUG', 'INFO', 'WARNING', 'ERROR'), default='INFO')
     parser.add_argument("--activate-at", type=datetime.fromisoformat, help=argparse.SUPPRESS)
     parser.add_argument("--stop-at", type=datetime.fromisoformat,
         help="本策略窗口终点（含时区）；正常保存、撤单并保留归属仓位")
     args = parser.parse_args(argv)
+    logging.basicConfig(level=getattr(logging, args.log_level),
+        format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
     if args.activate_at is not None and args.activate_at.tzinfo is None:
         parser.error("开盘边界须携带时区")
     if args.stop_at is not None and (args.stop_at.tzinfo is None or
@@ -205,9 +209,13 @@ def _run(args, config, stop_event):
             stop_at = getattr(args, 'stop_at', None)
             if stop_at is not None:
                 from bomber.framework.calendars.sessions import TradingWindow
-                session.runner.continuous_window = TradingWindow(config['trading_day'],
-                    args.activate_at, stop_at, 'worker')
+                window = TradingWindow(config['trading_day'], args.activate_at, stop_at, 'worker')
+                session.runner.continuous_window = window
                 session.runner.continuous_stop_event = stop_event
+                if row['kind'] == 'option_vega':
+                    from bomber.framework.trader.runtime.live.continuous import LiveWindowContext
+                    session.runner.window_context = LiveWindowContext(None, window, stop_event,
+                        source_day=config['trading_day'], resume=args.resume)
             session.runner.start()
             from bomber.framework.trader.runtime.live.shared import prepare_strategy_history
             activate_at = getattr(args, "activate_at", None)

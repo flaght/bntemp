@@ -18,6 +18,7 @@ def quiescent(payload, client):
     journal = shared.get('shared', {}).get('event_journal', {})
     if (driver['orders'] or shared.get('failed') or shared.get('pending')
             or shared.get('shared', {}).get('execution_stop') is not None
+            or any(journal.get('ack', {}).get(sid, 0) != len(rows) for sid, rows in journal.get('events', {}).items())
             or any(row['status'] != 'completed' for row in journal.get('requests', {}).values())):
         raise ValueError('注册要求原执行已停止且没有未决订单、请求或账户故障')
     return ledger
@@ -78,6 +79,8 @@ def merge_positions(base, incoming, client, old_client, base_day, option_day):
     if ids(base['orders'][client]) & ids(old_orders):
         raise ValueError('两个来源的订单ID重复')
     base['orders'][client].extend(old_orders)
+    base['ctp_drivers'][client]['next_ref'] = max(base['ctp_drivers'][client]['next_ref'],
+        incoming['ctp_drivers'][old_client]['next_ref'])
     base['targets'].extend(incoming['targets'])
     for name in ('strategy_revisions', 'contributions'):
         base['portfolio'][name].update(incoming['portfolio'][name])
@@ -142,6 +145,12 @@ def registration_payload(account, payload, option, option_signal, base_config, *
         raise ValueError('原08信号与成交账户身份/来源版本不一致；先核对原文件')
     if any(row['strategy_id'] != added for row in option['positions']['strategy_positions']):
         raise ValueError('原08包含其他策略归属')
+    if (set(shared['sources']) - {added} or set(shared['strategy_revisions']) - {added}
+            or set(option['portfolio']['contributions']) - {added}
+            or {row['strategy_id'] for row in option['targets']} - {added}):
+        raise ValueError('原08包含其他策略目标，不能合并或覆盖')
+    restore = account.option_sessions[added].restore_signal
+    restore(option_signal['signal'])  # 校验业务状态及旧非零目标，禁单阶段不能丢弃。
     incoming = merge_positions(payload, option, client, old_client,
         payload['ctp_ledgers'][client]['trading_day'], option['ctp_ledgers'][old_client]['trading_day'])
     shared = incoming['component_states']['shared_account']
@@ -248,12 +257,22 @@ def main(argv=None):
         if row['strategy_id'] in base.payload['component_states']['session_identity']['identity']['strategies']:
             raise ValueError('08已经注册；请使用run_workers恢复，不能重复导入旧仓')
         option, signal = load(option_path), load(signal_path)
+        for original_row in original_config['strategies']:
+            persisted = load(original_row['state_file']).payload
+            previous = base.payload['component_states']['session_identity']['identity']['strategies'][original_row['strategy_id']]
+            if (persisted.get('identity') != previous or 'signal' not in persisted
+                    or previous['argv'] != original_row['argv']):
+                raise ValueError('原Hybrid信号/批次与账户身份或配置不一致，禁止覆盖')
+        if Path(row['state_file']).exists():
+            raise ValueError('08 worker信号文件已经存在；首次注册须使用独立未占用路径')
         quiescent(base.payload, config['account']['client_id'])
         quiescent(option.payload, next(iter(option.payload['ctp_drivers'])))
         if args.connect:
-            host.account.start(resume=True, payload_transform=lambda payload: registration_payload(
+            host.account.start(resume=True, commit_restored=False, payload_transform=lambda payload: registration_payload(
                 host.account, payload, option.payload, signal.payload, original_config,
                 strategy_limits_only=sources['strategy_limits_only']))
+            host.account.manager.validate_components()
+            host.account.manager.commit_restore()
         print(json.dumps({'status': 'registered' if args.apply else 'files_checked', 'orders_enabled': False,
             'broker_verified': args.apply, 'account_state_file': config['account_state_file'],
             'source_option': str(option_path), 'source_generation': option.generation,
@@ -264,7 +283,11 @@ def main(argv=None):
         if host is not None:
             try:
                 if host.account._started:
-                    host.account.stop()
+                    if not host.account.manager._restore_pending:
+                        host.account.stop()
+                    else:
+                        host.account.abort_preparation()
+                        host.account.driver.stop()
             finally:
                 host.resources.close()
 

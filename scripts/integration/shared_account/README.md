@@ -613,6 +613,22 @@ CtpSharedAccountLifecycle.stop沿用最多两轮权威核验，对查询超时�
 
 snapshot.stop_reconciliation的errors列出各轮错误及code/retryable；queries包含Transport待结束请求与最近32条查询事件，无查询字段、凭据或资金数据。402项离线回归及Transport脚本通过，线上待验。见[交付说明](../../../doc/HANDOFF/live/HANDOFF_CTP_QUERY_DRAIN_RECOVERY_2026-10-21.md)。
 
+## Hybrid与08独立worker（2026-11-10）
+
+复用本目录`server.py`、`worker.py`及公共IPC，新增`run_workers`按各策略自己的日历调度。
+支持统一启动`--role all`，也支持账户终端`--role account`与独立策略终端
+`--role worker --kind hybrid_transformer`／`--role worker --kind option_vega`。
+08专用入口`demos.08_option_vega.run_worker`只委托公共worker，不创建TD连接。
+
+启动参数仍放08的`config/strategy.yaml`，依赖声明为`config/workers.json`，引用原Hybrid配置。
+原RB/P参数、手数及信号文件保持不变；联合持仓/名义限制可显式关闭，TD每日额度继承原值。
+首次添加策略必须正常停机，使用`register_worker`依据原08共享成交检查点禁单核验、注册并保留备份，
+不能把原Hybrid账户文件直接当三策略文件恢复，也不能把旧08仓位默认为零。
+原生单策略/模型检查点不隐式转换。注册后不再并行运行原独立TD入口。
+
+完整首次注册、三个终端、统一启动及停机命令见
+[08使用说明](../../../demos/08_option_vega/README.md#08与hybrid分别启动worker)。
+
 ## 共享TD超时配置（2026-10-22）
 
 公共工厂build_simnow_transport新增默认配置CTP_TD_TIMEOUT_SECONDS，默认30秒、范围(0,120]，明确函数实参优先。build_host移除写死15秒，08及多策略持续入口共用的observe_day移除固定30秒；两者均从进程环境读取同一配置。不同进程布局由账户server创建TD Transport并读取继承环境，worker不另建TD连接。此配置不进入持久化身份，沿用旧检查点即可；JSON配置和策略argv不新增该字段。

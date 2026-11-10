@@ -1,4 +1,38 @@
 experiment_setups:
+  # 独立终端启动：先完成一次register_worker，再依次启动account、hybrid、option。
+  # workers.json只引用原Hybrid配置及本策略声明，不改RB/P参数和信号文件。
+  workers_account:
+    description: "公共账户执行服务；唯一TD，不运行策略模型"
+    config: demos/08_option_vega/config/workers.json
+    role: account
+    prepare_seconds: 600
+    run_forever: true
+    connect: true
+    enable_orders: true
+    confirm_simnow: true
+
+  workers_hybrid:
+    description: "Hybrid RB/P独立worker；原模型、手数及批次继续恢复"
+    config: demos/08_option_vega/config/workers.json
+    role: worker
+    kind: hybrid_transformer
+    prepare_seconds: 600
+    run_forever: true
+    connect: true
+    enable_orders: true
+    confirm_simnow: true
+
+  workers_option:
+    description: "08独立worker；只管理自己的期权/期货归属及手数"
+    config: demos/08_option_vega/config/workers.json
+    role: worker
+    kind: option_vega
+    prepare_seconds: 600
+    run_forever: true
+    connect: true
+    enable_orders: true
+    confirm_simnow: true
+
   # 回测与Live共用此文件，各入口只加载所选ID，不合并其他配置。
   m5_index_blend:
     description: "MO期权M5、IM期货M1，使用MA20与MA60均值作为指数信号"

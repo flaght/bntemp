@@ -8,6 +8,8 @@ import subprocess
 import sys
 import time
 import uuid
+from tempfile import NamedTemporaryFile
+import os
 
 from .config import read_config
 
@@ -26,7 +28,8 @@ def config_for_day(config, day):
 class ProcessWindowRuntime:
     """调度server/worker原入口；先正常停止worker，再停止唯一TD服务。"""
     def __init__(self, config, window, stop_event, remaining, *, popen=None, clock=None, resume=True,
-                 stop_before_seconds=0, prepare_before_open=False, worker_windows=None, prepare_seconds=300):
+                 stop_before_seconds=0, prepare_before_open=False, worker_windows=None, prepare_seconds=300,
+                 discovery_file=None):
         if type(stop_before_seconds) is not int or stop_before_seconds < 0:
             raise ValueError('休盘前停止秒数须为非负整数')
         self.stop_at = window.end - timedelta(seconds=stop_before_seconds)
@@ -37,6 +40,7 @@ class ProcessWindowRuntime:
         self.resume = resume
         self.prepare_before_open = prepare_before_open
         self.worker_windows, self.prepare_seconds = worker_windows, prepare_seconds
+        self.discovery_file = Path(discovery_file) if discovery_file is not None else None
 
     def stop_process(self, process):
         if process.poll() is None:
@@ -79,6 +83,19 @@ class ProcessWindowRuntime:
                 if time.monotonic() >= deadline:
                     raise RuntimeError('账户服务未在期限内发布本窗口能力文件')
                 self.stop.wait(0.2)
+            if self.discovery_file is not None:
+                self.discovery_file.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+                with NamedTemporaryFile(dir=self.discovery_file.parent, delete=False) as stream:
+                    temporary = Path(stream.name)
+                    try:
+                        os.fchmod(stream.fileno(), 0o600)
+                        stream.write(json.dumps({'config': str(config_file), 'credentials_dir': str(credentials),
+                            'socket': str(socket), 'trading_day': self.window.trading_day,
+                            'start': self.window.start.isoformat(), 'end': self.window.end.isoformat()}).encode())
+                        stream.flush(); os.fsync(stream.fileno())
+                        os.replace(temporary, self.discovery_file)
+                    finally:
+                        temporary.unlink(missing_ok=True)
             if self.worker_windows is not None:
                 self.run_scheduled_workers(config_file, credentials)
             else:
@@ -106,13 +123,16 @@ class ProcessWindowRuntime:
                     errors.append(error)
             if errors:
                 raise RuntimeError('共享窗口停机失败，不进入下一窗口') from errors[0]
+            if self.discovery_file is not None and self.discovery_file.exists():
+                if json.loads(self.discovery_file.read_text()).get('config') == str(config_file):
+                    self.discovery_file.unlink()
         return {'status': 'completed', 'trading_day': self.window.trading_day,
                 'segment': self.window.segment_id, 'process_layout': 'separate-processes'}
 
     def run_scheduled_workers(self, config_file, credentials):
         """同一TD窗口内各worker按自己的日历启停；某策略休盘不停止其他策略。"""
         jobs = [(row, window) for row in self.config['strategies']
-                for window in self.worker_windows[row['strategy_id']]
+                for window in self.worker_windows.get(row['strategy_id'], ())
                 if window.start < self.window.end and window.end > self.window.start]
         started, running = set(), {}
         while not self.stop.is_set() and self.clock() < self.stop_at:
@@ -124,7 +144,10 @@ class ProcessWindowRuntime:
                     self.stop_process(process)
                     del running[sid]
                 elif process.poll() is not None:
-                    raise RuntimeError(f'策略进程提前退出: {sid}；查看worker报告，不自动重复启动')
+                    if process.returncode == 0 and self.clock() >= window.end:
+                        del running[sid]
+                    else:
+                        raise RuntimeError(f'策略进程提前退出: {sid}；查看worker报告，不自动重复启动')
             for index, (row, window) in enumerate(jobs):
                 if index in started or not window.start-timedelta(seconds=self.prepare_seconds) <= now < window.end:
                     continue
