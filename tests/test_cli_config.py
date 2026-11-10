@@ -9,7 +9,7 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-from bomber.framework.cli import ConfigArgumentParser, load_config
+from bomber.framework.cli import ConfigArgumentParser, load_config, execution_channel_from_argv
 
 
 class ConfigArgumentsTests(unittest.TestCase):
@@ -30,6 +30,15 @@ class ConfigArgumentsTests(unittest.TestCase):
         group.add_argument("--calendar", type=Path)
         group.add_argument("--calendar-id")
         return parser
+
+    def test_execution_channel_help_and_cli_override_do_not_require_reading_yaml(self):
+        with patch('bomber.framework.cli.load_config', side_effect=AssertionError('不应读取配置')):
+            self.assertEqual(execution_channel_from_argv([
+                '--config-file','missing.yaml','--config-id','x','--help']), 'local')
+            self.assertEqual(execution_channel_from_argv([
+                '--config-file','missing.yaml','--config-id','x','--execution-channel=shared']), 'shared')
+            self.assertEqual(execution_channel_from_argv([
+                '--config-file','missing.yaml','--config-id','x','--execution-channel=local']), 'local')
 
     def config(self, extra="", *, config_id="research"):
         self.path.write_text('experiment_setups:\n  research:\n'

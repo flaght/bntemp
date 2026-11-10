@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 
 from .run_workers import load_config
-from .config import read_config
+from .config import read_config, load_environment
 
 
 def validate_source_configuration(payload, config):
@@ -241,6 +241,7 @@ def main(argv=None):
     parser.add_argument('--trading-day', required=True)
     parser.add_argument('--connect', action='store_true')
     parser.add_argument('--apply', action='store_true', help='禁单柜台核验成功后提交注册；保留原账户代次备份')
+    parser.add_argument('--env-file', type=Path, help='账户env文件；策略参考资料使用各自env')
     args = parser.parse_args(argv)
     config, sources = load_config(args.config)
     config['trading_day'] = args.trading_day
@@ -255,6 +256,8 @@ def main(argv=None):
     protected = {Path(config['account_state_file']), *(Path(r['state_file']) for r in config['strategies'])}
     if option_path in protected or Path(signal_path).resolve() in protected:
         parser.error('来源检查点必须独立，不能覆盖账户或任一worker信号文件')
+    if sources.get('base_config') is None:
+        parser.error('首次注册须配置registration.source_account_config，指向原账户配置；日常启动不使用该来源')
     original_config = read_config(sources['base_config'])
     initial = JsonStateStore(config['account_state_file']).load()
     if initial is None:
@@ -264,9 +267,7 @@ def main(argv=None):
     host = None
     try:
         if args.connect:
-            from dotenv import load_dotenv
-            from .run import PROJECT_ROOT
-            load_dotenv(PROJECT_ROOT/'.env')
+            load_environment(args.env_file or config.get('account_env_file'))
             host = build_host(config, resume=True, read_only=True, strategy_processes=True,
                 session_order_budget=config['account']['max_session_orders'])
             for path in [option_path, signal_path, *(r['state_file'] for r in config['strategies'])]:

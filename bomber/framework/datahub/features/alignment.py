@@ -32,7 +32,7 @@ class FeatureHub:
         requirements = tuple(requirements)
         if not requirements or len({r.alias for r in requirements}) != len(requirements):
             raise FeatureError("需求不能为空或含重复alias")
-        generation, captured, health = self.store.capture_with_health()
+        generation, captured, health = self.store.capture_for(requirements, query)
         values, fingerprints = {}, {}
         for requirement in requirements:
             spec = self.registry.get(requirement.dataset_id, requirement.schema_version)

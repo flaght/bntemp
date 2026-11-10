@@ -586,6 +586,23 @@ python -u -m demos.10_hybrid_transformer.recover_expired \
 
 ## RB/P同账户：同进程与多进程布局
 
+与08共用账户时，先独立启动公共账户服务，再从10自己的入口运行RB/P：
+
+```bash
+PYTHONPATH=.:/workspace/worker/pj/KiChaos IMPLUSE_VERSION=all \
+  /workspace/worker/env/chs-live/bin/python -u -m demos.10_hybrid_transformer.run_shared \
+  --config-file demos/10_hybrid_transformer/config/strategy.yaml --config-id workers_hybrid
+```
+
+该YAML使用`execution_channel: shared`，读取原`shared_rb_p.json`的RB/P实例参数和`work2/env2`。
+RB、P在当前进程内各有Runner、IPC客户端及检查点；不创建TD或策略子进程，不转调公共启动器。
+追加`--strategy-id hybrid-transformer-live`只运行RB；追加`--strategy-id hybrid-p-live`只运行P。
+本入口负责自身日历、预热、休盘前30秒撤单及保存；账户服务由独立终端管理。
+原策略ID、模型、手数、批次、信号路径和账户报单计数保留；首次接入08仍执行原归属核验注册。
+账户服务、08和10的完整三终端命令见[08启动说明](../08_option_vega/README.md#独立账户服务与原生策略入口)。
+
+以下两种原布局继续用于由10同时拥有账户生命周期的旧部署：
+
 共享入口`run_shared.py`复用现有账户服务与Unix IPC，使用同一份`config/shared_rb_p.json`，通过`--process-layout same-process`或`separate-processes`切换。模型、独立五分钟批次、信号与仓位限制不变。
 
 完整参数、原RB检查点接入及布局切换步骤见[共享执行指南](../../doc/strategies/HYBRID_SHARED_EXECUTION_GUIDE.md)。

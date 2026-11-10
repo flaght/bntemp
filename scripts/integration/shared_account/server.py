@@ -6,7 +6,7 @@ from datetime import datetime
 import secrets
 import time
 
-from .config import read_config, ctp_instrument_max_age_seconds
+from .config import read_config, ctp_instrument_max_age_seconds, load_environment
 
 
 def capture_execution_failure(host):
@@ -106,6 +106,7 @@ def _main(argv):
     parser.add_argument("--enable-orders", action="store_true")
     parser.add_argument("--confirm-simnow", action="store_true")
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument('--env-file', type=Path, help='账户env文件；各策略来源由strategy_env_files分别指定')
     parser.add_argument("--activate-at", type=datetime.fromisoformat, help=argparse.SUPPRESS)
     parser.add_argument("--remaining-orders", type=int, help="持续调度从账户订单历史扣除后的本窗口额度")
     args = parser.parse_args(argv)
@@ -128,11 +129,10 @@ def _main(argv):
 
 def _run(args, config, stop_event):
     from bomber.framework.trader.runtime.live.continuous import StopRequested, wait_for_open
-    from dotenv import load_dotenv
-    from .run import build_host, PROJECT_ROOT
+    from .run import build_host
     from bomber.framework.trader.execution.ipc import AccountExecutionProtocol, UnixExecutionServer, encode
     from bomber.framework.trader.runtime.reports import LiveRunReport
-    load_dotenv(PROJECT_ROOT / ".env")
+    load_environment(getattr(args, 'env_file', None) or config.get('account_env_file'))
     report = LiveRunReport(config["report_dir"], prefix="shared-account-server", metadata={"config": config})
     report.begin()
     host = server = None
@@ -173,6 +173,23 @@ def _run(args, config, stop_event):
                         os.replace(temporary, path)
                     finally:
                         temporary.unlink(missing_ok=True)
+            discovery_file = getattr(args, 'discovery_file', None)
+            if discovery_file is not None:
+                import os
+                from tempfile import NamedTemporaryFile
+                window = args.discovery_window
+                discovery_file.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+                with NamedTemporaryFile(dir=discovery_file.parent, delete=False) as output:
+                    temporary = Path(output.name)
+                    try:
+                        os.fchmod(output.fileno(), 0o600)
+                        output.write(encode(dict(config=str(args.discovery_config),
+                            credentials_dir=str(args.credentials_dir), socket=str(args.socket),
+                            trading_day=config['trading_day'], start=window.start.isoformat(), end=window.end.isoformat())))
+                        output.flush(); os.fsync(output.fileno())
+                        os.replace(temporary, discovery_file)
+                    finally:
+                        temporary.unlink(missing_ok=True)
 
 
         def poll_preparation():
@@ -208,7 +225,9 @@ def _run(args, config, stop_event):
         print(f"账户服务就绪：socket={args.socket}；策略客户端文件目录={args.credentials_dir}", flush=True)
         print(f"账户CTP逐合约估值时效: {ctp_instrument_max_age_seconds(config)}秒", flush=True)
         until = time.monotonic() + config["seconds"] + 120  # 给分终端启动和策略先停机留出时间。
-        while not stop_event.is_set() and (time.monotonic() < until or execution_stop_started is not None):
+        stop_at = getattr(args, 'stop_at', None)
+        while (not stop_event.is_set() and (stop_at is None or datetime.now(stop_at.tzinfo) < stop_at)
+                and (time.monotonic() < until or execution_stop_started is not None)):
             if host.service.execution_stop is None and valuation is not None:
                 readiness = valuation.check()
                 if not readiness.ready:

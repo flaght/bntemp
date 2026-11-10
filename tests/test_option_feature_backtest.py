@@ -173,6 +173,24 @@ class FeatureBacktestTests(unittest.TestCase):
             native.assert_called_once()
         self.assertEqual([row["status"] for row in runner.frame_audit], ["SKIPPED", "READY"])
 
+    def test_replay_progress_distinguishes_loading_alignment_and_native_simulation(self):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        runner = replay.build_backtest_runner(positions=None,
+            feed=NS(load_events=lambda: [self.bar(), self.bar(END+M)]), backend=None,
+            bundle=self.bundle, binding=self.binding, records=[self.record()], index_key='000852', wait_seconds=2)
+        def native_replay():
+            runner.frame_audit = [dict(status=row.status) for row in runner.outcomes.values()]
+            return 'completed'
+        output = StringIO()
+        with redirect_stdout(output), patch.object(type(runner).__mro__[1], 'run_replay', side_effect=native_replay):
+            self.assertEqual(runner.run_replay(), 'completed')
+        messages = output.getvalue()
+        self.assertLess(messages.index('开始转换与排序'), messages.index('开始指数特征对齐'))
+        self.assertLess(messages.index('特征对齐完成'), messages.index('开始推进模拟时间'))
+        self.assertIn('events=2', messages)
+        self.assertIn('frames=1 ready=1 skipped=0', messages)
+
 
 class FeatureGenerationTests(unittest.TestCase):
     def setUp(self):

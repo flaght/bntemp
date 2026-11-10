@@ -1,32 +1,12 @@
 experiment_setups:
-  # 独立终端启动：先完成一次register_worker，再依次启动account、hybrid、option。
-  # workers.json只引用原Hybrid配置及本策略声明，不改RB/P参数和信号文件。
-  workers_account:
-    description: "公共账户执行服务；唯一TD，不运行策略模型"
-    config: demos/08_option_vega/config/workers.json
-    role: account
-    prepare_seconds: 600
-    run_forever: true
-    connect: true
-    enable_orders: true
-    confirm_simnow: true
-
-  workers_hybrid:
-    description: "Hybrid RB/P独立worker；原模型、手数及批次继续恢复"
-    config: demos/08_option_vega/config/workers.json
-    role: worker
-    kind: hybrid_transformer
-    prepare_seconds: 600
-    run_forever: true
-    connect: true
-    enable_orders: true
-    confirm_simnow: true
-
+  # 这里只维护08启动参数；公共账户及10的启动参数分别放各自目录。
   workers_option:
-    description: "08独立worker；只管理自己的期权/期货归属及手数"
-    config: demos/08_option_vega/config/workers.json
-    role: worker
-    kind: option_vega
+    description: "原生run_live入口；本进程运行Vega，连接独立账户服务"
+    execution_channel: shared
+    account_config: scripts/integration/shared_account/workers.json
+    live_config_id: live_simnow
+    env_file: work1/env1
+    state_file: demos/08_option_vega/results/live/state/worker_signal.json
     prepare_seconds: 600
     run_forever: true
     connect: true

@@ -109,6 +109,11 @@ flowchart LR
 
 [SharedAccountExecutionService](trader/execution/shared.py)让同一物理账户拥有唯一执行写入端，策略保留独立Runner、目标版本、信号状态和成交份额。同进程使用共享宿主；同机独立进程使用[账户协议／Unix服务](trader/execution/ipc.py)和[远程策略客户端](trader/execution/ipc_client.py)，不让多个worker各自抢占TD连接。
 
+[RemoteStrategyRuntime](trader/runtime/live/remote.py)让策略原生入口在当前进程内直接运行Runner，
+通过注入的装配函数复用原策略；框架维护远程连接、信号恢复、事件游标、盘前预热与停机保存。
+`run_remote_group`支持同一进程多个独立实例，不创建账户或策略子进程，不切换进程环境。
+08的`run_live.py`运行一个Vega实例；10的`run_shared.py`运行RB/P实例；账户服务独立启动。
+
 - **netted**：汇总目标并允许已声明政策下的内部抵消，transfer单独审计，不伪造柜台成交。
 - **independent**：各策略实际订单和归属独立，不跨策略内部转移；同一合约可以持有同向或反向份额。
 - **仓位来源与账户观测分开**：fills／model、strict／observe／off有显式合法组合；model要求off，off报告物理账户为None，不能将系统账本伪称柜台总仓。
