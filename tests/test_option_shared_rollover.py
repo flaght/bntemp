@@ -34,6 +34,23 @@ class OptionSharedRolloverTests(unittest.TestCase):
     setUp = fixture.MigrationTests.setUp
     identity = fixture.MigrationTests.identity
 
+    def test_changed_strategy_and_risk_settings_report_paths_without_identity_values(self):
+        module = import_module("demos.08_option_vega.recovery")
+        old, new = deepcopy(self.identity), deepcopy(self.new_identity)
+        new["config"]["option_slot"] = "13:37"
+        new["frame_wait_seconds"] = 21
+        before_old, before_new = deepcopy(old), deepcopy(new)
+        with self.assertRaisesRegex(ValueError, "差异字段=") as caught:
+            module.validate_identity(old, new)
+        message = str(caught.exception)
+        self.assertIn("session.config.option_slot", message)
+        self.assertIn("session.frame_wait_seconds", message)
+        self.assertNotIn("session.td_day", message)
+        self.assertNotIn("session.sources", message)
+        self.assertNotIn("13:37", message)
+        self.assertEqual(old, before_old)
+        self.assertEqual(new, before_new)
+
     def test_legacy_index_metadata_addition_requires_same_verified_declaration(self):
         import json
         from bomber.framework.dataprep.features import DEFAULT_FEATURE_CONFIG

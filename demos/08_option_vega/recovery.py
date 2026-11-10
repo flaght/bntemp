@@ -189,8 +189,14 @@ def validate_identity(old, new, *, mode="simnow"):
         allowed.update(("sources", "labels"))
     elif sources != old["sources"]:
         allowed.add("sources")
-    if any(old.get(key) != new.get(key) for key in old.keys() | new.keys() if key not in allowed):
-        raise ValueError("08跨日恢复不能改变策略、风险或执行配置")
+    changed = {key for key in old.keys() | new.keys()
+               if key not in allowed and old.get(key) != new.get(key)}
+    if changed:
+        from bomber.framework.trader.runtime.live.recovery import identity_difference_paths
+        raise ValueError("08跨日恢复不能改变策略、风险或执行配置；差异字段="
+            + ", ".join(identity_difference_paths(
+                {key: old.get(key) for key in changed},
+                {key: new.get(key) for key in changed})))
 
 
 def restore_signal(session, state):
