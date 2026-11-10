@@ -45,6 +45,7 @@ class RemoteStrategyExecutionClient:
         self.position_manager, self._configuration = service.position_manager, configuration
         self.ready_check = lambda: False
         self._started = self._stopping = False
+        self._stop_failure = None
         self._handlers, self._pending = [], []
         self.cursor = 0
         self.state = service.state
@@ -92,6 +93,7 @@ class RemoteStrategyExecutionClient:
             result = self.service.connection.call("attach", {"configuration": self.configuration()})
             self.sync(result["state"])
             self._started, self._stopping = True, False
+            self._stop_failure = None
 
     def register_execution_event_handler(self, handler):
         if handler not in self._handlers:
@@ -169,14 +171,20 @@ class RemoteStrategyExecutionClient:
 
     def begin_stop(self):
         self._stopping = True
+        if self._stop_failure is not None:
+            raise self._stop_failure
         if self._started:
-            result = self.service.connection.call("stop", {"cursor": self.cursor})
-            self.sync(result["state"])
-            self.deliver(result["events"])
-            if len(result["events"]) == 100:
-                raise RuntimeError("停机回报批次尚未排空，保留策略检查点")
-            self.service.connection.call("ack_stopped", {"cursor": self.cursor})
-            self._started = False
+            try:
+                result = self.service.connection.call("stop", {"cursor": self.cursor})
+                self.sync(result["state"])
+                self.deliver(result["events"])
+                if len(result["events"]) == 100:
+                    raise RuntimeError("停机回报批次尚未排空，保留策略检查点")
+                self.service.connection.call("ack_stopped", {"cursor": self.cursor})
+                self._started = False
+            except Exception as error:
+                self._stop_failure = error
+                raise
 
     def stop(self):
         if self._started:

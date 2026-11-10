@@ -1,0 +1,2 @@
+a3bccc1d7be7685320d53c8feb2be0de7fe43e7ace2b0c9fdbf22af88099c8c4  demos/08_option_vega/run_backtest.py
+385bcf352a52a1431d50297d6af32295e650e3ab033d42a7fd9ed9a4a1e0f337  demos/08_option_vega/strategy.py

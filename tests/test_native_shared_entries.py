@@ -175,6 +175,52 @@ class NativeEntryTests(unittest.TestCase):
 
 
 class RemoteRuntimeTests(unittest.TestCase):
+    def test_preparation_heartbeat_failure_keeps_gate_closed_and_joins_thread(self):
+        from bomber.framework.trader.runtime.live.remote import PreparationLease
+        called = Event()
+        ping = Mock()
+        def fail(*args):
+            called.set()
+            raise RuntimeError('fixture lease lost')
+        ping.call.side_effect = fail
+        original = NS(path=Path('/tmp/unused.sock'), sid='rb', key='key', lease='lease-token')
+        lease = PreparationLease(original, interval=.001)
+        with patch('bomber.framework.trader.execution.ipc.UnixExecutionConnection', return_value=ping), \
+                self.assertRaisesRegex(RuntimeError, '准备期间续租失败'):
+            with lease:
+                self.assertTrue(called.wait(2))
+        self.assertFalse(lease.thread.is_alive())
+        self.assertEqual(ping.lease, 'lease-token')
+        ping.call.assert_called_once_with('heartbeat', {})
+
+    def test_preparation_failure_is_not_replaced_by_stop_failures(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            primary = RuntimeError('fixture original warmup error')
+            credentials = root/'credentials.json'
+            credentials.write_text(json.dumps(dict(strategy_id='rb', socket=str(root/'exec.sock'),
+                key='fixture', configuration={})))
+            port = NS(state=dict(source_revision=0, positions={}), cursor=0, received_events=[],
+                set_cursor=lambda cursor:None, drain_events=lambda:None,
+                begin_stop=Mock(side_effect=RuntimeError('fixture stop error')))
+            runner = NS(_submit_lock=RLock(), failure=None, accept_bars=False, start=lambda:None,
+                session_ready=lambda:True, stop=Mock(side_effect=RuntimeError('fixture runner stop error')))
+            session = NS(client=port, runner=runner, references=NS(spec='fixed'),
+                strategy=NS(fills_received=0, restore_target_revision=lambda revision:None))
+            report = Mock()
+            runtime = RemoteStrategyRuntime('rb',root/'signal.json',credentials,'20261110',{},
+                lambda *args:(session,{}),Mock(),report)
+            connection = NS(call=lambda *args:{'state':dict(trading_day='20261110', source_revision=0, ack=0)})
+            with patch('bomber.framework.trader.execution.ipc.UnixExecutionConnection', return_value=connection), \
+                    patch('bomber.framework.trader.execution.ipc_client.RemoteAccountService'), \
+                    patch('bomber.framework.trader.execution.ipc_client.RemoteTraderSession'), \
+                    patch('bomber.framework.trader.runtime.live.shared.prepare_strategy_history', side_effect=primary):
+                with self.assertRaises(RuntimeError) as caught:
+                    runtime.run(Event())
+            self.assertIs(caught.exception, primary)
+            self.assertEqual(report.write.call_args.kwargs['fields']['failure'], str(primary))
+            self.assertFalse(runner.accept_bars)
+
     def test_two_instances_restore_separate_signals_cursors_and_late_fills_before_saving(self):
         with TemporaryDirectory() as directory:
             root, stop, barrier, sessions, calls = Path(directory), Event(), Barrier(2), {}, []
@@ -294,13 +340,15 @@ class NativeHybridIpcTests(unittest.TestCase):
         import time
         from bomber.framework.trader.execution.ipc import AccountExecutionProtocol, UnixExecutionServer
         rb, p = self.session('RB'), self.session('P')
-        protocol = AccountExecutionProtocol(self.service, keys={'hybrid-rb':'rb', 'hybrid-p':'p'}, trading_day='20261013')
+        protocol = AccountExecutionProtocol(self.service, keys={'hybrid-rb':'rb', 'hybrid-p':'p'},
+            trading_day='20261013', lease_seconds=.3)
         self.account.start(resume=False); self.service.start(); self.account.authorize()
         self.addCleanup(self.account.driver.stop)
         directory = TemporaryDirectory(dir='/tmp'); self.addCleanup(directory.cleanup)
         root = Path(directory.name)
         server = UnixExecutionServer(root/'exec.sock', protocol); self.addCleanup(server.close)
         running, stop, filled, failures, sessions = Event(), Event(), set(), [], {}
+        warmed = set()
         prepared = Barrier(2)
         running.set()
         def control():
@@ -324,6 +372,18 @@ class NativeHybridIpcTests(unittest.TestCase):
                 sessions[sid] = session
                 session.references.refresh = lambda: None
                 session.runner.session_ready = lambda: session.client.is_reconciled
+                prepare_history = session.runner.prepare_history
+                def slow_history():
+                    result = prepare_history()
+                    deadline = time.monotonic()+.9
+                    while time.monotonic() < deadline:
+                        self.assertFalse(session.runner.accept_bars)
+                        self.assertFalse(protocol.leases[sid]['ready'])
+                        self.assertFalse(self.service._ports[sid].ready_check())
+                        time.sleep(.01)
+                    warmed.add(sid)
+                    return result
+                session.runner.prepare_history = slow_history
                 def begin():
                     session.runner.accept_bars = True
                     prepared.wait(timeout=5)
@@ -344,10 +404,12 @@ class NativeHybridIpcTests(unittest.TestCase):
                 restore_fills_received=False, poll_session=poll))
         thread.start()
         try:
-            with patch('subprocess.Popen', side_effect=AssertionError('不得创建子进程')):
+            with patch('subprocess.Popen', side_effect=AssertionError('不得创建子进程')), \
+                    patch.object(native, 'PREPARATION_HEARTBEAT_SECONDS', .02):
                 run_remote_group(runtimes, stop)
             self.assertFalse(failures, failures)
             self.assertEqual(filled, {'hybrid-rb','hybrid-p'})
+            self.assertEqual(warmed, filled)
             self.assertEqual(self.transport.starts, 1)
             self.assertEqual(len(self.transport.sent), 2)
             for sid in filled:

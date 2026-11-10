@@ -7,12 +7,56 @@ from pathlib import Path
 import json
 import re
 import time
+from threading import Event, Thread
 
 from bomber.framework.trader.execution.contracts import MarketDataUnavailable, OrderBudgetExhausted
 from bomber.framework.trader.persistence import JsonStateStore
 from .contracts import LiveRunContext
 from .continuous import StopRequested
 from .local import strategy_state_lock
+
+
+PREPARATION_HEARTBEAT_SECONDS = 5
+
+
+class PreparationLease:
+    """只在闭闸准备期间续租；独立连接不参与回报交付或信号保存。"""
+    def __init__(self, connection, *, interval=None):
+        self.connection = connection
+        self.interval = PREPARATION_HEARTBEAT_SECONDS if interval is None else interval
+        self.stopped = Event()
+        self.failure = None
+        self.thread = Thread(target=self._run, name='strategy-preparation-lease', daemon=True)
+
+    def _run(self):
+        from bomber.framework.trader.execution.ipc import UnixExecutionConnection
+        connection = None
+        while not self.stopped.wait(self.interval):
+            token = getattr(self.connection, 'lease', None)
+            if token is None:
+                continue  # Runner尚未attach，不创建或接管租约。
+            try:
+                if connection is None:
+                    connection = UnixExecutionConnection(self.connection.path, self.connection.sid,
+                        self.connection.key, timeout=5)
+                connection.lease = token
+                connection.call('heartbeat', {})
+            except Exception as error:
+                self.failure = error
+                return
+
+    def __enter__(self):
+        self.thread.start()
+        return self
+
+    def __exit__(self, kind, error, traceback):
+        self.stopped.set()
+        self.thread.join(timeout=11)
+        if kind is None:
+            if self.thread.is_alive():
+                raise RuntimeError('准备续租线程未退出，拒绝开放策略决策')
+            if self.failure is not None:
+                raise RuntimeError(f'策略准备期间续租失败: {self.failure}') from self.failure
 
 
 def resolve_strategy_rows(rows, path, *, path_arguments=()):
@@ -297,7 +341,8 @@ class RemoteStrategyRuntime:
                 bind = getattr(session, "bind_signal_checkpoint", None)
                 if callable(bind):
                     bind(save)
-                port.ready_check = session.runner.session_ready
+                preparing = True
+                port.ready_check = lambda: not preparing and session.runner.session_ready()
                 stop_at = self.stop_at
                 if stop_at is not None:
                     from bomber.framework.calendars.sessions import TradingWindow
@@ -308,14 +353,28 @@ class RemoteStrategyRuntime:
                         from bomber.framework.trader.runtime.live.continuous import LiveWindowContext
                         session.runner.window_context = LiveWindowContext(None, window, stop_event,
                             source_day=self.trading_day, resume=self.resume)
-                session.runner.start()
-                from bomber.framework.trader.runtime.live.shared import prepare_strategy_history
-                activate_at = self.activate_at
-                if activate_at is not None:
-                    if prepare_strategy_history(session, require_ready=False) is False:
-                        raise StopRequested()
-                    def poll_preparation():
-                        if stop_at is not None and datetime.now(stop_at.tzinfo) >= stop_at:
+                with PreparationLease(connection):
+                    session.runner.start()
+                    from bomber.framework.trader.runtime.live.shared import prepare_strategy_history
+                    activate_at = self.activate_at
+                    if activate_at is not None:
+                        if prepare_strategy_history(session, require_ready=False) is False:
+                            raise StopRequested()
+                        def poll_preparation():
+                            if stop_at is not None and datetime.now(stop_at.tzinfo) >= stop_at:
+                                raise StopRequested()
+                            if session.runner.failure:
+                                raise RuntimeError(session.runner.failure)
+                            port.drain_events()
+                            session.references.refresh()
+                            poll = getattr(session.runner, "poll_live_inputs", None)
+                            if callable(poll):
+                                poll()
+                        wait_for_open(activate_at, stop_event, poll=poll_preparation)
+                    ready_seconds = self.ready_seconds
+                    until_ready = time.monotonic() + ready_seconds
+                    while not session.runner.session_ready():
+                        if stop_event.is_set() or stop_at is not None and datetime.now(stop_at.tzinfo) >= stop_at:
                             raise StopRequested()
                         if session.runner.failure:
                             raise RuntimeError(session.runner.failure)
@@ -324,36 +383,24 @@ class RemoteStrategyRuntime:
                         poll = getattr(session.runner, "poll_live_inputs", None)
                         if callable(poll):
                             poll()
-                    wait_for_open(activate_at, stop_event, poll=poll_preparation)
-                ready_seconds = self.ready_seconds
-                until_ready = time.monotonic() + ready_seconds
-                while not session.runner.session_ready():
-                    if stop_event.is_set() or stop_at is not None and datetime.now(stop_at.tzinfo) >= stop_at:
-                        raise StopRequested()
-                    if session.runner.failure:
-                        raise RuntimeError(session.runner.failure)
+                        if time.monotonic() >= until_ready:
+                            context = capture_session_failure(session)
+                            raise RuntimeError(f"策略未在期限内取得健康行情/参考/账户: {context}")
+                        time.sleep(0.2)
                     port.drain_events()
-                    session.references.refresh()
-                    poll = getattr(session.runner, "poll_live_inputs", None)
-                    if callable(poll):
-                        poll()
-                    if time.monotonic() >= until_ready:
-                        context = capture_session_failure(session)
-                        raise RuntimeError(f"策略未在期限内取得健康行情/参考/账户: {context}")
-                    time.sleep(0.2)
-                port.drain_events()
-                save()
-                if stop_event.is_set():
-                    raise StopRequested()
-                if activate_at is None:
-                    if prepare_strategy_history(session) is False:
+                    save()
+                    if stop_event.is_set():
                         raise StopRequested()
-                else:
-                    from bomber.framework.trader.runtime.live.lifecycle import validate_session_ready
-                    session.references.refresh()
-                    validate_session_ready(session)
-                if stop_event.is_set():
-                    raise StopRequested()
+                    if activate_at is None:
+                        if prepare_strategy_history(session) is False:
+                            raise StopRequested()
+                    else:
+                        from bomber.framework.trader.runtime.live.lifecycle import validate_session_ready
+                        session.references.refresh()
+                        validate_session_ready(session)
+                    if stop_event.is_set():
+                        raise StopRequested()
+                preparing = False
                 session.runner.begin_bars()
                 until = time.monotonic() + self.seconds
                 while (not stop_event.is_set() and time.monotonic() < until
@@ -397,7 +444,8 @@ class RemoteStrategyRuntime:
                             session.runner.stop()
                 except Exception as error:
                     shutdown_failure, status = str(error), "failed"
-                    raise
+                    if failure is None:
+                        raise
                 finally:
                     from bomber.framework.trader.runtime.live.shared import history_snapshot
                     report.write(status=status, fields={"failure": failure, "shutdown_failure": shutdown_failure,

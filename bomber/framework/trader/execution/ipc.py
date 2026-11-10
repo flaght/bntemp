@@ -246,6 +246,10 @@ class AccountExecutionProtocol:
             self.stop_owner(sid)
             raise RuntimeError("策略连接租约已到期")
         lease["deadline"] = time.monotonic() + self.lease_seconds
+        if action == "heartbeat":
+            # 准备线程可独立续租；不声明行情就绪、不推进游标或执行旧目标。
+            lease["ready"] = False
+            return {}
         if action == "stop":
             self.stop_owner(sid)
             return {"state": self.state(sid), "events": self.journal.read(sid, data["cursor"])}

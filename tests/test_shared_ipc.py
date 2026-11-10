@@ -646,6 +646,53 @@ class SharedIpcTests(unittest.TestCase):
             self.assertEqual(new_service.position_manager.position("one", "main"), 1)
             new_protocol.stop_owner("one")
 
+    def test_preparation_heartbeat_renews_only_owner_and_never_enables_or_acknowledges(self):
+        from copy import deepcopy
+        from unittest.mock import patch
+        with nullcontext(self.enterContext(TemporaryDirectory())) as directory:
+            _, _, service, transport, protocol = self.prepare(Path(directory)/'account.json')
+            one, two = self.attach(protocol, 'one'), self.attach(protocol, 'two')
+            deadline = protocol.leases['one']['deadline']
+            peer = deepcopy(protocol.leases['two'])
+            journal = protocol.journal.snapshot_state()
+            prices = service.prices.snapshot()
+            with patch('bomber.framework.trader.execution.ipc.time.monotonic', return_value=deadline-1):
+                self.call(protocol, 'one', 'heartbeat', {'ready':True, 'cursor':999}, lease=one)
+            self.assertGreater(protocol.leases['one']['deadline'], deadline)
+            self.assertFalse(protocol.leases['one']['ready'])
+            self.assertEqual(protocol.leases['two'], peer)
+            self.assertEqual(protocol.journal.snapshot_state(), journal)
+            self.assertEqual(service.prices.snapshot(), prices)
+            self.assertFalse(transport.sent)
+            protocol.stop_owner('one'); protocol.stop_owner('two')
+
+    def test_failed_remote_stop_is_not_sent_again_during_runner_cleanup(self):
+        from bomber.framework.trader.execution.ipc_client import RemoteAccountService
+        from bomber.framework.trader.execution.shared import SharedRiskBudget
+        with nullcontext(self.enterContext(TemporaryDirectory())) as directory:
+            _, _, service, _, protocol = self.prepare(Path(directory)/'account.json')
+            owner, calls = self, []
+            class Connection:
+                sid = 'one'
+                lease = None
+                def call(self, action, data):
+                    calls.append(action)
+                    result = owner.call(protocol,'one',action,data,lease=self.lease)
+                    if action == 'attach': self.lease = result['lease']
+                    return result
+            connection = Connection()
+            remote = RemoteAccountService(connection,service._ports['one'].configuration(),protocol.state('one'))
+            port = remote.strategy_client('one',routes={'main':self.instrument},
+                budget=SharedRiskBudget(5,50000),instrument_limits=service._ports['one'].instrument_limits)
+            port.start()
+            protocol.stop_owner('one')
+            with self.assertRaisesRegex(ValueError, '租约失效') as first:
+                port.begin_stop()
+            with self.assertRaises(ValueError) as second:
+                port.stop()
+            self.assertIs(first.exception, second.exception)
+            self.assertEqual(calls.count('stop'), 1)
+
     def test_expired_lease_cancels_only_owner_and_new_attach_retains_positions(self):
         with nullcontext(self.enterContext(TemporaryDirectory())) as directory:
             _, _, service, transport, protocol = self.prepare(Path(directory) / "account.json")
