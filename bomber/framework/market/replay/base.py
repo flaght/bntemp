@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Literal
+from time import perf_counter
 
 from bomber.framework.market.basic.base import (
     Bar,
@@ -48,6 +49,8 @@ class FileReplayFeed(MarketDataFeed):
         super().__init__(source_id=source_id)
         self._sources: list[FileSource] = []
         self._events: tuple[MarketEvent, ...] = ()
+        # Optional run-local diagnostics, set by the composition layer.
+        self.performance = None
 
     def add_tick_csv(self, path: str | Path, parser: RowParser) -> None:
         self._add_source(path, CsvReader(), parser, "tick")
@@ -109,6 +112,8 @@ class FileReplayFeed(MarketDataFeed):
         if self._events and not force_reload:
             return self._events
 
+        started = perf_counter()
+        rows_read = 0
         loaded: list[tuple[int, ParsedEvent]] = []
         sequence = 0
         for source in self._sources:
@@ -120,6 +125,7 @@ class FileReplayFeed(MarketDataFeed):
             try:
                 rows = source.reader.read(path)
                 for position, row in rows:
+                    rows_read += 1
                     context = ParserContext(path, position, self.get_instrument_meta)
                     parsed_events = source.parser.parse(row, context)
                     for parsed in parsed_events:
@@ -134,9 +140,17 @@ class FileReplayFeed(MarketDataFeed):
             except Exception as exc:
                 raise ParserContext(path, position, self.get_instrument_meta).error(str(exc)) from exc
 
+        if self.performance is not None:
+            self.performance.add("replay_event_conversion", perf_counter() - started)
+            self.performance.count("replay_source_files", len(self._sources))
+            self.performance.count("replay_source_rows", rows_read)
+            self.performance.count("replay_events", len(loaded))
+        started = perf_counter()
         # 按历史时间排序，相同时间保留原文件顺序。
         loaded.sort(key=lambda item: (item[1].payload.ts_init, item[0]))
         self._events = tuple(item[1].payload for item in loaded)
+        if self.performance is not None:
+            self.performance.add("replay_event_sort", perf_counter() - started)
         return self._events
 
 

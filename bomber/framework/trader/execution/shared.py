@@ -144,6 +144,40 @@ class SharedAccountExecutionService(AccountExecutionService):
         self._ports[strategy_id] = port
         return port
 
+    def reconfigure_strategy(self, strategy_id, *, routes, budget, instrument_limits):
+        """无租约且无未决事件的已登记策略，可刷新无仓位/无目标的旧路由。"""
+        with self.client._submit_lock, self._dispatch_lock, self._lock:
+            port = self._ports[strategy_id]
+            if (self._failed or self._pending or port._started or strategy_id in self._draining
+                    or self._owner_working(strategy_id)):
+                raise ValueError('策略仍有租约、在途订单或账户未决状态，不能刷新路由')
+            if self.event_journal is not None and (
+                    self.event_journal.ack[strategy_id] != len(self.event_journal.events[strategy_id])
+                    or any(key.startswith(strategy_id+':') and row['status'] != 'completed'
+                           for key,row in self.event_journal.requests.items())):
+                raise ValueError('策略仍有未确认回报或请求，不能刷新路由')
+            routes = dict(routes)
+            if not routes or set(instrument_limits) != set(routes.values()) or budget.is_unlimited:
+                raise ValueError('新的策略执行声明不完整')
+            changed = {key for key,instrument in port.routes.items() if routes.get(key) != instrument}
+            source = self._sources.get(strategy_id)
+            if source and any(row['target_key'] in changed and Decimal(row['quantity']) for row in source['rows']):
+                raise ValueError('旧路由仍有非零目标，不能刷新')
+            self.position_manager.rebind_zero_routes(self.client_id, strategy_id, port.routes, routes)
+            if source is not None:
+                old = {row['target_key']: Decimal(row['quantity']) for row in source['rows']}
+                amounts = {key: old.get(key, Decimal(0)) if key not in changed else Decimal(0) for key in routes}
+                source['targets'] = {AccountTargetKey(self.client_id,i): amounts[key] for key,i in routes.items()}
+                source['rows'] = tuple(dict(strategy_id=strategy_id,target_key=key,
+                    instrument_id=str(i),quantity=str(amounts[key])) for key,i in routes.items())
+                state = self.coordinator.state()
+                self.coordinator.restore(replace(state,
+                    contributions={**state.contributions, strategy_id: source['targets']},
+                    known_keys=state.known_keys | source['targets'].keys()))
+            port.routes, port.budget, port.instrument_limits = routes, budget, dict(instrument_limits)
+            self._suspended.add(strategy_id)
+            return port
+
     def _check_budget(self, rows, budget, now_ns):
         if budget.is_unlimited:
             return  # 本策略预算已单独核验；不读取其他策略的行情或聚合其仓位。

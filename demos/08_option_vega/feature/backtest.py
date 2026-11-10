@@ -48,7 +48,7 @@ def build_backtest_runner(**kwargs):
     class OptionFeatureBacktestRunner(UnifiedStrategyRunner):
         """行情照常进入撮合；策略只消费与Live相同的封闭分钟帧。"""
         def __init__(self, *, positions, feed, backend, bundle, binding, records, index_key, wait_seconds,
-                     max_market_age_seconds=300, index_value_field=None):
+                     max_market_age_seconds=300, index_value_field=None, performance=None):
             super().__init__(RuntimeMode.HISTORICAL, position_manager=positions)
             self.feed, self.backend = feed, backend
             self.bundle, self.binding, self.records = bundle, binding, records
@@ -61,6 +61,7 @@ def build_backtest_runner(**kwargs):
             self.failure = None
             self._progress_day = None
             self._progress_wall = 0.0
+            self.performance = performance
 
         def run_replay(self):
             started = perf_counter()
@@ -72,6 +73,12 @@ def build_backtest_runner(**kwargs):
             outcomes, self.deadlines = prepare_feature_frames(events, self.bundle,
                 self.binding, self.records, self.index_key, self.wait_ns, self.max_age_ns)
             ready = sum(row.status == 'READY' for row in outcomes)
+            if self.performance is not None:
+                self.performance.add("feature_alignment", perf_counter() - started)
+                self.performance.count("index_feature_records", len(self.records))
+                self.performance.count("decision_frames", len(outcomes))
+                self.performance.count("ready_frames", ready)
+                self.performance.count("skipped_frames", len(outcomes) - ready)
             print(f"[回测进度] 特征对齐完成：frames={len(outcomes)} ready={ready} "
                   f"skipped={len(outcomes)-ready} elapsed={perf_counter()-started:.3f}s", flush=True)
             if not outcomes:
@@ -88,7 +95,12 @@ def build_backtest_runner(**kwargs):
                     "当前计算快照不能直接用于历史时点回测")
             self.outcomes = {row.event_ns: row for row in outcomes}
             print("[回测进度] 开始推进模拟时间及撮合；按交易日或每30秒输出进度", flush=True)
-            result = super().run_replay()
+            started = perf_counter()
+            try:
+                result = super().run_replay()
+            finally:
+                if self.performance is not None:
+                    self.performance.add("replay_dispatch_including_engine", perf_counter() - started)
             if self.failure is not None:
                 raise RuntimeError("指数特征分钟决策失败") from self.failure
             if len(self.frame_audit) != len(self.outcomes):
@@ -125,12 +137,15 @@ def build_backtest_runner(**kwargs):
             observations[self.index_key] = FrameObservation(_index_price(record, field),
                 "index-bars", record.source_ns, record.visible_ns)
             try:
+                started = perf_counter() if self.performance is not None else None
                 self.strategy.on_market_frame(MinuteFrame(timestamp, now_ns, observations))
             except Exception as error:
                 self.failure = error
                 audit["status"] = "FAILED"
                 raise
             finally:
+                if self.performance is not None:
+                    self.performance.add("strategy_decision", perf_counter() - started)
                 self._report_progress(timestamp)
 
         def _report_progress(self, timestamp):

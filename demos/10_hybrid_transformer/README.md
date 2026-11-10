@@ -594,11 +594,11 @@ PYTHONPATH=.:/workspace/worker/pj/KiChaos IMPLUSE_VERSION=all \
   --config-file demos/10_hybrid_transformer/config/strategy.yaml --config-id workers_hybrid
 ```
 
-该YAML使用`execution_channel: shared`，读取原`shared_rb_p.json`的RB/P实例参数和`work2/env2`。
+该YAML使用`execution_channel: shared`，读取纯策略文件`instances_rb_p.json`的RB/P实例参数和`work2/env2`。
 RB、P在当前进程内各有Runner、IPC客户端及检查点；不创建TD或策略子进程，不转调公共启动器。
 追加`--strategy-id hybrid-transformer-live`只运行RB；追加`--strategy-id hybrid-p-live`只运行P。
 本入口负责自身日历、预热、休盘前30秒撤单及保存；账户服务由独立终端管理。
-原策略ID、模型、手数、批次、信号路径和账户报单计数保留；首次接入08仍执行原归属核验注册。
+原策略ID、模型、手数、批次、信号路径和账户报单计数保留；首次切换执行独立`migrate_account`禁单迁移；账户JSON及账本位于公共目录。
 账户服务、08和10的完整三终端命令见[08启动说明](../08_option_vega/README.md#独立账户服务与原生策略入口)。
 
 以下两种原布局继续用于由10同时拥有账户生命周期的旧部署：

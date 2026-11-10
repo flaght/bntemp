@@ -15,6 +15,8 @@ class RemoteAccountService:
         self.position_manager, self.prices = PositionManager(), MarketReferencePriceStore()
         self.state = state
         self.port = None
+        self.allow_reconfigure = False
+        self.instrument_specs = {}
 
     def strategy_client(self, strategy_id, *, routes, budget, instrument_limits=None):
         if strategy_id != self.connection.sid or self.port is not None:
@@ -23,7 +25,13 @@ class RemoteAccountService:
             "limits": {str(i): {name: None if value is None else str(value)
                 for name, value in vars(limits).items()} for i, limits in instrument_limits.items()}}
         if declaration != self.configuration:
-            raise ValueError("策略路由或风控声明与账户服务不一致")
+            if not self.allow_reconfigure:
+                raise ValueError("策略路由或风控声明与账户服务不一致")
+            state = self.connection.call('configure', {'configuration':declaration,
+                'instruments':self.instrument_specs})['state']
+            if state['configuration'] != declaration:
+                raise ValueError('账户未确认本策略执行声明')
+            self.configuration, self.state = declaration, state
         self.port = RemoteStrategyExecutionClient(self, strategy_id, routes, declaration)
         return self.port
 

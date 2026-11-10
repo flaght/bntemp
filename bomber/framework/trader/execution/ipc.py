@@ -115,10 +115,11 @@ class ExecutionEventJournal:
 
 class AccountExecutionProtocol:
     """账户控制线程处理请求；单策略连接租约不等于物理账户租约。"""
-    def __init__(self, service, *, keys, trading_day, lease_seconds=30, stop_seconds=15):
+    def __init__(self, service, *, keys, trading_day, lease_seconds=30, stop_seconds=15, configure=None):
         if service.execution_mode != "independent" or set(keys) != set(service._ports):
             raise ValueError("独立进程协议须注册完整独立订单服务")
         self.service, self.keys, self.trading_day = service, dict(keys), trading_day
+        self.configure = configure
         self.lease_seconds, self.stop_seconds = lease_seconds, stop_seconds
         self.leases = {}
         self.closed_tokens = {}
@@ -211,6 +212,11 @@ class AccountExecutionProtocol:
         port = self.service._ports[sid]
         if action == "describe":
             return {"state": self.state(sid)}
+        if action == 'configure':
+            if self.configure is None or sid in self.leases:
+                raise ValueError('此账户不接受执行声明刷新，或策略已有租约')
+            self.configure(sid, data['configuration'], data['instruments'])
+            return {'state': self.state(sid)}
         if action == "ack_stopped":
             if (sid in self.leases or not hmac.compare_digest(str(message.get("lease", "")),
                                                              self.closed_tokens.get(sid, ""))):

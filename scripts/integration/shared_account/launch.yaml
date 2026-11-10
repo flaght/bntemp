@@ -1,8 +1,7 @@
 experiment_setups:
   workers_account:
-    description: "公共账户执行服务；唯一TD，按日历服务所有已注册worker"
-    config: scripts/integration/shared_account/workers.json
-    role: account
+    description: "独立账户服务；仅读取本账户JSON和执行账本"
+    config: scripts/integration/shared_account/account.json
     prepare_seconds: 600
     run_forever: true
     connect: true

@@ -29,7 +29,7 @@ def read_research_frame(path, key, day, kind, bar_timestamp):
     return read_bar_frame(path, spec, BarFileKey(kind, key, day)).frame
 
 
-def prepare_option_chain(paths, plan, *, specs=None, context=None):
+def prepare_option_chain(paths, plan, *, specs=None, context=None, copy_frames=True):
     index = {}
     for kind, root in paths.items():
         index.update(scan_bar_files(root, kind))
@@ -39,5 +39,5 @@ def prepare_option_chain(paths, plan, *, specs=None, context=None):
     for key, path in sorted(files.items()):
         spec = specs.get(key.asset_kind, BarReadSpec(trading_day_policy="day_session"))
         purpose = "research" if spec.value_policy == "research_audited" else "execution"
-        sources.append(SourceSpec(read_bar_frame(path, spec, key), purpose))
+        sources.append(SourceSpec(read_bar_frame(path, spec, key, copy_frame=copy_frames), purpose))
     return HistoricalInputBundle(context or InputContext(), tuple(sources), plan.bindings, coverage)

@@ -10,6 +10,15 @@ from .config import read_config, strategy_report_dir
 
 
 def load_native_config(path, rows, env_file):
+    from .account_config import read_account_config
+    from .config import resolve_config
+    declaration = json.loads(Path(path).read_text())
+    if 'strategy_configs' not in declaration and 'base_config' not in declaration:
+        account = read_account_config(path)
+        config = resolve_config({**account,'strategies':rows,
+            'strategy_env_files':{row['strategy_id']:str(Path(env_file).expanduser().resolve()) for row in rows}}, path)
+        config['_account_only'] = True
+        return config
     from .run_workers import load_config
     config, _ = load_config(path)
     registered = {row['strategy_id']: row for row in config['strategies']}
@@ -26,15 +35,23 @@ def load_native_config(path, rows, env_file):
 
 def window_credentials(config, rows, window, stop_event, runtime_dir=None):
     from bomber.framework.trader.runtime.live.remote import wait_for_account
-    discovery = (runtime_dir or Path(config['account_state_file']).parent/'workers')/'current.json'
+    pure = config.get('_account_only', False)
+    discovery = (runtime_dir or Path(config['account_state_file']).parent/('service' if pure else 'workers'))/'current.json'
     def validate(candidate):
-        published = read_config(candidate['config'])
-        expected = deepcopy(config)
+        if pure:
+            from .account_config import read_account_config, FIELDS
+            published = read_account_config(candidate['config'])
+            expected = {key:deepcopy(config[key]) for key in FIELDS}
+        else:
+            published = read_config(candidate['config'])
+            expected = deepcopy(config)
         expected.update(trading_day=window.trading_day, seconds=86400)
         if published != expected:
             raise ValueError('账户服务声明与本地已核对配置不一致；保留原状态并停止')
         for row in rows:
             path = Path(candidate['credentials_dir'])/(row['strategy_id']+'.json')
+            if not path.is_file():
+                raise ValueError(f"该策略ID尚未登记到账户: {row['strategy_id']}")
             credentials = json.loads(path.read_text())
             if (credentials['strategy_id'] != row['strategy_id']
                     or Path(credentials['socket']) != Path(candidate['socket'])):
@@ -46,7 +63,7 @@ def window_credentials(config, rows, window, stop_event, runtime_dir=None):
 def make_runtime(config, row, credentials, *, resume, activate_at=None, stop_at=None):
     """注入原策略装配函数，复用原worker身份及信号格式，不切换全局env。"""
     from .factories import (strategy_arguments, prepare_strategy_inputs,
-        assemble_strategy_session, shared_strategy_identity)
+        assemble_strategy_session, shared_strategy_identity, instrument_specs)
     from .rollover import validate_strategy_identity
     from bomber.framework.market.sources import source_config
     from bomber.framework.trader.runtime.live.channels.ctp import required
@@ -70,6 +87,9 @@ def make_runtime(config, row, credentials, *, resume, activate_at=None, stop_at=
             transport=SimpleNamespace(investor_id=required('CTP_ACCOUNT_ID'), password=required('CTP_PASSWORD'),
                 production_mode=os.getenv('CTP_PRODUCTION_MODE', 'true').lower() in {'1', 'true', 'yes', 'on'}))
         inputs = prepare_strategy_inputs(row, entry, args, context, lifecycle)
+        if service.allow_reconfigure:
+            service.instrument_specs = {str(i):dict(tick=str(spec.tick),multiplier=str(spec.multiplier))
+                for i,spec in instrument_specs(row['kind'], inputs.references).items()}
         upstream = getattr(inputs, 'upstream', getattr(inputs, 'ctp_upstream', None))
         if getattr(upstream, 'config', None) is not None and source_config(args).source == 'ctp':
             upstream.config = replace(upstream.config,

@@ -7,7 +7,7 @@ from math import isfinite
 
 from .catalog import symbol
 from .contracts import BarFileKey, BarLoadResult, BarReadSpec, InputIssue
-from .session import current_session, fail, read_feather, record_issue
+from .session import current_session, fail, read_feather, record_issue, profile_input
 
 
 def timestamps(values, timezone="Asia/Shanghai"):
@@ -36,7 +36,13 @@ def key_from_path(path, asset_kind="future"):
     return BarFileKey(asset_kind, code, day)
 
 
-def read_bar_frame(path, spec=None, key=None):
+@profile_input("bar_read_normalize_validate")
+def read_bar_frame(path, spec=None, key=None, *, copy_frame=True):
+    """Return an isolated frame by default; False borrows a read-only cache frame.
+
+    Borrowing is reserved for preparation/replay paths that never modify it.
+    The normal public API continues to protect cached data from caller writes.
+    """
     import pandas as pd
     spec = spec or BarReadSpec()
     key = key or key_from_path(path)
@@ -45,8 +51,9 @@ def read_bar_frame(path, spec=None, key=None):
     fingerprint = session.fingerprint(path) if session is not None else None
     cache_key = ("bar", fingerprint, key, spec)
     if session is not None and cache_key in session.cache:
+        session.performance.count("bar_cache_hits")
         old = session.cache[cache_key]
-        return replace(old, frame=old.frame.copy(deep=True))
+        return replace(old, frame=old.frame.copy(deep=True)) if copy_frame else old
     frame = read_feather(path)
     if not frame.columns.is_unique or frame.empty:
         fail("INVALID_SCHEMA", "Empty file or duplicate columns", source=path)
@@ -155,6 +162,8 @@ def read_bar_frame(path, spec=None, key=None):
         fail("UNSUPPORTED_CAPABILITY", "Out-of-order arrival needs stage-two late-frame handling", source=path)
     result = BarLoadResult(key, path, frame, spec, tuple(issues))
     if session is not None:
+        session.performance.count("bar_files_prepared")
+        session.performance.count("bar_rows_prepared", len(frame))
         session.cache[cache_key] = result
         details = {"identity": str(key), "rows": len(frame),
             "first_ns": result.first_ns, "last_ns": result.last_ns,
@@ -176,7 +185,7 @@ def read_bar_frame(path, spec=None, key=None):
             or (end is not None and key.trading_day > end)) else "actual_days"
         setattr(session.coverage, field,
             tuple(sorted(set(getattr(session.coverage, field)) | {key.trading_day})))
-    return replace(result, frame=frame.copy(deep=True))
+    return replace(result, frame=frame.copy(deep=True)) if copy_frame else result
 
 
 def filter_session_bars(result: BarLoadResult, calendar) -> BarLoadResult:
@@ -235,12 +244,16 @@ def filter_session_bars(result: BarLoadResult, calendar) -> BarLoadResult:
 class PreparedFrameReader:
     suffixes = frozenset({".feather"})
 
-    def __init__(self, frame):
-        self.frame = frame.copy(deep=True)
+    def __init__(self, frame, *, copy_frame=True):
+        # Default isolates caller mutations. The backtest composition layer can
+        # borrow its already-prepared frame for the duration of a read-only run.
+        self.frame = frame.copy(deep=True) if copy_frame else frame
 
     def read(self, path):
-        for index, row in enumerate(self.frame.to_dict("records"), 1):
-            yield index, row
+        columns = tuple(self.frame.columns)
+        # Stream one mapping at a time; avoid a second full list of row dicts.
+        for index, values in enumerate(self.frame.itertuples(index=False, name=None), 1):
+            yield index, dict(zip(columns, values))
 
 
 def add_bar_source(feed, path, instrument_id, *, spec=None, key=None):
@@ -253,7 +266,7 @@ def add_bar_source(feed, path, instrument_id, *, spec=None, key=None):
     return result
 
 
-def add_prepared_bar_source(feed, result, instrument_id):
+def add_prepared_bar_source(feed, result, instrument_id, *, copy_frame=True):
     """消费场景已准备的结果，不重复读取或调整时间。"""
     from bomber.framework.market.replay.parsers.bar import FixedInstrumentBarParser
     if result.spec.value_policy != "execution_strict":
@@ -269,7 +282,7 @@ def add_prepared_bar_source(feed, result, instrument_id):
             fail("IDENTITY_MISMATCH", "Prepared rows differ from instrument venue", source=result.path)
     parser = FixedInstrumentBarParser(instrument_id, timestamp="datetime",
         available_nanoseconds="available_ns", timezone=result.spec.timezone, bar_spec=result.spec.bar_spec)
-    feed.add_source(result.path, PreparedFrameReader(result.frame), parser, "bar")
+    feed.add_source(result.path, PreparedFrameReader(result.frame, copy_frame=copy_frame), parser, "bar")
 
 
 def first_ns(path, spec=None):

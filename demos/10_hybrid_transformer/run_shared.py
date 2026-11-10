@@ -150,14 +150,23 @@ def main(argv=None):
     options = parser.parse_args(argv)
     if options.prepare_seconds < 0:
         parser.error('prepare-seconds须为非负整数')
-    config = read_config(options.config)
-    validate_layout(config, options.process_layout)
     if options.execution_channel == 'shared':
         if not options.account_config or not options.env_file:
             parser.error('shared须指定account-config和本策略env-file')
         if options.process_layout != 'same-process':
             parser.error('shared通道在本进程运行实例；分别启动可使用strategy-id选择实例')
+        from scripts.integration.shared_account.account_config import read_account_config, read_strategy_rows
+        import json
+        document = json.loads(options.config.read_text())
+        if set(document) == {'version','strategies'}:
+            account = read_account_config(options.account_config)
+            config = {**account,'strategies':read_strategy_rows(options.config, account)}
+        else:
+            config = read_config(options.config)  # 兼容旧完整配置，原生YAML使用纯策略JSON。
+        validate_layout(config, options.process_layout)
         return run_remote(config, options, parser)
+    config = read_config(options.config)
+    validate_layout(config, options.process_layout)
     if options.account_config or options.runtime_dir or options.strategy_id:
         parser.error('account-config/runtime-dir/strategy-id仅用于shared执行通道')
     if not options.connect:

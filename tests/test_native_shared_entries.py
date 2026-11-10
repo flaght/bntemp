@@ -73,7 +73,7 @@ class NativeEntryTests(unittest.TestCase):
         self.assertEqual(seen, [os.getpid()])
 
     def test_hybrid_native_entry_runs_rb_and_p_concurrently_in_current_process(self):
-        config, _ = run_workers.load_config(ROOT/'scripts/integration/shared_account/workers.json')
+        config, _ = run_workers.load_config(ROOT/'scripts/integration/shared_account/legacy_workers.json')
         now = datetime.now(ZONE)
         window = TradingWindow(now.strftime('%Y%m%d'), now-timedelta(minutes=1), now+timedelta(minutes=3), 'test')
         barrier, seen, stopped = Barrier(2), [], Event()
@@ -102,12 +102,12 @@ class NativeEntryTests(unittest.TestCase):
         self.assertEqual(set(seen), {('hybrid-transformer-live', os.getpid()), ('hybrid-p-live', os.getpid())})
 
     def test_changed_local_strategy_or_env_is_rejected_before_connection(self):
-        config, _ = run_workers.load_config(ROOT/'scripts/integration/shared_account/workers.json')
+        config, _ = run_workers.load_config(ROOT/'scripts/integration/shared_account/legacy_workers.json')
         row = dict(config['strategies'][0]); row['argv'] = row['argv']+['--max-contracts','3']
         with self.assertRaisesRegex(ValueError, '本地策略参数'):
-            native.load_native_config(ROOT/'scripts/integration/shared_account/workers.json', [row], ROOT/'work2/env2')
+            native.load_native_config(ROOT/'scripts/integration/shared_account/legacy_workers.json', [row], ROOT/'work2/env2')
         with self.assertRaisesRegex(ValueError, 'env'):
-            native.load_native_config(ROOT/'scripts/integration/shared_account/workers.json',
+            native.load_native_config(ROOT/'scripts/integration/shared_account/legacy_workers.json',
                 [config['strategies'][0]], ROOT/'work1/env1')
 
     def test_account_entry_runs_server_in_current_process_and_removes_its_discovery(self):

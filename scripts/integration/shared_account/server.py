@@ -129,7 +129,10 @@ def _main(argv):
 
 def _run(args, config, stop_event):
     from bomber.framework.trader.runtime.live.continuous import StopRequested, wait_for_open
-    from .run import build_host
+    if getattr(args, 'account_only', False):
+        from .account_service import build_host
+    else:
+        from .run import build_host
     from bomber.framework.trader.execution.ipc import AccountExecutionProtocol, UnixExecutionServer, encode
     from bomber.framework.trader.runtime.reports import LiveRunReport
     load_environment(getattr(args, 'env_file', None) or config.get('account_env_file'))
@@ -146,7 +149,8 @@ def _run(args, config, stop_event):
         host = build_host(config, resume=args.resume, diagnostics=diagnostics, strategy_processes=True,
             session_order_budget=args.remaining_orders)
         keys = {sid: secrets.token_hex(32) for sid in host.strategies}
-        protocol = AccountExecutionProtocol(host.service, keys=keys, trading_day=config["trading_day"])
+        protocol = AccountExecutionProtocol(host.service, keys=keys, trading_day=config["trading_day"],
+            **({'configure':host.configure} if getattr(args,'account_only',False) else {}))
         host.account.start(resume=args.resume)
         if any(row["status"] != "completed" for row in protocol.journal.requests.values()):
             raise RuntimeError("恢复存在未决跨进程请求，须权威核查，拒绝自动重复发单")
@@ -168,7 +172,9 @@ def _run(args, config, stop_event):
                         output.write(encode({"version": 1, "strategy_id": sid, "key": key,
                             "socket": str(args.socket.resolve()), "configuration": host.service._ports[sid].configuration(),
                             "bootstrap_signal": host.service.bootstrap_signals.get(sid),
-                            "reference": getattr(host.strategies[sid].session, "session_identity", None)}))
+                            "reference": getattr(host.strategies[sid].session, "session_identity", None),
+                            "check_reference": not getattr(args,'account_only',False),
+                            "allow_reconfigure": bool(getattr(args,'account_only',False))}))
                         output.flush(); os.fsync(output.fileno())
                         os.replace(temporary, path)
                     finally:
@@ -223,7 +229,8 @@ def _run(args, config, stop_event):
             publish_server()
 
         print(f"账户服务就绪：socket={args.socket}；策略客户端文件目录={args.credentials_dir}", flush=True)
-        print(f"账户CTP逐合约估值时效: {ctp_instrument_max_age_seconds(config)}秒", flush=True)
+        if not getattr(args,'account_only',False):
+            print(f"账户CTP逐合约估值时效: {ctp_instrument_max_age_seconds(config)}秒", flush=True)
         until = time.monotonic() + config["seconds"] + 120  # 给分终端启动和策略先停机留出时间。
         stop_at = getattr(args, 'stop_at', None)
         while (not stop_event.is_set() and (stop_at is None or datetime.now(stop_at.tzinfo) < stop_at)

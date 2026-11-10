@@ -484,84 +484,90 @@ python -u -m scripts.integration.shared_account.join_option \
 
 ### 独立账户服务与原生策略入口
 
-日常运行分为三个进程：账户服务、08策略、10策略。账户服务独立运行唯一TD；08从自己的
-`run_live.py`直接运行一个Vega实例；10从自己的`run_shared.py`在同一进程内运行RB、P两个实例。
-策略通过框架的`RemoteStrategyRuntime`连接账户服务，不再由公共启动器派生策略进程。
-RB/P各有Runner、IPC客户端、策略ID及信号检查点；同一合约可以属于多个策略。
-
-三个启动YAML分别属于公共账户、10和08，对应`workers_account`、`workers_hybrid`、`workers_option`，统一引用公共目录的
-`scripts/integration/shared_account/workers.json`。08与10是平行策略，分别拥有自己的启动配置及账户注册声明：
+账户JSON只描述账户，策略JSON只描述策略。账户日常启动不读取08/10目录的JSON，不导入策略工厂、
+模型或信号配置。三个进程分别运行：公共账户、08的一个Vega实例、10的RB/P两个实例。
 
 ```text
-scripts/integration/shared_account/workers.json  公共TD、200笔额度及策略文件列表
-├── demos/08_option_vega/config/workers.json     08环境、参数入口、自己的信号文件
-└── demos/10_hybrid_transformer/config/workers.json  Hybrid环境，引用原RB/P参数
+scripts/integration/shared_account/
+├── account.json                     纯账户配置，无strategy_configs或registration
+├── account.env                      账户自己的CTP环境，已忽略提交
+├── launch.yaml                      账户启动参数
+└── results/account/state.json       账户自己的订单、成交、归属及执行登记
+
+demos/08_option_vega/
+├── config/strategy.yaml             08启动配置及live_simnow业务参数
+├── config/vega_live.json             08期货/期权手数和策略参数
+└── results/live/state/worker_signal.json
+
+demos/10_hybrid_transformer/
+├── config/strategy.yaml             10启动配置
+├── config/instances_rb_p.json        仅RB/P实例，无账户字段
+└── results/live/state/              原rb_signal.json、p_signal.json
 ```
 
-公共配置的`strategy_configs`平级引用两个策略文件；调换顺序不改变各策略参数或账户限额。
-RB/P模型、手数和信号路径仍复用`shared_rb_p.json`，不复制或改写原配置。
-08仅声明自己的`strategies`，`argv`加载本目录`strategy.yaml`的`live_simnow`，手数由`vega_live.json`决定。
+`account.json`中的所有相对路径以该JSON所在目录为基准。`account_env_file: account.env`、
+`account_state_file: results/account/state.json`及`report_dir: results/account`都位于公共账户目录。
+08/10启动YAML中的`env_file`和`account_config`相对于项目工作目录；策略分别读取`work1/env1`和`work2/env2`，
+再通过IPC连接账户服务。账户不读取这些策略env，也不读取其模型/行情/信号JSON。
 
-08的`config/workers.json`配置自己的env：
+账户账本保存纯执行登记：已登记策略ID、真实合约、最小变动价位、乘数、执行限额和公共市场时段快照。
+这些是恢复订单和归属所需的执行事实，不包含策略argv或业务文件路径；恢复市场时段无需查询策略的DDB。
+策略自行准备行情、参考与模型，连接时核验自身信号身份；账户只验证执行声明。
+已登记策略可在原产品、原有限额内刷新空仓路由，不新增策略身份，不移除非零持仓/目标，不跳过未确认回报。
+执行登记、路由、归属、报单计数及事件日志在同一账户检查点代次保存。
 
-```json
-"env_file": "../../../work1/env1"
-```
+账户仍保留`max_gross_quantity/max_gross_notional: null`和共享TD每交易日200笔；各策略自身限额生效。
+执行client_id沿用历史值以保留订单身份，不代表公共账户属于10。两个策略的ID、模型、手数、批次和信号路径保留。
 
-10的`config/workers.json`同级声明`env_file: ../../../work2/env2`及`strategies_file: shared_rb_p.json`。
-路径相对于各自JSON，因此分别对应项目`pro/work1/env1`和`pro/work2/env2`，也支持绝对路径。
-公共配置独立声明`account_env_file`，当前使用`../../../work2/env2`作为唯一TD连接的环境。
-账户服务准备各策略日历、参考合约及Feed时也使用对应env，不能只给worker切换DDB。
-显式env的同名变量优先于进程已有变量，不再读取项目根目录`.env`；未声明的CTP/模型变量仍继承。
-DDB变量在读取显式文件前清理，防止08漏填某个键时回退到Hybrid的另一组连接；文件须完整声明
-所需`DDB_MARKET_*`、`DDB_REFERENCE_*`或兼容`DDB_*`。不存在的文件会报错，不静默使用根目录配置。
-原配置未指定env路径时保留旧的导出变量优先、根`.env`仅补缺行为。文件内容和密码不进入运行JSON或日志。
-这些JSON保留账户启动和首次注册所需的原身份；原生策略入口会核对自己的声明是否一致。启动YAML也平级管理：公共账户使用
-`scripts/integration/shared_account/launch.yaml`，10使用本策略`config/strategy.yaml`，08使用自己的`config/strategy.yaml`。
-两个策略启动配置使用`execution_channel: shared`和`account_config`，不再声明`role/kind`。
-08的`live_config_id: live_simnow`复用同一YAML中的业务参数，`state_file`指定原worker信号文件；
-10的`config`继续引用原`shared_rb_p.json`，其中账户字段不作为远程服务额度。
-策略启动的`env_file`相对于项目工作目录，须与公共注册声明解析后的env一致；策略参数变化仍需显式核验。
-
-公共账户`max_gross_quantity`和`max_gross_notional`均为null，每个策略自己的限额仍生效。
-TD每日额度在公共配置独立设为200，不由08或10的策略文件决定。
-账户client_id和账本暂时保留原历史名称及路径以兼容恢复，名称不表示账户服务属于Hybrid。
-首次注册会更新账户账本中的策略注册信息，并保留原代次备份；不是保持账户文件字节不变。
-
-**首次切换只做一次注册。**先正常停止原Hybrid及任何08交易进程，等待撤单、回报及保存完成。同步新代码后，先核对来源文件：
+**切换前：**正常停止原账户、Hybrid及08交易进程，等待撤单、回报确认和保存完成。同步本次完整代码与框架包，
+两个Python环境都要能加载新的框架模块。先为账户创建独立env（不打印内容）：
 
 ```bash
 cd /workspace/worker/pj/Chrono/nautilus_trader_demo/pro || exit 1
-export PYTHONPATH=.:/workspace/worker/pj/KiChaos
-export IMPLUSE_VERSION=all
-
-/workspace/worker/env/chs-live/bin/python -u \
-  -m scripts.integration.shared_account.register_worker \
-  --config scripts/integration/shared_account/workers.json \
-  --trading-day 20261110 \
-  --option-checkpoint /workspace/worker/pj/Chrono/nautilus_trader_demo/pro_new/tests/results/gap08-realtime-simnow/state-1791869411336135873.json
+install -m 600 work2/env2 scripts/integration/shared_account/account.env
 ```
 
-`20261110`须替换成CTP实际返回的交易日，夜盘不能按自然日期猜测。默认信号路径为原08账户文件名追加`.vega-signal.json`；不同时加`--option-signal`。
-也可在公共配置的`registration`中配置`option_checkpoint`和`option_signal`；`source_account_config`仅用于首次核对原账户，不作为日常运行基类。
-新08 worker信号使用本策略`results/live/state/worker_signal.json`，不能用旧账户文件代替。
-注册器接收原08共享成交检查点，模型/Recording或原生单策略格式会拒绝。
+也可参考公共目录的`account.env.example`只填写账户CTP字段。首次切换不要创建空的`results/account/state.json`。
 
-文件检查通过后，**同一命令末尾追加`--connect --apply`**，进行禁单柜台核验和注册。不运行策略、不授权报单；保留历史订单ID、成本、原归属和Hybrid信号/批次。核验全部自有多空份额、今昨仓与无活动订单，通过后原子提交账户文件并生成`.before-rollover-g*.json`备份。原08来源文件不改写。原仓缺失、未决订单/请求/未确认事件、参数冲突均拒绝。已注册后不能重复导入旧仓。
+**旧文件只在首次迁移命令中显式提供。**原`workers.json`现改名为`legacy_workers.json`，只作为迁移来源和旧部署兼容声明。
+它引用原`shared_rb_p.json`、08旧注册声明及原检查点；不会由新账户入口读取。10日常启动只读取新的`instances_rb_p.json`。
 
-源配置的账户身份、限额、策略集合及argv会在连接前核对，正式注册取得锁后再次核对。
-错误中的`checkpoint`为已保存原值，`config`为当前源配置值；例如原TD额度200而部署模板为100，
-应核对并恢复原源配置，不能修改检查点来绕过。取消联合手数/名义限制也不允许隐式改变TD额度。
-
-**分别启动：**各终端先进入同一项目目录，并确认各自`env_file`及公共`account_env_file`指向完整配置。账户及Hybrid环境需安装模型依赖和PyYAML。终端1先启动账户服务：
+保留此前已核对的`VEGA_OLD_STATE`，并把`VEGA_TD_DAY`设置为CTP实际返回的交易日，例如20261110。
+先执行纯文件预检：
 
 ```bash
 PYTHONPATH=.:/workspace/worker/pj/KiChaos IMPLUSE_VERSION=all \
-  /workspace/worker/env/chs-live/bin/python -u -m scripts.integration.shared_account.run_workers \
+  /workspace/worker/env/chs-live/bin/python -u -m scripts.integration.shared_account.migrate_account \
+  --account-config scripts/integration/shared_account/account.json \
+  --source-config scripts/integration/shared_account/legacy_workers.json \
+  --trading-day "$VEGA_TD_DAY" --option-checkpoint "$VEGA_OLD_STATE"
+```
+
+看到`status: files_checked`后，在同一命令末尾追加`--connect --apply`，禁单核验后迁移：
+
+```bash
+PYTHONPATH=.:/workspace/worker/pj/KiChaos IMPLUSE_VERSION=all \
+  /workspace/worker/env/chs-live/bin/python -u -m scripts.integration.shared_account.migrate_account \
+  --account-config scripts/integration/shared_account/account.json \
+  --source-config scripts/integration/shared_account/legacy_workers.json \
+  --trading-day "$VEGA_TD_DAY" --option-checkpoint "$VEGA_OLD_STATE" --connect --apply
+```
+
+未合入08时，默认原08信号文件为旧检查点文件名追加`.vega-signal.json`；也可用`--option-signal`指定。
+若原账户已注册08，则直接迁移该完整账本，不重复导入旧08。源配置、信号/批次、归属、未决订单和每日额度均需匹配。
+此前出现的“检查点200、原shared_rb_p.json配置100”仍须先核对并恢复原源配置，不能修改检查点绕过。
+迁移过程使用临时账户副本完成柜台核验和最终停机检查，成功后才创建新的公共账本，并保存原代次来源备份；
+原账户、原08检查点及两个策略信号文件均不改写。看到`status: migrated`并正常退出后，开始日常三终端启动。
+
+**终端1先启动账户服务：**只需CTP与框架环境，不需要Hybrid模型依赖。
+
+```bash
+PYTHONPATH=. /workspace/worker/env/uv-nautilus/bin/python -u \
+  -m scripts.integration.shared_account.account \
   --config-file scripts/integration/shared_account/launch.yaml --config-id workers_account
 ```
 
-终端2从10原生入口启动RB/P两个实例：
+**终端2从10原生入口启动RB/P：**
 
 ```bash
 PYTHONPATH=.:/workspace/worker/pj/KiChaos IMPLUSE_VERSION=all \
@@ -569,7 +575,7 @@ PYTHONPATH=.:/workspace/worker/pj/KiChaos IMPLUSE_VERSION=all \
   --config-file demos/10_hybrid_transformer/config/strategy.yaml --config-id workers_hybrid
 ```
 
-终端3从08原生入口启动Vega实例：
+**终端3从08原生入口启动Vega：**
 
 ```bash
 PYTHONPATH=. /workspace/worker/env/uv-nautilus/bin/python -u \
@@ -577,23 +583,16 @@ PYTHONPATH=. /workspace/worker/env/uv-nautilus/bin/python -u \
   --config-file demos/08_option_vega/config/strategy.yaml --config-id workers_option
 ```
 
-三者默认常驻。账户服务在当前进程运行；08和10在自己的当前进程运行策略，10内部用两个控制线程管理RB/P。
-10只启动一个实例时，在上述10命令后追加`--strategy-id hybrid-transformer-live`（RB）或`--strategy-id hybrid-p-live`（P）。
-启动前会核对本地策略ID、argv、信号路径、env以及账户发布声明，不匹配时停止，不隐式改变原参数。
-各终端默认通过账户检查点旁`workers/current.json`发现当日服务；若覆盖`--runtime-dir`，三个终端必须一致。
+三个终端先进入同一项目目录，均默认常驻。10在本进程用两个控制线程运行RB/P，不创建策略子进程；
+追加`--strategy-id hybrid-transformer-live`只运行RB，追加`--strategy-id hybrid-p-live`只运行P。
+账户覆盖其已保存市场时段的并集，各策略按自己的日历预热和启停；Hybrid保留休盘前30秒停止，08使用自己的期权终点。
+各终端默认通过公共账本旁的`service/current.json`发现服务；覆盖`--runtime-dir`时三个终端须一致。
+正常退出先停止策略，等待保存和回报确认，再停止账户；保留已成交仓位和已使用额度。
 
-首次注册成功后使用本节shared入口恢复。原来的独立TD入口、旧worker和本节入口不能同时占用同一策略状态。
-正常停止时先停止两个策略终端，等待撤单、回报游标及信号保存完成，再停止账户服务；已成交仓位保留。
-10内任一实例异常会要求其余实例正常收尾，账户服务由自己的终端管理；进程不盲目重启。
-旧`run_workers --role all/worker`及`worker.py`保留兼容原部署，不作为这两个YAML的启动入口。
-
-同步时必须包含公共`workers.json`、两个策略的注册JSON、原生入口与启动YAML、`shared_account/native.py`、
-框架`trader/runtime/live/remote.py`及本次修改的CLI/账户服务文件。公共配置不是可省略的自动生成文件；
-此前服务器缺少`scripts/integration/shared_account/workers.json`时，须同步该文件后再进行原有注册步骤。
-
-调度使用各策略自己的公共日历：Hybrid保留休盘前30秒停止；08使用MO/IO/HO连续交易终点，例如14:57。账户连接覆盖窗口并集，再留30秒给最后worker撤单/确认；不会拿RB的09:00或15:00要求MO行情。午休、夜盘和跨日从原归属与各自信号恢复，TD每日额度不因进程/窗口切换重置。
-
-验证覆盖`tests/test_native_shared_entries.py`、`tests/test_option_workers.py`及共享执行、跨日、Hybrid布局回归。柜台、行情和模型为离线替身；Linux上实际DDB/CTP和原检查点仍须首次禁单核验。
+旧`run_workers/server/worker`及原同进程布局仍用于旧部署兼容，新三终端流程使用本节入口。
+原策略文件和公共账本不能由新旧入口同时占用；迁移成功后日常启动不再运行迁移命令。
+验证覆盖`tests/test_account_isolation.py`、`tests/test_native_shared_entries.py`及原共享执行、跨日与布局回归；
+柜台、行情和模型采用离线替身，实际服务器仍需执行上述首次禁单核验。
 
 ## 4. 自定义特征
 
@@ -836,6 +835,39 @@ Live仍使用M1交易腿和可投影的原始指数声明；`--option-bar-minute
 `--simnow-environment`默认realtime；replay须声明`--replay-md-trading-day YYYYMMDD`，并使用CTP行情。可选`--replay-test-start-time HH:MM`和`--replay-test-source-time HH:MM`用于显式工程时间映射，要求CTP Replay、DFS指数及新测试会话；source-time须同时声明start-time。常驻模式只支持realtime，不重映射历史日期；Replay不是通过改日期发送已下架合约的授权。
 
 ## 6. 验证与诊断
+
+### 回测性能统计与默认日志
+
+`m5_index_blend`示例使用`log_level: WARNING`，阶段耗时、交易日进度和性能统计仍直接输出。
+启动方式不变；临时排查引擎细节时可以追加`--log-level INFO`。
+
+每个回测结果目录新增`performance.json`，在运行器清理后写入最终统计；
+`summary.json`的`performance_report`指向此文件。输入失败报告也包含已收集的性能统计。
+所有时间都是本机墙钟耗时，不是模拟交易时间。嵌套计时包含子项，不能直接相加：
+
+| 统计项 | 范围 |
+| --- | --- |
+| `phase:*`、`run_case` | 各入口阶段和本次运行总耗时 |
+| `index_feature_file_read` | 特征文件读取、manifest及可见时间校验 |
+| `feather_disk_read` | 实际Feather读取；另计文件数、行数和缓存命中 |
+| `bar_read_normalize_validate` | 交易腿读取、标准化和校验，包含Feather读取及副本创建 |
+| `replay_event_conversion` | 各回放来源的逐行转换、解析和订阅过滤，不含排序 |
+| `replay_event_sort` | 按可用时间稳定排序并创建事件元组 |
+| `feature_alignment` | 将指数特征按可见时间对齐分钟帧 |
+| `market_binding_lookup` | 行情到模拟引擎的绑定匹配 |
+| `simulation_engine_including_decisions` | 每根行情推进引擎；包含原生定时器内触发的策略决策 |
+| `strategy_decision` | 策略分钟决策回调；它是引擎推进耗时的子项 |
+| `replay_dispatch_including_engine` | 回放分发总耗时，包含引擎及策略决策 |
+
+`counters`记录期权/期货文件数、合约数、交易日、事件数、READY/SKIPPED帧数及订单/成交数。
+Feather读取数包含基础资料等输入文件；`option_bar_files`和`future_bar_files`单独统计交易腿。
+这些计数用于比较相同输入、相同参数的运行，不能用某个局部优化的耗时代表整段回测。
+
+回放适配器按合约、数据类型索引绑定，不再为每根Bar扫描整个合约集合。
+准备后的DataFrame按行迭代输出，避免一次创建全部行字典；08内部只读链路借用已校验的
+DataFrame，省去准备结果和回放注册时的两次深拷贝。公共读取器默认仍返回独立副本，
+其他调用方不受内部借用方式影响。逐根推进引擎、同刻事件顺序、接收期限、策略公式、
+`next_market`成交时序和结算规则均沿用原逻辑。
 
 ### 长区间回测进度与特征缓存
 

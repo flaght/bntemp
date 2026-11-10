@@ -31,7 +31,7 @@ def dt(text):
 class WorkerLaunchTests(unittest.TestCase):
     def test_declaration_preserves_hybrid_paths_parameters_and_daily_td_limit(self):
         root = Path(__file__).resolve().parents[1]
-        path = root/'scripts/integration/shared_account/workers.json'
+        path = root/'scripts/integration/shared_account/legacy_workers.json'
         config, sources = run_workers.load_config(path)
         base = run_workers.read_config(sources['base_config'])
         self.assertEqual(config['strategies'][:-1], base['strategies'])
@@ -163,7 +163,7 @@ class WorkerLaunchTests(unittest.TestCase):
         root=Path(__file__).resolve().parents[1]
         from contextlib import redirect_stdout,redirect_stderr
         from io import StringIO
-        args=['--config',str(root/'scripts/integration/shared_account/workers.json')]
+        args=['--config',str(root/'scripts/integration/shared_account/legacy_workers.json')]
         with redirect_stdout(StringIO()),patch.object(run_workers,'load_calendars',side_effect=AssertionError('不得查询')):
             run_workers.main(args+['--role','worker','--kind','option_vega'])
         with redirect_stderr(StringIO()),self.assertRaises(SystemExit):
@@ -171,7 +171,7 @@ class WorkerLaunchTests(unittest.TestCase):
 
     def test_strategy_declarations_are_peers_and_do_not_supply_public_account_limits(self):
         root=Path(__file__).resolve().parents[1]
-        path=root/'scripts/integration/shared_account/workers.json'
+        path=root/'scripts/integration/shared_account/legacy_workers.json'
         template=json.loads(path.read_text())
         for name in ('account_state_file','report_dir','account_env_file'):
             template[name]=str((path.parent/template[name]).resolve())
@@ -208,10 +208,10 @@ class WorkerLaunchTests(unittest.TestCase):
         for index,(filename,sid) in enumerate(profiles):
             setup=load_setup(root/filename,sid)
             if index == 0:
-                self.assertEqual(setup['config'],'scripts/integration/shared_account/workers.json')
-                self.assertEqual(setup['role'],'account')
+                self.assertEqual(setup['config'],'scripts/integration/shared_account/account.json')
+                self.assertNotIn('role',setup)
             else:
-                self.assertEqual(setup['account_config'],'scripts/integration/shared_account/workers.json')
+                self.assertEqual(setup['account_config'],'scripts/integration/shared_account/account.json')
                 self.assertEqual(setup['execution_channel'],'shared')
                 self.assertNotIn('role',setup)
                 self.assertNotIn('kind',setup)
@@ -222,7 +222,7 @@ class WorkerLaunchTests(unittest.TestCase):
 
     def test_legacy_composition_still_reads_without_rewriting_original_files(self):
         root=Path(__file__).resolve().parents[1]
-        config,_=run_workers.load_config(root/'scripts/integration/shared_account/workers.json')
+        config,_=run_workers.load_config(root/'scripts/integration/shared_account/legacy_workers.json')
         legacy=dict(base_config=str(root/'demos/10_hybrid_transformer/config/shared_rb_p.json'),
             option=config['strategies'][-1],strategy_limits_only=True)
         with TemporaryDirectory() as directory:

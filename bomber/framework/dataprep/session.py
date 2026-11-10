@@ -9,6 +9,7 @@ from functools import wraps
 import json
 from pathlib import Path
 from collections.abc import Mapping
+from bomber.framework.performance import PerformanceStats
 
 from .contracts import CoverageReport, InputError, InputIssue, SCHEMA_VERSION
 
@@ -35,6 +36,7 @@ class InputSession:
         self.coverage = CoverageReport()
         self.paths = []
         self.counters = {"directory_scans": 0, "feather_reads": 0}
+        self.performance = PerformanceStats()
         self._token = None
 
     def __enter__(self):
@@ -67,6 +69,7 @@ class InputSession:
                 "evidence": "file_size_and_mtime_not_content_hash"},
             "input_coverage.json": self.coverage,
             "input_issues.json": self.issues,
+            "performance.json": self.performance.snapshot(),
         }
         for name, payload in payloads.items():
             (root / name).write_text(json.dumps(json_value(payload), ensure_ascii=False,
@@ -75,6 +78,20 @@ class InputSession:
 
 def current_session():
     return _CURRENT.get()
+
+
+def profile_input(name):
+    """Record input work in the current run; leave standalone readers unchanged."""
+    def decorate(function):
+        @wraps(function)
+        def wrapped(*args, **kwargs):
+            session = current_session()
+            if session is None:
+                return function(*args, **kwargs)
+            with session.performance.measure(name):
+                return function(*args, **kwargs)
+        return wrapped
+    return decorate
 
 
 def record_issue(issue):
@@ -149,10 +166,16 @@ def read_feather(path, columns=None):
     fingerprint = session.fingerprint(path)
     full_key = ("feather", fingerprint, None)
     if full_key in session.cache:
+        session.performance.count("feather_cache_hits")
         frame = session.cache[full_key]
         return (frame if columns is None else frame.loc[:, list(columns)]).copy(deep=True)
     key = ("feather", fingerprint, None if columns is None else tuple(columns))
     if key not in session.cache:
-        session.cache[key] = pd.read_feather(path, columns=columns)
+        with session.performance.measure("feather_disk_read"):
+            session.cache[key] = pd.read_feather(path, columns=columns)
         session.counters["feather_reads"] += 1
+        session.performance.count("feather_files_read")
+        session.performance.count("feather_rows_read", len(session.cache[key]))
+    else:
+        session.performance.count("feather_cache_hits")
     return session.cache[key].copy(deep=True)
