@@ -1,4 +1,4 @@
 {
-  "env_file": "../../../work2/env2",
+  "env_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/demos/10_hybrid_transformer/config/.env",
   "strategies_file": "shared_rb_p.json"
 }

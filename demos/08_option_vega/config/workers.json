@@ -1,5 +1,5 @@
 {
-  "env_file": "../../../work1/env1",
+  "env_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/demos/08_option_vega/config/.env",
   "strategies": [{
     "strategy_id": "option-vega-live",
     "kind": "option_vega",
