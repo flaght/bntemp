@@ -1,0 +1,53 @@
+diff --git a/backtest/engine.pyx b/backtest/engine.pyx
+index 8c2f998fcc..85f35081b7 100644
+--- a/backtest/engine.pyx
++++ b/backtest/engine.pyx
+@@ -214,6 +214,10 @@ from bomber.portfolio.base cimport PortfolioFacade
+ from bomber.trading.strategy cimport Strategy
+ 
+ 
++# Deployment evidence: readable from the compiled extension, not a runtime switch.
++STREAMING_VALIDATION_REVISION = "l1-indexed-validation-v1"
++
++
+ cdef class BacktestEngine:
+     """
+     Provides a backtest engine to run a portfolio of strategies over historical
+@@ -863,7 +867,7 @@ cdef class BacktestEngine:
+             first = data[0]
+             if hasattr(first, "instrument_id"):
+                 Condition.is_true(
+-                    first.instrument_id in self._kernel.cache.instrument_ids(),
++                    self._kernel.cache.instrument(first.instrument_id) is not None,
+                     f"`Instrument` {first.instrument_id} for the given data not found in the cache. "
+                     "Add the instrument through `add_instrument()` prior to adding related data.",
+                 )
+@@ -873,7 +877,7 @@ cdef class BacktestEngine:
+                 data_added_str = f"{first.instrument_id} {type(first).__name__}"
+             elif isinstance(first, Bar):
+                 Condition.is_true(
+-                    first.bar_type.instrument_id in self._kernel.cache.instrument_ids(),
++                    self._kernel.cache.instrument(first.bar_type.instrument_id) is not None,
+                     f"`Instrument` {first.bar_type.instrument_id} for the given data not found in the cache. "
+                     "Add the instrument through `add_instrument()` prior to adding related data.",
+                 )
+@@ -1549,13 +1553,16 @@ cdef class BacktestEngine:
+             InstrumentId instrument_id
+             bint has_data
+             bint missing_book_data
+-            bint book_type_has_depth
+         for exchange in self._venues.values():
++            # L1 quotes/trades/bars do not require depth data. Streaming callers
++            # can enter _run once per event: avoid enumerating every registered
++            # instrument when this validation cannot reject anything.
++            if exchange.book_type <= BookType.L1_MBP:
++                continue
+             for instrument_id in exchange.instruments:
+                 has_data = instrument_id in self._has_data
+                 missing_book_data = instrument_id not in self._has_book_data
+-                book_type_has_depth = exchange.book_type > BookType.L1_MBP
+-                if book_type_has_depth and has_data and missing_book_data:
++                if has_data and missing_book_data:
+                     raise InvalidConfiguration(
+                         f"No order book data found for instrument '{instrument_id }' when `book_type` is '{book_type_to_str(exchange.book_type)}'. "
+                         "Set the venue `book_type` to 'L1_MBP' (for top-of-book data like quotes, trades, and bars) or provide order book data for this instrument."
