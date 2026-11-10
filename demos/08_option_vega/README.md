@@ -856,6 +856,10 @@ Live仍使用M1交易腿和可投影的原始指数声明；`--option-bar-minute
 | `feature_alignment` | 将指数特征按可见时间对齐分钟帧 |
 | `market_binding_lookup` | 行情到模拟引擎的绑定匹配 |
 | `simulation_engine_including_decisions` | 每根行情推进引擎；包含原生定时器内触发的策略决策 |
+| `simulation_backend_prepare` | 生命周期/时间顺序检查、首次启动、订单行情门控 |
+| `simulation_add_data` | 单根真实行情注册到内核 |
+| `simulation_run_including_decisions` | 内核run推进，包含定时器内的策略决策 |
+| `simulation_clear_data` | 内核已消费数据清理 |
 | `strategy_decision` | 策略分钟决策回调；它是引擎推进耗时的子项 |
 | `replay_dispatch_including_engine` | 回放分发总耗时，包含引擎及策略决策 |
 
@@ -868,6 +872,22 @@ Feather读取数包含基础资料等输入文件；`option_bar_files`和`future
 DataFrame，省去准备结果和回放注册时的两次深拷贝。公共读取器默认仍返回独立副本，
 其他调用方不受内部借用方式影响。逐根推进引擎、同刻事件顺序、接收期限、策略公式、
 `next_market`成交时序和结算规则均沿用原逻辑。
+
+### XY引擎推进优化验证
+
+2026-11-10的第一轮优化继续逐根推进，不合并批次：公共Backend只在首次行情时启动，
+每根行情仍执行生命周期/单调时钟检查和`next_market`门控。四项`simulation_*`细分计时
+用于定位add/run/clear的开销，`simulation_run_including_decisions`包含策略决策，不能重复相加。
+
+原生内核另有独立源码补丁：`add_data`用单个合约缓存索引校验身份，L1模式在深度数据
+校验前跳过全合约遍历；L2/L3仍每批核验，不缓存校验结果。该部分必须重建并安装
+XY对应Python/平台的Bomber内核wheel；只同步本目录和framework只能获得Python侧调整及细分计时。
+新内核公开`STREAMING_VALIDATION_REVISION="l1-indexed-validation-v1"`作为部署证据。
+启动日志、`summary.json`及最终`performance.json`的`engine_identity`记录实际扩展路径和此标记；
+标记为null时，不把本轮运行当作原生优化版。
+
+完整补丁、XY/DX验证步骤及本地测试限制见
+[引擎推进优化交接](../../doc/HANDOFF/demos/HANDOFF_SIM_STREAMING_ENGINE_2026-11-10.md)。
 
 ### 长区间回测进度与特征缓存
 

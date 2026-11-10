@@ -358,6 +358,71 @@ class SimulationMarketTimingTests(unittest.TestCase):
         self.assertEqual(self.engine.gateway.submissions[0][0], 100)
         self.assertEqual(self.engine.gateway.subscriptions, [])
 
+    def test_gateway_starts_once_but_later_streams_and_lifecycle_checks_remain_active(self):
+        with patch.object(self.backend, "start", wraps=self.backend.start) as start:
+            self.event("IC2603.CFFEX", 100)
+            self.order()
+            self.event("IF2603.CFFEX", 100)
+            self.event("IF2603.CFFEX", 101)
+            self.assertEqual(start.call_count, 1)
+        self.assertEqual(len(self.engine.gateway.subscriptions), 2)
+        self.assertEqual(len(self.engine.gateway.submissions), 1)
+        with self.assertRaisesRegex(ValueError, "backwards"):
+            self.event("IF2603.CFFEX", 99)
+        self.backend.finish()
+        with self.assertRaisesRegex(RuntimeError, "已结束"):
+            self.event("IF2603.CFFEX", 102)
+
+    def test_stage_timing_preserves_submission_boundaries_and_counts_per_event(self):
+        from bomber.framework.performance import PerformanceStats
+        outcomes = []
+        for performance in (None, PerformanceStats()):
+            engine = EngineHost()
+            backend = self.sdk.backend.NautilusSimExecutionBackend("sim", engine=engine,
+                execution_timing="next_market", performance=performance)
+            with patch.object(self.sdk.backend, "perf_counter", side_effect=iter(range(100)).__next__):
+                backend.process_market_event(Bar("IC", 100))
+                backend.submit_order(self.sdk.contracts.OrderIntent(strategy_id="cta", backend_id="sim",
+                    instrument_id="IF", side="SELL", quantity=1, metadata={"request_ts": 100}))
+                backend.process_market_event(Bar("IF", 100))
+                backend.process_market_event(Bar("IC", 101))
+                backend.process_market_event(Bar("IF", 101))
+            outcomes.append([(ts, order.instrument_id, order.quantity)
+                for ts, order in engine.gateway.submissions])
+            if performance is not None:
+                expected = {name: {"seconds": 4, "calls": 4} for name in (
+                    "simulation_backend_prepare", "simulation_add_data",
+                    "simulation_run_including_decisions", "simulation_clear_data")}
+                self.assertEqual(performance.snapshot()["timings"], expected)
+        self.assertEqual(outcomes, [[(101, "IF", 1)], [(101, "IF", 1)]])
+
+    def test_failed_run_is_timed_without_clearing_data_or_advancing_backend_clock(self):
+        from bomber.framework.performance import PerformanceStats
+        performance = PerformanceStats()
+        backend = self.sdk.backend.NautilusSimExecutionBackend("sim", engine=self.engine,
+            performance=performance)
+        with patch.object(self.engine, "run", side_effect=RuntimeError("engine failure")), \
+                patch.object(self.engine, "clear_data", wraps=self.engine.clear_data) as clear:
+            with self.assertRaisesRegex(RuntimeError, "engine failure"):
+                backend.process_market_event(Bar("IF", 100))
+            clear.assert_not_called()
+        self.assertEqual(backend._last_market_ns, 0)
+        self.assertEqual(performance.timings["simulation_run_including_decisions"]["calls"], 1)
+        self.assertNotIn("simulation_clear_data", performance.timings)
+
+    def test_failed_add_is_timed_and_does_not_run_the_engine(self):
+        from bomber.framework.performance import PerformanceStats
+        performance = PerformanceStats()
+        backend = self.sdk.backend.NautilusSimExecutionBackend("sim", engine=self.engine,
+            performance=performance)
+        with patch.object(self.engine, "add_data", side_effect=ValueError("unknown instrument")), \
+                patch.object(self.engine, "run", wraps=self.engine.run) as run:
+            with self.assertRaisesRegex(ValueError, "unknown instrument"):
+                backend.process_market_event(Bar("unknown", 100))
+            run.assert_not_called()
+        self.assertEqual(performance.timings["simulation_add_data"]["calls"], 1)
+        self.assertNotIn("simulation_run_including_decisions", performance.timings)
+
     def test_sequential_backends_keep_process_logger_alive_after_engine_disposal(self):
         class Guard:
             pass
