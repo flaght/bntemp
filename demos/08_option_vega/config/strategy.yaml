@@ -3,7 +3,7 @@ experiment_setups:
   workers_option:
     description: "原生run_live入口；本进程运行Vega，连接独立账户服务"
     execution_channel: shared
-    account_config: scripts/integration/shared_account/workers.json
+    account_config: scripts/integration/shared_account/account.json
     live_config_id: live_simnow
     env_file: work1/env1
     state_file: demos/08_option_vega/results/live/state/worker_signal.json
@@ -39,7 +39,8 @@ experiment_setups:
     frame_wait_seconds: 5
     bar_timestamp: end
     starting_balance: "40000000"
-    log_level: INFO
+    # 阶段耗时、交易日进度和性能统计独立输出；按需用--log-level INFO展开引擎日志。
+    log_level: WARNING
     report_dir: demos/08_option_vega/results/backtest
     # 按部署填写官方到期结算资料；有到期残仓时必须提供对应资产的终值。
     option_settlements: null

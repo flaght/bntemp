@@ -49,6 +49,7 @@ class ExecutionComponents:
     backend: object = None
     ledger: object = None
     driver: object = None
+    accounting: object = None
 
 
 def build_simulation_execution(backend, *, instrument_limits, positions=None, prices=None):
@@ -144,9 +145,10 @@ def build_ctp_portfolio_execution(driver, *, trading_day, price_increments,
         wall_clock_ns=clock_ns or (lambda: time.time_ns()))
     backend.submission_check = lambda: (session_check() and client.is_reconciled and not client.portfolio_failure
                                        and not client.report_errors)
-    backend.register_report_handler(CtpExecutionAccounting(ledger, multipliers,
-        generic_close_today_first_venues=generic_close_today_first_venues).on_report)
-    return ExecutionComponents(client, positions, prices, backend, ledger, driver)
+    accounting = CtpExecutionAccounting(ledger, multipliers,
+        generic_close_today_first_venues=generic_close_today_first_venues)
+    backend.register_report_handler(accounting.on_report)
+    return ExecutionComponents(client, positions, prices, backend, ledger, driver, accounting)
 
 
 def build_model_execution(client_id, *, instrument_limits, positions=None, prices=None):

@@ -29,7 +29,7 @@ from bomber.framework.dataprep.contracts import BarFileKey, BarReadSpec, InputIs
 from bomber.framework.dataprep.metadata import load_cffex_futures, load_options_basic, positive
 from bomber.framework.dataprep.paths import resolve_option_args
 from bomber.framework.dataprep.scenarios.option_chain import plan_option_chain, prepare_option_chain
-from bomber.framework.dataprep.session import input_session, record_issue, write_input_reports
+from bomber.framework.dataprep.session import current_session, input_session, record_issue, write_input_reports
 from bomber.framework.dataprep.commissions import add_commission_arguments, commission_config_from_args
 from bomber.framework.dataprep.option_settlements import (add_option_settlement_arguments,
     load_option_settlements)
@@ -47,7 +47,11 @@ def _start_phase(name):
 
 def _finish_phase(name, started):
     """打印已完成阶段的耗时。"""
-    print(f"[耗时] {name}完成，耗时={perf_counter() - started:.3f}s", flush=True)
+    elapsed = perf_counter() - started
+    session = current_session()
+    if session is not None:
+        session.performance.add("phase:" + name, elapsed)
+    print(f"[耗时] {name}完成，耗时={elapsed:.3f}s", flush=True)
 
 
 def load_contracts(opt_path, fut_path, option_product, future_product, index_code):
@@ -164,14 +168,16 @@ def run_case(args):
     OptionVegaStrategy = import_module("demos.08_option_vega.strategy").OptionVegaStrategy
 
     started = perf_counter()
+    performance = current_session().performance
     phase = _start_phase("输入路径解析与配置校验")
     args = resolve_backtest_paths(args)
     bar_specs = backtest_bar_specs(args)
     print(f"期权行情周期={bar_specs['option'].bar_spec} 实际目录={args.opt_dir}", flush=True)
     features = import_module("demos.08_option_vega.feature")
-    index_bundle, index_binding, index_records, index_identity = features.read_index_features(args,
-        int(pd.Timestamp(args.start_day, tz="Asia/Shanghai").value),
-        int((pd.Timestamp(args.end_day, tz="Asia/Shanghai") + pd.Timedelta(days=1)).value)-1)
+    with performance.measure("index_feature_file_read"):
+        index_bundle, index_binding, index_records, index_identity = features.read_index_features(args,
+            int(pd.Timestamp(args.start_day, tz="Asia/Shanghai").value),
+            int((pd.Timestamp(args.end_day, tz="Asia/Shanghai") + pd.Timedelta(days=1)).value)-1)
     config = OptionVegaConfig(
         nav=args.nav if args.nav is not None else args.starting_balance, vega_budget=args.vega_budget,
         delta_targets=tuple(float(item.strip()) for item in args.delta_targets.split(",")),
@@ -254,18 +260,18 @@ def run_case(args):
                 needed[(day, key)] = path
 
     _finish_phase("行情目录扫描与同月对冲资格组装", phase)
-    phase = _start_phase("期权链、期货与指数行情加载校验")
+    phase = _start_phase("期权与期货行情加载校验")
     # 交易腿使用行情文件；指数单独经标准特征文件及可见时钟消费。
     plan = plan_option_chain((BarFileKey(
         "option" if key in contracts else "future", key, day,
     ) for day, key in needed), requested=(args.start_day, args.end_day))
     bundle = prepare_option_chain(
         {"option": args.opt_dir, "future": args.fut_dir}, plan,
-        specs=bar_specs,
+        specs=bar_specs, copy_frames=False,
     )
     prepared = {(source.result.key.trading_day, source.result.key.symbol): source.result for source in bundle.sources}
     frames = {identity: source.frame for identity, source in prepared.items()}
-    _finish_phase("期权链、期货与指数行情加载校验", phase)
+    _finish_phase("期权与期货行情加载校验", phase)
     phase = _start_phase("开仓同步与末日清仓时钟检查")
     # 指数提供最终清仓的信号时钟。候选合约可能未交易或已提前平仓，
     # 不应要求每个候选都有收盘行情；实际持仓的新鲜报价由策略逐分钟检查。
@@ -316,11 +322,13 @@ def run_case(args):
         execution_timing=getattr(args, "execution_timing", "native"))
     instruments = {}
     multipliers = {}
+    output = None
     try:
         profile = CtpFuturesBasicProfile(profile_id="option-vega-basic", venue=Venue("CFFEX"),
             starting_balance=args.starting_balance, commission_per_contract=args.commission,
             **commission_config_from_args(args).profile_kwargs())
         feed = create_market_feed(getattr(args, "market_source_config", None) or MarketSourceConfig(source="file"), "OPTION_VEGA_REPLAY")
+        feed.performance = performance
         backend.add_profile(profile,
             option_settlements={item.instrument_id: item for item in settlements.values()},
             option_last_trade_times={key + ".CFFEX": stamp for key, stamp in last_trade_times.items()},
@@ -351,7 +359,10 @@ def run_case(args):
         _finish_phase("模拟账户与真实合约注册", phase)
         phase = _start_phase("已准备行情注册到回放源")
         for identity in sorted(frames):
-            add_prepared_bar_source(feed, prepared[identity], all_ids[identity[1]])
+            # This run owns these frames and does not mutate them after validation.
+            add_prepared_bar_source(feed, prepared[identity], all_ids[identity[1]], copy_frame=False)
+        performance.count("option_bar_files", sum(key in contracts for _, key in frames))
+        performance.count("future_bar_files", sum(key in future_rows for _, key in frames))
         _finish_phase("已准备行情注册到回放源", phase)
         phase = _start_phase("策略、执行路由与风控装配")
         from bomber.framework.trader.execution.builders import build_simulation_execution
@@ -364,7 +375,7 @@ def run_case(args):
             bundle=index_bundle, binding=index_binding, records=index_records,
             index_key=args.index_code, wait_seconds=args.frame_wait_seconds,
             max_market_age_seconds=args.max_market_age_seconds,
-            index_value_field=getattr(args, "index_value_field", None))
+            index_value_field=getattr(args, "index_value_field", None), performance=performance)
         strategy = OptionVegaStrategy("option-vega", config, contracts, future_rows, instruments,
             args.index_code, calendar, days[-1], options_by_day, option_last_trade_times=last_trade_times,
             future_last_trade_times=future_last_trade_times)
@@ -376,7 +387,7 @@ def run_case(args):
         runner.strategy = strategy
         adapter = NautilusMarketFeedAdapter("option-vega-clock", feed, backend,
             tuple(MarketStreamBinding(item, DataType.BAR, bar_specs_by_key[key])
-                for key, item in instruments.items()), manage_lifecycle=False)
+                for key, item in instruments.items()), manage_lifecycle=False, performance=performance)
         runtime = UnifiedHistoricalRuntime("option-vega-runtime", runner, adapter)
         _finish_phase("策略、执行路由与风控装配", phase)
         try:
@@ -388,6 +399,8 @@ def run_case(args):
             orders, fills = trader.generate_orders_report(), trader.generate_fills_report()
             position_report = trader.generate_positions_report()
             account_report = trader.generate_account_report(Venue("CFFEX"))
+            performance.count("orders", len(orders))
+            performance.count("fills", len(fills))
             _finish_phase("交易报表与残留持仓检查资料生成", phase)
             phase = _start_phase("报表写出与最终结果校验")
             output = (Path(args.report_dir) / args.option_product /
@@ -436,6 +449,7 @@ def run_case(args):
                 "future_settlement_prices_loaded": len(future_settlements),
                 "future_settlement_count": len(backend.future_settlement_records),
                 "orders": len(orders), "fills": len(fills), "remaining_positions_or_working": remaining,
+                "performance_report": "performance.json",
                 "report_errors": errors, "config": vars(config),
                 "simulation": "NETTING/BAR/CONFIGURED_FEE/PREMIUM_PERCENT_MARGIN; OPTION_AND_INDEX_FUTURE_CASH_SETTLEMENT",
                 "backend": str(result.backend_result)}
@@ -467,6 +481,23 @@ def run_case(args):
         # 配置阶段失败时也释放Backend；正常runtime.stop后不会重复释放。
         if not backend.is_disposed:
             backend.stop()
+        performance.add("run_case", perf_counter() - started)
+        performance.count("option_contracts", len(contracts))
+        performance.count("future_contracts", len(future_rows))
+        performance.count("trading_days", len(days))
+        performance.count("directory_scans", current_session().counters["directory_scans"])
+        report = performance.snapshot()
+        if output is not None:
+            try:
+                (output / "performance.json").write_text(
+                    json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            except OSError as exc:
+                # Diagnostics must not mask a strategy/execution failure during cleanup.
+                print(f"[性能统计] 最终性能文件写入失败: {exc}", flush=True)
+        print("[性能统计] 数量=" + json.dumps(report["counters"], ensure_ascii=False), flush=True)
+        for name, row in report["timings"].items():
+            if not name.startswith("phase:"):
+                print(f"[性能统计] {name}: seconds={row['seconds']:.6f} calls={row['calls']}", flush=True)
         print(f"[耗时] run_case 总耗时={perf_counter() - started:.3f}s", flush=True)
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+from time import perf_counter
 from dataclasses import dataclass, field
 from typing import Any, Callable, Mapping, Sequence
 
@@ -82,6 +83,7 @@ class NautilusMarketFeedAdapter:
         bindings: Sequence[MarketStreamBinding],
         *,
         manage_lifecycle: bool = True,
+        performance=None,
     ) -> None:
         if not adapter_id.strip():
             raise ValueError("adapter_id不能为空")
@@ -95,7 +97,14 @@ class NautilusMarketFeedAdapter:
         self.feed = feed
         self.backend = backend
         self.bindings = normalized
+        # Bindings are immutable for this adapter's lifetime. Lookup only the
+        # periods of this instrument, rather than scanning the whole universe.
+        binding_specs = {}
+        for binding in normalized:
+            binding_specs.setdefault((binding.data_type, binding.instrument_id), set()).add(binding.bar_spec)
+        self._binding_specs = {key: frozenset(specs) for key, specs in binding_specs.items()}
         self.manage_lifecycle = manage_lifecycle
+        self.performance = performance
         self._lifecycle_lock = threading.RLock()
         self._process_lock = threading.RLock()
         self._error_handlers: list[Callable[[Exception, Any], None]] = []
@@ -201,18 +210,27 @@ class NautilusMarketFeedAdapter:
         self._handlers_attached = True
 
     def _on_market_event(self, event: QuoteTick | TradeTick | Bar) -> None:
-        if not self._matches_binding(event):
+        started = perf_counter() if self.performance is not None else None
+        matches = self._matches_binding(event)
+        if self.performance is not None:
+            self.performance.add("market_binding_lookup", perf_counter() - started)
+        if not matches:
             return
         with self._process_lock:
             if not self._started:
                 return
             try:
+                started = perf_counter() if self.performance is not None else None
                 reports = self.backend.process_market_event(event)
             except Exception as exc:
                 self._last_error = exc
                 for handler in tuple(self._error_handlers):
                     handler(exc, event)
                 raise
+            finally:
+                if self.performance is not None:
+                    # Native timers can invoke strategy decisions within this call.
+                    self.performance.add("simulation_engine_including_decisions", perf_counter() - started)
             self._events_processed += 1
             self._reports_received += len(tuple(reports))
 
@@ -226,20 +244,12 @@ class NautilusMarketFeedAdapter:
             instrument_id = event.instrument_id
             bar_spec = None
         elif isinstance(event, Bar):
-            event_type = DataType.BAR
             instrument_id = event.bar_type.instrument_id
+            specs = self._binding_specs.get((DataType.BAR, instrument_id), ())
+            if not specs:
+                return False
             bar_type_text = str(event.bar_type).upper()
-            return any(
-                binding.data_type is event_type
-                and binding.instrument_id == instrument_id
-                and f"-{binding.bar_spec}-" in bar_type_text
-                for binding in self.bindings
-            )
+            return any(f"-{spec}-" in bar_type_text for spec in specs)
         else:
             return False
-        return any(
-            binding.data_type is event_type
-            and binding.instrument_id == instrument_id
-            and binding.bar_spec is bar_spec
-            for binding in self.bindings
-        )
+        return bar_spec in self._binding_specs.get((event_type, instrument_id), ())

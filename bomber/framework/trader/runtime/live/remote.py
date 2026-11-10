@@ -162,6 +162,7 @@ class RemoteStrategyRuntime:
                 if state["trading_day"] != self.trading_day:
                     raise ValueError("账户服务交易日不一致")
                 service = RemoteAccountService(connection, credentials["configuration"], state)
+                service.allow_reconfigure = bool(credentials.get('allow_reconfigure', False))
                 driver = RemoteTraderSession(service, self.trading_day)
                 context = LiveRunContext(resources=resources,
                     trading_day=datetime.strptime(self.trading_day, "%Y%m%d").date())
@@ -169,7 +170,8 @@ class RemoteStrategyRuntime:
                 port = session.client
                 if persisted and persisted.payload["identity"] != identity:
                     self.validate_identity(persisted.payload["identity"], identity)
-                if hasattr(session, "session_identity") and credentials.get("reference") != session.session_identity:
+                if (credentials.get('check_reference', True) and hasattr(session, "session_identity")
+                        and credentials.get("reference") != session.session_identity):
                     raise ValueError("策略行情/模型/条款身份与账户服务声明不一致")
                 if persisted and persisted.payload["revision"] > state["source_revision"]:
                     raise ValueError("策略信号版本领先账户服务")

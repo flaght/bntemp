@@ -152,6 +152,7 @@ activemq-data/
 # Environments
 .env
 .envrc
+/scripts/integration/shared_account/account.env
 .venv
 env/
 venv/

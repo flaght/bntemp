@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "strategies": [
+    {
+      "strategy_id": "hybrid-transformer-live",
+      "kind": "hybrid_transformer",
+      "state_file": "../results/live/state/rb_signal.json",
+      "argv": [
+        "--product",
+        "RB",
+        "--release-path",
+        "/workspace/worker/pj/Chrono/genuis/mizar/records/ricso2/1release/rbb/10002",
+        "--directions-file",
+        "/workspace/worker/pj/Chrono/genuis/mizar/records/ricso2/rbb/rulex/113001/nxt1_ret_5h/cohort_pro.csv",
+        "--signal-config",
+        "signal_rb.json",
+        "--max-contracts",
+        "2",
+        "--entry-contracts",
+        "2",
+        "--no-session-overrides",
+        "--market-source",
+        "dolphindb",
+        "--history-minutes",
+        "260",
+        "--market-config",
+        "market_dolphindb_rb.json",
+        "--report-dir",
+        "../results/live/RB",
+        "--history-config",
+        "history_rb.json"
+      ]
+    },
+    {
+      "strategy_id": "hybrid-p-live",
+      "kind": "hybrid_transformer",
+      "state_file": "../results/live/state/p_signal.json",
+      "argv": [
+        "--product",
+        "P",
+        "--release-path",
+        "/workspace/worker/pj/Chrono/genuis/mizar/records/ricso2/1release/pc/10001",
+        "--directions-file",
+        "/workspace/worker/pj/Chrono/genuis/mizar/records/ricso2/pc/rulex/159001/nxt1_ret_5h/cohort_pro.csv",
+        "--signal-config",
+        "signal_p.json",
+        "--max-contracts",
+        "2",
+        "--entry-contracts",
+        "2",
+        "--no-session-overrides",
+        "--market-source",
+        "dolphindb",
+        "--history-minutes",
+        "260",
+        "--market-config",
+        "market_dolphindb_p.json",
+        "--report-dir",
+        "../results/live/P",
+        "--history-config",
+        "history_p.json"
+      ]
+    }
+  ]
+}

@@ -173,6 +173,28 @@ class FeatureBacktestTests(unittest.TestCase):
             native.assert_called_once()
         self.assertEqual([row["status"] for row in runner.frame_audit], ["SKIPPED", "READY"])
 
+    def test_diagnostics_count_decisions_without_changing_feature_frames_or_timer_boundaries(self):
+        from bomber.framework.performance import PerformanceStats
+        stats, delivered = PerformanceStats(), []
+        runner = replay.build_backtest_runner(positions=None,
+            feed=NS(load_events=lambda: [self.bar(), self.bar(END+M), self.bar(END+2*M)]), backend=None,
+            bundle=self.bundle, binding=self.binding, records=[self.record(event=END+M)],
+            index_key="000852", wait_seconds=2, performance=stats)
+        runner.strategy = NS(on_market_frame=delivered.append)
+        def native_replay():
+            for stamp in runner.outcomes:
+                runner._close_frame(stamp, runner.deadlines[stamp]+1)
+            return "completed"
+        with patch.object(type(runner).__mro__[1], "run_replay", side_effect=native_replay):
+            self.assertEqual(runner.run_replay(), "completed")
+        self.assertEqual([row["status"] for row in runner.frame_audit], ["SKIPPED", "READY"])
+        self.assertEqual(len(delivered), 1)
+        self.assertEqual(delivered[0].request_ns, END+M+2*S+1)
+        self.assertEqual(stats.counters, {"index_feature_records": 1,
+            "decision_frames": 2, "ready_frames": 1, "skipped_frames": 1})
+        for name in ("feature_alignment", "strategy_decision", "replay_dispatch_including_engine"):
+            self.assertEqual(stats.timings[name]["calls"], 1)
+
     def test_replay_progress_distinguishes_loading_alignment_and_native_simulation(self):
         from contextlib import redirect_stdout
         from io import StringIO

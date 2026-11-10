@@ -397,6 +397,23 @@ class PositionManager:
             self._guard_revision(self._strategy_revisions, key, revision, "策略仓位")
             self._strategy_positions[key] = normalized
 
+    def rebind_zero_routes(self, client_id, strategy_id, previous, current):
+        """只移除已核实为零的旧归属键；历史订单计划和其他策略保持原样。"""
+        with self._lock:
+            changed = {key for key, instrument in previous.items()
+                       if current.get(key) != instrument}
+            owned = self.attribution.state()
+            if any(self.position(strategy_id, key) for key in changed) or any(
+                    row['client_id'] == client_id and row['strategy_id'] == strategy_id
+                    and row['target_key'] in changed and Decimal(row['quantity']) for row in owned['owned']):
+                raise ValueError('旧路由仍有归属持仓，不能重绑定')
+            owned['owned'] = [row for row in owned['owned'] if not (row['client_id'] == client_id
+                and row['strategy_id'] == strategy_id and row['target_key'] in changed)]
+            for key in changed:
+                self._strategy_positions.pop((strategy_id, key), None)
+                self._strategy_revisions.pop((strategy_id, key), None)
+            self.attribution.restore(owned)
+
     def adjust_strategy_position(
         self,
         strategy_id: str,
