@@ -1,0 +1,85 @@
+{
+  "status": "offline_regressions_and_differential_checks_passed_server_validation_pending",
+  "scope": "pro/bomber/framework/dataprep/bars.py only production code",
+  "reference_sha256": "e4047bd4dd680cf416d0b78fbb66d2a177b4c28e52a4340672882213fffdae77",
+  "current_sha256": "7a14f3269ec6afecabbfca05eb8e2f264fef63cfce649945b695ed2f23a41f27",
+  "changes": [
+    "assemble_time_columns_once_preserve_order_attrs_flags",
+    "reuse_already_normalized_availability_clock",
+    "avoid_recoercing_plain_numeric_columns",
+    "native_dtype_validity_masks_keep_integer_precision_and_error_paths"
+  ],
+  "tests": {
+    "input_multiperiod_performance": {
+      "passed": 64,
+      "new_tests_this_round": 5
+    },
+    "feature_external_simulation_regressions": {
+      "passed": 127
+    },
+    "old_new_differential": {
+      "cases": 720,
+      "status": "passed",
+      "compared": [
+        "values",
+        "dtypes",
+        "timestamps",
+        "row_order",
+        "issues",
+        "coverage",
+        "errors"
+      ]
+    },
+    "compileall": "passed",
+    "diff_check": "passed"
+  },
+  "benchmark_environment": {
+    "python": "3.12.14",
+    "pandas": "3.0.6",
+    "numpy": "2.5.3"
+  },
+  "benchmarks": [
+    {
+      "source": "real_synthetic_feather_files",
+      "rows_per_file": 48,
+      "files": 300,
+      "rows": 14400,
+      "method": "one warmup then median of 3 alternating runs; fresh InputSession each run",
+      "before_seconds": 0.994718,
+      "after_seconds": 0.657637,
+      "reduction_percent": 33.89,
+      "disk_seconds_before": 0.179376,
+      "disk_seconds_after": 0.172227
+    },
+    {
+      "source": "real_synthetic_feather_files",
+      "rows_per_file": 240,
+      "files": 100,
+      "rows": 24000,
+      "method": "one warmup then median of 3 alternating runs; fresh InputSession each run",
+      "before_seconds": 0.332868,
+      "after_seconds": 0.221765,
+      "reduction_percent": 33.38,
+      "disk_seconds_before": 0.05337,
+      "disk_seconds_after": 0.051178
+    }
+  ],
+  "xy_baseline_user_supplied": {
+    "run_case_seconds": 719.843958,
+    "bar_prepare_seconds": 252.148737,
+    "feather_read_seconds": 58.343362,
+    "event_conversion_seconds": 111.874586,
+    "events": 1488480,
+    "frames": 45839,
+    "entries": 179,
+    "orders": 1048,
+    "fills": 1060
+  },
+  "limitations": [
+    "No native full strategy backtest locally",
+    "Local synthetic small-file benchmark only",
+    "XY full performance and financial equivalence require remote validation",
+    "No nt-bomber/framework or native core edits",
+    "Bar event conversion code unchanged"
+  ]
+}

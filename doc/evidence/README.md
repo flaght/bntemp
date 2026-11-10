@@ -1,5 +1,10 @@
 # Bomber 校验清单与历史证据索引
 
+2026-11-10第二轮行情准备优化：[改动、XY验证及Bar转换位置](../HANDOFF/demos/HANDOFF_BAR_PREPARATION_BULK_2026-11-10.md)、
+[离线证据](live/BAR_PREPARATION_BULK_20261110.json)、
+[同步清单](checksums/BAR_PREPARATION_BULK_20261110_SHA256.txt)。
+191项关联回归和720组新旧结果对照通过，本地小文件基准较上一版下降约33%；服务器完整性能待测。
+
 2026-11-10新增行情准备向量化：[修改与XY验证](../HANDOFF/demos/HANDOFF_BAR_PREPARATION_VECTORIZE_2026-11-10.md)、
 [离线证据](live/BAR_PREPARATION_VECTORIZE_20261110.json)、
 [同步清单](checksums/BAR_PREPARATION_VECTORIZE_20261110_SHA256.txt)。

@@ -144,6 +144,67 @@ class BarPreparationTests(unittest.TestCase):
         self.assertEqual(second.frame.close.iloc[0], 101.)
         self.assertEqual(frame.columns.tolist(), ["datetime", "open", "high", "low", "close", "volume"])
 
+    def test_plain_numeric_columns_need_no_recoercion_or_scalar_series_comparisons(self):
+        frame = self.frame()
+        # Date comparison/availability checks still run; only market value
+        # coercion and numeric Series ge/gt/mod are unnecessary on this path.
+        with patch("pandas.to_numeric", side_effect=AssertionError("redundant numeric coercion")), \
+                patch.object(pd.Series, "ge", side_effect=AssertionError("numeric Series ge")), \
+                patch.object(pd.Series, "gt", side_effect=AssertionError("numeric Series gt")), \
+                patch.object(pd.Series, "mod", side_effect=AssertionError("numeric Series mod")):
+            result = self.read(frame)
+        self.assertEqual(result.frame.volume.tolist(), [2, 2, 2])
+
+    def test_time_columns_keep_existing_positions_attributes_and_flags(self):
+        frame = self.frame()
+        frame.insert(2, "source_timestamp", "replaced")
+        frame.insert(3, "available_ns", -1)
+        frame.columns = pd.Index(frame.columns, dtype=object, name="source_columns")
+        frame.attrs = {"source": {"version": 2}}
+        frame = frame.set_flags(allows_duplicate_labels=False)
+        original_columns = list(frame.columns)
+        result = self.read(frame)
+        expected = original_columns + [name for name in ("event_ns", "bar_ns", "trading_day",
+            "available_datetime", "zero_volume_bar") if name not in original_columns]
+        self.assertEqual(list(result.frame.columns), expected)
+        self.assertEqual(result.frame.columns.dtype, frame.columns.dtype)
+        self.assertEqual(result.frame.columns.name, "source_columns")
+        self.assertEqual(result.frame.attrs, frame.attrs)
+        self.assertFalse(result.frame.flags.allows_duplicate_labels)
+        self.assertTrue(result.frame.available_ns.eq(result.frame.event_ns).all())
+
+    def test_categorical_column_index_keeps_legacy_insertion_behavior(self):
+        frame = self.frame()
+        frame.columns = pd.CategoricalIndex(frame.columns, name="source_columns")
+        result = self.read(frame)
+        self.assertEqual(result.frame.close.tolist(), [101.] * 3)
+        self.assertEqual(result.frame.columns.name, "source_columns")
+        self.assertIsNone(result.frame.index.name)
+
+    def test_named_publication_column_is_parsed_before_being_replaced(self):
+        frame = self.frame()
+        frame["available_datetime"] = frame.datetime + pd.Timedelta(seconds=3)
+        result = self.read(frame, available_column="available_datetime")
+        self.assertTrue((result.frame.available_ns-result.frame.event_ns).eq(3_000_000_000).all())
+        self.assertEqual(str(result.frame.available_datetime.dtype), "datetime64[ns, Asia/Shanghai]")
+
+    def test_native_numeric_dtypes_and_fractional_quantities_preserve_policy(self):
+        for dtype in ("int8", "int16", "int32", "int64", "uint8", "uint32", "uint64",
+                "float16", "float32", "float64", "bool"):
+            with self.subTest(dtype=dtype):
+                frame = self.frame()
+                for name in ("open", "high", "low", "close", "volume"):
+                    frame[name] = frame[name].astype(dtype)
+                result = self.read(frame)
+                for name in ("open", "high", "low", "close", "volume"):
+                    pd.testing.assert_series_equal(result.frame[name], frame[name])
+        frame = self.frame()
+        frame["volume"] = [.5, 1., 2.]
+        with self.assertRaises(InputError) as failure:
+            self.read(frame)
+        self.assertEqual((failure.exception.issue.field, failure.exception.issue.row), ("volume", 1))
+        self.assertEqual(self.read(frame, require_integer_volume=False).frame.volume.tolist(), [.5, 1., 2.])
+
 
 if __name__ == "__main__":
     unittest.main()
