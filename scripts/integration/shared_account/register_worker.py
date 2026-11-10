@@ -10,6 +10,26 @@ from .run_workers import load_config
 from .config import read_config
 
 
+def validate_source_configuration(payload, config):
+    """先离线核对源身份，不能把待注册的联合限额覆盖当作源配置已匹配。"""
+    identity = payload['component_states']['session_identity']['identity']
+    saved, declared = identity['account'], config['account']
+    differences = {key: {'checkpoint': saved.get(key), 'config': declared.get(key)}
+        for key in sorted(saved.keys() | declared.keys()) if saved.get(key) != declared.get(key)}
+    if differences:
+        raise ValueError('原Hybrid账户身份或限额与源配置不一致；差异='
+            + json.dumps(differences, ensure_ascii=False, sort_keys=True)
+            + '；先恢复与原检查点一致的源配置，禁止修改检查点绕过核验')
+    rows = {row['strategy_id']: row for row in config['strategies']}
+    if rows.keys() != identity['strategies'].keys():
+        raise ValueError('原账户策略集合与base_config不符；已注册时请使用run_workers恢复')
+    for sid, row in rows.items():
+        previous = identity['strategies'][sid]
+        if previous['kind'] != row['kind'] or previous['argv'] != row['argv']:
+            raise ValueError(f'原Hybrid策略参数与源配置不一致: {sid}；禁止在注册时隐式改变')
+    return identity
+
+
 def quiescent(payload, client):
     from bomber.framework.trader.runtime.live.channels.ctp_owned import validate_saved_ownership
     ledger = validate_saved_ownership(payload, client)
@@ -94,14 +114,12 @@ def registration_payload(account, payload, option, option_signal, base_config, *
     from .rollover import validate_strategy_identity
     from bomber.framework.trader.runtime.live.channels.ctp_rollover import observe_rollover
     current = account.manager.state_components['session_identity'].identity
-    old = payload['component_states']['session_identity']['identity']
+    old = validate_source_configuration(payload, base_config)
     original_ids = {row['strategy_id'] for row in base_config['strategies']}
     added, = current['strategies'].keys()-original_ids
     if set(old['strategies']) != original_ids or any(row['kind'] != 'hybrid_transformer' for row in old['strategies'].values()):
         raise ValueError('原账户策略集合与base_config不符；已经注册不能重复导入')
     before_budget, after_budget = deepcopy(old['account']), deepcopy(current['account'])
-    if before_budget != base_config['account']:
-        raise ValueError('原Hybrid账户身份或限额与源配置不一致')
     if strategy_limits_only:
         before_budget.update(max_gross_quantity=None, max_gross_notional=None)
     if before_budget != after_budget:
@@ -237,6 +255,12 @@ def main(argv=None):
     protected = {Path(config['account_state_file']), *(Path(r['state_file']) for r in config['strategies'])}
     if option_path in protected or Path(signal_path).resolve() in protected:
         parser.error('来源检查点必须独立，不能覆盖账户或任一worker信号文件')
+    original_config = read_config(sources['base_config'])
+    initial = JsonStateStore(config['account_state_file']).load()
+    if initial is None:
+        raise ValueError(f"检查点不存在: {config['account_state_file']}")
+    # --connect --apply也先执行：配置差异不需要登录、查询DDB或组装策略才能发现。
+    validate_source_configuration(initial.payload, original_config)
     host = None
     try:
         if args.connect:
@@ -253,7 +277,7 @@ def main(argv=None):
                 raise ValueError(f'检查点不存在: {path}')
             return saved
         base = load(config['account_state_file'])
-        original_config = read_config(sources['base_config'])
+        validate_source_configuration(base.payload, original_config)  # 取得账户锁后重新核对。
         if row['strategy_id'] in base.payload['component_states']['session_identity']['identity']['strategies']:
             raise ValueError('08已经注册；请使用run_workers恢复，不能重复导入旧仓')
         option, signal = load(option_path), load(signal_path)

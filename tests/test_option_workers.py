@@ -296,6 +296,34 @@ class WorkerRegistrationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'每日额度'):
             self.transform(deepcopy(self.base))
 
+    def test_source_budget_difference_reports_checkpoint_and_configuration_without_modification(self):
+        config=deepcopy(self.base_config)
+        config['account']['max_session_orders']=100
+        original=deepcopy((self.base,config))
+        with self.assertRaisesRegex(ValueError,'max_session_orders') as caught:
+            register_worker.validate_source_configuration(self.base,config)
+        self.assertIn('"checkpoint": 200',str(caught.exception))
+        self.assertIn('"config": 100',str(caught.exception))
+        self.assertEqual((self.base,config),original)
+
+    def test_offline_and_apply_both_reject_source_mismatch_before_building_host(self):
+        original=deepcopy(self.base_config)
+        original['account']['max_session_orders']=100
+        for row in original['strategies']:
+            row['state_file']=str(self.f.root/(row['strategy_id']+'.json'))
+        config=dict(account_state_file=str(self.base_account.manager.repository.path),
+            account=deepcopy(original['account']),strategies=deepcopy(original['strategies'])+[
+                dict(strategy_id=self.sid,kind='option_vega',state_file=str(self.f.root/'worker.json'))])
+        sources=dict(base_config='original.json',option_checkpoint=None,option_signal=None,strategy_limits_only=True)
+        argv=['--config','workers.json','--trading-day','20261013','--option-checkpoint',str(self.f.root/'option.json')]
+        for flags in ([],['--connect','--apply']):
+            with self.subTest(flags=flags), patch.object(register_worker,'load_config',return_value=(config,sources)), \
+                    patch.object(register_worker,'read_config',return_value=original), \
+                    patch('scripts.integration.shared_account.run.build_host') as build:
+                with self.assertRaisesRegex(ValueError,'max_session_orders'):
+                    register_worker.main(argv+flags)
+                build.assert_not_called()
+
     def test_unacknowledged_fills_and_different_ctp_account_are_rejected(self):
         broken=deepcopy(self.base)
         broken['component_states']['shared_account']['shared']['event_journal']['ack']['hybrid-rb']=0
