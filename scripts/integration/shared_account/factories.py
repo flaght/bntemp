@@ -26,6 +26,9 @@ def strategy_arguments(row, config, *, resume):
         "--seconds", str(config["seconds"]), "--simnow-environment", config["environment"]]
     if config.get("replay_md_trading_day"):
         argv += ["--replay-md-trading-day", config["replay_md_trading_day"]]
+    if row["kind"] == "option_vega":
+        # 窗口由宿主/worker控制；YAML中的常驻开关不能再启动一层调度器。
+        argv += ["--no-run-forever"]
     if resume and (row["kind"] != "option_vega" or Path(row["state_file"]).is_file()):
         argv += ["--resume"]
     args = (entry.parse_args(argv, shared_execution=True) if row["kind"] in {"main_ema", "calendar_spread", "cross_section"}

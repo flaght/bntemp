@@ -17,6 +17,7 @@
 | --- | --- |
 | `run_backtest.py` | 文件准备、公共模拟Backend/结算接线及回测报告 |
 | `run_live.py` | 在线参数、行情/参考/执行渠道选择、期权时段接线及公共常驻调度启动 |
+| `run_worker.py` | IPC worker入口，复用公共worker，不创建CTP交易连接 |
 | `feature/` | 特征生成/导出、声明加载、标准文件读取及回测分钟帧适配 |
 | `strategy.py` | 策略决策、实际自有仓位管理与执行回报处理 |
 | `vega_signal.py` | 策略配置、共享JSON参数声明、风控限额转换、数值算法与信号状态 |
@@ -477,9 +478,76 @@ python -u -m scripts.integration.shared_account.join_option \
   --strategy-limits-only
 ```
 
-该入口读取带校验和的原账户及全部Hybrid信号文件，不连接柜台、不改写状态、不开放交易。输出原账户限额、按各策略归属绝对数量相加的总仓、旧08状态格式及日期、Hybrid信号版本，以及期权在已保存外部基线中的数量；基线不是当前柜台核验。`--strategy-limits-only`将拟迁移配置的联合手数/名义金额上限报告为null，保留原TD每日订单上限，原Hybrid配置仍按原身份核对且不改写。此时RB多2手及两笔期权各空1手的合计4手只是归属诊断，不是共享配额，不妨碍P或08按自身限额交易；不设置一个更大的虚假账户上限。省略该开关时仍检查原有限联合预算。当前零仓的P信号文件同样必须保留。`can_start_orders`始终为false：该命令只提供迁移准备信息，联合账本迁移和Hybrid/MO不同交易时段的混合常驻接入尚未完成，不能用它替代正式交易入口。现有Hybrid宿主仅支持Hybrid策略，08常驻共享入口仅支持08策略，不得将两份配置拼接后直接启动。
+该入口仅提供只读预检，`can_start_orders`始终为false。`--strategy-limits-only`只报告取消联合手数/名义限制的计划，不修改原配置或状态。实际注册与不同交易时段的worker启动见下一节。
 
 关注`分钟行情汇总`、`分钟决策汇总`与心跳。迟到的新Bar可只更新健康，不回填旧决策；真实过期、断流或账户冲突仍停止。模拟现金结算不用于生成Live柜台事实。
+
+### 08与Hybrid分别启动worker
+
+公共入口`scripts.integration.shared_account.run_workers`复用原server/worker及IPC执行链：一个账户服务、RB worker、P worker、08 worker。各策略独立计算信号和管理归属；同一合约可以属于多个策略。
+
+启动YAML新增`workers_account`、`workers_hybrid`、`workers_option`三个ID。依赖声明`config/workers.json`只引用原Hybrid `shared_rb_p.json`和08 `live_simnow`。RB/P模型、参数、手数、信号文件不改；08手数由`vega_live.json`决定。
+
+`strategy_limits_only: true`显式取消运行服务的联合手数/名义限制，每策略限额仍生效。TD每日报单上限原样继承服务器Hybrid配置，原值200则继续200；本地模板100不能代替服务器200。Hybrid原配置文件不改。首次注册会更新账户账本中的策略注册信息，并保留原代次备份；不是保持账户文件字节不变。
+
+**首次切换只做一次注册。**先正常停止原Hybrid及任何08交易进程，等待撤单、回报及保存完成。同步新代码后，先核对来源文件：
+
+```bash
+cd /workspace/worker/pj/Chrono/nautilus_trader_demo/pro || exit 1
+export PYTHONPATH=.:/workspace/worker/pj/KiChaos
+export IMPLUSE_VERSION=all
+
+/workspace/worker/env/chs-live/bin/python -u \
+  -m scripts.integration.shared_account.register_worker \
+  --config demos/08_option_vega/config/workers.json \
+  --trading-day 20261110 \
+  --option-checkpoint /workspace/worker/pj/Chrono/nautilus_trader_demo/pro_new/tests/results/gap08-realtime-simnow/state-1791869411336135873.json
+```
+
+`20261110`须替换成CTP实际返回的交易日，夜盘不能按自然日期猜测。默认信号路径为原08账户文件名追加`.vega-signal.json`；不同时加`--option-signal`。也可在`workers.json`配置`option_checkpoint`和`option_signal`。新worker信号使用`results/live/state/worker_signal.json`，不能用旧账户文件代替。注册器接收原08共享成交检查点，模型/Recording或原生单策略格式会拒绝。
+
+文件检查通过后，**同一命令末尾追加`--connect --apply`**，进行禁单柜台核验和注册。不运行策略、不授权报单；保留历史订单ID、成本、原归属和Hybrid信号/批次。核验全部自有多空份额、今昨仓与无活动订单，通过后原子提交账户文件并生成`.before-rollover-g*.json`备份。原08来源文件不改写。原仓缺失、未决订单/请求/未确认事件、参数冲突均拒绝。已注册后不能重复导入旧仓。
+
+**分别启动：**各终端先进入同一项目目录、导出对应DDB/CTP环境；导出变量优先于`.env`。账户及Hybrid环境需安装模型依赖和PyYAML。终端1先启动账户服务：
+
+```bash
+PYTHONPATH=.:/workspace/worker/pj/KiChaos IMPLUSE_VERSION=all \
+  /workspace/worker/env/chs-live/bin/python -u -m scripts.integration.shared_account.run_workers \
+  --config-file demos/08_option_vega/config/strategy.yaml --config-id workers_account
+```
+
+终端2启动Hybrid RB/P worker：
+
+```bash
+PYTHONPATH=.:/workspace/worker/pj/KiChaos IMPLUSE_VERSION=all \
+  /workspace/worker/env/chs-live/bin/python -u -m scripts.integration.shared_account.run_workers \
+  --config-file demos/08_option_vega/config/strategy.yaml --config-id workers_hybrid
+```
+
+终端3启动08 worker：
+
+```bash
+PYTHONPATH=. /workspace/worker/env/uv-nautilus/bin/python -u \
+  -m scripts.integration.shared_account.run_workers \
+  --config-file demos/08_option_vega/config/strategy.yaml --config-id workers_option
+```
+
+三者默认常驻。也可不用启动YAML，指定`--config demos/08_option_vega/config/workers.json`，分别使用`--role account`、`--role worker --kind hybrid_transformer`、`--role worker --kind option_vega`，显式加`--run-forever --connect --enable-orders --confirm-simnow`。只启动一个策略可用`--role worker --strategy-id 策略ID`，可重复指定。各终端默认通过账户检查点旁`workers/current.json`发现当日服务；若覆盖`--runtime-dir`，各终端必须一致，令牌不打印。
+
+**统一启动：**以下一条命令自动创建上述独立进程，与分别启动方式二选一：
+
+```bash
+PYTHONPATH=.:/workspace/worker/pj/KiChaos IMPLUSE_VERSION=all \
+  /workspace/worker/env/chs-live/bin/python -u -m scripts.integration.shared_account.run_workers \
+  --config demos/08_option_vega/config/workers.json --role all --prepare-seconds 600 \
+  --run-forever --connect --enable-orders --confirm-simnow
+```
+
+注册后不再用原Hybrid `run_shared`或08独立`live_simnow`重复连接账户。分别启动时先停止策略终端，等待保存完成，再停止账户终端；Ctrl+C保留已成交仓位。进程异常不自动盲目重启。
+
+调度使用各策略自己的公共日历：Hybrid保留休盘前30秒停止；08使用MO/IO/HO连续交易终点，例如14:57。账户连接覆盖窗口并集，再留30秒给最后worker撤单/确认；不会拿RB的09:00或15:00要求MO行情。午休、夜盘和跨日从原归属与各自信号恢复，TD每日额度不因进程/窗口切换重置。
+
+验证覆盖`tests/test_option_workers.py`及共享执行、跨日、Hybrid布局回归。柜台、行情和模型为离线替身；Linux上实际DDB/CTP和原检查点仍须首次禁单核验。
 
 ## 4. 自定义特征
 

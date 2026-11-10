@@ -28,6 +28,13 @@ def ctp_instrument_max_age_seconds(config):
 def read_config(path):
     path = Path(path).resolve()
     config = json.loads(path.read_text(encoding="utf-8"))
+    return resolve_config(config, path)
+
+
+def resolve_config(config, path):
+    """校验内存组合声明；相对路径仍以其声明文件为基准，不改写源配置。"""
+    path = Path(path).resolve()
+    config = deepcopy(config)
     allowed = {"version", "trading_day", "environment", "replay_md_trading_day", "seconds",
         "account_state_file", "report_dir", "account", "strategies", "position_scope", "execution_mode",
         "existing_position_policy", "ctp_instrument_max_age_seconds", "history_missing_policy",
@@ -123,6 +130,9 @@ def read_config(path):
         path_arguments = {"--history-file", "--history-config"}
         if row["kind"] == "hybrid_transformer":
             path_arguments.update({"--release-path", "--directions-file", "--signal-config", "--market-config", "--report-dir"})
+        if row["kind"] == "option_vega":
+            path_arguments.update({"--config-file", "--strategy-config", "--market-config",
+                "--index-feature-config", "--opt-basic", "--fut-basic", "--report-dir"})
         for index, arg in enumerate(argv):
             key, separator, value = arg.partition("=")
             if key not in path_arguments:

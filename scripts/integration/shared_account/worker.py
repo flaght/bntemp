@@ -8,6 +8,7 @@ from datetime import datetime
 from types import SimpleNamespace
 import json
 import time
+import logging
 
 from .config import read_config, strategy_report_dir
 
@@ -70,10 +71,18 @@ def _main(argv):
     parser.add_argument("--enable-orders", action="store_true")
     parser.add_argument("--confirm-simnow", action="store_true")
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument('--log-level', choices=('DEBUG', 'INFO', 'WARNING', 'ERROR'), default='INFO')
     parser.add_argument("--activate-at", type=datetime.fromisoformat, help=argparse.SUPPRESS)
+    parser.add_argument("--stop-at", type=datetime.fromisoformat,
+        help="本策略窗口终点（含时区）；正常保存、撤单并保留归属仓位")
     args = parser.parse_args(argv)
+    logging.basicConfig(level=getattr(logging, args.log_level),
+        format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
     if args.activate_at is not None and args.activate_at.tzinfo is None:
         parser.error("开盘边界须携带时区")
+    if args.stop_at is not None and (args.stop_at.tzinfo is None or
+            args.activate_at is None or args.stop_at <= args.activate_at):
+        parser.error("stop-at须晚于activate-at且携带时区")
     config = read_config(args.config)
     rows = [r for r in config["strategies"] if r["strategy_id"] == args.strategy_id]
     if len(rows) != 1 or config.get("execution_mode") != "independent":
@@ -197,6 +206,16 @@ def _run(args, config, stop_event):
             if callable(bind):
                 bind(save)
             port.ready_check = session.runner.session_ready
+            stop_at = getattr(args, 'stop_at', None)
+            if stop_at is not None:
+                from bomber.framework.calendars.sessions import TradingWindow
+                window = TradingWindow(config['trading_day'], args.activate_at, stop_at, 'worker')
+                session.runner.continuous_window = window
+                session.runner.continuous_stop_event = stop_event
+                if row['kind'] == 'option_vega':
+                    from bomber.framework.trader.runtime.live.continuous import LiveWindowContext
+                    session.runner.window_context = LiveWindowContext(None, window, stop_event,
+                        source_day=config['trading_day'], resume=args.resume)
             session.runner.start()
             from bomber.framework.trader.runtime.live.shared import prepare_strategy_history
             activate_at = getattr(args, "activate_at", None)
@@ -204,6 +223,8 @@ def _run(args, config, stop_event):
                 if prepare_strategy_history(session, require_ready=False) is False:
                     raise StopRequested()
                 def poll_preparation():
+                    if stop_at is not None and datetime.now(stop_at.tzinfo) >= stop_at:
+                        raise StopRequested()
                     if session.runner.failure:
                         raise RuntimeError(session.runner.failure)
                     port.drain_events()
@@ -217,7 +238,7 @@ def _run(args, config, stop_event):
                 ready_seconds = max(ready_seconds, source_config(strategy_args).max_age_seconds)
             until_ready = time.monotonic() + ready_seconds
             while not session.runner.session_ready():
-                if stop_event.is_set():
+                if stop_event.is_set() or stop_at is not None and datetime.now(stop_at.tzinfo) >= stop_at:
                     raise StopRequested()
                 if session.runner.failure:
                     raise RuntimeError(session.runner.failure)
@@ -245,7 +266,8 @@ def _run(args, config, stop_event):
                 raise StopRequested()
             session.runner.begin_bars()
             until = time.monotonic() + min(config["seconds"], row.get("stop_after_seconds", config["seconds"]))
-            while not stop_event.is_set() and time.monotonic() < until:
+            while (not stop_event.is_set() and time.monotonic() < until
+                    and (stop_at is None or datetime.now(stop_at.tzinfo) < stop_at)):
                 poll_strategy_session(session, save)
                 time.sleep(0.2)
             status = "completed"
