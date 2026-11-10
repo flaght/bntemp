@@ -72,7 +72,13 @@ def read_config(path):
         raise ValueError("账户配置须完整声明身份、总量、名义预算及订单上限")
     if not isinstance(account["client_id"], str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", account["client_id"]):
         raise ValueError("账户client_id不能为空")
-    for key in ("max_gross_quantity", "max_gross_notional"):
+    budget_keys = ("max_gross_quantity", "max_gross_notional")
+    disabled = all(account[key] is None for key in budget_keys)
+    if any(account[key] is None for key in budget_keys) and not disabled:
+        raise ValueError("联合总量与名义预算须同时为null或有限正数")
+    if disabled and config.get("execution_mode") != "independent":
+        raise ValueError("仅按策略限制须使用independent独立归属订单")
+    for key in (() if disabled else budget_keys):
         value = Decimal(str(account[key]))
         if not value.is_finite() or value <= 0:
             raise ValueError("账户预算须为有限正数")
@@ -144,6 +150,9 @@ def read_config(path):
 
 def validate_budget_increase(original, updated):
     """显式迁移只允许账户总名义限额上调，其他身份/路径/参数必须相同。"""
+    if any(config["account"][key] is None for config in (original, updated)
+           for key in ("max_gross_quantity", "max_gross_notional")):
+        raise ValueError("预算上调工具仅支持有限联合预算；策略限额模式须显式迁移账户身份")
     candidate = deepcopy(updated)
     candidate["account"]["max_gross_notional"] = original["account"]["max_gross_notional"]
     if candidate != original or Decimal(str(updated["account"]["max_gross_notional"])) <= Decimal(

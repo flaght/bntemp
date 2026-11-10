@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from examples.opts2.export_tinysoft_options import (
+from examples.opts2.export_tinysoft_options_min import (
     connect_session, export_day, fill_previous_close, fill_previous_prices, prepare_bars,
 )
 
@@ -237,7 +237,7 @@ class TinysoftOptionExportTests(unittest.TestCase):
                                       day=self.day)
         self.assertEqual(filled.prev_close.tolist(), [358.0] * 4)
         self.assertEqual(filled.prev_settlement.tolist(), [371.2] * 4)
-        minute_queries = [q for q in session.queries if '"opt_5min_patch"' in q]
+        minute_queries = [q for q in session.queries if '"opt_5min_tiny"' in q]
         self.assertEqual(len(minute_queries), 1)
         self.assertIn("where TradeDate = 2025.12.31", minute_queries[0])
 
@@ -305,7 +305,7 @@ class TinysoftOptionExportTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             result = export_day(session, day=self.day, output_dir=directory)
             self.assertEqual(result, (3, 12))
-            self.assertIn('loadTable("dfs://JC_MKT_MIN", "opt_5min_patch")',
+            self.assertIn('loadTable("dfs://JC_MKT_MIN", "opt_5min_tiny")',
                           session.sql)
             self.assertIn("where TradeDate = 2026.01.05", session.sql)
             root = Path(directory) / "20260105"
@@ -437,6 +437,92 @@ class TinysoftOptionExportTests(unittest.TestCase):
             with self.assertRaisesRegex(ConnectionError, "legacy.example:9999") as caught:
                 connect_session(session)
         self.assertNotIn("test-only", str(caught.exception))
+
+    def test_reported_zero_volume_open_above_high_rejected_with_details(self):
+        source = self.frame().iloc[:1].assign(
+            Code="MO2606-C-6000", TradeDate=pd.Timestamp("2026-06-22"),
+            ActTime=pd.Timestamp("2026-06-22 09:35"),
+            openPrice=2761.6, highPrice=2752., lowPrice=2752., closePrice=2752., volume=0,
+        )
+        issues = []
+        with self.assertRaisesRegex(ValueError, "OHLC.*1 行"):
+            prepare_bars(source, day=date(2026, 6, 22), validation_issues=issues)
+        self.assertEqual(len(issues), 1)
+        self.assertEqual(issues[0]["open"], 2761.6)
+        self.assertEqual(issues[0]["high"], 2752.)
+        self.assertEqual(issues[0]["volume"], 0)
+        self.assertEqual(issues[0]["issue"], "HIGH_BELOW_OPEN_OR_CLOSE")
+
+    def test_tiny_source_example_preserves_interval_zero_and_nonzero_cumulative(self):
+        source = self.frame().iloc[:1].drop(columns="refilled").assign(
+            Code="MO2706-C-6000", TradeDate=pd.Timestamp("2026-11-06"),
+            ActTime=pd.Timestamp("2026-11-06 10:55"),
+            openPrice=669.6, highPrice=669.6, lowPrice=669.6, closePrice=669.6,
+            volume=0, volumeAccumulate=19, turnover=0, turnoverAccumulate=1264440,
+            openInterest=0, openInterestAccumulate=527,
+        )
+        bars = prepare_bars(source, day=date(2026, 11, 6))
+        self.assertEqual(len(bars), 1)
+        self.assertEqual(bars.volume.iloc[0], 0)
+        self.assertEqual(bars.volume_accumulate.iloc[0], 19)
+        self.assertEqual(bars.turnover.iloc[0], 0.)
+        self.assertEqual(bars.turnover_accumulate.iloc[0], 1264440.)
+        self.assertEqual(bars.open_interest.iloc[0], 527.)
+        self.assertEqual(len(bars.columns), 14)
+
+    def test_warn_preserves_bad_prices_and_default_rejects_zero_prices(self):
+        source = self.frame().iloc[:1].assign(openPrice=400.)
+        original = source.copy(deep=True)
+        issues = []
+        bars = prepare_bars(source, day=self.day, ohlc_policy="warn", validation_issues=issues)
+        self.assertEqual(bars.open.iloc[0], 400.)
+        self.assertEqual(bars.high.iloc[0], 373.6)
+        self.assertEqual(issues[0]["action"], "warn_preserve")
+        pd.testing.assert_frame_equal(source, original)
+        zero = self.frame().iloc[:1].assign(openPrice=0., highPrice=0., lowPrice=0., closePrice=0.)
+        with self.assertRaisesRegex(ValueError, "ZERO_PRICE"):
+            prepare_bars(zero, day=self.day)
+
+    def test_price_validation_report_and_new_source_for_both_policies(self):
+        bad = self.frame().copy()
+        bad.loc[0, "openPrice"] = 400.
+        source = pd.concat([bad, self.frame().assign(Code="OP10009633")], ignore_index=True)
+        with tempfile.TemporaryDirectory() as directory:
+            for policy, expected in (("reject", (1, 4)), ("warn", (2, 8))):
+                session = DailyReferenceSession(pd.DataFrame(), pd.DataFrame(),
+                                                 previous_day=None, minute_frame=source)
+                output = Path(directory) / policy
+                result = export_day(session, day=self.day, output_dir=output, ohlc_policy=policy)
+                self.assertEqual(result, expected)
+                root = output / "20260105"
+                report = pd.read_csv(root / "bar_validation.csv")
+                self.assertEqual(report.Code.tolist(), ["HO2601-C-2650"])
+                self.assertEqual(report.open.tolist(), [400.])
+                self.assertEqual(report.high.tolist(), [373.6])
+                self.assertEqual(report.exported_this_run.tolist(), [policy == "warn"])
+                self.assertTrue((root / "OP10009633_20260105.feather").exists())
+                self.assertEqual((root / "HO2601-C-2650_20260105.feather").exists(), policy == "warn")
+                minute_queries = [q for q in session.queries if "opt_5min" in q]
+                self.assertTrue(minute_queries)
+                self.assertTrue(all('"opt_5min_tiny"' in q for q in minute_queries))
+                self.assertFalse(any("opt_5min_patch" in q for q in session.queries))
+                self.assertIn("where TradeDate = 2026.01.05", session.queries[0])
+
+    def test_rejected_existing_file_is_preserved_and_marked_in_report(self):
+        source = self.frame().assign(openPrice=500.)
+        session = DailyReferenceSession(pd.DataFrame(), pd.DataFrame(),
+                                         previous_day=None, minute_frame=source)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "20260105"
+            root.mkdir()
+            original = root / "HO2601-C-2650_20260105.feather"
+            original.write_bytes(b"original output")
+            self.assertEqual(export_day(session, day=self.day, output_dir=directory,
+                                        overwrite=True), (0, 0))
+            self.assertEqual(original.read_bytes(), b"original output")
+            report = pd.read_csv(root / "bar_validation.csv")
+            self.assertTrue(report.existing_file_kept.all())
+            self.assertFalse(report.exported_this_run.any())
 
 
 if __name__ == "__main__":

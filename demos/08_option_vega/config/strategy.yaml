@@ -9,6 +9,8 @@ experiment_setups:
     calendar_id: china.cffex
     option_bar_minutes: 5
     options_bar_timestamp: end
+    # 研究时可显式选择expand_range；原文件不变，修整会记录警告并可能影响撮合。
+    option_ohlc_policy: reject
     execution_timing: next_market
     index_feature_file: demos/feature/index/index-blend.csv
     index_feature_config: demos/feature/index/index-blend.csv.dataset.json

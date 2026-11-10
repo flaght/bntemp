@@ -10,6 +10,7 @@ import pandas as pd
 from dotenv import load_dotenv
 
 
+MINUTE_TABLE = "opt_5min_tiny"
 OUTPUT_COLUMNS = (
     "symbol", "trade_date", "datetime", "open", "high", "low", "close",
     "volume", "turnover", "volume_accumulate", "turnover_accumulate",
@@ -44,7 +45,48 @@ OPTION_PATTERN = (
 )
 
 
-def prepare_bars(frame, *, day, source_timezone="Asia/Shanghai"):
+def validate_bar_prices(bars, *, policy="reject", issues=None):
+    """检查回测所需的正价格及 OHLC 关系；零成交量不构成价格异常。"""
+    if policy not in ("reject", "warn"):
+        raise ValueError("ohlc_policy 应为 reject 或 warn")
+    high_bad = bars["high"] < bars[["open", "close"]].max(axis=1)
+    low_bad = bars["low"] > bars[["open", "close"]].min(axis=1)
+    inverted = bars["high"] < bars["low"]
+    zero = bars[["open", "high", "low", "close"]].eq(0).any(axis=1)
+    invalid = high_bad | low_bad | inverted | zero
+    found = []
+    for position in np.flatnonzero(invalid.to_numpy()):
+        row = bars.iloc[position]
+        reasons = []
+        for mask, reason in ((high_bad, "HIGH_BELOW_OPEN_OR_CLOSE"),
+                             (low_bad, "LOW_ABOVE_OPEN_OR_CLOSE"),
+                             (inverted, "HIGH_BELOW_LOW"), (zero, "ZERO_PRICE")):
+            if mask.iloc[position]:
+                reasons.append(reason)
+        found.append(dict(
+            trade_date=row["trade_date"], Code=row["symbol"], datetime=row["datetime"],
+            source_row=int(position) + 1, issue=";".join(reasons), policy=policy,
+            action="reject_contract" if policy == "reject" else "warn_preserve",
+            **{name: row[name] for name in ("open", "high", "low", "close", "volume",
+                                           "turnover", "volume_accumulate", "turnover_accumulate")},
+        ))
+    if not found:
+        return
+    if issues is not None:
+        issues.extend(found)
+    first = found[0]
+    detail = (f"价格/OHLC 检查失败 {len(found)} 行；首条 {first['Code']} "
+              f"{first['datetime']}：open={first['open']}, high={first['high']}, "
+              f"low={first['low']}, close={first['close']}, volume={first['volume']}；"
+              f"{first['issue']}")
+    if policy == "reject":
+        raise ValueError(detail)
+    if issues is None:
+        print(f"警告并保留原值：{detail}")
+
+
+def prepare_bars(frame, *, day, source_timezone="Asia/Shanghai",
+                 ohlc_policy="reject", validation_issues=None):
     """保留源频率；成交量和成交额直接映射，不差分、不重新累计。
 
     源数据缺少昨收/昨结算时保留 NaN；若调用前已补入同名字段则保留。
@@ -112,6 +154,7 @@ def prepare_bars(frame, *, day, source_timezone="Asia/Shanghai"):
         sample = bars.loc[duplicate, ["symbol", "datetime"]].head(10)
         raise ValueError(f"{day}: 存在重复合约时间记录：{sample.to_dict('records')}")
 
+    validate_bar_prices(bars, policy=ohlc_policy, issues=validation_issues)
     return bars.loc[:, list(OUTPUT_COLUMNS)].sort_values(
         ["symbol", "datetime"],
     ).reset_index(drop=True)
@@ -144,7 +187,7 @@ def fill_previous_close(session, bars, *, day, previous_day=None):
     if previous_day is None:
         previous = session.run(f"""
             select max(TradeDate) as previous_trade_date
-            from loadTable("dfs://JC_MKT_MIN", "opt_5min_patch")
+            from loadTable("dfs://JC_MKT_MIN", "{MINUTE_TABLE}")
             where TradeDate < {day:%Y.%m.%d}
         """)
         if previous.empty or pd.isna(previous["previous_trade_date"].iloc[0]):
@@ -158,7 +201,7 @@ def fill_previous_close(session, bars, *, day, previous_day=None):
     # atImax 按最大 ActTime 取对应 closePrice，不依赖数据库存储顺序。
     reference = session.run(f"""
         select atImax(ActTime, closePrice) as prev_close
-        from loadTable("dfs://JC_MKT_MIN", "opt_5min_patch")
+        from loadTable("dfs://JC_MKT_MIN", "{MINUTE_TABLE}")
         where TradeDate = {previous_day:%Y.%m.%d}
         group by Code
     """)
@@ -276,11 +319,13 @@ def fill_previous_prices(session, bars, *, day):
 
 
 def export_day(session, *, day, output_dir, overwrite=False,
-               source_timezone="Asia/Shanghai"):
+               source_timezone="Asia/Shanghai", ohlc_policy="reject"):
     day = pd.Timestamp(day).date()
+    if ohlc_policy not in ("reject", "warn"):
+        raise ValueError("ohlc_policy 应为 reject 或 warn")
     sql = f"""
         select *
-        from loadTable("dfs://JC_MKT_MIN", "opt_5min_patch")
+        from loadTable("dfs://JC_MKT_MIN", "{MINUTE_TABLE}")
         where TradeDate = {day:%Y.%m.%d}
         order by Code, ActTime
     """
@@ -297,6 +342,7 @@ def export_day(session, *, day, output_dir, overwrite=False,
     errors = []
     existing = 0
     prepared = []
+    validation_issues = []
 
     def record_error(symbol, stage, exc):
         errors.append(dict(trade_date=str(day), Code=str(symbol), stage=stage,
@@ -305,7 +351,8 @@ def export_day(session, *, day, output_dir, overwrite=False,
 
     for symbol, group in frame.groupby("Code", sort=True, dropna=False):
         try:
-            bars = prepare_bars(group, day=day, source_timezone=source_timezone)
+            bars = prepare_bars(group, day=day, source_timezone=source_timezone,
+                                ohlc_policy=ohlc_policy, validation_issues=validation_issues)
         except Exception as exc:
             record_error(symbol, "conversion", exc)
             continue
@@ -316,6 +363,15 @@ def export_day(session, *, day, output_dir, overwrite=False,
             continue
         prepared.append(bars)
 
+    # 在补充日行情之前落盘，后续数据库查询失败时也能保留价格检查结果。
+    day_dir.mkdir(parents=True, exist_ok=True)
+    validation_report = day_dir / "bar_validation.csv"
+    if validation_issues:
+        pd.DataFrame(validation_issues).to_csv(validation_report, index=False, encoding="utf-8-sig")
+        print(f"{day}: {len(validation_issues)} 条价格/OHLC 问题行已保存至 {validation_report}")
+    else:
+        validation_report.unlink(missing_ok=True)
+
     # 合并有效合约后统一补昨值，避免每个期权重复查询日行情。
     if prepared:
         frame = pd.concat(prepared, ignore_index=True)
@@ -325,6 +381,7 @@ def export_day(session, *, day, output_dir, overwrite=False,
     day_dir.mkdir(parents=True, exist_ok=True)
 
     files = rows = 0
+    written_symbols = set()
     for symbol, group in frame.groupby("symbol", sort=True):
         bars = group.reset_index(drop=True)
         path = day_dir / f"{symbol}_{day:%Y%m%d}.feather"
@@ -340,6 +397,15 @@ def export_day(session, *, day, output_dir, overwrite=False,
             continue
         files += 1
         rows += len(bars)
+        written_symbols.add(symbol)
+
+    if validation_issues:
+        for issue in validation_issues:
+            issue["exported_this_run"] = issue["Code"] in written_symbols
+            issue["existing_file_kept"] = (
+                day_dir / f"{issue['Code']}_{day:%Y%m%d}.feather"
+            ).exists() and issue["Code"] not in written_symbols
+        pd.DataFrame(validation_issues).to_csv(validation_report, index=False, encoding="utf-8-sig")
 
     report = day_dir / "export_errors.csv"
     if errors:
@@ -348,7 +414,8 @@ def export_day(session, *, day, output_dir, overwrite=False,
     else:
         report.unlink(missing_ok=True)
     print(f"{day}: 导出 {files} 个合约文件，{rows} 条记录；"
-          f"异常跳过 {len(errors)} 个合约，已有文件跳过 {existing} 个")
+          f"异常跳过 {len(errors)} 个合约，已有文件跳过 {existing} 个；"
+          f"价格/OHLC 问题 {len(validation_issues)} 行")
     return files, rows
 
 
@@ -372,6 +439,8 @@ def main():
     parser.add_argument("--end-day", type=date.fromisoformat, default=date(2026, 4, 29))
     parser.add_argument("--output-dir", type=Path, default=Path("./temp"))
     parser.add_argument("--source-timezone", default="Asia/Shanghai")
+    parser.add_argument("--ohlc-policy", choices=("reject", "warn"), default="reject",
+                        help="reject 拒绝存在价格/OHLC 异常的合约当日文件；warn 保留原值并记录")
     parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args()
     if args.start_day > args.end_day:
@@ -386,7 +455,8 @@ def main():
     try:
         connect_session(session)
 
-        print("保留五分钟频率；prev_close / prev_settlement 优先从 opt_eod_patch 补充；"
+        print(f"分钟源表={MINUTE_TABLE}；OHLC 策略={args.ohlc_policy}；"
+              "保留五分钟频率；prev_close / prev_settlement 优先从 opt_eod_patch 补充；"
               "昨收可回退到前一交易日五分钟行情，仍缺失的值保留 NaN")
         # 按自然日查询，非交易日无数据则跳过，无需 ultron 日历。
         day = args.start_day
@@ -394,6 +464,7 @@ def main():
             files, rows = export_day(
                 session, day=day, output_dir=args.output_dir,
                 overwrite=args.overwrite, source_timezone=args.source_timezone,
+                ohlc_policy=args.ohlc_policy,
             )
             total_files += files
             total_rows += rows

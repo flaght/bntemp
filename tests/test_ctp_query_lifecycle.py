@@ -31,6 +31,24 @@ class CtpQueryLifecycleTests(unittest.TestCase):
         self.addCleanup(transport.close)
         return transport
 
+    def test_disconnect_reason_is_available_before_handler_and_survives_handler_error(self):
+        from types import SimpleNamespace
+        from tests.test_shared_account import SharedAccountTests
+        SharedAccountTests.native_modules(self)
+        from bomber.framework.trader.execution.ctp.native_driver import CtpNativeTraderDriver
+        observations=[]
+        def disconnected(message):
+            observations.append((message,driver._connected,dict(driver.last_disconnect)))
+            raise RuntimeError('handler failed')
+        driver=CtpNativeTraderDriver('test','demo',SimpleNamespace(),disconnect_handler=disconnected)
+        self.assertIsNone(driver.last_disconnect)
+        driver._connected=True
+        with patch('bomber.framework.trader.execution.ctp.native_driver.time.time_ns',return_value=12345):
+            with self.assertRaisesRegex(RuntimeError,'handler failed'):
+                driver.on_disconnect(8193)
+        self.assertEqual(observations,[('ctp_front_disconnected:8193',False,{'reason':8193,'ts_ns':12345})])
+        self.assertEqual(driver.last_disconnect,{'reason':8193,'ts_ns':12345})
+
     def test_timeout_audit_counts_partial_and_late_responses_without_using_incomplete_rows(self):
         def partial(api, reqid):
             api.onRspQryTradingAccount({'Balance':123}, {}, reqid, False)

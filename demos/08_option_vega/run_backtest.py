@@ -90,7 +90,8 @@ def backtest_bar_specs(args):
     return {
         "option": BarReadSpec(interval_seconds=minutes * 60,
             timestamp_label=getattr(args, "options_bar_timestamp", None) or args.bar_timestamp,
-            trading_day_policy="day_session"),
+            trading_day_policy="day_session",
+            ohlc_policy=getattr(args, "option_ohlc_policy", "reject")),
         "future": BarReadSpec(timestamp_label=args.bar_timestamp, trading_day_policy="day_session"),
     }
 
@@ -422,6 +423,7 @@ def run_case(args):
                 "index": args.index_code, "bar_timestamp": args.bar_timestamp,
                 "bar_specs": {kind: {"bar_spec": spec.bar_spec, "timestamp_label": spec.timestamp_label}
                     for kind, spec in bar_specs.items()},
+                "option_ohlc_policy": bar_specs["option"].ohlc_policy,
                 "execution_timing": getattr(args, "execution_timing", "native"),
                 "index_feature": index_identity, "frame_wait_seconds": args.frame_wait_seconds,
                 "skipped_index_frames": sum(row["status"] == "SKIPPED" for row in runner.frame_audit),
@@ -505,6 +507,8 @@ def main():
         help="真实期权Bar周期；M1使用data-root默认目录，M5须指定opt-dir；期货和指数保持M1")
     parser.add_argument("--options-bar-timestamp", choices=("start", "end"),
         help="单独指定期权源时间标签；省略时沿用--bar-timestamp，M5开始标签按5分钟右移")
+    parser.add_argument("--option-ohlc-policy", choices=("reject", "expand_range"), default="reject",
+        help="期权OHLC异常默认拒绝；expand_range仅在读取时扩展高低价并记录警告，可能影响撮合")
     parser.add_argument("--execution-timing", choices=("native", "next_market"), default="native",
         help="默认保留原生撮合；next_market等待本合约下一根真实Bar，期权M5不会阻塞期货M1")
     parser.add_argument("--index-precision", type=int, default=4)
