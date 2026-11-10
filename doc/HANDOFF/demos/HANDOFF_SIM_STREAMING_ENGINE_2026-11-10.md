@@ -38,6 +38,31 @@ git apply --directory=bomber /absolute/pro/doc/evidence/patches/SIM_STREAMING_EN
 ```
 
 `--check`不通过说明源码版本/命名空间不同，应先核对差异；不要使用强制或模糊替换。
+
+### 版本标记插入位置不匹配
+
+XY返回过`engine.pyx:214: patch does not apply`，原命令在`--check`时停止，未修改源码。
+该补丁的首段仅插入部署标记，依赖import区布局。可使用兼容工具分开检查算法与标记，
+不需要内核源码目录具有`.git`：
+
+```bash
+cd /workspace/worker/pj/Chrono/nautilus_trader_demo/pro
+
+/workspace/worker/env/uv-nautilus/bin/python \
+  scripts/integration/options/patch_streaming_engine.py \
+  --source-root /workspace/worker/pj/Chrono/nautilus_trader_demo/code/bomber
+
+/workspace/worker/env/uv-nautilus/bin/python \
+  scripts/integration/options/patch_streaming_engine.py \
+  --source-root /workspace/worker/pj/Chrono/nautilus_trader_demo/code/bomber \
+  --apply
+```
+
+第一条只读检查；第二条在三段算法补丁全部匹配后创建原文件备份、应用算法，
+将版本标记追加到模块末尾，避免依赖import区布局。算法段仍使用原补丁严格检查，
+未启用忽略空白、强制或三方合并；算法本身不匹配时拒绝修改并返回具体错误。
+重复执行已应用版本不重复修改；应用过程出错时恢复备份。
+
 然后沿用该项目原有的Bomber wheel构建流程，生成匹配XY操作系统、架构、Python版本的wheel，
 安装到**实际启动回测的Python环境**。修改已安装的`.pyx`不会更新已编译扩展。
 本地Nautilus源码项目构建的是`nautilus_trader`，不能把它的wheel当作Bomber wheel安装。
