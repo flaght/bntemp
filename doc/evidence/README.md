@@ -1,5 +1,10 @@
 # Bomber 校验清单与历史证据索引
 
+2026-11-10新增标准化行情到Bar转换优化：[原理与XY验证](../HANDOFF/demos/HANDOFF_PREPARED_BAR_PARSER_2026-11-10.md)、
+[离线证据](live/PREPARED_BAR_PARSER_20261110.json)、
+[同步清单](checksums/PREPARED_BAR_PARSER_20261110_SHA256.txt)。
+212项离线关联测试和1500组新旧解析对照通过；两个原生对象对照测试待XY运行，未宣称完整金融结果或原生性能通过。
+
 2026-11-10第二轮行情准备优化：[改动、XY验证及Bar转换位置](../HANDOFF/demos/HANDOFF_BAR_PREPARATION_BULK_2026-11-10.md)、
 [离线证据](live/BAR_PREPARATION_BULK_20261110.json)、
 [同步清单](checksums/BAR_PREPARATION_BULK_20261110_SHA256.txt)。

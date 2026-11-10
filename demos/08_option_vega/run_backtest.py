@@ -365,7 +365,8 @@ def run_case(args):
         phase = _start_phase("已准备行情注册到回放源")
         for identity in sorted(frames):
             # This run owns these frames and does not mutate them after validation.
-            add_prepared_bar_source(feed, prepared[identity], all_ids[identity[1]], copy_frame=False)
+            add_prepared_bar_source(feed, prepared[identity], all_ids[identity[1]], copy_frame=False,
+                fast_parse=getattr(args, "bar_parser", "prepared") == "prepared")
         performance.count("option_bar_files", sum(key in contracts for _, key in frames))
         performance.count("future_bar_files", sum(key in future_rows for _, key in frames))
         _finish_phase("已准备行情注册到回放源", phase)
@@ -443,6 +444,7 @@ def run_case(args):
                     for kind, spec in bar_specs.items()},
                 "option_ohlc_policy": bar_specs["option"].ohlc_policy,
                 "execution_timing": getattr(args, "execution_timing", "native"),
+                "bar_parser": getattr(args, "bar_parser", "prepared"),
                 "index_feature": index_identity, "frame_wait_seconds": args.frame_wait_seconds,
                 "skipped_index_frames": sum(row["status"] == "SKIPPED" for row in runner.frame_audit),
                 "bars": result.replay_summary.bars, "frames": strategy.frames,
@@ -549,6 +551,8 @@ def main():
         help="期权OHLC异常默认拒绝；expand_range仅在读取时扩展高低价并记录警告，可能影响撮合")
     parser.add_argument("--execution-timing", choices=("native", "next_market"), default="native",
         help="默认保留原生撮合；next_market等待本合约下一根真实Bar，期权M5不会阻塞期货M1")
+    parser.add_argument("--bar-parser", choices=("generic", "prepared"), default="prepared",
+        help="prepared复用标准化整数时钟、合约及BarType；generic沿用通用解析器，用于同机结果/性能对照")
     parser.add_argument("--index-precision", type=int, default=4)
     parser.add_argument("--starting-balance", type=Decimal, default=Decimal("40000000"))
     parser.add_argument("--nav", type=Decimal)

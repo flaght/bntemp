@@ -1,9 +1,11 @@
 """远程账户策略运行时：当前进程运行Runner；装配由策略入口注入。"""
 from contextlib import ExitStack
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 import json
+import re
 import time
 
 from bomber.framework.trader.execution.contracts import MarketDataUnavailable, OrderBudgetExhausted
@@ -11,6 +13,101 @@ from bomber.framework.trader.persistence import JsonStateStore
 from .contracts import LiveRunContext
 from .continuous import StopRequested
 from .local import strategy_state_lock
+
+
+def resolve_strategy_rows(rows, path, *, path_arguments=()):
+    """仅解析实例声明与路径，不加载策略，不接受覆盖执行/授权/恢复政策。"""
+    path = Path(path).expanduser().resolve()
+    if not isinstance(rows, list) or not rows:
+        raise ValueError('须声明至少一个策略实例')
+    ids, files, result = set(), set(), []
+    protected = {'--connect','--mode','--enable-orders','--confirm-simnow','--resume','--state-file',
+        '--expected-trading-day','--seconds','--account-reconciliation','--strategy-position-source',
+        '--run-forever','--adopt-existing-position','--expected-position','--simnow-environment',
+        '--replay-md-trading-day','--execution-channel'}
+    for raw in rows:
+        if not isinstance(raw,dict) or set(raw) != {'strategy_id','kind','state_file','argv'}:
+            raise ValueError('每个实例只接受strategy_id、kind、state_file和argv')
+        row = deepcopy(raw)
+        sid = row['strategy_id']
+        if not isinstance(sid,str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,64}',sid) or sid in ids:
+            raise ValueError('策略ID无效或重复')
+        if not isinstance(row['kind'],str) or not row['kind'].strip():
+            raise ValueError('须声明策略类型')
+        if not isinstance(row['state_file'],str) or not row['state_file'].strip():
+            raise ValueError('须声明策略信号文件')
+        state_file = str((path.parent/Path(row['state_file']).expanduser()).resolve())
+        if state_file in files:
+            raise ValueError('策略实例不能共用信号文件')
+        argv = row['argv']
+        if not isinstance(argv,list) or any(not isinstance(arg,str) for arg in argv):
+            raise ValueError('策略argv须为字符串数组')
+        if any(arg.split('=',1)[0] in protected for arg in argv):
+            raise ValueError('策略参数不能覆盖执行、授权或恢复政策')
+        for index,arg in enumerate(argv):
+            key,separator,value = arg.partition('=')
+            if key not in path_arguments:
+                continue
+            if not separator:
+                if index+1 >= len(argv) or argv[index+1].startswith('--'):
+                    raise ValueError(f'{key}缺少路径')
+                value = argv[index+1]
+            resolved = str((path.parent/Path(value).expanduser()).resolve())
+            argv[index if separator else index+1] = f'{key}={resolved}' if separator else resolved
+        row['state_file'] = state_file
+        ids.add(sid); files.add(state_file); result.append(row)
+    return result
+
+
+def read_strategy_rows(path, *, path_arguments=()):
+    path = Path(path).expanduser().resolve()
+    document = json.loads(path.read_text())
+    if not isinstance(document,dict) or set(document) != {'version','strategies'} or document['version'] != 1:
+        raise ValueError('策略JSON只接受version和strategies，不包含账户字段')
+    return resolve_strategy_rows(document['strategies'],path,path_arguments=path_arguments)
+
+
+def load_account_connection(path, rows):
+    """读取纯账户地址与本策略实例；不读取任何其他策略的配置。"""
+    from bomber.framework.account_config import read_account_config
+    account = read_account_config(path)
+    rows = resolve_strategy_rows(rows,path)
+    if any(row['state_file'] == account['account_state_file'] for row in rows):
+        raise ValueError('账户账本和策略信号文件必须不同')
+    return {**account,'strategies':rows}
+
+
+def window_credentials(config, rows, window, stop_event, runtime_dir=None):
+    from bomber.framework.account_config import read_account_config, FIELDS
+    discovery = (runtime_dir or Path(config['account_state_file']).parent/'service')/'current.json'
+    def validate(candidate):
+        published = read_account_config(candidate['config'])
+        expected = {key:deepcopy(config[key]) for key in FIELDS}
+        expected.update(trading_day=window.trading_day,seconds=86400)
+        if published != expected:
+            raise ValueError('账户服务声明与本地配置不一致')
+        for row in rows:
+            path = Path(candidate['credentials_dir'])/(row['strategy_id']+'.json')
+            if not path.is_file():
+                raise ValueError(f"该策略ID尚未登记到账户: {row['strategy_id']}")
+            credential = json.loads(path.read_text())
+            if credential['strategy_id'] != row['strategy_id'] or Path(credential['socket']) != Path(candidate['socket']):
+                raise ValueError('账户凭据的策略ID或socket不一致')
+    candidate = wait_for_account(discovery,window,stop_event,validate)
+    return {row['strategy_id']:Path(candidate['credentials_dir'])/(row['strategy_id']+'.json') for row in rows}
+
+
+def resume_available(row, credentials):
+    return Path(row['state_file']).is_file() or json.loads(Path(credentials).read_text()).get('bootstrap_signal') is not None
+
+
+def validate_forward_identity(old, new):
+    previous = deepcopy(old)
+    if not previous['trading_day'] < new['trading_day'] or new['environment'] != 'realtime':
+        raise ValueError('策略恢复仅支持向前的realtime交易日')
+    previous['trading_day'] = new['trading_day']
+    if previous != new:
+        raise ValueError('跨日不能改变策略身份、参数、路由、预算或固定参考')
 
 
 def run_remote_group(runtimes, stop_event):

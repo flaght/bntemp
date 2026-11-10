@@ -13,6 +13,24 @@ from pathlib import Path
 import sys
 
 
+def load_environment(path=None):
+    """显式env覆盖同名变量并隔离DDB；未指定时只从项目.env补缺。"""
+    import os
+    from dotenv import load_dotenv
+    selected = path or os.environ.get('BOMBER_EXECUTION_ENV_FILE')
+    if selected is None:
+        load_dotenv(Path(__file__).resolve().parents[2]/'.env')
+        return
+    selected = Path(selected).expanduser().resolve()
+    if not selected.is_file():
+        raise ValueError(f'指定的环境文件不存在: {selected}')
+    for key in tuple(os.environ):
+        if key.startswith('DDB_'):
+            del os.environ[key]
+    load_dotenv(selected, override=True)
+    os.environ['BOMBER_EXECUTION_ENV_FILE'] = str(selected)
+
+
 def execution_channel_from_argv(argv=None):
     """只选择入口的执行通道；业务参数仍由该入口的正式parser完整校验。"""
     probe = argparse.ArgumentParser(add_help=False)

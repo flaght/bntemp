@@ -1,39 +1,82 @@
-"""同一份Hybrid配置切换同进程/多进程；复用共享执行、IPC和交易日历。"""
-from copy import deepcopy
-from datetime import datetime, timedelta
-import math
+"""Hybrid原生多实例入口：本进程运行RB/P，连接独立账户服务。"""
+from datetime import timedelta
 import os
 from pathlib import Path
+import sys
 from types import SimpleNamespace
 
-from scripts.integration.shared_account.config import read_config
+if __package__ in (None, ''):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    __package__ = 'demos.10_hybrid_transformer'
 
-# 正常分钟信号处理完后，给休盘前撤单和回报留出时间。
 SESSION_STOP_SECONDS = 30
-# 各交易时段默认提前5分钟连接、恢复和预热；可由启动参数覆盖。
 PREPARE_SECONDS = 300
+PATH_ARGUMENTS = {'--history-file','--history-config','--release-path','--directions-file',
+    '--signal-config','--market-config','--report-dir'}
 
 
-def validate_layout(config, layout):
-    if config.get('environment') != 'realtime' or config.get('execution_mode') != 'independent':
-        raise ValueError('Hybrid布局切换须固定realtime和independent执行政策')
-    if layout not in {'same-process', 'separate-processes'}:
-        raise ValueError('进程布局无效')
-    if any(row['kind'] != 'hybrid_transformer' for row in config['strategies']):
-        raise ValueError('此入口管理Hybrid策略；其他策略沿用公共共享入口')
-    for row in config['strategies']:
-        if 'stop_after_seconds' in row or any(arg.split('=', 1)[0] in {
-                '--expected-source-day', '--confirm-manual-flat'} for arg in row['argv']):
-            raise ValueError('共享Hybrid日期由日历确定，不能覆盖来源日或清空旧仓')
+def shared_arguments(row, config, *, resume):
+    from . import run_live, shared
+    argv = list(row['argv'])+['--connect','--mode','simnow','--enable-orders','--confirm-simnow',
+        '--state-file',row['state_file'],'--expected-trading-day',config['trading_day'],
+        '--expected-source-day',shared.previous_source_day(config['trading_day']),
+        '--seconds',str(config['seconds'])]
+    if resume and Path(row['state_file']).is_file():
+        argv.append('--resume')
+    return run_live, run_live.parse_args(argv,shared_execution=True)
+
+
+def build_shared_runtime(config, row, credentials, *, resume, activate_at=None, stop_at=None):
+    from . import shared
+    from bomber.framework.market.sources import source_config
+    from bomber.framework.trader.runtime.live.channels.ctp import required
+    from bomber.framework.trader.runtime.live.remote import RemoteStrategyRuntime, validate_forward_identity
+    from bomber.framework.trader.runtime.reports import LiveRunReport
+    entry, args = shared_arguments(row,config,resume=resume)
+    identity = dict(strategy_id=row['strategy_id'],kind=row['kind'],argv=row['argv'],
+        trading_day=config['trading_day'],environment=config['environment'])
+    def prepare(service, driver, context):
+        lifecycle = SimpleNamespace(transport=SimpleNamespace(investor_id=required('CTP_ACCOUNT_ID'),
+            password=required('CTP_PASSWORD'),
+            production_mode=os.getenv('CTP_PRODUCTION_MODE','true').lower() in {'1','true','yes','on'}),
+            md_front=required('CTP_MD_ADDRESS') if source_config(args).source == 'ctp' else None)
+        inputs = entry.prepare_inputs(context,lifecycle,product=args.product,
+            expected_source_day=args.expected_source_day,market_config=args.market_source_config,
+            calendar_id=args.calendar_id,no_session_overrides=args.no_session_overrides)
+        if source_config(args).source == 'ctp':
+            from dataclasses import replace
+            inputs.upstream.config = replace(inputs.upstream.config,
+                flow_path=f"/tmp/{config['account']['client_id']}-{row['strategy_id']}-worker-md")
+        service.instrument_specs = {str(inputs.references.instrument_id):dict(
+            tick=str(inputs.references.spec.tick),multiplier=str(inputs.references.spec.multiplier))}
+        refresh = getattr(inputs.references,'refresh',None)
+        if callable(refresh):
+            refresh()
+        session = entry.assemble(inputs,SimpleNamespace(driver=driver),product=args.product,
+            release_path=args.release_path,directions_file=args.directions_file,signal_config=args.signal_config,
+            market_config=args.market_source_config,mode='simnow',max_contracts=args.max_contracts,
+            entry_contracts=args.entry_contracts,state_file=args.state_file,resume=args.resume,
+            history_minutes=args.history_minutes,history_config=args.history_config,history_file=args.history_file,
+            shared_service=service,strategy_id=row['strategy_id'])
+        shared.configure_report(session,args.report_dir)
+        session.validate_rollover_identity = validate_forward_identity
+        current = {**identity,'routes':session.client.configuration(),
+            'reference':{'reference':session.session_identity,'market_config':session.market_source_identity}}
+        return session,current
+    ready = 30 if source_config(args).source == 'ctp' else max(30,source_config(args).max_age_seconds)
+    return RemoteStrategyRuntime(row['strategy_id'],Path(row['state_file']),Path(credentials),config['trading_day'],
+        identity,prepare,validate_forward_identity,
+        LiveRunReport(args.report_dir,prefix=row['strategy_id'],metadata=identity),
+        resume=resume,activate_at=activate_at,stop_at=stop_at,seconds=config['seconds'],ready_seconds=ready,
+        restore_fills_received=False)
 
 
 def load_calendar(config):
     from bomber.framework.dataprep.session_inputs import SessionInputs, load_session_inputs
     from bomber.framework.dataprep.sources import DataSourcePurpose
-    from scripts.integration.shared_account.factories import strategy_arguments
     calendars = []
     for row in config['strategies']:
-        _, declaration = strategy_arguments(row, config, resume=Path(row['state_file']).is_file())
+        _, declaration = shared_arguments(row, config, resume=Path(row['state_file']).is_file())
         calendar = load_session_inputs(SessionInputs(product=declaration.product,
             calendar_id=declaration.calendar_id,
             database=os.getenv('DDB_TRADING_HOURS_DATABASE') or 'dfs://bomber_static',
@@ -50,153 +93,38 @@ def load_calendar(config):
     return first
 
 
-def run_same_process(config, window, stop, *, resume, remaining, clock=None):
-    from scripts.integration.shared_account.run import build_host
-    from bomber.framework.trader.execution.ctp.query_errors import CtpQueryInterrupted
-    from bomber.framework.trader.runtime.live.continuous import StopRequested, wait_for_open
-    from bomber.framework.trader.runtime.reports import TradingDayLiveReport
-    clock = clock or (lambda: datetime.now(window.end.tzinfo))
-    report = TradingDayLiveReport(config['report_dir'], prefix='hybrid-shared-account',
-        trading_day=window.trading_day, metadata={'process_layout': 'same-process'})
-    report.begin()
-    host, failure, shutdown_failure, status = None, None, None, 'failed'
-    stop_at = window.end - timedelta(seconds=SESSION_STOP_SECONDS)
-    def stop_requested():
-        return stop.is_set() or clock() >= stop_at
-    def check():
-        if stop_requested():
-            raise StopRequested()
-    try:
-        check()
-        host = build_host(config, resume=resume, session_order_budget=remaining)
-        host.preparation_check = check
-        host.activation_wait = lambda: wait_for_open(window.start, stop,
-            poll=host.poll_preparation, clock=clock)
-        host.account.transport.query_stop_requested = stop_requested
-        for item in host.strategies.values():
-            item.session.runner.continuous_window = window
-            item.session.runner.continuous_stop_event = stop
-        host.start()
-        print(f'Hybrid休盘前停机: stop_at={stop_at.isoformat()} session_end={window.end.isoformat()}；'
-              '撤单并保留持仓及批次', flush=True)
-        while not stop.is_set() and clock() < stop_at:
-            host.poll()
-            if not any(item.active for item in host.strategies.values()):
-                reasons = '；'.join(f'{sid}: {item.failure or "未提供停止原因"}'
-                    for sid, item in host.strategies.items())
-                raise RuntimeError('所有Hybrid策略已停止；' + reasons)
-            stop.wait(0.2)
-        status = 'completed'
-    except (StopRequested, CtpQueryInterrupted):
-        status = 'completed'
-    except BaseException as error:
-        failure = str(error)
-        raise
-    finally:
-        try:
-            if host is not None:
-                host.stop()
-        except BaseException as error:
-            status = 'failed'
-            shutdown_failure = str(error)
-            if failure is not None:
-                raise RuntimeError(f'{failure}；停机未完成: {shutdown_failure}') from error
-            failure = shutdown_failure
-            raise
-        finally:
-            report.write(status=status, fields={'failure': failure, 'shutdown_failure': shutdown_failure,
-                **(host.snapshot() if host else {})}, session=host,
-                events=host.account.execution.backend.reports if host else ())
-    return {'status': status}
-
-
-def run_window(config, layout, calendar, window, stop):
-    from bomber.framework.trader.persistence import JsonStateStore
-    from bomber.framework.trader.runtime.live.continuous import orders_for_day
-    from scripts.integration.shared_account.continuous import ProcessWindowRuntime
-    if any(row['kind'] != 'hybrid_transformer' for row in config['strategies']):
-        raise ValueError('此入口只组装Hybrid策略')
-    current = deepcopy(config)
-    current['trading_day'] = window.trading_day
-    current['seconds'] = min(86400, max(1, math.ceil((window.end-datetime.now(window.end.tzinfo)).total_seconds())+60))
-    saved = JsonStateStore(current['account_state_file']).load()
-    if saved and not {'shared_account', 'hybrid'} & saved.payload.get('component_states', {}).keys():
-        raise ValueError('须使用共享账户检查点；原单策略RB文件不能直接当共享账本，原文件保持不变')
-    used = orders_for_day(saved.payload, window.trading_day) if saved else 0
-    remaining = current['account']['max_session_orders']-used
-    if remaining <= 0:
-        raise RuntimeError('本交易日报单额度已用完，不通过切换布局重置额度')
-    if layout == 'same-process':
-        return run_same_process(current, window, stop, resume=saved is not None, remaining=remaining)
-    return ProcessWindowRuntime(current, window, stop, remaining, resume=saved is not None,
-        stop_before_seconds=SESSION_STOP_SECONDS, prepare_before_open=True).run()
-
-
 def main(argv=None):
     from bomber.framework.cli import ConfigArgumentParser
+    from bomber.framework.account_config import read_account_config
     parser = ConfigArgumentParser(description=__doc__)
-    parser.add_argument('--config', type=Path, required=True)
-    parser.add_argument('--execution-channel', choices=('local', 'shared'), default='local')
-    parser.add_argument('--account-config', type=Path)
-    parser.add_argument('--env-file', type=Path)
-    parser.add_argument('--runtime-dir', type=Path)
-    parser.add_argument('--strategy-id', action='append', help='可选，仅运行指定的Hybrid实例')
-    parser.add_argument('--process-layout', choices=('same-process', 'separate-processes'), default='same-process')
-    parser.add_argument('--run-forever', action='store_true')
-    parser.add_argument('--prepare-seconds', type=int, default=PREPARE_SECONDS,
-        help='开盘前开始准备的秒数，默认300；0表示开盘时开始准备')
-    for flag in ('connect', 'enable-orders', 'confirm-simnow'):
-        parser.add_argument('--'+flag, action='store_true')
+    parser.add_argument('--config',type=Path,required=True,help='只包含Hybrid实例的JSON')
+    parser.add_argument('--execution-channel',choices=('shared',),default='shared')
+    parser.add_argument('--account-config',type=Path,required=True)
+    parser.add_argument('--env-file',type=Path,required=True)
+    parser.add_argument('--runtime-dir',type=Path)
+    parser.add_argument('--strategy-id',action='append')
+    parser.add_argument('--prepare-seconds',type=int,default=PREPARE_SECONDS)
+    parser.add_argument('--run-forever',action='store_true')
+    for flag in ('connect','enable-orders','confirm-simnow'):
+        parser.add_argument('--'+flag,action='store_true')
     options = parser.parse_args(argv)
     if options.prepare_seconds < 0:
         parser.error('prepare-seconds须为非负整数')
-    if options.execution_channel == 'shared':
-        if not options.account_config or not options.env_file:
-            parser.error('shared须指定account-config和本策略env-file')
-        if options.process_layout != 'same-process':
-            parser.error('shared通道在本进程运行实例；分别启动可使用strategy-id选择实例')
-        from scripts.integration.shared_account.account_config import read_account_config, read_strategy_rows
-        import json
-        document = json.loads(options.config.read_text())
-        if set(document) == {'version','strategies'}:
-            account = read_account_config(options.account_config)
-            config = {**account,'strategies':read_strategy_rows(options.config, account)}
-        else:
-            config = read_config(options.config)  # 兼容旧完整配置，原生YAML使用纯策略JSON。
-        validate_layout(config, options.process_layout)
-        return run_remote(config, options, parser)
-    config = read_config(options.config)
-    validate_layout(config, options.process_layout)
-    if options.account_config or options.runtime_dir or options.strategy_id:
-        parser.error('account-config/runtime-dir/strategy-id仅用于shared执行通道')
-    if not options.connect:
-        if options.enable_orders or options.confirm_simnow:
-            parser.error('离线校验不接受报单授权')
-        print('Hybrid共享配置通过；未连接、未报单')
-        return
-    if not (options.enable_orders and options.confirm_simnow):
-        parser.error('连接须显式enable-orders和confirm-simnow')
-    from scripts.integration.shared_account.config import load_environment
-    load_environment(options.env_file)
-    from bomber.framework.trader.runtime.live.local import strategy_state_lock
-    from bomber.framework.trader.runtime.live.continuous import ContinuousPositionRuntime, StopSignal
-    with strategy_state_lock(str(Path(config['account_state_file']).resolve())+'.continuous-owner'), StopSignal() as stop:
-        calendar = load_calendar(config)
-        print(f'Hybrid准备调度: prepare_seconds={options.prepare_seconds}；'
-              '按交易日历提前准备，开盘且健康核验通过后才放行', flush=True)
-        return ContinuousPositionRuntime(calendar,
-            lambda window, event: SimpleNamespace(run=lambda: run_window(config, options.process_layout,
-                calendar, window, event)), run_forever=options.run_forever, stop_event=stop,
-            prepare_seconds=options.prepare_seconds).run()
+    from bomber.framework.trader.runtime.live.remote import read_strategy_rows
+    account = read_account_config(options.account_config)
+    rows = read_strategy_rows(options.config,path_arguments=PATH_ARGUMENTS)
+    if any(row['kind'] != 'hybrid_transformer' for row in rows):
+        parser.error('此入口只运行Hybrid实例')
+    return run_remote({**account,'strategies':rows},options,parser)
 
 
 def run_remote(local_config, options, parser):
     """RB/P在本进程内各运行一个Runner，分别持有自己的远程账户客户端。"""
     from contextlib import ExitStack
     from dataclasses import replace
-    from scripts.integration.shared_account.config import load_environment
-    from scripts.integration.shared_account.native import (
-        load_native_config, window_credentials, make_runtime, resume_available)
+    from bomber.framework.cli import load_environment
+    from bomber.framework.trader.runtime.live.remote import (
+        load_account_connection, window_credentials, resume_available)
     from bomber.framework.trader.runtime.live.continuous import ContinuousPositionRuntime, StopSignal, StopRequested
     from bomber.framework.trader.runtime.live.local import strategy_state_lock
     from bomber.framework.trader.runtime.live.remote import run_remote_group
@@ -204,7 +132,7 @@ def run_remote(local_config, options, parser):
     rows = [row for row in local_config['strategies'] if row['strategy_id'] in ids]
     if not ids or ids != {row['strategy_id'] for row in rows}:
         parser.error('strategy-id须为本地配置中的Hybrid实例')
-    config = load_native_config(options.account_config, rows, options.env_file)
+    config = load_account_connection(options.account_config, rows)
     if not options.connect:
         if options.enable_orders or options.confirm_simnow:
             parser.error('离线校验不接受报单授权')
@@ -223,7 +151,7 @@ def run_remote(local_config, options, parser):
                     own_window = replace(window, end=window.end-timedelta(seconds=SESSION_STOP_SECONDS))
                     credentials = window_credentials(config, rows, own_window, event, options.runtime_dir)
                     current = {**config, 'trading_day': window.trading_day, 'seconds': 86400}
-                    runtimes = [make_runtime(current, row, credentials[row['strategy_id']],
+                    runtimes = [build_shared_runtime(current, row, credentials[row['strategy_id']],
                         resume=resume_available(row, credentials[row['strategy_id']]),
                         activate_at=window.start, stop_at=own_window.end) for row in rows]
                     run_remote_group(runtimes, event)

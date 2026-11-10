@@ -3,7 +3,7 @@ experiment_setups:
   workers_option:
     description: "原生run_live入口；本进程运行Vega，连接独立账户服务"
     execution_channel: shared
-    account_config: scripts/integration/shared_account/account.json
+    account_config: demos/shared_account/account.json
     live_config_id: live_simnow
     env_file: work1/env1
     state_file: demos/08_option_vega/results/live/state/worker_signal.json

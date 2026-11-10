@@ -1,0 +1,9 @@
+experiment_setups:
+  workers_account:
+    description: "独立账户服务；仅读取本账户JSON和执行账本"
+    config: demos/shared_account/account.json
+    prepare_seconds: 600
+    run_forever: true
+    connect: true
+    enable_orders: true
+    confirm_simnow: true
