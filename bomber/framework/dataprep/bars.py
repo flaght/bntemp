@@ -57,6 +57,32 @@ def _finite_values(values):
     return values.map(lambda value: not pd.isna(value) and isfinite(float(value)))
 
 
+def _native_numbers(values):
+    """Ordinary numeric columns need neither coercion nor pandas mask objects."""
+    import numpy as np
+    dtype = values.dtype
+    if isinstance(dtype, np.dtype) and dtype.kind in "biuf" and dtype.itemsize <= 8:
+        return values.to_numpy(copy=False)
+    return None
+
+
+def _attach_time_columns(frame, columns):
+    """Build all time columns once, preserving replacement/append column order."""
+    import pandas as pd
+    if type(frame.columns) is not pd.Index:
+        # Preserve insertion behavior of unusual indexes (e.g. CategoricalIndex).
+        for name, values in columns.items():
+            frame[name] = values
+        return frame
+    order = [*frame.columns, *(name for name in columns if name not in frame.columns)]
+    result = pd.DataFrame({name: columns[name] if name in columns else frame[name] for name in order},
+        index=frame.index, columns=pd.Index(order, dtype=frame.columns.dtype, name=frame.columns.name), copy=False)
+    result.attrs = frame.attrs
+    if not frame.flags.allows_duplicate_labels:
+        result.flags.allows_duplicate_labels = False
+    return result
+
+
 def _ohlc_check(frame):
     """Check homogeneous numeric prices without constructing row-wise frames.
 
@@ -103,6 +129,7 @@ def read_bar_frame(path, spec=None, key=None, *, copy_frame=True):
     Borrowing is reserved for preparation/replay paths that never modify it.
     The normal public API continues to protect cached data from caller writes.
     """
+    import numpy as np
     import pandas as pd
     spec = spec or BarReadSpec()
     key = key or key_from_path(path)
@@ -157,19 +184,19 @@ def read_bar_frame(path, spec=None, key=None, *, copy_frame=True):
     if spec.available_column and spec.available_column not in frame:
         fail("MISSING_FIELD", f"Missing {spec.available_column}", source=path)
     available_values = frame[spec.available_column].copy() if spec.available_column else None
-    frame["source_timestamp"] = raw
-    frame["datetime"] = event
-    frame["event_ns"] = ns
-    frame["bar_ns"] = ns
-    frame["trading_day"] = key.trading_day
     if spec.available_column:
         available = timestamps(available_values, spec.timezone)
-        frame["available_ns"] = _nanoseconds(available)
+        available_ns = _nanoseconds(available)
     else:
-        frame["available_ns"] = ns
-    if frame.available_ns.lt(ns).any():
+        available, available_ns = event, ns
+    if available_ns.lt(ns).any():
         fail("INVALID_TIMESTAMP", "Availability precedes completed minute", source=path)
-    frame["available_datetime"] = pd.to_datetime(frame.available_ns, utc=True).dt.tz_convert(spec.timezone)
+    # The timezone was already normalized above. Preserve the original ns dtype
+    # without parsing the same integer clock through pandas a second time.
+    available_datetime = (available.dt.as_unit("ns") if hasattr(available.dt, "as_unit") else available)
+    frame = _attach_time_columns(frame, {"source_timestamp": raw, "datetime": event,
+        "event_ns": ns, "bar_ns": ns, "trading_day": key.trading_day,
+        "available_ns": available_ns, "available_datetime": available_datetime})
     issues = []
     if spec.zero_price_policy == "drop":
         prices = [name for name in ("open", "high", "low", "close") if name in spec.required_fields]
@@ -181,11 +208,23 @@ def read_bar_frame(path, spec=None, key=None, *, copy_frame=True):
             record_issue(issue)
             frame = frame.loc[~zeros].copy()
     for name in spec.required_fields:
-        frame[name] = pd.to_numeric(frame[name], errors="coerce")
-        finite = _finite_values(frame[name])
-        valid = finite & (frame[name].ge(0) if name in {"volume", "open_interest"} else frame[name].gt(0))
-        if name == "volume" and spec.require_integer_volume:
-            valid &= frame[name].mod(1).eq(0)
+        values = frame[name]
+        array = _native_numbers(values)
+        if array is None:
+            frame[name] = pd.to_numeric(values, errors="coerce")
+            values = frame[name]
+            array = _native_numbers(values)
+        if array is not None and np.isfinite(array).all():
+            valid = array >= 0 if name in {"volume", "open_interest"} else array > 0
+            if name == "volume" and spec.require_integer_volume:
+                valid &= array % 1 == 0
+        else:
+            # Keep nullable/non-finite/special-type diagnostics and arithmetic
+            # behavior; the ordinary, finite case avoids repeated Series ops.
+            finite = _finite_values(values)
+            valid = finite & (values.ge(0) if name in {"volume", "open_interest"} else values.gt(0))
+            if name == "volume" and spec.require_integer_volume:
+                valid &= values.mod(1).eq(0)
         for index in frame.index[~valid]:
             issue = InputIssue("INVALID_BAR_FIELDS", f"Invalid {name}",
                 "WARNING" if spec.value_policy == "research_audited" else "ERROR",

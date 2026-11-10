@@ -910,6 +910,20 @@ XY上一轮已安装新内核的基线为`run_case=789.960931s`、
 这是本地小文件准备基准，不代表XY完整回测的提速比例。
 同步及验证见[行情准备优化交接](../../doc/HANDOFF/demos/HANDOFF_BAR_PREPARATION_VECTORIZE_2026-11-10.md)。
 
+第二轮进一步减少每个小文件的Pandas列/Series创建：批量组装时间列，直接复用已标准化
+的可用时间；普通有限数值列使用原类型数组检查，不重复转换或创建Series掩码。
+混合、可空、非有限及特殊数值保持原兼容路径，列顺序、元数据和错误报告不变。
+本地与上一版交替执行的小文件基准下降约33%，XY完整收益待验证。
+本轮XY基线为加载`252.148737s`、总计`719.843958s`。
+见[第二轮更新和Bar转换说明](../../doc/HANDOFF/demos/HANDOFF_BAR_PREPARATION_BULK_2026-11-10.md)。
+
+Bar对象转换是加载校验之后的独立阶段：`feature/backtest.py:run_replay`调用
+`FileReplayFeed.load_events`，由`PreparedFrameReader`从已准备的DataFrame逐行输出，
+`FixedInstrumentBarParser`补合约身份、`MappedBarParser.parse`解析时间和数值，
+经`make_bar`生成原生`Bar/Price/Quantity/BarType`，再按订阅收集事件。
+`replay_event_conversion`包含此过程（最近XY约111.875s），事件排序另计约1.268s；
+该阶段还未推进模拟时间，也不重新读取Feather或执行策略决策。
+
 ### 长区间回测进度与特征缓存
 
 `Registered Strategy`后会先转换、排序全部文件Bar，再预处理特征帧，之后才推进模拟撮合。
