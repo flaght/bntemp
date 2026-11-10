@@ -107,7 +107,11 @@ def main(argv=None):
         resources.enter_context(strategy_state_lock(config['account_state_file']+'.continuous-owner'))
         saved = JsonStateStore(config['account_state_file']).load()
         if saved is None:
-            parser.error('公共账户账本不存在；请在account.json中配置已有公共账户账本，不自动创建空账本')
+            parser.error(
+                f"公共账户账本不存在: {config['account_state_file']}\n"
+                'account_state_file的相对路径以账户JSON所在目录为基准。'
+                '已有纯账户账本请填写其实际路径；只有旧Hybrid/08账本时须先一次性迁移，'
+                '见demos/shared_account/README.md。不自动创建空账本。')
         registry = validate_registry(saved.payload['component_states'].get('execution_registry'))
         calendar = load_account_calendar(registry)
         discovery = (args.runtime_dir or Path(config['account_state_file']).parent/'service')/'current.json'
