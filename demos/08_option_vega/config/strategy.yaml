@@ -130,7 +130,7 @@ experiment_setups:
     index_feature_config: demos/08_option_vega/feature/index.json
     index_dataset: index.minute
     index_schema_version: 1
-    index_poll_seconds: 1
+    index_poll_seconds: 0.2
     reference_source: dolphindb
     frame_wait_seconds: 20
     run_forever: true

@@ -13,7 +13,7 @@ from types import MappingProxyType
 from typing import Any, Mapping
 
 from bomber.framework.market.basic.base import InstrumentId
-from bomber.framework.trader.contracts import TargetPortfolio, TargetUpdateMode
+from bomber.framework.trader.contracts import ExecutionRoute, TargetPortfolio, TargetUpdateMode
 
 
 class StaleRevisionError(ValueError):
@@ -380,6 +380,21 @@ class PositionManager:
     def position(self, strategy_id: str, target_key: str) -> Decimal:
         with self._lock:
             return self._strategy_positions.get((strategy_id, target_key), Decimal(0))
+
+    def strategy_quantities(
+        self, strategy_id: str, routes: Mapping[str, ExecutionRoute],
+    ) -> tuple[dict[str, Decimal], dict[str, Decimal]]:
+        """Detached strategy positions/working maps for validated static routes.
+
+        Positions retain logical-target aggregation across old/new instruments;
+        working quantities retain the current route's client and instrument scope.
+        """
+        with self._lock:
+            zero = Decimal(0)
+            actual = {key: self._strategy_positions.get((strategy_id, key), zero)
+                      for key in routes}
+            working = self.attribution.working_quantities(strategy_id, routes)
+            return actual, working
 
     def set_strategy_position(
         self,

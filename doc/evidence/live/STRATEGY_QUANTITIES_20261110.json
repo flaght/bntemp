@@ -1,0 +1,81 @@
+{
+  "date": "2026-11-10",
+  "scope": "Historical per-frame strategy position and attributed working-quantity batch reads",
+  "production_files": [
+    "bomber/framework/trader/template.py",
+    "bomber/framework/trader/runner.py",
+    "bomber/framework/trader/portfolio.py",
+    "bomber/framework/trader/execution/attribution.py",
+    "demos/08_option_vega/strategy.py"
+  ],
+  "contracts": {
+    "same_full_universe_and_zero_keys": true,
+    "no_cross_frame_state_cache": true,
+    "historical_standard_position_manager_only": true,
+    "live_and_custom_providers_use_scalar_reads": true,
+    "strategy_formulas_and_decision_order_unchanged": true,
+    "native_engine_changed": false,
+    "rebuild_wheel_required": false
+  },
+  "xy_baseline_before_this_change": {
+    "strategy_decision_seconds": 163.579214,
+    "run_case_seconds": 614.757041,
+    "simulation_engine_including_decisions_seconds": 294.515605,
+    "process_seconds": 633.492,
+    "events": 1488480,
+    "frames": 45839,
+    "entries": 179,
+    "orders": 1048,
+    "fills": 1060
+  },
+  "validation": {
+    "offline_regressions": 226,
+    "new_tests": 8,
+    "additional_targeted_suite_tests": 54,
+    "frame_ast_equal_outside_quantity_read": true,
+    "differential": {
+      "cases": 600,
+      "equivalent": true,
+      "outcomes": {
+        "RESUME_WAIT": 46,
+        "NO_TARGET_CHANGE": 337,
+        "TARGET_SUBMITTED": 157,
+        "RuntimeError": 13,
+        "FINAL_FLAT_CHECK": 47
+      },
+      "scope": "Original saved _frame vs modified _frame using actual Runner, PositionManager and attribution; SDK entities replaced"
+    },
+    "local_benchmark": [
+      {
+        "contracts": 459,
+        "frames": 1500,
+        "active_orders": 0,
+        "scalar_seconds": 0.958288,
+        "bulk_seconds": 0.381241,
+        "reduction_percent": 60.22,
+        "scope": "Actual _frame/Runner/PositionManager/attribution; no native matching or IV workload",
+        "method": "One warmup then median of three alternating runs"
+      },
+      {
+        "contracts": 459,
+        "frames": 1500,
+        "active_orders": 4,
+        "scalar_seconds": 1.168718,
+        "bulk_seconds": 0.386135,
+        "reduction_percent": 66.96,
+        "scope": "Actual _frame/Runner/PositionManager/attribution; no native matching or IV workload",
+        "method": "One warmup then median of three alternating runs"
+      }
+    ],
+    "git_diff_check": "passed",
+    "compileall": "passed",
+    "sdk_entities": "offline fixtures; actual Python strategy, Runner, PositionManager, attribution and clients",
+    "native_full_backtest": "not run locally; pending XY performance and full financial-result comparison"
+  },
+  "native_followup_candidates": [
+    "Guard per-batch INFO formatting before building strings at WARNING level",
+    "Profile per-event datetime conversion, clock setup and iterator initialization",
+    "Evaluate a native one-event entry point with identical timer, settlement and message-drain boundaries",
+    "Batching by minute/day changes timer exhaustion boundaries and requires separate equivalence verification"
+  ]
+}

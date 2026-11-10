@@ -6,7 +6,7 @@ from collections import defaultdict
 from dataclasses import dataclass, replace
 from decimal import Decimal
 import threading
-from typing import Any
+from typing import Any, Iterable
 
 from bomber.framework.market.basic.base import (
     Bar,
@@ -56,6 +56,11 @@ class _RuntimeContext(StrategyContext):
 
     def position(self, target_key: str) -> Decimal:
         return self._runner.position(self._strategy_id, target_key)
+
+    def position_quantities(
+        self, target_keys: Iterable[str],
+    ) -> tuple[dict[str, Decimal], dict[str, Decimal]]:
+        return self._runner.position_quantities(self._strategy_id, target_keys)
 
     def account_position(self, target_key: str) -> Decimal:
         return self._runner.account_position(self._strategy_id, target_key)
@@ -605,6 +610,24 @@ class UnifiedStrategyRunner:
         if registration is None or target_key not in registration.execution_routes:
             raise ValueError(f"未知策略目标: {strategy_id}/{target_key}")
         return self._position_provider.position(strategy_id, target_key)
+
+    def position_quantities(
+        self, strategy_id: str, target_keys: Iterable[str],
+    ) -> tuple[dict[str, Decimal], dict[str, Decimal]]:
+        """Batch historical ledger reads; retain Live/custom-provider semantics.
+
+        The historical runner dispatches fills and decisions on the same thread.
+        Its standard ledger can read all requested quantities under one lock,
+        scanning active allocation plans once rather than once per target.
+        """
+        keys = tuple(target_keys)
+        if (self.mode is RuntimeMode.HISTORICAL
+                and self._position_provider is self._position_manager
+                and type(self._position_manager) is PositionManager):
+            routes = {key: self._static_execution_route(strategy_id, key) for key in keys}
+            return self._position_manager.strategy_quantities(strategy_id, routes)
+        return ({key: self.position(strategy_id, key) for key in keys},
+                {key: self.strategy_working_quantity(strategy_id, key) for key in keys})
 
     def _static_execution_route(self, strategy_id: str, target_key: str) -> ExecutionRoute:
         registration = self._registrations.get(strategy_id)

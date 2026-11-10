@@ -359,8 +359,12 @@ class OptionVegaStrategy(StrategyTemplate):
         self.frames += 1
         now = datetime.fromtimestamp(signal_ns / 1e9, ZoneInfo("Asia/Shanghai"))
         day, slot = now.date(), now.strftime("%H:%M")
-        actual = {key: self.position(str(instrument)) for key, instrument in self.instruments.items()}
-        working = {key: self.strategy_working_quantity(str(instrument)) for key, instrument in self.instruments.items()}
+        # Read the same full contract universe once. No cross-frame state cache:
+        # fills, in-flight shares and settlement changes are visible every frame.
+        target_keys = {key: str(instrument) for key, instrument in self.instruments.items()}
+        positions, pending = self.position_quantities(target_keys.values())
+        actual = {key: positions[target] for key, target in target_keys.items()}
+        working = {key: pending[target] for key, target in target_keys.items()}
         expired = {key for key, stamp in self.option_last_trade_times.items() if request_ns >= stamp}
         expired_futures = {key for key, stamp in self.future_last_trade_times.items() if request_ns >= stamp}
         expired_all = expired | expired_futures
