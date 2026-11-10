@@ -3,10 +3,11 @@ experiment_setups:
     workers_option:
       description: "原生run_live入口；本进程运行Vega，连接独立账户服务"
       execution_channel: shared
+      strategy_id: option-vega-fresh
       account_config: demos/shared_account/account.json
       live_config_id: live_simnow
-      env_file: work1/env1
-      state_file: demos/08_option_vega/results/live/state/worker_signal.json
+      env_file: demos/08_option_vega/config/.env
+      state_file: demos/08_option_vega/results/live/state/worker_signal_fresh.json
       prepare_seconds: 600
       run_forever: true
       connect: true
@@ -149,4 +150,4 @@ experiment_setups:
       query_timeout: 30
       log_level: INFO
       report_dir: demos/08_option_vega/results/live
-  
+

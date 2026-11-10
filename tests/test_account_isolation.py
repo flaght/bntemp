@@ -460,7 +460,10 @@ class AccountJoinMigrationTests(unittest.TestCase):
     def test_first_migration_uses_the_aligned_business_copy_without_rewriting_the_old_signal(self):
         self.run_first_migration(aligned_signal=True)
 
-    def run_first_migration(self, *, aligned_signal=False):
+    def test_fresh_option_never_reads_old_option_files_preserves_hybrid_and_keeps_external_positions(self):
+        self.run_first_migration(fresh_option=True)
+
+    def run_first_migration(self, *, aligned_signal=False, fresh_option=False):
         from tests import test_option_workers as worker_fixtures
         f = worker_fixtures.WorkerRegistrationTests('runTest')
         f.setUp(); self.addCleanup(f.doCleanups)
@@ -494,6 +497,12 @@ class AccountJoinMigrationTests(unittest.TestCase):
             f.signal['revision'] = 0
             f.signal['signal'] = {'goals':[0], 'sent_days':[], 'hedge_sent':[]}
         JsonStateStore(signal_path).save(f.signal,expected_generation=0)
+        if fresh_option:
+            expected_signal = dict(version=1, option_goals={str(f.f.p):'0'}, future_goals={},
+                sent_days=[], hedge_sent=[], submissions=0, entry_decisions=0, flatten_requested=False)
+            f.new_account.option_sessions[f.sid].signal_checkpoint = NS(
+                snapshot_state=lambda:deepcopy(expected_signal))
+            signal_path.write_text('old 08 signal deliberately unreadable in fresh mode')
         combined = {**settings,'account_state_file':str(base_path),'strategies':rows}
         source_files = {path:path.read_bytes() for path in [base_path,option_path,signal_path,
             *(Path(row['state_file']) for row in rows[:-1])]}
@@ -505,19 +514,30 @@ class AccountJoinMigrationTests(unittest.TestCase):
             return NS(account=f.new_account,service=f.new_service,resources=f.new_account.resources,
                 strategies={sid:NS(session=fake_session) for sid in f.current['strategies']})
         args = ['--account-config',str(account_file),'--source-config','explicit-legacy.json',
-            '--trading-day','20261013','--option-checkpoint',str(option_path),'--option-signal',str(signal_path),
-            '--connect','--apply']
+            '--trading-day','20261013','--connect','--apply']
+        args += ['--fresh-option'] if fresh_option else [
+            '--option-checkpoint',str(option_path),'--option-signal',str(signal_path)]
+        original_load = JsonStateStore.load
+        def load(store):
+            if fresh_option and store.path in {option_path,signal_path}:
+                raise AssertionError('全新08禁止读取旧08文件')
+            return original_load(store)
         with patch('scripts.integration.shared_account.run_workers.load_config',return_value=(combined,{'base_config':'explicit-original.json'})), \
                 patch('scripts.integration.shared_account.config.read_config',return_value=original), \
                 patch('scripts.integration.shared_account.config.load_environment'), \
+                patch.object(JsonStateStore, 'load', load), \
                 patch('scripts.integration.shared_account.run.build_host',side_effect=build), redirect_stdout(StringIO()):
             migrate_account.main(args)
         self.assertTrue(all(path.read_bytes() == content for path,content in source_files.items()))
         payload = JsonStateStore(settings['account_state_file']).load().payload
         positions = {(row['strategy_id'],row['target_key']):row['quantity'] for row in payload['positions']['strategy_positions']}
         self.assertEqual(positions[('hybrid-rb','rb_main')],'2')
-        self.assertEqual(positions[(f.sid,str(f.f.p))],'-1')
-        self.assertEqual(orders_for_day(payload,'20261013'),2)
+        self.assertEqual(positions.get((f.sid,str(f.f.p)),'0'),'0' if fresh_option else '-1')
+        self.assertEqual(orders_for_day(payload,'20261013'),1 if fresh_option else 2)
+        if fresh_option:
+            self.assertEqual(payload['orders'],f.base['orders'])
+            self.assertEqual(payload['component_states']['external_positions']['gross'][str(f.f.p)],['0','1'])
+            self.assertEqual(payload['component_states']['shared_account']['shared']['event_journal']['events'][f.sid],[])
         self.assertEqual(set(payload['component_states']['execution_registry']['ports']),set(f.current['strategies']))
         self.assertEqual(payload['component_states']['shared_account']['shared']['bootstrap_signals'][f.sid],
             expected_signal)

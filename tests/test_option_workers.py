@@ -49,7 +49,9 @@ class WorkerLaunchTests(unittest.TestCase):
         self.assertEqual(args.config.max_total_option_lots, 2)
         self.assertEqual(args.config.max_future_lots, 1)
         self.assertEqual(config['account_env_file'],str(root/'work2/env2'))
-        self.assertEqual(config['strategy_env_files']['option-vega-live'],str(root/'work1/env1'))
+        self.assertEqual(row['strategy_id'], 'option-vega-fresh')
+        self.assertTrue(config['strategy_env_files'][row['strategy_id']].endswith(
+            '/demos/08_option_vega/config/.env'))
 
     def calendars(self):
         def calendar(windows):

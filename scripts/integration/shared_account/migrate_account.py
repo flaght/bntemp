@@ -49,7 +49,7 @@ def isolate_payload(payload, config, registry):
     return result
 
 
-def read_sources(account, source_launch, option_path=None, signal_path=None):
+def read_sources(account, source_launch, option_path=None, signal_path=None, *, fresh_option=False):
     from .run_workers import load_config
     from .config import read_config
     from .register_worker import validate_source_configuration, validate_option_signal, quiescent
@@ -70,7 +70,13 @@ def read_sources(account, source_launch, option_path=None, signal_path=None):
     rows = {row['strategy_id']:row for row in combined['strategies']}
     incoming, = [row for row in rows.values() if row['kind'] == 'option_vega']
     joining = incoming['strategy_id'] not in identity['strategies']
+    if fresh_option and not joining:
+        raise ValueError('全新08策略ID已存在于原账户，不能清空原归属重新开始')
+    if fresh_option and (option_path or signal_path or sources.get('option_checkpoint') or sources.get('option_signal')):
+        raise ValueError('fresh-option不能同时指定旧08账本或信号')
     original = read_config(sources['base_config']) if sources.get('base_config') else None
+    if joining and Path(incoming['state_file']).exists():
+        raise ValueError('新08信号路径已占用，须使用独立未占用路径，不覆盖原文件')
     if joining:
         if original is None:
             raise ValueError('旧注册来源缺少原账户配置')
@@ -94,7 +100,7 @@ def read_sources(account, source_launch, option_path=None, signal_path=None):
             raise ValueError(f'原策略信号/批次与账户身份不一致: {sid}')
         source_files[path] = path.read_bytes()
     option = signal = None
-    if joining:
+    if joining and not fresh_option:
         option_path = option_path or sources.get('option_checkpoint')
         if not option_path:
             raise ValueError('首次合入08须提供option-checkpoint；不能以空归属开始')
@@ -129,6 +135,7 @@ def main(argv=None):
     parser.add_argument('--trading-day', type=trading_day, required=True)
     parser.add_argument('--option-checkpoint', type=Path)
     parser.add_argument('--option-signal', type=Path)
+    parser.add_argument('--fresh-option', action='store_true', help='08作为全新策略登记；不读取旧08账本和信号')
     parser.add_argument('--connect', action='store_true')
     parser.add_argument('--apply', action='store_true')
     args = parser.parse_args(argv)
@@ -136,7 +143,8 @@ def main(argv=None):
         parser.error('提交迁移须同时connect和apply；默认只检查文件')
     account = read_account_config(args.account_config)
     account['trading_day'] = args.trading_day
-    data = read_sources(account,args.source_config,args.option_checkpoint,args.option_signal)
+    data = read_sources(account,args.source_config,args.option_checkpoint,args.option_signal,
+        fresh_option=args.fresh_option)
     if not args.apply:
         print(json.dumps(dict(status='files_checked',orders_enabled=False,
             account_state_file=account['account_state_file'],source_files=len(data[-1])),ensure_ascii=False))
@@ -152,7 +160,7 @@ def main(argv=None):
             locks.enter_context(strategy_state_lock(path))
         # 锁内重读，不能使用用户检查期间可能已变化的代次。
         combined, original, base, option, signal, source_files = read_sources(
-            account,args.source_config,args.option_checkpoint,args.option_signal)
+            account,args.source_config,args.option_checkpoint,args.option_signal,fresh_option=args.fresh_option)
         source_account_path = Path(combined['account_state_file'])
         source_account_raw = source_files[source_account_path]
         temporary = Path(directory)/'source-account.json'
@@ -167,9 +175,11 @@ def main(argv=None):
             for row in combined['strategies']:
                 locks.enter_context(strategy_state_lock(row['state_file']+'.worker-owner'))
             transform = None
-            if option is not None:
-                transform = lambda payload:registration_payload(host.account,payload,option.payload,signal.payload,
-                    original,strategy_limits_only=combined['account']['max_gross_quantity'] is None)
+            if option is not None or args.fresh_option:
+                transform = lambda payload:registration_payload(host.account,payload,
+                    option.payload if option else None,signal.payload if signal else None,
+                    original,strategy_limits_only=combined['account']['max_gross_quantity'] is None,
+                    fresh_option=args.fresh_option)
             host.account.start(resume=True,commit_restored=False,payload_transform=transform)
             host.account.manager.validate_components()
             registry = registry_from_host(host)

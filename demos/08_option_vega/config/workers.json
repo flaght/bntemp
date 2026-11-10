@@ -1,9 +1,9 @@
 {
   "env_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/demos/08_option_vega/config/.env",
   "strategies": [{
-    "strategy_id": "option-vega-live",
+    "strategy_id": "option-vega-fresh",
     "kind": "option_vega",
-    "state_file": "../results/live/state/worker_signal.json",
+    "state_file": "../results/live/state/worker_signal_fresh.json",
     "argv": ["--config-file", "strategy.yaml", "--config-id", "live_simnow"]
   }]
 }

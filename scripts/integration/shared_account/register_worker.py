@@ -145,11 +145,10 @@ def merge_positions(base, incoming, client, old_client, base_day, option_day):
     return incoming
 
 
-def registration_payload(account, payload, option, option_signal, base_config, *, strategy_limits_only):
+def registration_payload(account, payload, option, option_signal, base_config, *, strategy_limits_only,
+                         fresh_option=False):
     """变换只作用于暂存副本；RuntimeStateManager在柜台核验成功后才提交。"""
-    from bomber.framework.trader.runtime.live.channels.ctp_owned import restore_external_baseline
     from .rollover import validate_strategy_identity
-    from bomber.framework.trader.runtime.live.channels.ctp_rollover import observe_rollover
     current = account.manager.state_components['session_identity'].identity
     old = validate_source_configuration(payload, base_config)
     original_ids = {row['strategy_id'] for row in base_config['strategies']}
@@ -175,6 +174,10 @@ def registration_payload(account, payload, option, option_signal, base_config, *
         raise ValueError('注册不能改变原账户执行政策或身份')
     client = account.service.client_id
     quiescent(payload, client)
+    if fresh_option:
+        if option is not None or option_signal is not None:
+            raise ValueError('全新08不能同时导入原08账本或信号')
+        return fresh_option_payload(account, payload, current, added)
     option = deepcopy(option)
     if len(option['ctp_drivers']) != 1:
         raise ValueError('原08须为唯一CTP成交客户端')
@@ -251,7 +254,41 @@ def registration_payload(account, payload, option, option_signal, base_config, *
     target['known_instruments'] = known
     payload['portfolio']['known_keys'] = [dict(client_id=client, instrument_id=i) for i in known]
     target['shared']['suspended'] = sorted(set(target['shared']['suspended']) | {added})
+    return finish_registration(account, payload, current)
+
+
+def fresh_option_payload(account, payload, current, added):
+    """显式新登记08：不读取原08，不创建历史成交，柜台余仓留在外部基线。"""
+    if current['strategies'][added]['kind'] != 'option_vega':
+        raise ValueError('全新登记仅用于08策略')
+    session = account.option_sessions[added]
+    signal = deepcopy(session.signal_checkpoint.snapshot_state())
+    if (any(Decimal(q) for name in ('option_goals', 'future_goals') for q in signal[name].values())
+            or signal['sent_days'] or signal['hedge_sent'] or signal['submissions']
+            or signal['entry_decisions'] or signal['flatten_requested']):
+        raise ValueError('全新08须使用空目标、空选约和对冲标记及零计数')
+    target = payload['component_states']['shared_account']
+    declaration = account.service.snapshot_state()['shared']
+    routes = declaration['routes'][added]['routes']
+    for name in ('routes', 'budget', 'managed_instruments'):
+        target['shared'][name] = deepcopy(declaration[name])
+    target['shared'].setdefault('bootstrap_signals', {})[added] = signal
+    journal = target['shared'].setdefault('event_journal',
+        {'version':1, 'events':{}, 'ack':{}, 'requests':{}})
+    journal['events'][added], journal['ack'][added] = [], 0
+    target['known_instruments'] = sorted(set(target['known_instruments']) | set(routes.values()))
+    payload['portfolio']['known_keys'] = [dict(client_id=account.service.client_id, instrument_id=i)
+        for i in target['known_instruments']]
+    target['shared']['suspended'] = sorted(set(target['shared']['suspended']) | {added})
+    return finish_registration(account, payload, current)
+
+
+def finish_registration(account, payload, current):
     from bomber.framework.trader.runtime.live.continuous import orders_for_day
+    from bomber.framework.trader.runtime.live.channels.ctp_owned import restore_external_baseline
+    from bomber.framework.trader.runtime.live.channels.ctp_rollover import observe_rollover
+    client = account.service.client_id
+    target = payload['component_states']['shared_account']
     budget = dict(limit=current['account']['max_session_orders'], submitted=orders_for_day(payload, account.expected_day))
     account.driver.restore_order_budget(budget)
     target['shared']['order_budget'] = budget

@@ -66,12 +66,12 @@ class NativeEntryTests(unittest.TestCase):
             def run(self): return self.factory(window, stopped).run()
         def make(current, row, credentials, **kwargs):
             self.assertEqual(kwargs['stop_at'], window.end)
-            self.assertEqual(row['strategy_id'], 'option-vega-live')
+            self.assertEqual(row['strategy_id'], 'option-vega-fresh')
             return NS(strategy_id=row['strategy_id'], run=lambda stop: seen.append(os.getpid()))
         with patch('bomber.framework.cli.load_environment'), \
                 patch('bomber.framework.dataprep.session_inputs.load_session_inputs', return_value=NS()), \
                 patch.object(vega, 'validate_calendar'), \
-                patch.object(native, 'window_credentials', return_value={'option-vega-live': Path('/tmp/fixture.json')}), \
+                patch.object(native, 'window_credentials', return_value={'option-vega-fresh': Path('/tmp/fixture.json')}), \
                 patch.object(native, 'resume_available', return_value=True), \
                 patch.object(vega, 'build_shared_runtime', side_effect=make), \
                 patch('bomber.framework.trader.runtime.live.continuous.ContinuousPositionRuntime', Continuous), \
