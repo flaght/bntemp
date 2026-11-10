@@ -475,6 +475,70 @@ class WorkerRegistrationTests(unittest.TestCase):
             self.assertNotIn('private-identity-value', message)
         self.assertEqual((self.option, self.signal), before)
 
+    def test_lagging_signal_uses_only_the_account_aligned_business_copy(self):
+        option, signal = deepcopy(self.option), deepcopy(self.signal)
+        shared = option['component_states']['shared_account']
+        shared['strategy_revisions'][self.sid] = 14
+        source = shared['sources'][self.sid]
+        source['revision'] = 14
+        aligned = {'goals':[-1], 'sent_days':['2026-10-13'], 'hedge_sent':['2026-10-13_14:00']}
+        source.setdefault('metadata', {})['checkpoint_alignment'] = dict(revision=14, signal=aligned)
+        signal['revision'] = 4
+        signal['signal'] = {'goals':[0], 'sent_days':[], 'hedge_sent':[]}
+        before = deepcopy((option, signal))
+        selected = register_worker.validate_option_signal(option, signal, self.sid)
+        self.assertEqual(selected, aligned)
+        selected['goals'][0] = 999
+        self.assertEqual((option, signal), before)
+
+    def test_alignment_never_accepts_wrong_identity_version_missing_business_or_ahead_signal(self):
+        for reason in ('missing', 'old_alignment', 'wrong_source', 'missing_signal', 'ahead', 'identity'):
+            option, signal = deepcopy(self.option), deepcopy(self.signal)
+            shared = option['component_states']['shared_account']
+            shared['strategy_revisions'][self.sid] = 14
+            source = shared['sources'][self.sid]
+            source['revision'] = 14
+            alignment = dict(revision=14, signal={'goals':[-1]})
+            source.setdefault('metadata', {})['checkpoint_alignment'] = alignment
+            signal['revision'] = 4
+            if reason == 'missing':
+                source['metadata'].pop('checkpoint_alignment')
+            elif reason == 'old_alignment':
+                alignment['revision'] = 13
+            elif reason == 'wrong_source':
+                source['revision'] = 13
+            elif reason == 'missing_signal':
+                alignment.pop('signal')
+            elif reason == 'ahead':
+                signal['revision'] = 15
+            else:
+                signal['identity']['reference']['td_day'] = '20261012'
+            before = deepcopy((option, signal))
+            with self.subTest(reason=reason), self.assertRaisesRegex(ValueError, '原08信号与成交账户'):
+                register_worker.validate_option_signal(option, signal, self.sid)
+            self.assertEqual((option, signal), before)
+
+    def test_real_registration_restores_and_bootstraps_the_aligned_signal_without_editing_sources(self):
+        from bomber.framework.trader.persistence import JsonStateStore
+        aligned = {'goals':[-1], 'sent_days':['2026-10-13'], 'hedge_sent':['2026-10-13_14:00']}
+        source = self.option['component_states']['shared_account']['sources'][self.sid]
+        source.setdefault('metadata', {})['checkpoint_alignment'] = dict(revision=1, signal=deepcopy(aligned))
+        self.signal['revision'] = 0
+        self.signal['signal'] = {'goals':[0], 'sent_days':[], 'hedge_sent':[]}
+        restored = []
+        self.new_account.option_sessions[self.sid].restore_signal = lambda state: restored.append(deepcopy(state))
+        before = deepcopy((self.base, self.option, self.signal))
+        source_path = self.option_account.manager.repository.path
+        original_bytes = source_path.read_bytes()
+        JsonStateStore(self.new_account.manager.repository.path).save(self.base, expected_generation=0)
+        self.new_account.start(resume=True, payload_transform=self.transform)
+        self.assertEqual(restored, [aligned])
+        self.assertEqual(self.new_service.bootstrap_signals[self.sid], aligned)
+        self.assertEqual(self.new_service.position_manager.position(self.sid, str(self.f.p)), -1)
+        self.assertEqual((self.base, self.option, self.signal), before)
+        self.assertEqual(source_path.read_bytes(), original_bytes)
+        self.assertFalse(self.new_transport.sent)
+
     def test_unacknowledged_fills_and_different_ctp_account_are_rejected(self):
         broken=deepcopy(self.base)
         broken['component_states']['shared_account']['shared']['event_journal']['ack']['hybrid-rb']=0

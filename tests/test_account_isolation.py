@@ -455,6 +455,12 @@ class AccountJoinMigrationTests(unittest.TestCase):
         self.assertFalse(Path(settings['account_state_file']).exists())
 
     def test_first_migration_merges_existing_hybrid_and_option_ownership_without_touching_sources(self):
+        self.run_first_migration()
+
+    def test_first_migration_uses_the_aligned_business_copy_without_rewriting_the_old_signal(self):
+        self.run_first_migration(aligned_signal=True)
+
+    def run_first_migration(self, *, aligned_signal=False):
         from tests import test_option_workers as worker_fixtures
         f = worker_fixtures.WorkerRegistrationTests('runTest')
         f.setUp(); self.addCleanup(f.doCleanups)
@@ -476,6 +482,17 @@ class AccountJoinMigrationTests(unittest.TestCase):
         base_saved = base_store.load()
         base_saved.payload['component_states']['session_identity']['identity']['environment'] = 'realtime'
         base_store.save(base_saved.payload,expected_generation=base_saved.generation)
+        expected_signal = deepcopy(f.signal['signal'])
+        if aligned_signal:
+            expected_signal.update(sent_days=['2026-10-13'], hedge_sent=['2026-10-13_14:00'])
+            option_store = JsonStateStore(option_path)
+            option_saved = option_store.load()
+            source = option_saved.payload['component_states']['shared_account']['sources'][f.sid]
+            source.setdefault('metadata', {})['checkpoint_alignment'] = dict(
+                revision=f.signal['revision'], signal=deepcopy(expected_signal))
+            option_store.save(option_saved.payload, expected_generation=option_saved.generation)
+            f.signal['revision'] = 0
+            f.signal['signal'] = {'goals':[0], 'sent_days':[], 'hedge_sent':[]}
         JsonStateStore(signal_path).save(f.signal,expected_generation=0)
         combined = {**settings,'account_state_file':str(base_path),'strategies':rows}
         source_files = {path:path.read_bytes() for path in [base_path,option_path,signal_path,
@@ -502,6 +519,8 @@ class AccountJoinMigrationTests(unittest.TestCase):
         self.assertEqual(positions[(f.sid,str(f.f.p))],'-1')
         self.assertEqual(orders_for_day(payload,'20261013'),2)
         self.assertEqual(set(payload['component_states']['execution_registry']['ports']),set(f.current['strategies']))
+        self.assertEqual(payload['component_states']['shared_account']['shared']['bootstrap_signals'][f.sid],
+            expected_signal)
         self.assertFalse(f.new_transport.sent)
 
 

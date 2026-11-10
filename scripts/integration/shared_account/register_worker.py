@@ -31,7 +31,7 @@ def validate_source_configuration(payload, config):
 
 
 def validate_option_signal(option, signal, strategy_id):
-    """原08信号须与原成交账本配套；仅报告身份字段路径及目标版本。"""
+    """核验原08身份，返回匹配账户版本的业务信号；保留原文件。"""
     from bomber.framework.trader.runtime.live.recovery import identity_difference_paths
     previous = option['component_states']['session_identity']['identity']
     shared = option['component_states'].get('shared_account')
@@ -43,12 +43,28 @@ def validate_option_signal(option, signal, strategy_id):
         differences.append('身份差异字段='
             + ', '.join(identity_difference_paths(expected, signal['identity'])))
     revision = shared['strategy_revisions'].get(strategy_id, 0)
+    selected = signal.get('signal')
     if signal['revision'] != revision:
-        show = lambda value: str(value) if type(value) is int else '<非整数>'
-        differences.append(f"账户revision={show(revision)}, 信号revision={show(signal['revision'])}")
+        source = shared.get('sources', {}).get(strategy_id, {})
+        alignment = source.get('metadata', {}).get('checkpoint_alignment')
+        # 与SharedStrategySession.restore的维护恢复机制一致：只取账户已保存的
+        # 同版本业务副本，不从仓位推测选约/对冲标记，也不改写旧信号版本。
+        if (type(signal['revision']) is int and type(revision) is int
+                and 0 <= signal['revision'] < revision
+                and source.get('revision') == revision and isinstance(alignment, dict)
+                and type(alignment.get('revision')) is int and alignment['revision'] == revision
+                and isinstance(alignment.get('signal'), dict)):
+            selected = alignment['signal']
+        else:
+            show = lambda value: str(value) if type(value) is int else '<非整数>'
+            differences.append(f"账户revision={show(revision)}, 信号revision={show(signal['revision'])}"
+                '；缺少与账户版本一致的checkpoint_alignment业务副本，或信号版本领先账户')
     if differences:
         raise ValueError('原08信号与成交账户身份/来源版本不一致；'
             + '；'.join(differences) + '；须使用配套信号文件，不修改检查点绕过核验')
+    if not isinstance(selected, dict):
+        raise ValueError('原08信号检查点缺少有效业务状态')
+    return deepcopy(selected)
 
 
 def quiescent(payload, client):
@@ -179,7 +195,7 @@ def registration_payload(account, payload, option, option_signal, base_config, *
             raise ValueError('原08与worker策略、来源或风险参数不一致')
     else:
         recovery.validate_identity(reference, new_reference)
-    validate_option_signal(option, option_signal, added)
+    selected_signal = validate_option_signal(option, option_signal, added)
     if any(row['strategy_id'] != added for row in option['positions']['strategy_positions']):
         raise ValueError('原08包含其他策略归属')
     if (set(shared['sources']) - {added} or set(shared['strategy_revisions']) - {added}
@@ -187,7 +203,7 @@ def registration_payload(account, payload, option, option_signal, base_config, *
             or {row['strategy_id'] for row in option['targets']} - {added}):
         raise ValueError('原08包含其他策略目标，不能合并或覆盖')
     restore = account.option_sessions[added].restore_signal
-    restore(option_signal['signal'])  # 校验业务状态及旧非零目标，禁单阶段不能丢弃。
+    restore(selected_signal)  # 校验业务状态及旧非零目标，禁单阶段不能丢弃。
     incoming = merge_positions(payload, option, client, old_client,
         payload['ctp_ledgers'][client]['trading_day'], option['ctp_ledgers'][old_client]['trading_day'])
     shared = incoming['component_states']['shared_account']
@@ -220,7 +236,7 @@ def registration_payload(account, payload, option, option_signal, base_config, *
         payload['portfolio']['contributions'][added] = [dict(key=dict(client_id=client, instrument_id=i), quantity=values[key]) for key, i in routes.items()]
     for name in ('routes', 'budget', 'managed_instruments'):
         target['shared'][name] = deepcopy(declaration[name])
-    target['shared'].setdefault('bootstrap_signals', {})[added] = deepcopy(option_signal['signal'])
+    target['shared'].setdefault('bootstrap_signals', {})[added] = deepcopy(selected_signal)
     journal = target['shared'].setdefault('event_journal', {'version': 1, 'events': {}, 'ack': {}, 'requests': {}})
     source_journal = shared['shared'].get('event_journal', {})
     journal['events'][added] = deepcopy(source_journal.get('events', {}).get(added, []))
