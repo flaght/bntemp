@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Sequence
 from pathlib import Path
+from time import perf_counter
 
 from bomber.backtest.config import BacktestEngineConfig
 from bomber.backtest.engine import BacktestEngine
@@ -35,6 +36,7 @@ class NautilusSimExecutionBackend:
         engine: Any | None = None,
         execution_timing: str = "native",
         execution_delay_bars: int | None = None,
+        performance=None,
     ) -> None:
         if not backend_id.strip():
             raise ValueError("backend_id不能为空")
@@ -50,6 +52,7 @@ class NautilusSimExecutionBackend:
         if execution_timing == "next_market" and execution_delay_bars < 1:
             raise ValueError("next_market模式的execution_delay_bars必须至少为1")
         self.backend_id = backend_id
+        self.performance = performance
         # native保持原有提交行为；next_market仅在本合约严格更晚的新行情后放行。
         self._execution_timing = execution_timing
         self._execution_delay_bars = execution_delay_bars
@@ -213,17 +216,44 @@ class NautilusSimExecutionBackend:
         BacktestEngine掌握。返回值只包含本次事件推进新产生的执行回报。
         """
 
-        self._ensure_runnable()
-        event_ns = int(getattr(event, "ts_init", event.ts_event))
-        if event_ns < self._last_market_ns:
-            raise ValueError("Historical market time cannot move backwards")
-        report_offset = len(self._reports)
-        self.start()
-        if self.execution_timing == "next_market":
-            self._gateway.watch_market_event(event)
-        self.engine.add_data([event])
-        self.engine.run(streaming=True)
-        self.engine.clear_data()
+        performance = self.performance
+        started = perf_counter() if performance is not None else None
+        try:
+            self._ensure_runnable()
+            event_ns = int(getattr(event, "ts_init", event.ts_event))
+            if event_ns < self._last_market_ns:
+                raise ValueError("Historical market time cannot move backwards")
+            report_offset = len(self._reports)
+            # Configuration is sealed after the first start. Keep all lifecycle
+            # and monotonic-clock checks, but do not initialize per market event.
+            if not self._started:
+                self.start()
+            if self.execution_timing == "next_market":
+                self._gateway.watch_market_event(event)
+        finally:
+            if performance is not None:
+                performance.add("simulation_backend_prepare", perf_counter() - started)
+        if performance is None:
+            self.engine.add_data([event])
+            self.engine.run(streaming=True)
+            self.engine.clear_data()
+        else:
+            started = perf_counter()
+            try:
+                self.engine.add_data([event])
+            finally:
+                performance.add("simulation_add_data", perf_counter() - started)
+            started = perf_counter()
+            try:
+                self.engine.run(streaming=True)
+            finally:
+                # Native timer callbacks (and strategy decisions) are included.
+                performance.add("simulation_run_including_decisions", perf_counter() - started)
+            started = perf_counter()
+            try:
+                self.engine.clear_data()
+            finally:
+                performance.add("simulation_clear_data", perf_counter() - started)
         self._streaming = True
         self._last_market_ns = event_ns
         return tuple(self._reports[report_offset:])

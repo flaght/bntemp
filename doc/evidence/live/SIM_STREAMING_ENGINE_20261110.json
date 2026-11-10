@@ -1,0 +1,52 @@
+{
+  "status": "offline_python_and_cython_checks_passed_native_runtime_pending",
+  "revision": "l1-indexed-validation-v1",
+  "framework_base_commit": "f8cb2b2bf4aecf8ba2ef4abd9cab2e6e8205a579",
+  "engine_base_commit": "1724de21fc92a301f936c6b2328db63d6aba701c",
+  "changes": [
+    "index_lookup_instead_of_instrument_ids_list",
+    "skip_depth_universe_scan_for_l1",
+    "start_backend_once_preserve_per_event_lifecycle_checks",
+    "per_stage_prepare_add_run_clear_timings",
+    "record_loaded_compiled_engine_revision"
+  ],
+  "tests": {
+    "simulation_market_timing": {
+      "passed": 25,
+      "sdk_boundary": "offline_host_fixture"
+    },
+    "input_feature_and_performance_regressions": {
+      "passed": 131
+    },
+    "engine_source_validation_contracts": {
+      "passed": 3
+    },
+    "full_engine_cython_to_cpp": {
+      "status": "passed",
+      "cython_version": "3.2.8"
+    },
+    "bomber_namespace_patch": {
+      "status": "clean_apply_exact_source_match"
+    },
+    "native_runtime_regressions": {
+      "status": "not_run_no_compiled_engine",
+      "cases_added": 6
+    }
+  },
+  "xy_baseline_user_supplied": {
+    "run_case_seconds": 1394.073097,
+    "engine_including_decisions_seconds": 892.749016,
+    "strategy_decision_seconds": 158.865303,
+    "events": 1488480,
+    "frames": 45839,
+    "entries": 179,
+    "orders": 1048,
+    "fills": 1060
+  },
+  "limitations": [
+    "No Linux or macOS wheel built",
+    "No native execution or full strategy backtest locally",
+    "XY and DX performance improvements and financial equivalence require server validation",
+    "Framework-only synchronization does not update the compiled engine"
+  ]
+}

@@ -319,7 +319,12 @@ def run_case(args):
     phase = _start_phase("模拟账户与真实合约注册")
     backend = NautilusSimExecutionBackend("option-vega-sim", BacktestEngineConfig(
         trader_id=TraderId("OPTION-VEGA-001"), logging=LoggingConfig(log_level=args.log_level), run_analysis=True),
-        execution_timing=getattr(args, "execution_timing", "native"))
+        execution_timing=getattr(args, "execution_timing", "native"), performance=performance)
+    engine_module = import_module("bomber.backtest.engine")
+    engine_identity = {"module_file": getattr(engine_module, "__file__", None),
+        "streaming_validation_revision": getattr(engine_module, "STREAMING_VALIDATION_REVISION", None),
+        "python_version": sys.version.split()[0]}
+    print("回测内核: " + json.dumps(engine_identity, ensure_ascii=False), flush=True)
     instruments = {}
     multipliers = {}
     output = None
@@ -451,6 +456,7 @@ def run_case(args):
                 "orders": len(orders), "fills": len(fills), "remaining_positions_or_working": remaining,
                 "performance_report": "performance.json",
                 "report_errors": errors, "config": vars(config),
+                "engine_identity": engine_identity,
                 "simulation": "NETTING/BAR/CONFIGURED_FEE/PREMIUM_PERCENT_MARGIN; OPTION_AND_INDEX_FUTURE_CASH_SETTLEMENT",
                 "backend": str(result.backend_result)}
             (output / "feature_frames.json").write_text(json.dumps(runner.frame_audit, ensure_ascii=False, indent=2) + "\n")
@@ -487,6 +493,7 @@ def run_case(args):
         performance.count("trading_days", len(days))
         performance.count("directory_scans", current_session().counters["directory_scans"])
         report = performance.snapshot()
+        report["engine_identity"] = engine_identity
         if output is not None:
             try:
                 (output / "performance.json").write_text(
