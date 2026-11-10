@@ -411,7 +411,7 @@ class CtpSharedAccountLifecycle:
     def validate_stop_connection(self):
         """断线时关闭决策，但不把未核验内存写成新的恢复基准。"""
         if self._started and self._ready and (
-                not self.driver.is_simnow_session or self.driver.trading_day != self.expected_day):
+                not self.driver.is_simnow_authenticated or self.driver.trading_day != self.expected_day):
             self.client.disarm("stop_requires_authoritative_reconciliation")
             self.execution.positions.mark_recovery_required(self.service.client_id)
             self.stop_failure_reason = ("CTP连接失效，停机撤单和最终仓位未核验；"
@@ -434,7 +434,10 @@ class CtpSharedAccountLifecycle:
             self._started = False
             return
         self.validate_stop_connection()
-        self.client.set_risk_mode("HALTED", cancel_active_orders=True)
+        readonly = not self.driver.is_simnow_session
+        if readonly and self.service._active_instruments():
+            raise RuntimeError("禁单会话存在未完成委托，不能撤单或提交迁移")
+        self.client.set_risk_mode("HALTED", cancel_active_orders=not readonly)
         deadline = time.monotonic() + self.cancel_seconds
         # 等本地已知订单的终态，不因每0.2秒查全账户而产生查询风暴。
         while self.service._active_instruments():
@@ -452,7 +455,8 @@ class CtpSharedAccountLifecycle:
                 self.stop_query_attempts, self.query_failure)
             try:
                 # 停机只读核验，不重新授权；资金心跳失败可能已撤销client.reconciled。
-                if not self.driver.is_simnow_session or self.driver.trading_day != self.expected_day:
+                # 禁单迁移也须最终对账；认证有效与报单授权是独立条件。
+                if not self.driver.is_simnow_authenticated or self.driver.trading_day != self.expected_day:
                     raise RuntimeError("停机核验时柜台连接或交易日不符")
                 self.driver.reconcile_account_state()
                 gross, active = self._validate_account()

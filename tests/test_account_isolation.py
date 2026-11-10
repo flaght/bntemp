@@ -189,6 +189,33 @@ class AccountExecutionTests(unittest.TestCase):
         self.assertEqual((self.root/'account.json').read_bytes(),original)
         self.assertEqual(orders_for_day(JsonStateStore(settings['account_state_file']).load().payload,'20261013'),1)
 
+    def test_readonly_authenticated_account_can_finish_stop_without_authorizing_orders(self):
+        settings,_,_,_ = self.migrated(hold=True)
+        host = self.build_pure(settings)
+        sent = deepcopy(self.transport.sent)
+        host.account.driver._enable_simnow_orders = False
+        host.account.driver._enable_test_orders = False
+        self.assertTrue(host.account.driver.is_simnow_authenticated)
+        self.assertFalse(host.account.driver.is_simnow_session)
+        with self.assertRaises(PermissionError):
+            host.account.authorize()
+        host.account.stop()
+        self.assertFalse(host.account._started)
+        self.assertEqual(host.account.final_active_orders, 0)
+        self.assertEqual(self.transport.sent, sent)
+
+    def test_actual_disconnect_still_rejects_readonly_stop_and_keeps_last_checkpoint(self):
+        from bomber.framework.trader.execution.ctp.query_errors import CtpStopReconciliationRequired
+        settings,_,_,_ = self.migrated()
+        host = self.build_pure(settings)
+        host.account.driver._enable_simnow_orders = False
+        before = Path(settings['account_state_file']).read_bytes()
+        host.account.driver.on_disconnect(4097)
+        with self.assertRaises(CtpStopReconciliationRequired):
+            host.account.stop()
+        self.assertEqual(Path(settings['account_state_file']).read_bytes(), before)
+        self.assertFalse(self.transport.sent)
+
     def migration_fixture(self):
         settings,source,_,_ = self.migrated(hold=True)
         settings['account_state_file'] = str(self.root/'isolated-account.json')
@@ -216,6 +243,8 @@ class AccountExecutionTests(unittest.TestCase):
         snapshot = {Path(row['state_file']):Path(row['state_file']).read_bytes() for row in combined['strategies']}
         def build(current,**kwargs):
             self.assertTrue(kwargs['read_only'])
+            self.account.driver._enable_simnow_orders = False
+            self.account.driver._enable_test_orders = False
             self.assertNotEqual(current['account_state_file'],str(source))
             self.account.manager.repository.path = Path(current['account_state_file'])
             return NS(account=self.account,service=self.service,resources=self.account.resources,
@@ -246,6 +275,30 @@ class AccountExecutionTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError,'readonly failure'):
                 migrate_account.main(args+['--connect','--apply'])
         self.assertEqual(source.read_bytes(),raw)
+        self.assertFalse(Path(settings['account_state_file']).exists())
+
+    def test_migration_stop_failure_is_not_retried_or_hidden_by_cleanup(self):
+        settings,combined,source,args = self.migration_fixture()
+        before = source.read_bytes()
+        failure = RuntimeError('fixture final reconciliation failure')
+        def build(current, **kwargs):
+            self.account.manager.repository.path = Path(current['account_state_file'])
+            return NS(account=self.account, service=self.service, resources=self.account.resources,
+                strategies={sid:NS(session=session) for sid,session in zip(
+                    ('hybrid-rb','hybrid-p'), self.sessions[-2:])})
+        with patch('scripts.integration.shared_account.run_workers.load_config', return_value=(combined,{})), \
+                patch('scripts.integration.shared_account.config.load_environment'), \
+                patch('scripts.integration.shared_account.run_workers.load_calendars',
+                    return_value={'hybrid-p':self.sessions[-1].strategy.calendar}), \
+                patch('scripts.integration.shared_account.run.build_host', side_effect=build), \
+                patch.object(self.account, 'stop', side_effect=failure) as stop:
+            with self.assertRaises(RuntimeError) as caught:
+                migrate_account.main(args+['--connect','--apply'])
+        self.assertIs(caught.exception, failure)
+        stop.assert_called_once()
+        self.assertFalse(self.account.driver.is_simnow_authenticated)
+        self.assertFalse(self.account.client._started)
+        self.assertEqual(source.read_bytes(), before)
         self.assertFalse(Path(settings['account_state_file']).exists())
 
     def test_route_refresh_is_authenticated_preserves_other_owner_and_is_persisted(self):
@@ -541,6 +594,8 @@ class AccountJoinMigrationTests(unittest.TestCase):
         mo = option_calendar()
         def build(config,**kwargs):
             self.assertTrue(kwargs['read_only'])
+            f.new_account.driver._enable_simnow_orders = False
+            f.new_account.driver._enable_test_orders = False
             f.new_account.manager.repository.path = Path(config['account_state_file'])
             return NS(account=f.new_account,service=f.new_service,resources=f.new_account.resources,
                 strategies={sid:NS(session=NS(references=NS(

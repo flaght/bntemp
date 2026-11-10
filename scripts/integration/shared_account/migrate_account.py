@@ -177,6 +177,7 @@ def main(argv=None):
         temporary.chmod(0o600)
         combined.update(trading_day=args.trading_day,account_state_file=str(temporary))
         host = None
+        stop_attempted = False
         try:
             load_environment(account['account_env_file'])
             host = build_host(combined,resume=True,read_only=True,strategy_processes=True,
@@ -199,6 +200,7 @@ def main(argv=None):
             host.account.manager.validate_components()
             registry = registry_from_host(host)
             host.account.manager.commit_restore()  # 只提交临时副本，原账户从不改写。
+            stop_attempted = True
             host.account.stop()  # 最终柜台核验成功后才生成新公共账户。
             payload = isolate_payload(JsonStateStore(temporary).load().payload,account,registry)
             if any(path.read_bytes() != raw for path,raw in source_files.items()):
@@ -223,8 +225,10 @@ def main(argv=None):
             if host is not None:
                 try:
                     if host.account._started:
-                        if host.account.manager._restore_pending:
-                            host.account.abort_preparation(); host.account.driver.stop()
+                        if stop_attempted or host.account.manager._restore_pending:
+                            host.account.abort_preparation()
+                            host.account.client.stop()
+                            host.account.driver.stop()
                         else:
                             host.account.stop()
                 finally:
