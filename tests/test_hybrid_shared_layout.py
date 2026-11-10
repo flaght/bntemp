@@ -795,7 +795,7 @@ class HybridLayoutConfigTests(unittest.TestCase):
                         '--max-contracts','2','--entry-contracts','2','--market-source','ctp','--no-session-overrides'])])
         self.path.write_text(json.dumps(self.config))
 
-    def test_paths_resolve_once_and_both_layouts_accept_same_config_without_model_loading(self):
+    def test_paths_resolve_once_without_loading_models(self):
         from scripts.integration.shared_account.config import read_config
         from scripts.integration.shared_account.factories import strategy_arguments
         parsed=read_config(self.path)
@@ -804,7 +804,6 @@ class HybridLayoutConfigTests(unittest.TestCase):
         self.assertEqual(entry.__name__,live.__name__)
         self.assertEqual(args.product,'P');self.assertEqual(args.expected_source_day,'20261012')
         self.assertEqual(args.release_path,(self.root/'release').resolve())
-        for layout in ('same-process','separate-processes'):launcher.validate_layout(parsed,layout)
         self.assertNotIn('process_layout',parsed)
         self.assertEqual(args.entry_contracts,2)
 
@@ -812,7 +811,6 @@ class HybridLayoutConfigTests(unittest.TestCase):
         from scripts.integration.shared_account.config import read_config
         path=Path(__file__).resolve().parents[1]/'demos/10_hybrid_transformer/config/shared_rb_p.json'
         config=read_config(path)
-        launcher.validate_layout(config,'same-process');launcher.validate_layout(config,'separate-processes')
         rb,p=config['strategies']
         self.assertEqual(rb['argv'][rb['argv'].index('--history-minutes')+1],'260')
         self.assertTrue(Path(rb['argv'][rb['argv'].index('--history-config')+1]).is_absolute())
@@ -876,28 +874,7 @@ class HybridLayoutConfigTests(unittest.TestCase):
         self.path.write_text(json.dumps(raw))
         with self.assertRaisesRegex(ValueError,'缺少文件路径'):read_config(self.path)
 
-    def test_offline_cli_exercises_both_layout_options_without_connections(self):
-        for layout in ('same-process','separate-processes'):
-            with redirect_stdout(StringIO()) as output:
-                launcher.main(['--config',str(self.path),'--process-layout',layout])
-            self.assertIn('未连接',output.getvalue())
 
-    def test_prepare_seconds_defaults_and_override_reach_calendar_scheduler(self):
-        from contextlib import nullcontext
-        import threading
-        from bomber.framework.trader.runtime.live import continuous
-        for extra, seconds in (([],300),(['--prepare-seconds','600'],600),(['--prepare-seconds','0'],0)):
-            with self.subTest(seconds=seconds), redirect_stdout(StringIO()) as output, \
-                    patch.object(launcher,'load_calendar',return_value=object()), \
-                    patch('dotenv.load_dotenv'), \
-                    patch('bomber.framework.trader.runtime.live.local.strategy_state_lock',return_value=nullcontext()), \
-                    patch.object(continuous,'StopSignal',return_value=nullcontext(threading.Event())), \
-                    patch.object(continuous,'ContinuousPositionRuntime') as runtime:
-                launcher.main(['--config',str(self.path),'--run-forever','--connect',
-                    '--enable-orders','--confirm-simnow',*extra])
-                self.assertEqual(runtime.call_args.kwargs['prepare_seconds'],seconds)
-                self.assertIn(f'prepare_seconds={seconds}',output.getvalue())
-                self.assertFalse((self.root/'state').exists())
 
     def test_negative_prepare_seconds_is_rejected_before_connections(self):
         from contextlib import redirect_stderr
@@ -906,10 +883,6 @@ class HybridLayoutConfigTests(unittest.TestCase):
             launcher.main(['--config',str(self.path),'--prepare-seconds','-1'])
         load.assert_not_called()
 
-    def test_layout_change_cannot_silently_change_netting_policy(self):
-        self.config['execution_mode']='netted'
-        for layout in ('same-process','separate-processes'):
-            with self.assertRaisesRegex(ValueError,'independent'):launcher.validate_layout(self.config,layout)
 
     def test_calendar_validation_keeps_product_calendars_and_rejects_different_hours(self):
         from scripts.integration.shared_account.config import read_config
@@ -935,155 +908,12 @@ class HybridLayoutConfigTests(unittest.TestCase):
             candidate={**self.config,key:value};self.path.write_text(json.dumps(candidate))
             with self.assertRaisesRegex(ValueError,'Hybrid历史根数'):read_config(self.path)
 
-    def test_same_process_connects_and_prewarms_before_open_but_waits_before_decisions(self):
-        from datetime import timedelta
-        from unittest.mock import Mock
-        import threading
-        window = hybrid_fixture.TradingWindow(trading_day='20261013', segment_id='am',
-            start=hybrid_fixture.dt('2026-10-13 09:00'), end=hybrid_fixture.dt('2026-10-13 11:30'))
-        now = [window.start-timedelta(minutes=5)]
-        host = Mock()
-        host.strategies = {'rb': NS(active=True,session=NS(runner=NS()))}
-        host.snapshot.return_value = {}
-        host.account.execution.backend.reports = ()
-        calls = []
-        def poll_preparation():
-            calls.append('preopen')
-            self.assertLess(now[0], window.start)
-            now[0] = window.start
-        host.poll_preparation.side_effect = poll_preparation
-        def start():
-            self.assertEqual(now[0], window.start-timedelta(minutes=5))
-            host.activation_wait()
-            self.assertEqual(now[0], window.start)
-            calls.append('open')
-        host.start.side_effect = start
-        host.poll.side_effect = lambda: now.__setitem__(0, window.end-timedelta(seconds=30))
-        with patch('scripts.integration.shared_account.run.build_host',return_value=host), \
-                patch('bomber.framework.trader.runtime.reports.TradingDayLiveReport'):
-            result = launcher.run_same_process(self.config,window,threading.Event(),
-                resume=False,remaining=100,clock=lambda:now[0])
-        self.assertEqual(result['status'], 'completed')
-        self.assertEqual(calls, ['preopen', 'open'])
-        self.assertEqual(launcher.PREPARE_SECONDS, 300)
-        host.stop.assert_called_once()
 
-    def test_same_process_begins_stop_thirty_seconds_before_close(self):
-        from datetime import timedelta
-        from unittest.mock import Mock
-        import threading
-        window = hybrid_fixture.TradingWindow('20261013', 'am',
-            hybrid_fixture.dt('2026-10-13 09:00'), hybrid_fixture.dt('2026-10-13 11:30'))
-        now = [window.end-timedelta(seconds=31)]
-        host = Mock()
-        host.strategies = {'rb': NS(active=True,session=NS(runner=NS()))}
-        host.snapshot.return_value = {}
-        host.account.execution.backend.reports = ()
-        host.poll.side_effect = lambda: now.__setitem__(0, window.end-timedelta(seconds=30))
-        with patch('scripts.integration.shared_account.run.build_host',return_value=host), \
-                patch('bomber.framework.trader.runtime.reports.TradingDayLiveReport'):
-            result = launcher.run_same_process(self.config,window,threading.Event(),
-                resume=False,remaining=100,clock=lambda:now[0])
-        self.assertEqual(result['status'],'completed')
-        host.poll.assert_called_once()
-        host.stop.assert_called_once()
-        self.assertLess(now[0],window.end)
-        self.assertEqual(host.strategies['rb'].session.runner.continuous_window,window)
 
-    def test_all_stopped_exception_includes_each_strategy_failure(self):
-        from unittest.mock import Mock
-        import threading
-        window = hybrid_fixture.TradingWindow(trading_day='20261013', segment_id='am',
-            start=hybrid_fixture.dt('2026-10-13 09:00'), end=hybrid_fixture.dt('2026-10-13 11:30'))
-        host = Mock()
-        host.strategies = {'rb': NS(active=False,failure='价格缺失',session=NS(runner=NS())),
-            'p': NS(active=False,failure='行情超时',session=NS(runner=NS()))}
-        host.snapshot.return_value = {}
-        host.account.execution.backend.reports = ()
-        with patch('scripts.integration.shared_account.run.build_host',return_value=host), \
-                patch('bomber.framework.trader.runtime.reports.TradingDayLiveReport'):
-            with self.assertRaisesRegex(RuntimeError, 'rb: 价格缺失.*p: 行情超时'):
-                launcher.run_same_process(self.config,window,threading.Event(),
-                    resume=False,remaining=100,clock=lambda:window.start)
-        host.stop.assert_called_once()
 
-    def test_query_failure_is_retained_when_disconnected_stop_also_fails(self):
-        from unittest.mock import Mock
-        import threading
-        window=hybrid_fixture.TradingWindow(trading_day='20261013',segment_id='am',
-            start=hybrid_fixture.dt('2026-10-13 09:00'),end=hybrid_fixture.dt('2026-10-13 11:30'))
-        host=Mock()
-        host.strategies={'rb':NS(active=True,session=NS(runner=NS()))}
-        host.snapshot.return_value={}
-        host.account.execution.backend.reports=()
-        host.poll.side_effect=TimeoutError('orders timeout request_id=989')
-        host.stop.side_effect=RuntimeError('TD接收心跳超时8193，最终仓位未核验')
-        with patch('scripts.integration.shared_account.run.build_host',return_value=host), \
-                patch('bomber.framework.trader.runtime.reports.TradingDayLiveReport') as report:
-            with self.assertRaisesRegex(RuntimeError,'orders timeout request_id=989.*停机未完成.*8193'):
-                launcher.run_same_process(self.config,window,threading.Event(),
-                    resume=True,remaining=100,clock=lambda:window.start)
-            fields=report.return_value.write.call_args.kwargs['fields']
-            self.assertEqual(fields['failure'],'orders timeout request_id=989')
-            self.assertIn('8193',fields['shutdown_failure'])
-            self.assertEqual(report.return_value.write.call_args.kwargs['status'],'failed')
 
-    def test_same_process_scheduled_query_interruption_is_normal_stop(self):
-        from datetime import timedelta
-        from unittest.mock import Mock
-        from bomber.framework.trader.execution.ctp.query_errors import CtpQueryInterrupted
-        import threading
-        window = hybrid_fixture.TradingWindow('20261013','am',
-            hybrid_fixture.dt('2026-10-13 09:00'), hybrid_fixture.dt('2026-10-13 11:30'))
-        now=[window.end-timedelta(seconds=31)]
-        host=Mock()
-        host.strategies={'rb':NS(active=True,session=NS(runner=NS()))}
-        host.snapshot.return_value={}
-        host.account.execution.backend.reports=()
-        def delayed_query():
-            now[0]=window.end-timedelta(seconds=30)
-            self.assertTrue(host.account.transport.query_stop_requested())
-            raise CtpQueryInterrupted('fixture scheduled stop')
-        host.poll.side_effect=delayed_query
-        with patch('scripts.integration.shared_account.run.build_host',return_value=host), \
-                patch('bomber.framework.trader.runtime.reports.TradingDayLiveReport'):
-            result=launcher.run_same_process(self.config,window,threading.Event(),
-                resume=False,remaining=100,clock=lambda:now[0])
-        self.assertEqual(result['status'],'completed')
-        host.stop.assert_called_once()
 
-    def test_same_process_does_not_start_during_close_grace_period(self):
-        from datetime import timedelta
-        import threading
-        window = hybrid_fixture.TradingWindow('20261013', 'am',
-            hybrid_fixture.dt('2026-10-13 09:00'), hybrid_fixture.dt('2026-10-13 11:30'))
-        with patch('scripts.integration.shared_account.run.build_host') as build, \
-                patch('bomber.framework.trader.runtime.reports.TradingDayLiveReport'):
-            result=launcher.run_same_process(self.config,window,threading.Event(),
-                resume=False,remaining=100,clock=lambda:window.end-timedelta(seconds=20))
-        self.assertEqual(result['status'],'completed')
-        build.assert_not_called()
 
-    def test_layout_window_uses_same_account_and_signal_paths_and_deducts_daily_budget(self):
-        from scripts.integration.shared_account.config import read_config
-        from bomber.framework.trader.persistence import JsonStateStore
-        import threading
-        parsed=read_config(self.path)
-        JsonStateStore(parsed['account_state_file']).save({'component_states':{'shared_account':{}},
-            'orders':{'account':[{'client_order_id':'CTP-9999-fixture-20261013-7'}]}},expected_generation=0)
-        window=hybrid_fixture.TradingWindow('20261013','am',hybrid_fixture.dt('2026-10-13 09:00'),
-            hybrid_fixture.dt('2026-10-13 11:30'))
-        with patch.object(launcher,'run_same_process',return_value={'status':'completed'}) as same:
-            launcher.run_window(parsed,'same-process',None,window,threading.Event())
-            self.assertEqual(same.call_args.kwargs['remaining'],99)
-            self.assertTrue(same.call_args.kwargs['resume'])
-        with patch('scripts.integration.shared_account.continuous.ProcessWindowRuntime') as separate:
-            separate.return_value.run.return_value={'status':'completed'}
-            launcher.run_window(parsed,'separate-processes',None,window,threading.Event())
-            self.assertEqual(separate.call_args.args[3],99)
-            self.assertEqual(separate.call_args.kwargs['stop_before_seconds'],30)
-            self.assertEqual(same.call_args.args[0]['account_state_file'],separate.call_args.args[0]['account_state_file'])
-            self.assertEqual(same.call_args.args[0]['strategies'],separate.call_args.args[0]['strategies'])
 
 
 if __name__=='__main__':

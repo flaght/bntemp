@@ -588,6 +588,14 @@ class MultiPeriodBacktestTests(unittest.TestCase):
                 self.assertEqual(specs["option"].ohlc_policy, expected)
                 self.assertEqual(specs["future"].ohlc_policy, "reject")
 
+    def test_bar_parser_defaults_to_prepared_and_supports_explicit_generic_comparison(self):
+        cli = ["run_backtest.py", "--start-day", "2026-08-13", "--end-day", "2026-08-24",
+            "--index-feature-file", "index.csv"]
+        for extra, expected in (([], "prepared"), (["--bar-parser", "generic"], "generic")):
+            with patch.object(self.entry, "run_case") as run, patch("sys.argv", cli + extra):
+                self.entry.main()
+            self.assertEqual(run.call_args.args[0].bar_parser, expected)
+
     def test_real_m5_input_keeps_futures_m1_and_shifts_only_start_labeled_options(self):
         import pandas as pd
         from bomber.framework.dataprep.bars import read_bar_frame

@@ -202,16 +202,16 @@ class WorkerLaunchTests(unittest.TestCase):
     def test_startup_yaml_belongs_to_each_strategy_and_public_service_separately(self):
         from bomber.framework.cli import load_config as load_setup
         root=Path(__file__).resolve().parents[1]
-        profiles=[('scripts/integration/shared_account/launch.yaml','workers_account'),
+        profiles=[('demos/shared_account/launch.yaml','workers_account'),
             ('demos/10_hybrid_transformer/config/strategy.yaml','workers_hybrid'),
             ('demos/08_option_vega/config/strategy.yaml','workers_option')]
         for index,(filename,sid) in enumerate(profiles):
             setup=load_setup(root/filename,sid)
             if index == 0:
-                self.assertEqual(setup['config'],'scripts/integration/shared_account/account.json')
+                self.assertEqual(setup['config'],'demos/shared_account/account.json')
                 self.assertNotIn('role',setup)
             else:
-                self.assertEqual(setup['account_config'],'scripts/integration/shared_account/account.json')
+                self.assertEqual(setup['account_config'],'demos/shared_account/account.json')
                 self.assertEqual(setup['execution_channel'],'shared')
                 self.assertNotIn('role',setup)
                 self.assertNotIn('kind',setup)

@@ -20,20 +20,25 @@ from bomber.framework.trader.runtime.live.continuous import orders_for_day
 from bomber.framework.trader.execution.registry import ExecutionRegistry
 from bomber.framework.trader.execution.ipc import AccountExecutionProtocol, wire
 from bomber.framework.trader.execution.ipc_client import RemoteAccountService
-from scripts.integration.shared_account import account, account_service, native, migrate_account
-from scripts.integration.shared_account.account_config import read_account_config, read_strategy_rows, account_identity
+from demos.shared_account import account
+from bomber.framework.trader.runtime.live import account as account_service, remote as native
+from scripts.integration.shared_account import migrate_account
+from bomber.framework.trader.runtime.live.account import read_account_config, account_identity
+from bomber.framework.trader.runtime.live.remote import read_strategy_rows
+from importlib import import_module
+HYBRID_PATHS = import_module('demos.10_hybrid_transformer.run_shared').PATH_ARGUMENTS
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class AccountConfigurationTests(unittest.TestCase):
     def test_account_json_and_offline_entry_never_read_a_strategy_json(self):
-        path = ROOT/'scripts/integration/shared_account/account.json'
+        path = ROOT/'demos/shared_account/account.json'
         opened = []
         actual = Path.read_text
         def read(path, *args, **kwargs):
             opened.append(path.resolve())
-            if '/demos/' in str(path):
+            if any(part in str(path) for part in ('/08_option_vega/', '/10_hybrid_transformer/')):
                 raise AssertionError('账户不应读取策略目录')
             return actual(path,*args,**kwargs)
         with patch.object(Path,'read_text',read), redirect_stdout(StringIO()) as output:
@@ -41,13 +46,15 @@ class AccountConfigurationTests(unittest.TestCase):
         self.assertIn('未读取任何策略配置',output.getvalue())
         self.assertEqual(opened,[path.resolve()])
         config = read_account_config(path)
-        self.assertNotIn('/demos/',json.dumps(config))
+        self.assertNotIn('/08_option_vega/',json.dumps(config))
+        self.assertNotIn('/10_hybrid_transformer/',json.dumps(config))
+        self.assertNotIn('/scripts/',json.dumps(config))
         self.assertNotIn('strategies',config)
         self.assertNotIn('strategy_configs',config)
         self.assertNotIn('registration',config)
 
     def test_account_rejects_strategy_references_and_migration_sources(self):
-        original = json.loads((ROOT/'scripts/integration/shared_account/account.json').read_text())
+        original = json.loads((ROOT/'demos/shared_account/account.json').read_text())
         with TemporaryDirectory() as directory:
             path = Path(directory)/'account.json'
             for key in ('strategies','strategy_configs','registration','argv','model'):
@@ -56,25 +63,24 @@ class AccountConfigurationTests(unittest.TestCase):
                     read_account_config(path)
 
     def test_hybrid_instances_have_only_strategy_rows_and_preserve_old_parameters(self):
-        account = read_account_config(ROOT/'scripts/integration/shared_account/account.json')
+        account = read_account_config(ROOT/'demos/shared_account/account.json')
         path = ROOT/'demos/10_hybrid_transformer/config/instances_rb_p.json'
-        rows = read_strategy_rows(path, account)
+        rows = read_strategy_rows(path,path_arguments=HYBRID_PATHS)
         from scripts.integration.shared_account.config import read_config
         previous = read_config(path.with_name('shared_rb_p.json'))['strategies']
         self.assertEqual(rows,previous)
         self.assertEqual(set(json.loads(path.read_text())),{'version','strategies'})
 
     def test_native_strategy_only_reads_account_and_its_own_declaration(self):
-        path = ROOT/'scripts/integration/shared_account/account.json'
+        path = ROOT/'demos/shared_account/account.json'
         settings = read_account_config(path)
-        rows = read_strategy_rows(ROOT/'demos/10_hybrid_transformer/config/instances_rb_p.json',settings)
+        rows = read_strategy_rows(ROOT/'demos/10_hybrid_transformer/config/instances_rb_p.json',path_arguments=HYBRID_PATHS)
         original, opened = Path.read_text, []
         def read(current,*args,**kwargs):
             opened.append(current.resolve())
             return original(current,*args,**kwargs)
         with patch.object(Path,'read_text',read):
-            config = native.load_native_config(path,rows,ROOT/'work2/env2')
-        self.assertTrue(config['_account_only'])
+            config = native.load_account_connection(path,rows)
         self.assertEqual(set(opened),{path.resolve()})
         self.assertEqual(config['strategies'],rows)
 
@@ -102,7 +108,7 @@ class AccountExecutionTests(unittest.TestCase):
         host = NS(service=self.service,strategies={sid:NS(session=session)
             for sid,session in [('hybrid-rb',rb),('hybrid-p',p)]})
         registry = migrate_account.registry_from_host(host)
-        settings = read_account_config(ROOT/'scripts/integration/shared_account/account.json')
+        settings = read_account_config(ROOT/'demos/shared_account/account.json')
         settings.update(trading_day='20261013',account_state_file=str(self.root/'public'/'state.json'),
             report_dir=str(self.root/'public'/'reports'))
         settings['account'].update(client_id='account',max_gross_quantity=4,max_gross_notional=1000000,
@@ -324,7 +330,7 @@ class AccountExecutionTests(unittest.TestCase):
         class Continuous:
             def __init__(self,cal,factory,**kwargs): self.factory = factory
             def run(self): return self.factory(window,Event()).run()
-        with patch('scripts.integration.shared_account.config.load_environment'), \
+        with patch('bomber.framework.cli.load_environment'), \
                 patch('bomber.framework.trader.runtime.live.continuous.ContinuousPositionRuntime',Continuous), \
                 patch.object(account,'run_window',return_value={'status':'completed'}) as run:
             account.main(['--config',str(config_file),'--connect','--enable-orders','--confirm-simnow'])
@@ -341,7 +347,7 @@ class AccountExecutionTests(unittest.TestCase):
         from bomber.framework.trader.execution.ipc import UnixExecutionConnection
         from bomber.framework.trader.execution.registry import limits_from_wire
         from bomber.framework.trader.execution.shared import SharedRiskBudget
-        from scripts.integration.shared_account import server
+        from bomber.framework.trader.runtime.live import account as server
         settings,_,_,registry = self.migrated()
         stopped,errors = threading.Event(),[]
         credentials_dir = self.root/'pure-credentials'
@@ -357,7 +363,7 @@ class AccountExecutionTests(unittest.TestCase):
             self.transport.fill(fields['OrderRef'])
         def control():
             try:
-                server._run(args,settings,stopped)
+                server.serve_account(args,settings,stopped)
             except BaseException as error:
                 errors.append(error)
         with patch.object(server,'load_environment'), \
@@ -413,7 +419,7 @@ class AccountJoinMigrationTests(unittest.TestCase):
         f = worker_fixtures.WorkerRegistrationTests('runTest')
         f.setUp(); self.addCleanup(f.doCleanups)
         root = f.f.root
-        settings = read_account_config(ROOT/'scripts/integration/shared_account/account.json')
+        settings = read_account_config(ROOT/'demos/shared_account/account.json')
         settings.update(trading_day='20261013',account_state_file=str(root/'public-account.json'))
         settings['account'] = deepcopy(f.current['account'])
         f.current['environment'] = 'realtime'

@@ -1,0 +1,100 @@
+{
+  "status": "offline_passed_native_pending",
+  "date": "2026-11-10",
+  "scope": "Prepared execution DataFrame to native Bar conversion in the Python file replay path",
+  "production_files": [
+    "bomber/framework/dataprep/bars.py",
+    "bomber/framework/market/replay/parsers/bar/fixed.py",
+    "demos/08_option_vega/run_backtest.py"
+  ],
+  "default": "08 backtest uses --bar-parser prepared; all other callers retain fast_parse=False",
+  "comparison_and_rollback": "--bar-parser generic",
+  "changes": [
+    "Project the seven standard execution columns only",
+    "Use integer event_ns and available_ns instead of per-row ISO parsing",
+    "Bind fixed instrument metadata and BarType once per source and reset on reload",
+    "Preserve make_bar, Price/Quantity rounding, OHLCV checks, availability, and ordering",
+    "Fall back to the generic parser for source event clocks below microsecond resolution"
+  ],
+  "offline_tests": {
+    "passed": 212,
+    "input_preparation_and_parser": 73,
+    "feature_and_timing": 128,
+    "generic_parser": 11,
+    "native_entity_boundary": "Existing SDK fixtures; not native SDK validation",
+    "differential": {
+      "cases": 1500,
+      "expected_errors": 925,
+      "status": "passed",
+      "scope": "Actual generic vs prepared Python parsing and factory with SDK entity fixtures"
+    },
+    "compileall": "passed",
+    "git_diff_check": "passed"
+  },
+  "native_validation": {
+    "tests_added": 2,
+    "executed_locally": 0,
+    "local_result": "class skipped: no installed compiled bomber.backtest SDK",
+    "xy_command": "PYTHONPATH=. /workspace/worker/env/uv-nautilus/bin/python -m unittest tests.test_prepared_bar_parser_native -v",
+    "required_result": "2 tests run, OK, no skips",
+    "full_backtest_financial_equivalence": "pending XY; no full financial result claimed"
+  },
+  "offline_benchmarks": [
+    {
+      "files": 250,
+      "rows_per_file": 48,
+      "events": 12000,
+      "option_bar_minutes": 5,
+      "generic_seconds": 0.338755,
+      "prepared_seconds": 0.235532,
+      "reduction_percent": 30.47,
+      "bar_type_constructions": {
+        "generic": 12000,
+        "prepared": 250
+      },
+      "events_equal": true,
+      "scope": "Actual Python reader/parser/factory/feed code; native entities replaced by existing SDK fixtures",
+      "method": "One warmup then median of three alternating runs; parse, collect and stable-sort timing"
+    },
+    {
+      "files": 80,
+      "rows_per_file": 240,
+      "events": 19200,
+      "option_bar_minutes": 1,
+      "generic_seconds": 0.494629,
+      "prepared_seconds": 0.300653,
+      "reduction_percent": 39.22,
+      "bar_type_constructions": {
+        "generic": 19200,
+        "prepared": 80
+      },
+      "events_equal": true,
+      "scope": "Actual Python reader/parser/factory/feed code; native entities replaced by existing SDK fixtures",
+      "method": "One warmup then median of three alternating runs; parse, collect and stable-sort timing"
+    }
+  ],
+  "benchmark_limit": "Small offline samples with SDK entity fixtures; no promise of corresponding native or full-run speedup",
+  "xy_previous_generic_baseline": {
+    "replay_event_conversion_seconds": 111.874586,
+    "replay_event_sort_seconds": 1.267674,
+    "events": 1488480,
+    "frames": 45839,
+    "entries": 179,
+    "orders": 1048,
+    "fills": 1060,
+    "origin": "User-provided completed XY report; latest conversion-plus-sort progress was 110.713 seconds",
+    "attribution_note": "Concurrent loader optimization gains must not be attributed to this parser change"
+  },
+  "native_kernel_changed": false,
+  "wheel_rebuild_required": false,
+  "native_repository_framework_unchanged": {
+    "verified": true,
+    "files": 317
+  },
+  "external_actions": "No remote access, live orders, CTP or DolphinDB queries executed",
+  "production_sha256": {
+    "bomber/framework/dataprep/bars.py": "2619b00c2820853db3b92a93097536e18c86e3effdc5bab9c28722f201fd9627",
+    "bomber/framework/market/replay/parsers/bar/fixed.py": "1e317326b054b6564a0005483efee94e9efd3bbd3c74b31ebea8c454cb7147b7",
+    "demos/08_option_vega/run_backtest.py": "a3bccc1d7be7685320d53c8feb2be0de7fe43e7ace2b0c9fdbf22af88099c8c4"
+  }
+}

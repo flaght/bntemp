@@ -153,6 +153,8 @@ activemq-data/
 .env
 .envrc
 /scripts/integration/shared_account/account.env
+/demos/shared_account/account.env
+/demos/shared_account/results/
 .venv
 env/
 venv/

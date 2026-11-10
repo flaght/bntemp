@@ -18,12 +18,22 @@ from bomber.framework.calendars.sessions import TradingWindow
 from bomber.framework.cli import load_config as load_setup
 from bomber.framework.trader.persistence import JsonStateStore
 from bomber.framework.trader.runtime.live.remote import RemoteStrategyRuntime, run_remote_group, wait_for_account
-from scripts.integration.shared_account import native, run_workers
+from bomber.framework.trader.runtime.live import remote as native
+from bomber.framework.trader.runtime.live.account import read_account_config
+from demos.shared_account import account
 
 ROOT = Path(__file__).resolve().parents[1]
 vega = import_module('demos.08_option_vega.run_live')
 hybrid = import_module('demos.10_hybrid_transformer.run_shared')
 ZONE = ZoneInfo('Asia/Shanghai')
+
+
+def current_configuration():
+    from bomber.framework.trader.runtime.live.remote import read_strategy_rows
+    settings = read_account_config(ROOT/'demos/shared_account/account.json')
+    rows = read_strategy_rows(ROOT/'demos/10_hybrid_transformer/config/instances_rb_p.json',
+        path_arguments=hybrid.PATH_ARGUMENTS)
+    return {**settings,'strategies':rows}
 
 
 class NativeEntryTests(unittest.TestCase):
@@ -32,8 +42,7 @@ class NativeEntryTests(unittest.TestCase):
                 (vega, 'demos/08_option_vega/config/strategy.yaml', 'workers_option', '一个'),
                 (hybrid, 'demos/10_hybrid_transformer/config/strategy.yaml', 'workers_hybrid', '2个')):
             with self.subTest(config_id=config_id), patch('subprocess.Popen') as popen, \
-                    patch.object(run_workers, 'main', side_effect=AssertionError('不得转调公共启动器')), \
-                    patch('scripts.integration.shared_account.config.load_environment') as env, \
+                    patch('bomber.framework.cli.load_environment') as env, \
                     redirect_stdout(StringIO()) as output:
                 setup = load_setup(ROOT/path, config_id)
                 setup.update(connect=False, enable_orders=False, confirm_simnow=False)
@@ -59,12 +68,12 @@ class NativeEntryTests(unittest.TestCase):
             self.assertEqual(kwargs['stop_at'], window.end)
             self.assertEqual(row['strategy_id'], 'option-vega-live')
             return NS(strategy_id=row['strategy_id'], run=lambda stop: seen.append(os.getpid()))
-        with patch('scripts.integration.shared_account.config.load_environment'), \
+        with patch('bomber.framework.cli.load_environment'), \
                 patch('bomber.framework.dataprep.session_inputs.load_session_inputs', return_value=NS()), \
                 patch.object(vega, 'validate_calendar'), \
                 patch.object(native, 'window_credentials', return_value={'option-vega-live': Path('/tmp/fixture.json')}), \
                 patch.object(native, 'resume_available', return_value=True), \
-                patch.object(native, 'make_runtime', side_effect=make), \
+                patch.object(vega, 'build_shared_runtime', side_effect=make), \
                 patch('bomber.framework.trader.runtime.live.continuous.ContinuousPositionRuntime', Continuous), \
                 patch('subprocess.Popen', side_effect=AssertionError('不得创建子进程')):
             result = vega.main(['--config-file','demos/08_option_vega/config/strategy.yaml',
@@ -73,7 +82,7 @@ class NativeEntryTests(unittest.TestCase):
         self.assertEqual(seen, [os.getpid()])
 
     def test_hybrid_native_entry_runs_rb_and_p_concurrently_in_current_process(self):
-        config, _ = run_workers.load_config(ROOT/'scripts/integration/shared_account/legacy_workers.json')
+        config = current_configuration()
         now = datetime.now(ZONE)
         window = TradingWindow(now.strftime('%Y%m%d'), now-timedelta(minutes=1), now+timedelta(minutes=3), 'test')
         barrier, seen, stopped = Barrier(2), [], Event()
@@ -89,11 +98,11 @@ class NativeEntryTests(unittest.TestCase):
             self.assertEqual(kwargs['stop_at'], window.end-timedelta(seconds=30))
             return Runtime(row['strategy_id'])
         paths = {row['strategy_id']: Path('/tmp')/(row['strategy_id']+'.json') for row in config['strategies']}
-        with patch('scripts.integration.shared_account.config.load_environment'), \
+        with patch('bomber.framework.cli.load_environment'), \
                 patch.object(hybrid, 'load_calendar', return_value=NS()), \
                 patch.object(native, 'window_credentials', return_value=paths), \
                 patch.object(native, 'resume_available', return_value=True), \
-                patch.object(native, 'make_runtime', side_effect=make), \
+                patch.object(hybrid, 'build_shared_runtime', side_effect=make), \
                 patch('bomber.framework.trader.runtime.live.continuous.ContinuousPositionRuntime', Continuous), \
                 patch('subprocess.Popen', side_effect=AssertionError('不得创建子进程')):
             result = hybrid.main(['--config-file','demos/10_hybrid_transformer/config/strategy.yaml',
@@ -101,21 +110,27 @@ class NativeEntryTests(unittest.TestCase):
         self.assertEqual(result['status'], 'completed')
         self.assertEqual(set(seen), {('hybrid-transformer-live', os.getpid()), ('hybrid-p-live', os.getpid())})
 
-    def test_changed_local_strategy_or_env_is_rejected_before_connection(self):
-        config, _ = run_workers.load_config(ROOT/'scripts/integration/shared_account/legacy_workers.json')
-        row = dict(config['strategies'][0]); row['argv'] = row['argv']+['--max-contracts','3']
-        with self.assertRaisesRegex(ValueError, '本地策略参数'):
-            native.load_native_config(ROOT/'scripts/integration/shared_account/legacy_workers.json', [row], ROOT/'work2/env2')
-        with self.assertRaisesRegex(ValueError, 'env'):
-            native.load_native_config(ROOT/'scripts/integration/shared_account/legacy_workers.json',
-                [config['strategies'][0]], ROOT/'work1/env1')
+    def test_legacy_account_json_and_duplicate_instances_are_rejected(self):
+        config = current_configuration()
+        row = config['strategies'][0]
+        with self.assertRaisesRegex(ValueError,'账户JSON'):
+            native.load_account_connection(ROOT/'scripts/integration/shared_account/legacy_workers.json',[row])
+        with self.assertRaisesRegex(ValueError,'重复'):
+            native.load_account_connection(ROOT/'demos/shared_account/account.json',[row,row])
+
+    def test_hybrid_entry_rejects_removed_account_host_layout(self):
+        from contextlib import redirect_stderr
+        with redirect_stderr(StringIO()) as output, self.assertRaises(SystemExit):
+            hybrid.main(['--config-file','demos/10_hybrid_transformer/config/strategy.yaml',
+                '--config-id','workers_hybrid','--process-layout','same-process'])
+        self.assertIn('unrecognized arguments',output.getvalue())
 
     def test_account_entry_runs_server_in_current_process_and_removes_its_discovery(self):
         with TemporaryDirectory() as directory:
             root = Path(directory)
             now = datetime.now(ZONE)
             window = TradingWindow(now.strftime('%Y%m%d'), now, now+timedelta(minutes=5), 'test')
-            config = dict(report_dir=str(root), trading_day=window.trading_day)
+            config = dict(report_dir=str(root), trading_day=window.trading_day,account_env_file='fixture.env')
             discovery = root/'current.json'
             def serve(args, current, stop):
                 self.assertEqual(os.getpid(), pid)
@@ -123,12 +138,40 @@ class NativeEntryTests(unittest.TestCase):
                 self.assertEqual(args.remaining_orders, 197)
                 discovery.write_text(json.dumps({'config': str(args.discovery_config)}))
             pid = os.getpid()
-            with patch('scripts.integration.shared_account.server._run', side_effect=serve) as server, \
+            with patch('bomber.framework.trader.runtime.live.account.serve_account', side_effect=serve) as server, \
                     patch('subprocess.Popen', side_effect=AssertionError('不得创建子进程')):
-                result = run_workers.run_account_window(config, window, Event(), 197, discovery)
+                result = account.run_window(config, window, Event(), 197, discovery)
             server.assert_called_once()
             self.assertFalse(discovery.exists())
             self.assertEqual(result['status'], 'completed')
+
+    def test_vega_entry_preserves_identity_and_declares_only_real_execution_contracts(self):
+        config = read_account_config(ROOT/'demos/shared_account/account.json')
+        with TemporaryDirectory() as directory:
+            row = dict(strategy_id='option-vega-live',kind='option_vega',state_file=str(Path(directory)/'signal.json'),
+                argv=['--config-file',str(ROOT/'demos/08_option_vega/config/strategy.yaml'),'--config-id','live_simnow'])
+            i = fixture.InstrumentId.from_str('MO2611-C-6900.CFFEX')
+            future = fixture.InstrumentId.from_str('IM2611.CFFEX')
+            refs = NS(instrument_ids={'option':i,'future':future},
+                contracts={'option':NS(tick='.2',multiplier=100)},
+                futures={'future':{'minChgPriceNum':'.2','contMultNum':200}})
+            service,driver = NS(),NS()
+            inputs = NS(references=refs,ctp_upstream=None)
+            session = NS()
+            live = import_module('demos.08_option_vega.live')
+            with patch.object(vega,'prepare_inputs',return_value=inputs), \
+                    patch.object(live,'assemble',return_value=session) as assemble, \
+                    patch('bomber.framework.trader.runtime.live.channels.ctp.required',return_value='fixture'):
+                runtime = vega.build_shared_runtime(config,row,Path(directory)/'credentials.json',resume=False)
+                actual,identity = runtime.prepare(service,driver,NS())
+            self.assertIs(actual,session)
+            self.assertEqual(identity,dict(strategy_id=row['strategy_id'],kind=row['kind'],argv=row['argv'],
+                trading_day=config['trading_day'],environment='realtime',replay_md_trading_day=None,
+                execution_mode='independent'))
+            self.assertEqual(set(service.instrument_specs),{str(i),str(future)})
+            self.assertEqual(assemble.call_args.kwargs['strategy_id'],row['strategy_id'])
+            self.assertIs(assemble.call_args.kwargs['shared_service'],service)
+            self.assertTrue(callable(session.restore_signal))
 
 
 class RemoteRuntimeTests(unittest.TestCase):
@@ -218,6 +261,33 @@ class NativeHybridIpcTests(unittest.TestCase):
     make_account = Fixture.make_account
     session = Fixture.session
     bar = Fixture.bar
+
+    def test_hybrid_entry_assembles_real_runner_with_original_checkpoint_identity(self):
+        from contextlib import ExitStack
+        from bomber.framework.trader.runtime.live.contracts import LiveRunContext
+        from scripts.integration.shared_account.factories import shared_strategy_identity
+        declaration = self.session('RB')
+        market = self.root/'market-config.json'
+        market.write_text(json.dumps(dict(source='dolphindb',table='fixture',timestamp_label='start',volume_mode='per-bar')))
+        row = dict(strategy_id='hybrid-rb',kind='hybrid_transformer',state_file=str(self.root/'rb-signal.json'),argv=[
+            '--product','RB','--release-path',str(self.release),'--directions-file',str(self.directions),
+            '--signal-config',str(self.signals),'--market-source','dolphindb','--market-config',str(market),
+            '--max-contracts','2','--entry-contracts','2','--report-dir',str(self.root/'reports'),'--no-session-overrides'])
+        config = dict(trading_day='20261013',environment='realtime',seconds=60,account={'client_id':'account'})
+        inputs = NS(references=declaration.references,upstream=fixture.Upstream('fixture'),calendar=self.cal)
+        with ExitStack() as resources, \
+                patch.object(import_module('demos.10_hybrid_transformer.shared'),'previous_source_day',return_value='20261012'), \
+                patch.object(fixture.live,'prepare_inputs',return_value=inputs), \
+                patch.object(fixture.adapter,'MizarWorkflowAdapter',fixture.Predictor), \
+                patch('bomber.framework.trader.runtime.live.channels.ctp.required',return_value='fixture'):
+            runtime = hybrid.build_shared_runtime(config,row,self.root/'credentials.json',resume=False)
+            session,identity = runtime.prepare(self.service,self.account.driver,
+                LiveRunContext(resources=resources,trading_day=datetime(2026,10,13).date()))
+            self.assertEqual(identity,shared_strategy_identity(row,config,session))
+            self.assertEqual(session.strategy.strategy_id,'hybrid-rb')
+            self.assertEqual(session.strategy.config.max_contracts,2)
+            self.assertEqual(set(self.service.instrument_specs),{str(self.rb)})
+            self.assertIs(session.runner.shared_signal,session.signal_checkpoint)
 
     def test_real_rb_p_runners_trade_and_save_through_one_account_in_same_process(self):
         import threading

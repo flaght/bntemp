@@ -351,15 +351,17 @@ def filter_session_bars(result: BarLoadResult, calendar) -> BarLoadResult:
 class PreparedFrameReader:
     suffixes = frozenset({".feather"})
 
-    def __init__(self, frame, *, copy_frame=True):
+    def __init__(self, frame, *, copy_frame=True, columns=None):
         # Default isolates caller mutations. The backtest composition layer can
         # borrow its already-prepared frame for the duration of a read-only run.
         self.frame = frame.copy(deep=True) if copy_frame else frame
+        self.columns = None if columns is None else tuple(columns)
 
     def read(self, path):
-        columns = tuple(self.frame.columns)
+        frame = self.frame if self.columns is None else self.frame.loc[:, list(self.columns)]
+        columns = tuple(frame.columns)
         # Stream one mapping at a time; avoid a second full list of row dicts.
-        for index, values in enumerate(self.frame.itertuples(index=False, name=None), 1):
+        for index, values in enumerate(frame.itertuples(index=False, name=None), 1):
             yield index, dict(zip(columns, values))
 
 
@@ -373,7 +375,7 @@ def add_bar_source(feed, path, instrument_id, *, spec=None, key=None):
     return result
 
 
-def add_prepared_bar_source(feed, result, instrument_id, *, copy_frame=True):
+def add_prepared_bar_source(feed, result, instrument_id, *, copy_frame=True, fast_parse=False):
     """消费场景已准备的结果，不重复读取或调整时间。"""
     from bomber.framework.market.replay.parsers.bar import FixedInstrumentBarParser
     if result.spec.value_policy != "execution_strict":
@@ -387,9 +389,25 @@ def add_prepared_bar_source(feed, result, instrument_id, *, copy_frame=True):
         expected = str(instrument_id.venue).upper()
         if not result.frame.exchange.map(lambda value: VENUES.get(str(value).strip().upper(), str(value).strip().upper())).eq(expected).all():
             fail("IDENTITY_MISMATCH", "Prepared rows differ from instrument venue", source=result.path)
-    parser = FixedInstrumentBarParser(instrument_id, timestamp="datetime",
-        available_nanoseconds="available_ns", timezone=result.spec.timezone, bar_spec=result.spec.bar_spec)
-    feed.add_source(result.path, PreparedFrameReader(result.frame, copy_frame=copy_frame), parser, "bar")
+    columns = None
+    # Legacy ISO parsing has microsecond resolution. Keep its original behavior
+    # for exceptional sub-microsecond event clocks rather than changing history.
+    event_ns = result.frame.get("event_ns")
+    native_clock = _native_numbers(event_ns) if fast_parse and event_ns is not None else None
+    use_prepared = (fast_parse and native_clock is not None and native_clock.dtype.kind in "iu"
+        and (native_clock % 1000 == 0).all())
+    if use_prepared:
+        from bomber.framework.market.replay.parsers.bar.fixed import PreparedBarParser
+        parser = PreparedBarParser(instrument_id, bar_spec=result.spec.bar_spec)
+        columns = ("event_ns", "available_ns", "open", "high", "low", "close", "volume")
+    else:
+        parser = FixedInstrumentBarParser(instrument_id, timestamp="datetime",
+            available_nanoseconds="available_ns", timezone=result.spec.timezone, bar_spec=result.spec.bar_spec)
+    if fast_parse and current_session() is not None:
+        stats = current_session().performance
+        stats.count("prepared_parser_sources" if use_prepared else "prepared_parser_fallback_sources")
+        stats.count("prepared_parser_rows" if use_prepared else "prepared_parser_fallback_rows", len(result.frame))
+    feed.add_source(result.path, PreparedFrameReader(result.frame, copy_frame=copy_frame, columns=columns), parser, "bar")
 
 
 def first_ns(path, spec=None):

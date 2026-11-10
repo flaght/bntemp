@@ -1,15 +1,11 @@
 # 同账户多策略 SimNow 宿主
 
-08与10使用纯账户配置[account.json](account.json)，账户环境为自己的`account.env`，账本为
-`results/account/state.json`。该配置不接受`strategy_configs`、`strategies`或`registration`；
-账户启动不读取策略目录JSON、不加载策略工厂或模型。账户从自己的账本恢复纯执行登记及公共市场时段快照。
+账户可执行代码及配置现已复制到[应用目录](../../../demos/shared_account/README.md)。
+日常账户服务使用`python -m demos.shared_account.account --config-file demos/shared_account/launch.yaml --config-id workers_account`。
+08、10各自原生入口也已改为使用`demos.shared_account`；本目录保留原代码和旧部署记录。
+当前执行目录只保留账户入口及配置，已移除其中复制的迁移、旧worker启动器和验收工具。
+已有公共账本应继续使用原内容，不能因为代码目录变化而新建空账本或重复导入原仓。
 
-账户以`python -m scripts.integration.shared_account.account --config-file scripts/integration/shared_account/launch.yaml --config-id workers_account`启动；
-10以`demos.10_hybrid_transformer.run_shared`读取自己的`instances_rb_p.json`启动RB/P两个实例；08以自己的`run_live.py`启动Vega。
-旧文件只在独立`migrate_account --account-config ... --source-config legacy_workers.json`命令中显式提供。
-原账户、信号和批次文件保留，禁单核验成功后才写入新公共账本；旧`run_workers`配置已改名为`legacy_workers.json`。
-
-完整迁移和三终端启动步骤见[08启动说明](../../../demos/08_option_vega/README.md#独立账户服务与原生策略入口)。
 下文为其他策略和旧部署的兼容运行记录，不作为08/10新流程的启动命令。
 
 预热数量可用顶层`strategy_history_minutes`按策略ID覆盖，例如
