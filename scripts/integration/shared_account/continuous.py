@@ -25,7 +25,8 @@ def config_for_day(config, day):
 
 class ProcessWindowRuntime:
     """调度server/worker原入口；先正常停止worker，再停止唯一TD服务。"""
-    def __init__(self, config, window, stop_event, remaining, *, popen=None, clock=None, resume=True, stop_before_seconds=0, prepare_before_open=False):
+    def __init__(self, config, window, stop_event, remaining, *, popen=None, clock=None, resume=True,
+                 stop_before_seconds=0, prepare_before_open=False, worker_windows=None, prepare_seconds=300):
         if type(stop_before_seconds) is not int or stop_before_seconds < 0:
             raise ValueError('休盘前停止秒数须为非负整数')
         self.stop_at = window.end - timedelta(seconds=stop_before_seconds)
@@ -35,6 +36,7 @@ class ProcessWindowRuntime:
         self.workers, self.server = [], None
         self.resume = resume
         self.prepare_before_open = prepare_before_open
+        self.worker_windows, self.prepare_seconds = worker_windows, prepare_seconds
 
     def stop_process(self, process):
         if process.poll() is None:
@@ -77,16 +79,19 @@ class ProcessWindowRuntime:
                 if time.monotonic() >= deadline:
                     raise RuntimeError('账户服务未在期限内发布本窗口能力文件')
                 self.stop.wait(0.2)
-            for row in self.config['strategies']:
-                if self.stop.is_set() or self.clock() >= self.stop_at:
-                    break
-                self.workers.append(self.popen([sys.executable, '-u', '-m', 'scripts.integration.shared_account.worker',
-                    *common, '--strategy-id', row['strategy_id'], '--credentials',
-                    str(credentials/(row['strategy_id']+'.json'))], start_new_session=True))
-            while not self.stop.is_set() and self.clock() < self.stop_at:
-                if self.server.poll() is not None or any(worker.poll() is not None for worker in self.workers):
-                    raise RuntimeError('共享运行进程提前退出，不自动重复启动')
-                self.stop.wait(0.2)
+            if self.worker_windows is not None:
+                self.run_scheduled_workers(config_file, credentials)
+            else:
+                for row in self.config['strategies']:
+                    if self.stop.is_set() or self.clock() >= self.stop_at:
+                        break
+                    self.workers.append(self.popen([sys.executable, '-u', '-m', 'scripts.integration.shared_account.worker',
+                        *common, '--strategy-id', row['strategy_id'], '--credentials',
+                        str(credentials/(row['strategy_id']+'.json'))], start_new_session=True))
+                while not self.stop.is_set() and self.clock() < self.stop_at:
+                    if self.server.poll() is not None or any(worker.poll() is not None for worker in self.workers):
+                        raise RuntimeError('共享运行进程提前退出，不自动重复启动')
+                    self.stop.wait(0.2)
         finally:
             for process in self.workers:
                 try:
@@ -103,6 +108,43 @@ class ProcessWindowRuntime:
                 raise RuntimeError('共享窗口停机失败，不进入下一窗口') from errors[0]
         return {'status': 'completed', 'trading_day': self.window.trading_day,
                 'segment': self.window.segment_id, 'process_layout': 'separate-processes'}
+
+    def run_scheduled_workers(self, config_file, credentials):
+        """同一TD窗口内各worker按自己的日历启停；某策略休盘不停止其他策略。"""
+        jobs = [(row, window) for row in self.config['strategies']
+                for window in self.worker_windows[row['strategy_id']]
+                if window.start < self.window.end and window.end > self.window.start]
+        started, running = set(), {}
+        while not self.stop.is_set() and self.clock() < self.stop_at:
+            if self.server.poll() is not None:
+                raise RuntimeError('账户服务提前退出，不自动重启')
+            now = self.clock()
+            for sid, (process, window) in tuple(running.items()):
+                if now >= window.end:
+                    self.stop_process(process)
+                    del running[sid]
+                elif process.poll() is not None:
+                    raise RuntimeError(f'策略进程提前退出: {sid}；查看worker报告，不自动重复启动')
+            for index, (row, window) in enumerate(jobs):
+                if index in started or not window.start-timedelta(seconds=self.prepare_seconds) <= now < window.end:
+                    continue
+                sid = row['strategy_id']
+                if sid in running:  # 准备期可重叠；上一窗口必须先完成保存及回报确认。
+                    continue
+                credential = credentials/(sid+'.json')
+                common = ['--config', str(config_file), '--connect', '--enable-orders', '--confirm-simnow',
+                    '--strategy-id', sid, '--credentials', str(credential),
+                    '--activate-at', window.start.isoformat(), '--stop-at', window.end.isoformat()]
+                if Path(row['state_file']).is_file() or json.loads(credential.read_text()).get('bootstrap_signal') is not None:
+                    common.append('--resume')
+                module = ('demos.08_option_vega.run_worker' if row['kind'] == 'option_vega'
+                          else 'scripts.integration.shared_account.worker')
+                process = self.popen([sys.executable, '-u', '-m', module, *common], start_new_session=True)
+                self.workers.append(process)
+                started.add(index)
+                running[sid] = process, window
+                print(f"worker窗口: strategy={sid} start={window.start.isoformat()} stop={window.end.isoformat()}", flush=True)
+            self.stop.wait(0.2)
 
 
 class SharedWindowRuntime:

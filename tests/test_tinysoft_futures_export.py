@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from examples.opts2.export_tinysoft_futures import (
+from examples.opts2.export_tinysoft_futures_min import (
     OUTPUT_COLUMNS, build_specs, connect_session, export_day, prepare_bars,
     write_cumulative_diagnostic,
 )
@@ -58,8 +58,8 @@ class TinysoftFuturesTests(unittest.TestCase):
                                        "2026-01-05 09:02"]),
             "openPrice": [4207.] * 3, "highPrice": [4207.] * 3,
             "lowPrice": [4207.] * 3, "closePrice": [4207.] * 3,
-            "volume": [0, 2, 5], "volumeAccumulate": [0, 2, 5],
-            "turnover": [0, 84140, 210350], "turnoverAccumulate": [0, 84140, 210350],
+            "volume": [0, 2, 3], "volumeAccumulate": [0, 2, 5],
+            "turnover": [0, 84140, 126210], "turnoverAccumulate": [0, 84140, 210350],
             "openInterest": [-6454, 0, -1], "openInterestAccumulate": [6454, 6454, 6453],
         })
 
@@ -103,9 +103,9 @@ class TinysoftFuturesTests(unittest.TestCase):
     def test_first_row_requires_explicit_baseline(self):
         source = self.frame().iloc[1:]
         with self.assertRaisesRegex(ValueError, "首条累计值"):
-            prepare_bars(source, day=self.day, spec=self.spec)
+            prepare_bars(source, day=self.day, spec=self.spec, volume_mode="cumulative")
         bars = prepare_bars(source, day=self.day, spec=self.spec,
-                            first_row_policy="zero-baseline")
+                            volume_mode="cumulative", first_row_policy="zero-baseline")
         self.assertEqual(bars.volume.tolist(), [2., 3.])
 
     def test_missing_contract_uses_latest_consistent_product_metadata(self):
@@ -175,7 +175,7 @@ class TinysoftFuturesTests(unittest.TestCase):
         ]:
             with self.subTest(message=message):
                 with self.assertRaisesRegex(ValueError, message):
-                    prepare_bars(frame, day=self.day, spec=self.spec)
+                    prepare_bars(frame, day=self.day, spec=self.spec, volume_mode="cumulative")
 
     def test_interval_vwap_and_utc_input(self):
         source = self.frame()
@@ -204,7 +204,7 @@ class TinysoftFuturesTests(unittest.TestCase):
         session = Session()
         with tempfile.TemporaryDirectory() as directory:
             self.assertEqual(export_day(session, day=self.day, output_dir=directory), (3, 9))
-            self.assertIn('"fut_1min_patch"', session.queries[0])
+            self.assertIn('"fut_1min_tiny"', session.queries[0])
             self.assertIn("where TradeDate <= 2026.01.05", session.queries[1])
             for symbol in ("a2601", "rb2601", "b2610"):
                 path = Path(directory) / "20260105" / f"{symbol}_20260105.feather"
@@ -258,7 +258,8 @@ class TinysoftFuturesTests(unittest.TestCase):
                              "TradeDate": [pd.Timestamp(self.day)] * 3,
                              "exchange": ["DCE", "SHFE", "DCE"], "multiplier": [10.] * 3})
         with tempfile.TemporaryDirectory() as directory:
-            result = export_day(self.session(source, info), day=self.day, output_dir=directory)
+            result = export_day(self.session(source, info), day=self.day, output_dir=directory,
+                                volume_mode="cumulative")
             self.assertEqual(result, (1, 3))
             root = Path(directory) / "20260105"
             self.assertEqual([p.name for p in root.glob("*.feather")], ["rb2611_20260105.feather"])
@@ -345,7 +346,8 @@ class TinysoftFuturesTests(unittest.TestCase):
             for enabled in (False, True):
                 output = Path(directory) / str(enabled)
                 result = export_day(self.session(source, info), day=self.day,
-                                    output_dir=output, diagnose_cumulative=enabled)
+                                    output_dir=output, diagnose_cumulative=enabled,
+                                    volume_mode="cumulative")
                 self.assertEqual(result, (1, 3))
                 root = output / "20260105"
                 self.assertTrue((root / "rb2601_20260105.feather").exists())
@@ -364,10 +366,11 @@ class TinysoftFuturesTests(unittest.TestCase):
                              "TradeDate": [pd.Timestamp(self.day)] * 2,
                              "exchange": ["DCE", "SHFE"], "multiplier": [10., 10.]})
         with tempfile.TemporaryDirectory() as directory:
-            with patch("examples.opts2.export_tinysoft_futures.write_cumulative_diagnostic",
+            with patch("examples.opts2.export_tinysoft_futures_min.write_cumulative_diagnostic",
                        side_effect=OSError("模拟诊断写入失败")):
                 result = export_day(self.session(source, info), day=self.day,
-                                    output_dir=directory, diagnose_cumulative=True)
+                                    output_dir=directory, diagnose_cumulative=True,
+                                    volume_mode="cumulative")
             self.assertEqual(result, (1, 3))
             errors = pd.read_csv(Path(directory) / "20260105" / "export_errors.csv")
             self.assertIn("累计值回退", errors.error.iloc[0])
@@ -417,6 +420,51 @@ class TinysoftFuturesTests(unittest.TestCase):
             self.assertEqual(export_day(Session(), day=self.day, output_dir=directory,
                                         index_only=True), (0, 0))
             self.assertEqual(list(Path(directory).iterdir()), [])
+
+    def test_tiny_copper_sample_exports_interval_values_without_first_row_baseline(self):
+        source = self.frame("CU2701").iloc[:1].assign(
+            TradeDate=pd.Timestamp("2026-11-06"), ActTime=pd.Timestamp("2026-11-06 13:49"),
+            openPrice=103220., highPrice=103250., lowPrice=103210., closePrice=103220.,
+            volume=205, volumeAccumulate=98954, turnover=105806250,
+            turnoverAccumulate=51554194650, openInterest=82, openInterestAccumulate=165367,
+        )
+        spec = dict(symbol="cu2701", exchange="XSGE", multiplier=5.)
+        bars = prepare_bars(source, day=date(2026, 11, 6), spec=spec)
+        self.assertEqual(bars.volume.tolist(), [205.])
+        self.assertEqual(bars.value.tolist(), [105806250.])
+        self.assertEqual(bars.open_interest.tolist(), [165367.])
+        self.assertEqual(bars.vt_symbol.tolist(), ["cu2701.XSGE"])
+        self.assertEqual(bars.vwap.tolist(), [103220.])
+        self.assertEqual(tuple(bars.columns), OUTPUT_COLUMNS)
+
+    def test_interval_values_can_decrease_and_cumulative_reset_is_not_differenced(self):
+        source = self.frame().assign(volume=[205, 100, 0], turnover=[105806250, 50000000, 0],
+                                     volumeAccumulate=[98954, 99054, 0],
+                                     turnoverAccumulate=[51554194650, 51604194650, 0])
+        bars = prepare_bars(source, day=self.day, spec=self.spec)
+        self.assertEqual(bars.volume.tolist(), [205., 100., 0.])
+        self.assertEqual(bars.value.tolist(), [105806250., 50000000., 0.])
+        with self.assertRaisesRegex(ValueError, "回退"):
+            prepare_bars(source, day=self.day, spec=self.spec, volume_mode="cumulative")
+
+    def test_missing_interval_column_does_not_silently_fall_back_to_cumulative(self):
+        source = self.frame().drop(columns="volume")
+        with self.assertRaisesRegex(ValueError, "缺少字段.*volume"):
+            prepare_bars(source, day=self.day, spec=self.spec)
+        bars = prepare_bars(source, day=self.day, spec=self.spec, volume_mode="cumulative")
+        self.assertEqual(bars.volume.tolist(), [0., 2., 3.])
+
+    def test_interval_diagnostic_does_not_label_falling_minute_volume_as_rollback(self):
+        source = self.frame().assign(volume=[205, 100, 0])
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "diagnostic.csv"
+            write_cumulative_diagnostic(source, path, volume_mode="interval")
+            diagnostic = pd.read_csv(path)
+            self.assertEqual(diagnostic.diagnostic_volume_mode.tolist(), ["interval"] * 3)
+            self.assertEqual(diagnostic.diagnostic_volume_column.tolist(), ["volume"] * 3)
+            self.assertEqual(diagnostic.diagnostic_volume_interval.tolist(), [205., 100., 0.])
+            self.assertFalse(diagnostic.diagnostic_volume_rollback.any())
+            self.assertEqual(diagnostic.diagnostic_volume_accumulate_diff.iloc[1:].tolist(), [2., 3.])
 
 
 if __name__ == "__main__":

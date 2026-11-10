@@ -1,4 +1,4 @@
-"""导出 Tinysoft fut_1min_patch，匹配旧期货 Feather 的 14 列格式。"""
+"""导出 Tinysoft fut_1min_tiny，匹配旧期货 Feather 的 14 列格式。"""
 
 import argparse
 import os
@@ -18,6 +18,7 @@ OUTPUT_COLUMNS = (
     "vt_symbol", "symbol", "exchange", "open", "high", "low", "close",
     "date", "time", "datetime", "volume", "value", "open_interest", "vwap",
 )
+MINUTE_TABLE = "fut_1min_tiny"
 INDEX_PRODUCTS = ("IF", "IH", "IC", "IM")
 INDEX_CODE_PATTERN = r"(?:IF|IH|IC|IM)\d{2}(?:0[1-9]|1[0-2])"
 EXCHANGES = {
@@ -118,9 +119,20 @@ def cumulative_to_interval(values, name, first_row_policy):
     return increments.astype("float64")
 
 
+def resolve_volume_columns(volume_mode, volume_column=None, turnover_column=None):
+    if volume_mode not in ("interval", "cumulative"):
+        raise ValueError("volume_mode 应为 interval 或 cumulative")
+    defaults = (("volume", "turnover") if volume_mode == "interval"
+                else ("volumeAccumulate", "turnoverAccumulate"))
+    return volume_column or defaults[0], turnover_column or defaults[1]
+
+
 def prepare_bars(frame, *, day, spec, source_timezone="Asia/Shanghai",
                  first_row_policy="error", vwap_mode="close",
-                 volume_column="volumeAccumulate", turnover_column="turnoverAccumulate"):
+                 volume_mode="interval", volume_column=None, turnover_column=None):
+    volume_column, turnover_column = resolve_volume_columns(
+        volume_mode, volume_column, turnover_column,
+    )
     required_columns(frame, ("TradeDate", "ActTime", "openPrice", "highPrice",
                              "lowPrice", "closePrice", volume_column, turnover_column,
                              "openInterestAccumulate"))
@@ -148,7 +160,7 @@ def prepare_bars(frame, *, day, spec, source_timezone="Asia/Shanghai",
         if not np.isfinite(frame[column]).all() or (frame[column] < 0).any():
             raise ValueError(f"{column} 存在空值、非有限值或负值")
     if (frame[volume_column] % 1 != 0).any():
-        raise ValueError("累计成交量不是整数")
+        raise ValueError("成交量不是整数")
     bars = pd.DataFrame(index=frame.index)
     bars["vt_symbol"] = spec["symbol"] + "." + spec["exchange"]
     bars["symbol"] = spec["symbol"]
@@ -158,8 +170,13 @@ def prepare_bars(frame, *, day, spec, source_timezone="Asia/Shanghai",
     bars["datetime"] = frame["datetime"]
     bars["date"] = bars["datetime"].dt.strftime("%Y-%m-%d")
     bars["time"] = bars["datetime"].dt.strftime("%H:%M:%S")
-    bars["volume"] = cumulative_to_interval(frame[volume_column], "成交量", first_row_policy)
-    bars["value"] = cumulative_to_interval(frame[turnover_column], "成交额", first_row_policy)
+    if volume_mode == "cumulative":
+        bars["volume"] = cumulative_to_interval(frame[volume_column], "成交量", first_row_policy)
+        bars["value"] = cumulative_to_interval(frame[turnover_column], "成交额", first_row_policy)
+    else:
+        # tiny 源表已经提供分钟增量；首分钟不需要从累计基准推导。
+        bars["volume"] = frame[volume_column]
+        bars["value"] = frame[turnover_column]
     bars["open_interest"] = frame["openInterestAccumulate"]
     if vwap_mode not in ("close", "interval"):
         raise ValueError("vwap_mode 应为 close 或 interval")
@@ -174,10 +191,12 @@ def prepare_bars(frame, *, day, spec, source_timezone="Asia/Shanghai",
 
 
 def write_cumulative_diagnostic(frame, path, *, source_timezone="Asia/Shanghai",
-                                volume_column="volumeAccumulate",
-                                turnover_column="turnoverAccumulate",
+                                volume_mode="cumulative", volume_column=None, turnover_column=None,
                                 first_row_policy="error"):
     """保存失败合约的完整原始记录及当前排序、差分结果，不修正行情。"""
+    volume_column, turnover_column = resolve_volume_columns(
+        volume_mode, volume_column, turnover_column,
+    )
     diagnostic = frame.copy()
     diagnostic["diagnostic_source_row"] = np.arange(len(diagnostic))
     times = pd.to_datetime(diagnostic["ActTime"], errors="coerce")
@@ -187,13 +206,20 @@ def write_cumulative_diagnostic(frame, path, *, source_timezone="Asia/Shanghai",
     diagnostic = diagnostic.sort_values("diagnostic_datetime").reset_index(drop=True)
     diagnostic["diagnostic_volume_column"] = volume_column
     diagnostic["diagnostic_turnover_column"] = turnover_column
+    diagnostic["diagnostic_volume_mode"] = volume_mode
     diagnostic["diagnostic_first_row_policy"] = first_row_policy
     diagnostic["diagnostic_is_first_row"] = diagnostic.index == 0
     for name, column in (("volume", volume_column), ("turnover", turnover_column)):
         values = pd.to_numeric(diagnostic[column], errors="coerce").astype("float64")
         increments = values.diff()
         diagnostic[f"diagnostic_{name}_diff"] = increments
-        diagnostic[f"diagnostic_{name}_rollback"] = increments.lt(0)
+        diagnostic[f"diagnostic_{name}_rollback"] = (increments.lt(0)
+                                                       if volume_mode == "cumulative" else False)
+        diagnostic[f"diagnostic_{name}_interval"] = (values if volume_mode == "interval" else increments)
+        cumulative_column = name + "Accumulate"
+        if cumulative_column in diagnostic:
+            cumulative = pd.to_numeric(diagnostic[cumulative_column], errors="coerce").astype("float64")
+            diagnostic[f"diagnostic_{name}_accumulate_diff"] = cumulative.diff()
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(".csv.partial")
@@ -212,7 +238,7 @@ def export_day(session, *, day, output_dir, overwrite=False,
     product_filter = (' and productID in ["IF", "IH", "IC", "IM"]'
                       if index_only else "")
     frame = session.run(f'''
-        select * from loadTable("dfs://JC_MKT_MIN", "fut_1min_patch")
+        select * from loadTable("dfs://JC_MKT_MIN", "{MINUTE_TABLE}")
         where TradeDate = {day:%Y.%m.%d}{product_filter} order by Code, ActTime
     ''')
     if frame.empty:
@@ -297,6 +323,7 @@ def export_day(session, *, day, output_dir, overwrite=False,
                     diagnostic_options = {name: conversion_options[name] for name in (
                         "source_timezone", "volume_column", "turnover_column", "first_row_policy",
                     ) if name in conversion_options}
+                    diagnostic_options["volume_mode"] = conversion_options.get("volume_mode", "interval")
                     write_cumulative_diagnostic(group, diagnostic_path, **diagnostic_options)
                     diagnostic_file = str(diagnostic_path)
                     print(f"{day}/{code}: 累计诊断已保存至 {diagnostic_path}")
@@ -339,8 +366,10 @@ def main():
     parser.add_argument("--end-day", type=date.fromisoformat, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--source-timezone", default="Asia/Shanghai")
-    parser.add_argument("--volume-column", default="volumeAccumulate")
-    parser.add_argument("--turnover-column", default="turnoverAccumulate")
+    parser.add_argument("--volume-mode", choices=("interval", "cumulative"), default="interval",
+                        help="默认直接使用分钟量额；cumulative 模式对累计列差分")
+    parser.add_argument("--volume-column", help="默认 interval 用 volume，cumulative 用 volumeAccumulate")
+    parser.add_argument("--turnover-column", help="默认 interval 用 turnover，cumulative 用 turnoverAccumulate")
     parser.add_argument("--first-row-policy", choices=("error", "zero-baseline"), default="error")
     parser.add_argument("--vwap-mode", choices=("close", "interval"), default="close")
     parser.add_argument("--metadata-fallback", choices=("product", "error"), default="product",
@@ -355,8 +384,13 @@ def main():
         parser.error("开始日期不能晚于结束日期")
     if not (os.environ.get("DDB_REFERENCE_PASSWORD") or os.environ.get("DDB_PASSWORD")):
         parser.error("请设置环境变量 DDB_REFERENCE_PASSWORD 或 DDB_PASSWORD")
-    print(f"累计输入列：成交量={args.volume_column}，成交额={args.turnover_column}；"
-          f"按 ActTime 排序后各差分一次，首条策略={args.first_row_policy}")
+    args.volume_column, args.turnover_column = resolve_volume_columns(
+        args.volume_mode, args.volume_column, args.turnover_column,
+    )
+    operation = (f"累计差分，首条策略={args.first_row_policy}"
+                 if args.volume_mode == "cumulative" else "直接保留分钟量额")
+    print(f"分钟源表={MINUTE_TABLE}；量额模式={args.volume_mode}；"
+          f"成交量列={args.volume_column}，成交额列={args.turnover_column}；{operation}")
     if args.index_only:
         print(f"仅导出股指期货：{', '.join(INDEX_PRODUCTS)}")
     import dolphindb as ddb
@@ -370,6 +404,7 @@ def main():
                 session, day=day, output_dir=args.output_dir, overwrite=args.overwrite,
                 source_timezone=args.source_timezone, first_row_policy=args.first_row_policy,
                 vwap_mode=args.vwap_mode, volume_column=args.volume_column,
+                volume_mode=args.volume_mode,
                 turnover_column=args.turnover_column, metadata_fallback=args.metadata_fallback,
                 diagnose_cumulative=args.diagnose_cumulative,
                 index_only=args.index_only,
