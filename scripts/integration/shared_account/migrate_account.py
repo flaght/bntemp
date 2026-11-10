@@ -11,12 +11,20 @@ from .account_config import read_account_config, account_identity
 
 
 def registry_from_host(host):
+    from bomber.framework.calendars.sessions import SessionCalendar
     from bomber.framework.calendars.state import calendar_to_state
     from bomber.framework.trader.execution.registry import validate_registry
     planner = host.service.client.planner.planner
     sessions = []
     for item in host.strategies.values():
-        calendar = getattr(item.session.references, 'calendar', None) or item.session.strategy.calendar
+        session = item.session
+        calendar = next((candidate for candidate in (
+            getattr(session, 'session_calendar', None),
+            getattr(getattr(session, 'references', None), 'calendar', None),
+            getattr(getattr(session, 'strategy', None), 'calendar', None))
+            if isinstance(candidate, SessionCalendar)), None)
+        if calendar is None:
+            raise ValueError('账户执行登记缺少完整SessionCalendar；估值日期元组不能作为交易时段快照')
         state = calendar_to_state(calendar)
         if state not in sessions:
             sessions.append(state)
@@ -150,6 +158,7 @@ def main(argv=None):
             account_state_file=account['account_state_file'],source_files=len(data[-1])),ensure_ascii=False))
         return
     from .run import build_host
+    from .run_workers import load_calendars
     from .config import load_environment
     from .register_worker import registration_payload
     from bomber.framework.trader.persistence import JsonStateStore
@@ -172,6 +181,12 @@ def main(argv=None):
             load_environment(account['account_env_file'])
             host = build_host(combined,resume=True,read_only=True,strategy_processes=True,
                 session_order_budget=account['account']['max_session_orders'])
+            # 08的references.calendar只含估值日期；独立读取同一配置的完整交易时段，
+            # 保存到账户登记后，日常纯账户恢复不再依赖策略配置或数据库规则。
+            option_config = {**combined, 'strategies':[
+                row for row in combined['strategies'] if row['kind'] == 'option_vega']}
+            for sid, calendar in load_calendars(option_config).items():
+                host.strategies[sid].session.session_calendar = calendar
             for row in combined['strategies']:
                 locks.enter_context(strategy_state_lock(row['state_file']+'.worker-owner'))
             transform = None

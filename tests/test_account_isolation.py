@@ -92,6 +92,34 @@ class AccountExecutionTests(unittest.TestCase):
     start = fixtures.HybridSharedLayoutTests.start
     bar = fixtures.HybridSharedLayoutTests.bar
 
+    def test_option_date_tuple_keeps_its_full_session_calendar_through_migration_assembly(self):
+        from tests.test_option_continuous import calendar as option_calendar
+        from tests import test_option_workers as worker_fixtures
+        f = worker_fixtures.WorkerRegistrationTests('runTest')
+        f.setUp(); self.addCleanup(f.doCleanups)
+        from scripts.integration.shared_account.run_workers import load_config, load_calendars
+        config, _ = load_config(ROOT/'scripts/integration/shared_account/legacy_workers.json')
+        row, = [row for row in config['strategies'] if row['kind'] == 'option_vega']
+        mo = option_calendar()
+        with patch('scripts.integration.shared_account.config.load_environment'), \
+                patch('bomber.framework.dataprep.session_inputs.load_session_inputs', return_value=mo) as load:
+            calendars = load_calendars({**config, 'strategies':[row]})
+        load.assert_called_once()
+        session = NS(references=NS(calendar=mo.calendar.days), strategy=NS(calendar=mo.calendar.days),
+            session_calendar=calendars[row['strategy_id']])
+        self.assertIs(session.session_calendar, mo)
+        strategies = {sid:NS(session=NS(references=NS(calendar=f.f.cal)))
+            for sid in ('hybrid-rb','hybrid-p')}
+        strategies[f.sid] = NS(session=session)
+        registry = migrate_account.registry_from_host(NS(service=f.new_service, strategies=strategies))
+        self.assertEqual(len(registry['sessions']), 2)
+        restored = next(calendar_from_state(state) for state in registry['sessions']
+            if state['binding']['asset_type'] == 'OPTION')
+        self.assertEqual(calendar_to_state(restored), calendar_to_state(mo))
+        self.assertEqual(restored.binding.hours_code, 'MO')
+        self.assertEqual(restored.windows(datetime(2026,8,14).date())[-1].end.strftime('%H:%M'), '14:57')
+        self.assertFalse(f.new_transport.sent)
+
     def migrated(self, *, hold=False):
         self.account,self.service,self.transport = self.make_account(preserve_external=True)
         self.account.driver._max_session_orders = 200
@@ -195,6 +223,8 @@ class AccountExecutionTests(unittest.TestCase):
                     ('hybrid-rb','hybrid-p'),self.sessions[-2:])})
         with patch('scripts.integration.shared_account.run_workers.load_config',return_value=(combined,{})), \
                 patch('scripts.integration.shared_account.config.load_environment'), \
+                patch('scripts.integration.shared_account.run_workers.load_calendars',
+                    return_value={'hybrid-p':self.sessions[-1].strategy.calendar}), \
                 patch('scripts.integration.shared_account.run.build_host',side_effect=build) as builder, \
                 redirect_stdout(StringIO()) as output:
             migrate_account.main(args)
@@ -507,12 +537,14 @@ class AccountJoinMigrationTests(unittest.TestCase):
         source_files = {path:path.read_bytes() for path in [base_path,option_path,signal_path,
             *(Path(row['state_file']) for row in rows[:-1])]}
         account_file = root/'account-config.json'; account_file.write_text(json.dumps(settings))
+        from tests.test_option_continuous import calendar as option_calendar
+        mo = option_calendar()
         def build(config,**kwargs):
             self.assertTrue(kwargs['read_only'])
             f.new_account.manager.repository.path = Path(config['account_state_file'])
-            fake_session = NS(references=NS(calendar=f.f.cal))
             return NS(account=f.new_account,service=f.new_service,resources=f.new_account.resources,
-                strategies={sid:NS(session=fake_session) for sid in f.current['strategies']})
+                strategies={sid:NS(session=NS(references=NS(
+                    calendar=mo.calendar.days if sid == f.sid else f.f.cal))) for sid in f.current['strategies']})
         args = ['--account-config',str(account_file),'--source-config','explicit-legacy.json',
             '--trading-day','20261013','--connect','--apply']
         args += ['--fresh-option'] if fresh_option else [
@@ -525,6 +557,7 @@ class AccountJoinMigrationTests(unittest.TestCase):
         with patch('scripts.integration.shared_account.run_workers.load_config',return_value=(combined,{'base_config':'explicit-original.json'})), \
                 patch('scripts.integration.shared_account.config.read_config',return_value=original), \
                 patch('scripts.integration.shared_account.config.load_environment'), \
+                patch('scripts.integration.shared_account.run_workers.load_calendars', return_value={f.sid:mo}), \
                 patch.object(JsonStateStore, 'load', load), \
                 patch('scripts.integration.shared_account.run.build_host',side_effect=build), redirect_stdout(StringIO()):
             migrate_account.main(args)
