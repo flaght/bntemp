@@ -102,6 +102,26 @@ class PositionAttributionLedger:
                 for leg, remaining in self._remaining(order)
                 if (leg["strategy_id"], leg["target_key"]) == (strategy_id, target_key)), Decimal(0))
 
+    def working_quantities(self, strategy_id, routes):
+        """Read the same frozen shares as working_quantity in a single scan.
+
+        No cached quantities: partial fills, cancellations, restores and settlement
+        callbacks are observed on the next read through the authoritative ledger.
+        """
+        with self.positions._lock:
+            zero = Decimal(0)
+            result = dict.fromkeys(routes, zero)
+            for token in self._active_tokens:
+                order = self._orders[token]
+                for leg, remaining in self._remaining(order):
+                    key = leg["target_key"]
+                    route = routes.get(key)
+                    if (leg["strategy_id"] == strategy_id and route is not None
+                            and (order["client_id"], order["instrument_id"])
+                            == (route.client_id, str(route.instrument_id))):
+                        result[key] += order["direction"] * remaining
+            return result
+
     def unassigned(self, client_id, instrument_id):
         with self.positions._lock:
             assigned = sum((v for k, v in self._owned.items()

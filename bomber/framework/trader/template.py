@@ -5,7 +5,7 @@ from __future__ import annotations
 import threading
 from abc import ABC
 from decimal import Decimal
-from typing import Any, Mapping, Protocol
+from typing import Any, Iterable, Mapping, Protocol
 
 from bomber.framework.market.basic.base import Bar, CustomBar, QuoteTick, TradeTick
 from bomber.framework.trader.contracts import TargetPortfolio, TargetUpdateMode
@@ -131,6 +131,23 @@ class StrategyTemplate(ABC):
 
     def position(self, target_key: str) -> Decimal:
         return self._require_context().position(target_key)
+
+    def position_quantities(
+        self, target_keys: Iterable[str],
+    ) -> tuple[dict[str, Decimal], dict[str, Decimal]]:
+        """Read strategy-owned positions and signed working quantities together.
+
+        Each result includes every requested key, including zero quantities.
+        Contexts without the optional bulk capability retain the scalar reads,
+        with all positions read before working quantities, as in existing callers.
+        """
+        context = self._require_context()
+        keys = tuple(target_keys)
+        bulk = getattr(context, "position_quantities", None)
+        if callable(bulk):
+            return bulk(keys)
+        return ({key: self.position(key) for key in keys},
+                {key: self.strategy_working_quantity(key) for key in keys})
 
     def restore_target_revision(self, revision: int) -> None:
         """运行前恢复目标版本；信号窗口仍由策略自身的检查点决定。"""

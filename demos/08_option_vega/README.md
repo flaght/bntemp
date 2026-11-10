@@ -848,8 +848,9 @@ XY上一轮已安装新内核的基线为`run_case=789.960931s`、
 第二轮进一步减少每个小文件的Pandas列/Series创建：批量组装时间列，直接复用已标准化
 的可用时间；普通有限数值列使用原类型数组检查，不重复转换或创建Series掩码。
 混合、可空、非有限及特殊数值保持原兼容路径，列顺序、元数据和错误报告不变。
-本地与上一版交替执行的小文件基准下降约33%，XY完整收益待验证。
-本轮XY基线为加载`252.148737s`、总计`719.843958s`。
+本地与上一版交替执行的小文件基准下降约33%。XY后续完整日志中加载细分统计为
+`196.663552s`，此前为`252.148737s`；该次也启用了下面的prepared解析器，
+整次回测的收益应分别归因，不能全部计入加载优化。
 见[第二轮更新和Bar转换说明](../../doc/HANDOFF/demos/HANDOFF_BAR_PREPARATION_BULK_2026-11-10.md)。
 
 Bar对象转换是加载校验之后的独立阶段：`feature/backtest.py:run_replay`调用
@@ -862,11 +863,87 @@ Bar对象转换是加载校验之后的独立阶段：`feature/backtest.py:run_r
 `prepared_parser_sources/rows`和`prepared_parser_fallback_sources/rows`记录实际使用情况。
 
 追加`--bar-parser generic`可沿用`FixedInstrumentBarParser -> MappedBarParser`做同机对照。
-过去XY的通用路径`replay_event_conversion`约111.875s，排序约1.268s；
-本轮原生XY性能和完整结果等价待实测。Python文件同步后无需重编译内核。
+XY实测通用路径`replay_event_conversion`约111.875s，prepared为55.198365s，
+排序为1.077931s，1488480行均走prepared，45,839帧、179次选约、1048订单、1060成交保持一致。
+该次`run_case=614.757041s`，进程总耗时633.492s，同时包含第二轮加载优化收益。
+计数一致不等于完整金融结果等价；价格、费用、结算及最终权益仍须核对。
+Python文件同步后无需重编译内核。
 先在XY执行`python -m unittest tests.test_prepared_bar_parser_native -v`，需两项原生对象测试通过，
 再运行相同数据/配置的回测；详见
 [Bar转换优化与验证](../../doc/HANDOFF/demos/HANDOFF_PREPARED_BAR_PARSER_2026-11-10.md)。
+
+### 每帧批量读取策略仓位和在途
+
+`_frame`继续读取全部交易合约及其零数量，选约、退出、对冲、恢复等待、到期残仓和
+末日清仓的判断及执行顺序不变。改变的是取数方式：原来每帧分别调用459次`position`
+和459次`strategy_working_quantity`，现在通过`StrategyTemplate.position_quantities(keys)`
+批量获取本帧的两个独立字典，不跨帧缓存，也不根据目标数量猜测已成交仓位。
+
+公共Runner只在HISTORICAL模式、标准PositionManager和静态路由下使用批量路径：
+在同一账本锁内读取逻辑归属仓位，并将活动冻结订单计划扫描一次，保留策略、目标键、
+执行客户端及当前真实合约的在途归属范围。Live、自定义持仓提供器/PositionManager子类
+以及无批量能力的旧上下文沿用原标量查询。动态路由仍保持原静态在途查询的拒绝规则。
+返回的是本策略归属数量，不读取物理账户仓位，也不引入新的持久化状态或检查点版本。
+
+本轮生产改动为五个Python文件：
+
+- `demos/08_option_vega/strategy.py`
+- `bomber/framework/trader/template.py`
+- `bomber/framework/trader/runner.py`
+- `bomber/framework/trader/portfolio.py`
+- `bomber/framework/trader/execution/attribution.py`
+
+本地226项离线回归（含8项新增）通过；600组原始`_frame`与新路径对照涵盖目标提交、
+恢复等待、清仓、到期残仓和异常，输出/状态一致。AST检查确认查询语句之外的`_frame`
+完全一致。459合约、1500个普通分钟帧的交替小样本基准，耗时下降约60%（无在途）和
+67%（4个活动订单）；基准调用真实Python策略/Runner/账本，SDK实体为离线替身，
+没有原生撮合或IV选约负载，不能按此比例推算XY完整策略收益。
+
+只需同步这五个Python文件和新增测试，无需重新编译wheel。更新包不包含服务器YAML。
+在服务器pro根目录使用实际回测Python执行：
+
+```bash
+tar -xzf doc/evidence/archives/STRATEGY_QUANTITIES_20261110.tar.gz
+sha256sum -c doc/evidence/checksums/STRATEGY_QUANTITIES_20261110_SHA256.txt
+PYTHONPATH=. python -m unittest tests.test_strategy_quantities -v
+```
+
+需要确认实际导入文件，而不只是项目目录中的副本：
+
+```bash
+PYTHONPATH=. python - <<'PY'
+from pathlib import Path
+from importlib import import_module
+from hashlib import sha256
+for name in ('bomber.framework.trader.template', 'bomber.framework.trader.runner',
+             'bomber.framework.trader.portfolio', 'bomber.framework.trader.execution.attribution',
+             'demos.08_option_vega.strategy'):
+    actual = Path(import_module(name).__file__).resolve()
+    expected = Path(name.replace('.', '/') + '.py').resolve()
+    print(name, '->', actual)
+    assert sha256(actual.read_bytes()).digest() == sha256(expected.read_bytes()).digest(), '实际加载了旧副本'
+print('批量仓位查询代码核验通过')
+PY
+```
+
+保持原数据、191个交易日、OHLC政策、prepared解析器和`l1-indexed-validation-v1`内核：
+
+```bash
+TIMEFORMAT='回测进程总耗时：%3R 秒'
+time env PYTHONPATH=. python -u demos/08_option_vega/run_backtest.py \
+  --config-file demos/08_option_vega/config/strategy.yaml \
+  --config-id m5_index_blend --log-level WARNING
+```
+
+对比本轮前XY基线`strategy_decision=163.579214s`、`run_case=614.757041s`，
+并核对订单/成交的方向、数量、价格、时间、费用、结算、最终仓位及权益，不只比较笔数。
+本机没有可运行的Bomber编译内核，XY完整性能及金融结果验收仍待服务器执行。
+
+引擎下一步可先评估保持逐根边界的优化：避免WARNING级别下仍构造批次INFO日志、
+减少`run`入口的时间转换和迭代器准备，或增加严格等价的原生单事件推进接口。
+当前扣除策略后`simulation_run_including_decisions`约100.97s，add/prepare/clear合计约24.91s。
+`_run`在批次耗尽时处理定时器；直接按分钟或交易日合并事件会改变同刻回调边界，
+必须单独对照同刻顺序、定时器、next_market和结算后才能采用。本轮尚未改动引擎。
 
 ### 长区间回测进度与特征缓存
 
