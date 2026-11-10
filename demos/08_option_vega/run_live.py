@@ -49,6 +49,8 @@ def validate_calendar(calendar, product):
 
 def parse_args(argv=None):
     p = ConfigArgumentParser(description=__doc__)
+    p.add_argument('--execution-channel', choices=('local', 'shared'), default='local',
+        help='shared直接在本进程运行策略，并连接独立账户服务')
     add_strategy_config_argument(p)
     p.add_argument("--connect", action="store_true")
     p.add_argument("--log-level", choices=("DEBUG", "INFO", "WARNING", "ERROR"), default="INFO")
@@ -449,7 +451,76 @@ def build_runtime(args, *, account_routes=(), window_context=None):
         progress=lambda session: report.record(session, lifecycle.events(session)), window_context=window_context)
 
 
+def run_shared(argv=None):
+    """原生08入口拥有日历及Runner；账户服务只提供远程执行。"""
+    from contextlib import ExitStack
+    from scripts.integration.shared_account.config import load_environment
+    from scripts.integration.shared_account.native import (
+        load_native_config, window_credentials, make_runtime, resume_available)
+    from bomber.framework.trader.runtime.live.continuous import ContinuousPositionRuntime, StopSignal, StopRequested
+    from bomber.framework.trader.runtime.live.local import strategy_state_lock
+    from bomber.framework.trader.runtime.live.remote import run_remote_group
+    from bomber.framework.dataprep.session_inputs import load_session_inputs
+    parser = ConfigArgumentParser(description='08策略直接连接独立账户服务；业务参数复用live-config-id')
+    parser.add_argument('--execution-channel', choices=('shared',), required=True)
+    parser.add_argument('--account-config', type=Path, required=True)
+    parser.add_argument('--live-config-id', default='live_simnow')
+    parser.add_argument('--live-config-file', type=Path)
+    parser.add_argument('--env-file', type=Path, required=True)
+    parser.add_argument('--strategy-id', default='option-vega-live')
+    parser.add_argument('--state-file', type=Path, required=True, help='08信号检查点，自动恢复原格式')
+    parser.add_argument('--runtime-dir', type=Path)
+    parser.add_argument('--prepare-seconds', type=int, default=600)
+    parser.add_argument('--run-forever', action='store_true')
+    parser.add_argument('--log-level', choices=('DEBUG', 'INFO', 'WARNING', 'ERROR'), default='INFO')
+    for flag in ('connect', 'enable-orders', 'confirm-simnow'):
+        parser.add_argument('--'+flag, action='store_true')
+    options = parser.parse_args(argv)
+    if options.prepare_seconds < 0:
+        parser.error('prepare-seconds须为非负整数')
+    profile = options.live_config_file or options.config_file or Path(__file__).with_name('config')/'strategy.yaml'
+    row = dict(strategy_id=options.strategy_id, kind='option_vega', state_file=str(options.state_file.resolve()),
+        argv=['--config-file', str(profile.resolve()), '--config-id', options.live_config_id])
+    config = load_native_config(options.account_config, [row], options.env_file)
+    if not options.connect:
+        if options.enable_orders or options.confirm_simnow:
+            parser.error('离线校验不接受报单授权')
+        print('08原生入口配置通过；一个策略实例，未连接')
+        return
+    if not (options.enable_orders and options.confirm_simnow):
+        parser.error('连接须显式enable-orders和confirm-simnow')
+    load_environment(options.env_file)
+    logging.basicConfig(level=getattr(logging, options.log_level),
+        format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
+    # 只读取自己的业务配置和日历，不加载Hybrid模型或创建TD。
+    from scripts.integration.shared_account.factories import strategy_arguments
+    _, business = strategy_arguments(row, config, resume=Path(row['state_file']).is_file())
+    calendar = load_session_inputs(session_inputs(business))
+    validate_calendar(calendar, business.option_product)
+    with ExitStack() as resources, StopSignal() as stop:
+        resources.enter_context(strategy_state_lock(row['state_file']+'.worker-owner'))
+        def window_runtime(window, event):
+            def run():
+                try:
+                    credentials = window_credentials(config, [row], window, event, options.runtime_dir)
+                    current = {**config, 'trading_day': window.trading_day, 'seconds': 86400}
+                    runtime = make_runtime(current, row, credentials[row['strategy_id']],
+                        resume=resume_available(row, credentials[row['strategy_id']]),
+                        activate_at=window.start, stop_at=window.end)
+                    run_remote_group([runtime], event)
+                    return {'status': 'completed'}
+                except StopRequested:
+                    return {'status': 'completed'}
+            return SimpleNamespace(run=run)
+        print('08原生进程：一个Vega实例，通过IPC连接独立账户服务', flush=True)
+        return ContinuousPositionRuntime(calendar, window_runtime, stop_event=stop,
+            run_forever=options.run_forever, prepare_seconds=options.prepare_seconds).run()
+
+
 def main(argv=None):
+    from bomber.framework.cli import execution_channel_from_argv
+    if execution_channel_from_argv(argv) == 'shared':
+        return run_shared(argv)
     from dotenv import load_dotenv
     load_dotenv(Path(__file__).resolve().parents[2] / ".env")
     args = parse_args(argv)

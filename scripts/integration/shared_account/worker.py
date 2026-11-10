@@ -1,16 +1,12 @@
 """单策略进程；复用demo算法和Runner，通过本机账户服务执行。"""
 
 import argparse
-from contextlib import ExitStack
-from dataclasses import replace
 from pathlib import Path
 from datetime import datetime
-from types import SimpleNamespace
-import json
 import time
 import logging
 
-from .config import read_config, strategy_report_dir, load_environment
+from .config import read_config, load_environment
 
 
 def session_reference_is_current(session):
@@ -102,226 +98,13 @@ def _main(argv):
 
 
 def _run(args, config, stop_event):
-    row = next(row for row in config["strategies"] if row["strategy_id"] == args.strategy_id)
-    from bomber.framework.trader.runtime.live.continuous import StopRequested, wait_for_open
-    from bomber.framework.trader.execution.contracts import MarketDataUnavailable, OrderBudgetExhausted
-    from .factories import strategy_arguments, assemble_strategy_session, prepare_strategy_inputs, shared_strategy_identity
-    from bomber.framework.trader.execution.ipc import UnixExecutionConnection
-    from bomber.framework.trader.execution.ipc_client import RemoteAccountService, RemoteTraderSession
-    from bomber.framework.trader.persistence import JsonStateStore
-    from bomber.framework.trader.runtime.live.contracts import LiveRunContext
-    from bomber.framework.trader.runtime.live.local import strategy_state_lock
-    from bomber.framework.trader.runtime.live.channels.ctp import required
-    from bomber.framework.trader.runtime.reports import LiveRunReport
+    from .native import make_runtime
     load_environment(getattr(args, 'env_file', None) or config.get('strategy_env_files', {}).get(args.strategy_id))
-    identity = {"strategy_id": row["strategy_id"], "kind": row["kind"], "argv": row["argv"],
-        "trading_day": config["trading_day"], "environment": config["environment"],
-        "replay_md_trading_day": config.get("replay_md_trading_day"), "execution_mode": "independent"}
-    metadata = dict(identity)
-    if "history_missing_policy" in config:
-        metadata["history_missing_policy"] = config["history_missing_policy"]
-    if args.strategy_id in config.get("strategy_history_minutes", {}):
-        metadata["effective_history_minutes"] = config["strategy_history_minutes"][args.strategy_id]
-    if "ctp_instrument_max_age_seconds" in config:
-        metadata["ctp_instrument_max_age_seconds"] = config["ctp_instrument_max_age_seconds"]
-    report = LiveRunReport(strategy_report_dir(row, config), prefix=row["strategy_id"], metadata=metadata)
-    report.begin()
-    session, failure, shutdown_failure, status = None, None, None, "failed"
-    stop_reason = None
-    save = None
-    with ExitStack() as resources:
-        try:
-            resources.enter_context(strategy_state_lock(Path(row["state_file"])))
-            store = JsonStateStore(Path(row["state_file"]))
-            persisted = store.load()
-            credentials = json.loads(args.credentials.read_text())
-            bootstrap = credentials.get("bootstrap_signal")
-            if bool(persisted) != args.resume and not (args.resume and persisted is None and bootstrap is not None):
-                raise ValueError("策略进程恢复标志、身份或状态文件不一致")
-            if persisted and row["kind"] != "hybrid_transformer" and persisted.payload["identity"] != identity:
-                from .rollover import validate_strategy_identity
-                validate_strategy_identity(persisted.payload["identity"], identity)
-            if credentials["strategy_id"] != args.strategy_id:
-                raise ValueError("客户端凭据不属于本策略")
-            connection = UnixExecutionConnection(Path(credentials["socket"]), args.strategy_id, credentials["key"])
-            state = connection.call("describe", {})["state"]
-            if state["trading_day"] != config["trading_day"]:
-                raise ValueError("账户服务交易日不一致")
-            service = RemoteAccountService(connection, credentials["configuration"], state)
-            driver = RemoteTraderSession(service, config["trading_day"])
-            entry, strategy_args = strategy_arguments(row, config, resume=args.resume)
-            print(f"策略CTP逐合约时效: {getattr(strategy_args, 'instrument_max_age_seconds', 10)}秒；"
-                  f"策略={args.strategy_id}", flush=True)
-            import os
-            from bomber.framework.market.sources import source_config
-            lifecycle = SimpleNamespace(md_front=(required("CTP_MD_ADDRESS") if
-                source_config(strategy_args).source == "ctp" else None), transport=SimpleNamespace(
-                investor_id=required("CTP_ACCOUNT_ID"), password=required("CTP_PASSWORD"),
-                production_mode=os.getenv("CTP_PRODUCTION_MODE", "true").lower() in {"1", "true", "yes", "on"}))
-            from datetime import datetime
-            context = LiveRunContext(resources=resources, trading_day=datetime.strptime(config["trading_day"], "%Y%m%d").date())
-            inputs = prepare_strategy_inputs(row, entry, strategy_args, context, lifecycle)
-            upstream = getattr(inputs, "upstream", getattr(inputs, "ctp_upstream", None))
-            if getattr(upstream, "config", None) is not None and source_config(strategy_args).source == "ctp":
-                upstream.config = replace(upstream.config,
-                    flow_path=f"/tmp/{config['account']['client_id']}-{args.strategy_id}-worker-md")
-            session = assemble_strategy_session(entry, strategy_args, inputs,
-                service=service, driver=driver, strategy_id=args.strategy_id)
-            port = session.client
-            if row["kind"] == "hybrid_transformer":
-                identity = shared_strategy_identity(row, config, session)
-                if persisted and persisted.payload["identity"] != identity:
-                    from .rollover import validate_strategy_identity
-                    validate_strategy_identity(persisted.payload["identity"], identity)
-                from importlib import import_module
-                import_module("demos.10_hybrid_transformer.shared").configure_report(session, strategy_report_dir(row, config))
-            if hasattr(session, "session_identity") and credentials.get("reference") != session.session_identity:
-                raise ValueError("策略行情/模型/条款身份与账户服务声明不一致")
-            if persisted and persisted.payload["revision"] > state["source_revision"]:
-                raise ValueError("策略信号版本领先账户服务")
-            if not persisted and state["source_revision"] and bootstrap is None:
-                raise ValueError("账户已有策略来源，须使用原策略检查点恢复")
-            session.strategy.restore_target_revision(state["source_revision"])
-            if persisted and hasattr(session, "restore_signal"):
-                session.restore_signal(persisted.payload["signal"])
-            elif bootstrap is not None:
-                session.restore_signal(bootstrap)
-            if row["kind"] != "hybrid_transformer":
-                session.strategy.fills_received = persisted.payload.get("fills_received", 0) if persisted else 0
-            restored_cursor = getattr(session, "restored_signal_cursor", None)
-            port.set_cursor(restored_cursor if restored_cursor is not None else
-                (persisted.payload.get("cursor", state["ack"]) if persisted else state["ack"]))
-            generation = persisted.generation if persisted else 0
-            def save(cursor=None):
-                nonlocal generation
-                saved = store.save({"version": 1, "identity": identity,
-                    "revision": port.state["source_revision"], "cursor": port.cursor if cursor is None else cursor,
-                    "fills_received": session.strategy.fills_received,
-                    **({"signal": session.signal_checkpoint.snapshot_state()}
-                       if hasattr(session, "signal_checkpoint") else {})}, expected_generation=generation)
-                generation = saved.generation
-            port.completed = save
-            bind = getattr(session, "bind_signal_checkpoint", None)
-            if callable(bind):
-                bind(save)
-            port.ready_check = session.runner.session_ready
-            stop_at = getattr(args, 'stop_at', None)
-            if stop_at is not None:
-                from bomber.framework.calendars.sessions import TradingWindow
-                window = TradingWindow(config['trading_day'], args.activate_at, stop_at, 'worker')
-                session.runner.continuous_window = window
-                session.runner.continuous_stop_event = stop_event
-                if row['kind'] == 'option_vega':
-                    from bomber.framework.trader.runtime.live.continuous import LiveWindowContext
-                    session.runner.window_context = LiveWindowContext(None, window, stop_event,
-                        source_day=config['trading_day'], resume=args.resume)
-            session.runner.start()
-            from bomber.framework.trader.runtime.live.shared import prepare_strategy_history
-            activate_at = getattr(args, "activate_at", None)
-            if activate_at is not None:
-                if prepare_strategy_history(session, require_ready=False) is False:
-                    raise StopRequested()
-                def poll_preparation():
-                    if stop_at is not None and datetime.now(stop_at.tzinfo) >= stop_at:
-                        raise StopRequested()
-                    if session.runner.failure:
-                        raise RuntimeError(session.runner.failure)
-                    port.drain_events()
-                    session.references.refresh()
-                    poll = getattr(session.runner, "poll_live_inputs", None)
-                    if callable(poll):
-                        poll()
-                wait_for_open(activate_at, stop_event, poll=poll_preparation)
-            ready_seconds = strategy_args.ready_timeout if row["kind"] == "option_vega" else 30
-            if source_config(strategy_args).source != "ctp":
-                ready_seconds = max(ready_seconds, source_config(strategy_args).max_age_seconds)
-            until_ready = time.monotonic() + ready_seconds
-            while not session.runner.session_ready():
-                if stop_event.is_set() or stop_at is not None and datetime.now(stop_at.tzinfo) >= stop_at:
-                    raise StopRequested()
-                if session.runner.failure:
-                    raise RuntimeError(session.runner.failure)
-                port.drain_events()
-                session.references.refresh()
-                poll = getattr(session.runner, "poll_live_inputs", None)
-                if callable(poll):
-                    poll()
-                if time.monotonic() >= until_ready:
-                    context = capture_session_failure(session)
-                    raise RuntimeError(f"策略未在期限内取得健康行情/参考/账户: {context}")
-                time.sleep(0.2)
-            port.drain_events()
-            save()
-            if stop_event.is_set():
-                raise StopRequested()
-            if activate_at is None:
-                if prepare_strategy_history(session) is False:
-                    raise StopRequested()
-            else:
-                from bomber.framework.trader.runtime.live.lifecycle import validate_session_ready
-                session.references.refresh()
-                validate_session_ready(session)
-            if stop_event.is_set():
-                raise StopRequested()
-            session.runner.begin_bars()
-            until = time.monotonic() + min(config["seconds"], row.get("stop_after_seconds", config["seconds"]))
-            while (not stop_event.is_set() and time.monotonic() < until
-                    and (stop_at is None or datetime.now(stop_at.tzinfo) < stop_at)):
-                poll_strategy_session(session, save)
-                time.sleep(0.2)
-            status = "completed"
-        except OrderBudgetExhausted:
-            stop_reason, status = "order_budget_exhausted", "completed"
-        except MarketDataUnavailable as error:
-            stop_reason, status = "market_data_unavailable", "completed"
-            try:
-                context = capture_session_failure(session)
-            except Exception as diagnostic_error:
-                context = {"diagnostic_error": str(diagnostic_error)}
-            context["account_valuation"] = error.readiness
-            session.runner.failure_readiness = context
-        except StopRequested:
-            status = "completed"
-        except BaseException as error:
-            failure = str(error) or type(error).__name__
-            if session and getattr(session.runner, "failure_readiness", None) is None:
-                try:
-                    capture_session_failure(session)
-                except Exception as diagnostic_error:
-                    session.runner.failure_readiness = {"diagnostic_error": str(diagnostic_error)}
-            raise
-        finally:
-            try:
-                if session:
-                    with session.runner._submit_lock:
-                        session.runner.accept_bars = False
-                        session.client.begin_stop()  # 撤单、同步归属及回调完成后才解绑。
-                        if save is not None:
-                            save()
-                    finish = getattr(session, "finish_report", None)
-                    if callable(finish):
-                        finish()
-                    session.runner.stop()
-            except Exception as error:
-                shutdown_failure, status = str(error), "failed"
-                raise
-            finally:
-                from bomber.framework.trader.runtime.live.shared import history_snapshot
-                report.write(status=status, fields={"failure": failure, "shutdown_failure": shutdown_failure,
-                    "stop_reason": stop_reason,
-                    **(history_snapshot(session) if session else {}),
-                    "failure_readiness": getattr(session.runner, "failure_readiness", None) if session else None,
-                    "verification": "independent_strategy_process", "strategy_id": args.strategy_id,
-                    "positions": session.client.state["positions"] if session else None,
-                    "cursor": session.client.cursor if session else None,
-                    "fills_received": session.strategy.fills_received if session else None,
-                    "price_sync": getattr(session.client, "price_sync", None) if session else None,
-                    "source_revision": session.client.state["source_revision"] if session else None,
-                    "last_targets": getattr(session.strategy, "last_targets", None) if session else None,
-                    "reference_manifest": getattr(session.references, "manifest", None) if session else None,
-                    "bar_counts": {str(i): n for i, n in getattr(session.runner, "bar_counts", {}).items()} if session else {},
-                    "last_processed_ns": getattr(session.strategy, "last_processed_ns", None) if session else None},
-                    session=session, events=session.client.received_events if session else ())
+    row = next(row for row in config['strategies'] if row['strategy_id'] == args.strategy_id)
+    runtime = make_runtime(config, row, args.credentials, resume=args.resume,
+        activate_at=getattr(args, 'activate_at', None), stop_at=getattr(args, 'stop_at', None))
+    runtime.poll_session = poll_strategy_session
+    return runtime.run(stop_event)
 
 
 def main(argv=None):

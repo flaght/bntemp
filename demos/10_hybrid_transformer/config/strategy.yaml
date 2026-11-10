@@ -1,9 +1,10 @@
 experiment_setups:
   workers_hybrid:
-    description: "Hybrid RB/P独立worker；复用原模型、手数、批次和检查点"
-    config: scripts/integration/shared_account/workers.json
-    role: worker
-    kind: hybrid_transformer
+    description: "原生run_shared入口；本进程运行RB/P，连接独立账户服务"
+    execution_channel: shared
+    config: demos/10_hybrid_transformer/config/shared_rb_p.json
+    account_config: scripts/integration/shared_account/workers.json
+    env_file: work2/env2
     prepare_seconds: 600
     run_forever: true
     connect: true

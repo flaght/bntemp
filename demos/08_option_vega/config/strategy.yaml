@@ -1,10 +1,12 @@
 experiment_setups:
   # 这里只维护08启动参数；公共账户及10的启动参数分别放各自目录。
   workers_option:
-    description: "08独立worker；只管理自己的期权/期货归属及手数"
-    config: scripts/integration/shared_account/workers.json
-    role: worker
-    kind: option_vega
+    description: "原生run_live入口；本进程运行Vega，连接独立账户服务"
+    execution_channel: shared
+    account_config: scripts/integration/shared_account/workers.json
+    live_config_id: live_simnow
+    env_file: work1/env1
+    state_file: demos/08_option_vega/results/live/state/worker_signal.json
     prepare_seconds: 600
     run_forever: true
     connect: true

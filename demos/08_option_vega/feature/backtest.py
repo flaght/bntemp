@@ -2,6 +2,7 @@
 from collections import defaultdict
 from datetime import datetime
 from zoneinfo import ZoneInfo
+from time import perf_counter
 
 from bomber.framework.datahub import DataHub
 from bomber.framework.datahub.features import (FeatureError, FeatureHub, FeatureRequirement,
@@ -58,10 +59,21 @@ def build_backtest_runner(**kwargs):
             self.frame_audit = []
             self._scheduled = set()
             self.failure = None
+            self._progress_day = None
+            self._progress_wall = 0.0
 
         def run_replay(self):
-            outcomes, self.deadlines = prepare_feature_frames(self.feed.load_events(), self.bundle,
+            started = perf_counter()
+            print("[回测进度] 开始转换与排序行情事件；尚未推进模拟时间", flush=True)
+            events = self.feed.load_events()
+            print(f"[回测进度] 行情事件准备完成：events={len(events)} elapsed={perf_counter()-started:.3f}s", flush=True)
+            started = perf_counter()
+            print(f"[回测进度] 开始指数特征对齐：feature_records={len(self.records)}", flush=True)
+            outcomes, self.deadlines = prepare_feature_frames(events, self.bundle,
                 self.binding, self.records, self.index_key, self.wait_ns, self.max_age_ns)
+            ready = sum(row.status == 'READY' for row in outcomes)
+            print(f"[回测进度] 特征对齐完成：frames={len(outcomes)} ready={ready} "
+                  f"skipped={len(outcomes)-ready} elapsed={perf_counter()-started:.3f}s", flush=True)
             if not outcomes:
                 raise FeatureError("回测没有可封闭的分钟帧，行情范围不足以推进帧接收期限")
             if not any(row.status == "READY" for row in outcomes):
@@ -75,6 +87,7 @@ def build_backtest_runner(**kwargs):
                     "检查日期/代码、available_ns/received_ns与frame-wait-seconds；"
                     "当前计算快照不能直接用于历史时点回测")
             self.outcomes = {row.event_ns: row for row in outcomes}
+            print("[回测进度] 开始推进模拟时间及撮合；按交易日或每30秒输出进度", flush=True)
             result = super().run_replay()
             if self.failure is not None:
                 raise RuntimeError("指数特征分钟决策失败") from self.failure
@@ -102,6 +115,7 @@ def build_backtest_runner(**kwargs):
                 "deadline_ns": self.deadlines[timestamp], "status": outcome.status, "reason": outcome.reason}
             self.frame_audit.append(audit)
             if outcome.status != "READY":
+                self._report_progress(timestamp)
                 return
             record = outcome.frame.features.latest("index")
             audit.update(revision=record.revision, value_field=self.index_value_field, available_ns=record.available_ns,
@@ -116,6 +130,20 @@ def build_backtest_runner(**kwargs):
                 self.failure = error
                 audit["status"] = "FAILED"
                 raise
+            finally:
+                self._report_progress(timestamp)
+
+        def _report_progress(self, timestamp):
+            stamp = datetime.fromtimestamp(timestamp//1_000_000_000,
+                ZoneInfo(self.binding.spec.frequency.timezone))
+            wall = perf_counter()
+            if stamp.date() != self._progress_day or wall-self._progress_wall >= 30 or len(self.frame_audit) == len(self.outcomes):
+                print(f"[回测进度] minute={stamp.isoformat()} frames={len(self.frame_audit)}/{len(self.outcomes)} "
+                      f"strategy_frames={getattr(self.strategy, 'frames', 0)} "
+                      f"entries={getattr(self.strategy, 'entry_decisions', 0)} "
+                      f"submissions={getattr(self.strategy, 'submissions', 0)} "
+                      f"fills={getattr(self.strategy, 'fills_received', 0)}", flush=True)
+                self._progress_day, self._progress_wall = stamp.date(), wall
 
     return OptionFeatureBacktestRunner(**kwargs)
 

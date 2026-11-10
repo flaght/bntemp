@@ -13,6 +13,24 @@ from pathlib import Path
 import sys
 
 
+def execution_channel_from_argv(argv=None):
+    """只选择入口的执行通道；业务参数仍由该入口的正式parser完整校验。"""
+    probe = argparse.ArgumentParser(add_help=False)
+    probe.add_argument('--execution-channel', choices=('local', 'shared'))
+    probe.add_argument('--config-file', '--config_file')
+    probe.add_argument('--config-id', '--config_id')
+    argv = list(sys.argv[1:] if argv is None else argv)
+    selected, _ = probe.parse_known_args(argv)
+    if selected.execution_channel is not None:
+        return selected.execution_channel
+    if '-h' in argv or '--help' in argv:
+        return 'local'
+    if selected.config_file and selected.config_id:
+        setup = load_config(selected.config_file, selected.config_id)
+        return setup.get('execution_channel', setup.get('execution-channel', 'local'))
+    return 'local'
+
+
 def load_config(file_name, config_id):
     """读取一个实验配置；失败抛ValueError，不返回None继续启动。"""
     try:

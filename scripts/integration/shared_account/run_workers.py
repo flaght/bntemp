@@ -240,6 +240,26 @@ def run_remote_window(config, window, event, worker_windows, discovery_file, pre
     return {'status': 'completed'}
 
 
+def run_account_window(config, window, stop_event, remaining, discovery_file):
+    """账户角色在当前进程运行TD服务；策略由各自原生入口运行。"""
+    from .server import _run
+    import uuid
+    directory = Path(config['report_dir'])/('account-window-'+uuid.uuid4().hex)
+    directory.mkdir(parents=True, mode=0o700)
+    config_file = directory/'config.json'
+    config_file.write_text(json.dumps(config, ensure_ascii=False, indent=2)+'\n')
+    args = SimpleNamespace(socket=Path('/tmp')/('bomber-shared-'+uuid.uuid4().hex+'.sock'),
+        credentials_dir=directory/'credentials', resume=True, remaining_orders=remaining,
+        activate_at=window.start, stop_at=window.end, env_file=config.get('account_env_file'),
+        discovery_file=discovery_file, discovery_config=config_file, discovery_window=window)
+    try:
+        _run(args, config, stop_event)
+        return {'status': 'completed'}
+    finally:
+        if discovery_file.exists() and json.loads(discovery_file.read_text()).get('config') == str(config_file):
+            discovery_file.unlink()
+
+
 def main(argv=None):
     from bomber.framework.cli import ConfigArgumentParser
     parser = ConfigArgumentParser(description=__doc__)
@@ -307,8 +327,10 @@ def main(argv=None):
                     raise RuntimeError('共享TD当日报单额度已用完，不在切换worker时重置')
                 # 留出独立终端在最后一个策略窗口结束后的撤单/游标确认时间。
                 service_window = replace(window, end=window.end+timedelta(seconds=30))
+                if args.role == 'account':
+                    return run_account_window(current, service_window, event, remaining, discovery)
                 return ProcessWindowRuntime(current, service_window, event, remaining, prepare_before_open=True,
-                    worker_windows={} if args.role == 'account' else calendars.worker_windows(current, window),
+                    worker_windows=calendars.worker_windows(current, window),
                     prepare_seconds=args.prepare_seconds, discovery_file=discovery).run()
             return SimpleNamespace(run=run)
         print('独立worker调度：各策略使用自己的日历；原归属、批次及共享TD报单计数继续恢复', flush=True)

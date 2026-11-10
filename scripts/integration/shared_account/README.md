@@ -1,5 +1,13 @@
 # 同账户多策略 SimNow 宿主
 
+08与10日常运行使用独立账户服务和各自原生策略入口：
+账户以`run_workers --config-file scripts/integration/shared_account/launch.yaml --config-id workers_account`启动；
+10以`demos.10_hybrid_transformer.run_shared`启动RB/P两个实例；08以自己的`run_live.py`启动Vega。
+三个终端直接运行各自进程。原生入口的配置核对在`native.py`，通用远程生命周期在框架
+`trader/runtime/live/remote.py`；旧server/worker及统一布局入口保留兼容。
+完整命令与首次注册步骤见[08原生启动说明](../../../demos/08_option_vega/README.md#独立账户服务与原生策略入口)。
+服务器必须同步本目录`workers.json`及其引用的策略注册声明；它不是首次启动时自动生成的文件。
+
 预热数量可用顶层`strategy_history_minutes`按策略ID覆盖，例如
 `{"ema-im-three":30,"calendar-im-three":120,"cross-im-if-three":21}`。
 取值为1至10000的整数，仅支持01/03/04；未列出的策略沿用原argv数量。
