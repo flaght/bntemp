@@ -330,6 +330,112 @@ class SharedAccountTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.submit(two, 6)
 
+    def test_strategy_only_account_preserves_independent_same_contract_positions_and_limits(self):
+        modules = self.native_modules()
+        shared = import_module("bomber.framework.trader.execution.shared")
+        with TemporaryDirectory() as directory:
+            account, service, broker, (one, two), _ = self.native_account(
+                Path(directory)/"account.json", modules, execution_mode="independent")
+            service.budget = shared.SharedRiskBudget(None, None)
+            account.driver._max_session_orders = 200
+            one.budget = shared.SharedRiskBudget(2, 50000)
+            one.instrument_limits[self.instrument] = self.risk.RiskLimits(
+                max_order_quantity=4, max_abs_position=2, max_market_age_ns=120_000_000_000)
+            account.start(resume=False); service.start(); one.start(); two.start(); account.authorize()
+            self.submit(one, 2)
+            broker.fill(broker.sent[-1]["OrderRef"])
+            self.submit(two, 3)
+            broker.fill(broker.sent[-1]["OrderRef"])
+            self.assertEqual(service.position_manager.position("one", "main"), 2)
+            self.assertEqual(service.position_manager.position("two", "main"), 3)
+            self.assertEqual(broker.gross[str(self.instrument)], (5, 0))
+            before = len(broker.sent)
+            with self.assertRaises(ValueError):
+                self.submit(one, 3, revision=2)
+            self.assertEqual(len(broker.sent), before)
+            self.assertEqual(service.position_manager.position("two", "main"), 3)
+            self.submit(two, 1, revision=2)
+            broker.fill(broker.sent[-1]["OrderRef"])
+            self.assertEqual(service.position_manager.position("two", "main"), 1)
+            self.assertEqual(service.position_manager.position("one", "main"), 2)
+            self.assertEqual(account.driver.order_budget, {"limit": 200, "submitted": 3})
+            account.driver.check_order_capacity(197)
+            with self.assertRaises(import_module("bomber.framework.trader.execution.contracts").OrderBudgetExhausted):
+                account.driver.check_order_capacity(198)
+            state = service.snapshot_state()
+            self.assertEqual(state["shared"]["budget"], {"max_gross_quantity": None, "max_gross_notional": None})
+            one.stop(); two.stop(); account.stop()
+            persisted = account.manager.repository.load()
+            self.assertEqual(persisted.payload["component_states"]["shared_account"]["shared"]["budget"],
+                state["shared"]["budget"])
+            self.assertEqual(persisted.payload["component_states"]["shared_account"]["shared"]["order_budget"],
+                {"limit": 200, "submitted": 3})
+            resumed, service2, broker2, (one2, two2), _ = self.native_account(
+                Path(directory)/"account.json", modules, execution_mode="independent")
+            service2.budget = shared.SharedRiskBudget(None, None)
+            resumed.driver._max_session_orders = 200
+            one2.budget = one.budget
+            one2.instrument_limits[self.instrument] = one.instrument_limits[self.instrument]
+            broker2.gross = dict(broker.gross)
+            resumed.start(resume=True); service2.start(); one2.start(); two2.start(); resumed.authorize()
+            self.assertEqual(resumed.driver.order_budget, {"limit": 200, "submitted": 3})
+            self.assertEqual(service2.position_manager.position("one", "main"), 2)
+            self.assertEqual(service2.position_manager.position("two", "main"), 1)
+            self.assertFalse(broker2.sent)
+            one2.stop(); two2.stop(); resumed.stop()
+
+    def test_unlimited_budget_is_not_valid_for_strategy_or_netted_account(self):
+        shared = import_module("bomber.framework.trader.execution.shared")
+        with self.assertRaises(ValueError):
+            shared.SharedRiskBudget(None, 1)
+        with self.assertRaisesRegex(ValueError, "independent"):
+            self.service(quantity=None, notional=None)
+        service, _, _ = self.service()
+        with self.assertRaisesRegex(ValueError, "策略自身"):
+            service.strategy_client("unbounded", routes={"main": self.instrument},
+                budget=shared.SharedRiskBudget(None, None))
+
+    def test_strategy_only_budget_does_not_require_other_strategy_quote(self):
+        modules = self.native_modules()
+        shared = import_module("bomber.framework.trader.execution.shared")
+        with TemporaryDirectory() as directory:
+            other = type(self.instrument).from_str("p2701.DCE")
+            account, service, broker, (one, two), _ = self.native_account(
+                Path(directory)/"account.json", modules, execution_mode="independent", extra_instruments=(other,))
+            service.budget = shared.SharedRiskBudget(None, None)
+            service._ports.pop("two")
+            two = service.strategy_client("two", routes={"main": other}, budget=shared.SharedRiskBudget(5, 50000))
+            account.start(resume=False); service.start(); one.start(); two.start(); account.authorize()
+            self.submit(one, 2)
+            broker.fill(broker.sent[-1]["OrderRef"])
+            self.now += 121_000_000_000
+            service.prices.update(other, 3000, self.now)
+            account.client.refresh_account_state()
+            request = replace(self.request("account", strategy="two", quantity=2, timestamp=self.now),
+                targets={other: Decimal(2)}, metadata={"position_attribution": (
+                    {"strategy_id": "two", "target_key": "main", "instrument_id": str(other), "quantity": "2"},)})
+            two.submit_targets(request)
+            self.assertEqual(broker.sent[-1]["InstrumentID"], "p2701")
+            self.assertEqual(service.position_manager.position("one", "main"), 2)
+            one.stop(); two.stop(); account.stop()
+
+    def test_strategy_order_limits_are_rechecked_at_native_dispatch(self):
+        modules = self.native_modules()
+        with TemporaryDirectory() as directory:
+            account, service, broker, (one, _), _ = self.native_account(
+                Path(directory)/"account.json", modules, execution_mode="independent")
+            service.budget = import_module("bomber.framework.trader.execution.shared").SharedRiskBudget(None, None)
+            one.instrument_limits[self.instrument] = self.risk.RiskLimits(
+                max_order_quantity=1, max_abs_position=5, max_market_age_ns=120_000_000_000)
+            account.start(resume=False); service.start(); one.start(); account.authorize()
+            with self.assertRaisesRegex(self.risk.RiskRejected, "订单数量2超过上限1"):
+                self.submit(one, 2)
+            self.assertFalse(broker.sent)
+            self.assertEqual(service.position_manager.position("one", "main"), 0)
+            one.stop()
+            with self.assertRaisesRegex(RuntimeError, "保持闭闸"):
+                account.stop()
+
     def test_wrong_identity_route_or_same_version_policy_is_rejected(self):
         service, client, (one, two) = self.service()
         with self.assertRaises(ValueError):
@@ -2414,6 +2520,22 @@ class SharedConfigTests(unittest.TestCase):
             config["position_scope"] = value
             with self.assertRaisesRegex(ValueError, "position_scope"):
                 self.read(config)
+
+    def test_strategy_only_account_limits_require_explicit_independent_mode(self):
+        config = self.config()
+        config["execution_mode"] = "independent"
+        config["account"].update(max_gross_quantity=None, max_gross_notional=None, max_session_orders=200)
+        parsed = self.read(config)
+        self.assertIsNone(parsed["account"]["max_gross_quantity"])
+        self.assertIsNone(parsed["account"]["max_gross_notional"])
+        self.assertEqual(parsed["account"]["max_session_orders"], 200)
+        config["execution_mode"] = "netted"
+        with self.assertRaisesRegex(ValueError, "independent"):
+            self.read(config)
+        config["execution_mode"] = "independent"
+        config["account"]["max_gross_quantity"] = 4
+        with self.assertRaisesRegex(ValueError, "同时为null"):
+            self.read(config)
 
     def test_duplicate_ids_files_and_execution_overrides_are_rejected(self):
         for mutation in (lambda c: c["strategies"][1].update(strategy_id="one"),

@@ -147,6 +147,7 @@ class CtpNativeTraderDriver:
         self._sink: Callable[[ExecutionReport], None] | None = None
         self._session: CtpTraderSession | None = None
         self._connected = False
+        self.last_disconnect: dict[str, int] | None = None
         self._next_ref = 0
         self._orders: dict[str, tuple[str, OrderIntent]] = {}
         self._venue_order_ids: dict[str, str] = {}
@@ -290,7 +291,9 @@ class CtpNativeTraderDriver:
     def checkpoint(self) -> CtpDriverCheckpoint:
         """导出当前活动委托关联；调用方须与订单状态机同代保存。"""
         session = self._session
-        if session is None or not self._connected or self._recovery_checkpoint is not None:
+        if session is None or not self._connected:
+            raise RuntimeError(f"CTP会话已断开或未登录，不能生成检查点；disconnect={self.last_disconnect}")
+        if self._recovery_checkpoint is not None:
             raise RuntimeError("CTP会话未完成关联恢复，不能生成检查点")
         records = tuple(
             CtpOrderAssociation(
@@ -561,6 +564,8 @@ class CtpNativeTraderDriver:
                 self.transport.cancel_order(order_ref)
 
     def on_disconnect(self, reason: int) -> None:
+        # 先保留真实原因，再触发闭闸回调；供停机报告诊断，不写入交易账本。
+        self.last_disconnect = {"reason": reason, "ts_ns": time.time_ns()}
         self._connected = False
         if self._disconnect_handler is not None:
             self._disconnect_handler(f"ctp_front_disconnected:{reason}")

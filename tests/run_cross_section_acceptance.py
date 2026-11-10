@@ -57,7 +57,7 @@ FEATURE_RUNTIME_HASHES = {
  'demos/08_option_vega/reports.py': 'dc994e55d61f85ce89439750a950524a245799912f26b7cd156ee48752b12528',
  'bomber/framework/trader/runtime/reports.py': '4e8dd88e4aa2605be2637462c053b4d37e846b00318865c098b37d808065e0c8',
  'tests/test_cli_config.py': '6cb276ada5ee6f4a5e0ebd5cbc92016a544226b986f25700c8e38347d71f00a2',
- 'demos/08_option_vega/config/strategy.yaml': '3f36304e789f4a10ed1143374b3f872c9624f13491c94856a53e464436dd6e3d',
+ 'demos/08_option_vega/config/strategy.yaml': 'e9ce312e26bb30ca3901e3215f8dcce83fa2cae33d051b665942c6fc9f70d3ac',
  'bomber/framework/__init__.py': 'fcaca2c174a5e6b91f0aa28c17b2a4ded3b0e3aedd33925ed984cb5f43d8c2e7',
  'bomber/framework/requirements-config.txt': '865bbefc83398c2d53d4d494e8c0ad2302c93e657b78b860a1eba3ac71044309',
  'bomber/framework/cli.py': 'd8309e60c34edbac71d8f589f59d5baaab3c38ef79508d483f869bfa8a8f8c4d',
@@ -116,7 +116,7 @@ FEATURE_RUNTIME_HASHES = {
  'tests/test_option_dolphin_stream.py': 'f6a8a46d1f9ec3e2179c607d23c1f6f98d0f4acc7c3ba2ca59301159c0ecf3ff',
  'scripts/integration/options/dolphin_stream_probe.py': '1b9b7555a0662217347612bcd2b02e61a5632e661c638d7fed14653eb1c407e8',
  'bomber/framework/trader/execution/ctp/limit_planner.py': '52490c75d9464c8b2a96bfbcab0da30d1e1f8f2876d7e2421b342545a7d6aec7',
- 'bomber/framework/trader/execution/shared.py': '8c419afe212f762c659ae3d0eb767bbeaf34a158423dfca76f9b34c70e0643bc',
+ 'bomber/framework/trader/execution/shared.py': 'a656ed5c7063101eaff939864c657fe5eccdb05b54f46dccf5a0a2ed55b94db0',
  'bomber/framework/trader/persistence.py': 'f093a42413126d7afd16bb1161604b7011347a11e779f1f2a0196f4b426e4dd6',
  'bomber/framework/trader/runtime/live/channels/ctp_rollover.py': '298dcef3ddcd2df09a2d6219cbeebc3714ba6ab90721704fd0e52009b404789a',
  'bomber/framework/trader/runtime/live/channels/ctp_shared.py': '57e8a3ef24c87b3bd8414919839c2b09c767bf5aa5769b4eb7c47a7fdd88341f',
@@ -124,7 +124,7 @@ FEATURE_RUNTIME_HASHES = {
  'scripts/integration/options/shared.py': '72db9fd7a2a17a79c5893d6c3feee404333a1e764e349268c76eb88933010022',
  'scripts/integration/options/simnow_migrate.py': '9414e937f240f1717b577ef82b85e0df6632c6f4cd43d92627baaea01a268009',
  'scripts/integration/options/simnow_preflight.py': '5028abd4b2528845762b0896bcbb312d3c40daf212f1293d1f01d5d169a39635',
- 'scripts/integration/shared_account/config.py': '91ddc9c40168e259657f054f935989380cf4d0e59576c23813cd2dbb748d3ffc',
+ 'scripts/integration/shared_account/config.py': 'abd3a505cac352cd2471b97f29efbe5c0e21b2c197a38eaef48f6e0b6e0ffd87',
  'scripts/integration/shared_account/factories.py': '58b611935822dd48968ef0896691e5dc5f522e5f707c51952bfee1d6c430023a',
  'scripts/integration/shared_account/preflight.py': 'ecbb8b93e6a7956f88c72d5bd639075d5c0f6bc6e895c10e8d36a22ea0cdf89b',
  'scripts/integration/shared_account/rollover.py': '9721068bc651ea1c1c71ea321f8d5b6cf937fe85aa99d2989fcbb80a210ce705',
@@ -143,9 +143,13 @@ FEATURE_RUNTIME_HASHES = {
  'bomber/framework/calendars/hours.py': '273d4ab3bb0da4dd28fc805d4bc8c50790b328309461a7ee36383dc935facda7',
  'demos/08_option_vega/vega_signal.py': '7407614b19422773acff714e65508bf668445c1dc1d567c40c68ef775001ccfe',
  'demos/08_option_vega/feature/__init__.py': '4346c583915c67812676b8e2d520e669ae5b26aebbda05976f44f9f5a5b8bb40',
- 'demos/08_option_vega/run_backtest.py': 'ddda67f2a31058f1b912fbdd48f3d3f89e84f2f6e5c3819ddcc712cb4435848e',
+ 'demos/08_option_vega/run_backtest.py': '287e71f221eb00f49f5110879d0dc4dd41b5fb45b62fae50de2136c90cc53fab',
  'scripts/integration/options/check_backtest_data.py': '75c1140f623f14ac08a4e7f337066462dfcea337d8b69cd99186df5a6f7fbbaa',
- 'tests/test_option_feature_backtest.py': '679ad9d9f1803973c38e6fd6b0a23fc891309a773741256b9d78c9bca8df5366'}
+ 'tests/test_option_feature_backtest.py': '0921e818928128f5d2e85840e4acc7f9af6df569163964aa4bbaa63ae7041264',
+ 'bomber/framework/trader/execution/ctp/independent_risk.py': '820ff73a3b769ce2c42c90705be4419fde4562af450c570a2c30eb28b5dca76c',
+ 'scripts/integration/shared_account/join_option.py': 'dde274d4ad2b2e62af1f817fd2517ff1f3ace44702ab500c8d3e217fab078eec',
+ 'tests/test_shared_option_join.py': '64160abe16b0b176f54b4ffe57f6d4cd80d560619a778c103423381f12f6b93a',
+ 'tests/test_shared_account.py': '359c49ad5f2c60487993803ceb0c43476886515f3bdb002fa280ee396e6405ea'}
 
 
 def inspect_feature_deployment(root, expected, retired=()):

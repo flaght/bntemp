@@ -501,6 +501,53 @@ class MultiPeriodBacktestTests(unittest.TestCase):
     def setUp(self):
         self.entry = import_module("demos.08_option_vega.run_backtest")
 
+    def test_option_ohlc_repair_is_explicit_audited_and_keeps_raw_file(self):
+        import pandas as pd
+        from bomber.framework.dataprep.bars import read_bar_frame
+        from bomber.framework.dataprep.contracts import BarFileKey, InputError
+        args = NS(option_bar_minutes=5, option_slot="14:00", bar_timestamp="end")
+        strict = self.entry.backtest_bar_specs(args)
+        args.option_ohlc_policy = "expand_range"
+        repair = self.entry.backtest_bar_specs(args)
+        self.assertEqual(strict["option"].ohlc_policy, "reject")
+        self.assertEqual(repair["future"].ohlc_policy, "reject")
+        key = BarFileKey("option", "MO2606-C-6000", date(2026, 6, 22))
+        raw = pd.DataFrame(dict(datetime=pd.to_datetime(["2026-06-22 09:35"]),
+            open=[2761.6], high=[2752.0], low=[2752.0], close=[2752.0], volume=[0]))
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "MO2606-C-6000_20260622.feather"
+            raw.to_feather(path)
+            original = path.read_bytes()
+            with self.assertRaisesRegex(InputError, "INVALID_OHLC"):
+                read_bar_frame(path, strict["option"], key)
+            result = read_bar_frame(path, repair["option"], key)
+            self.assertEqual(path.read_bytes(), original)
+            self.assertEqual(len(result.frame), 1)
+            row = result.frame.iloc[0]
+            self.assertEqual((row.open, row.high, row.low, row.close, row.volume),
+                (2761.6, 2761.6, 2752.0, 2752.0, 0))
+            self.assertEqual((row.source_high, row.source_low), (2752.0, 2752.0))
+            self.assertEqual([issue.code for issue in result.issues], ["OHLC_RANGE_EXPANDED"])
+            raw.loc[0, "close"] = 0
+            raw.to_feather(path)
+            with self.assertRaisesRegex(InputError, "INVALID_BAR_FIELDS"):
+                read_bar_frame(path, repair["option"], key)
+
+    def test_ohlc_policy_loads_from_yaml_and_cli_can_override(self):
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "launch.yaml"
+            path.write_text(json.dumps({"experiment_setups": {"research": {
+                "start_day": "2026-06-01", "end_day": "2026-06-22",
+                "index_feature_file": "index.csv", "option_ohlc_policy": "expand_range"}}}))
+            cli = ["run_backtest.py", "--config-file", str(path), "--config-id", "research"]
+            for override, expected in (([], "expand_range"),
+                    (["--option-ohlc-policy", "reject"], "reject")):
+                with patch.object(self.entry, "run_case") as run, patch("sys.argv", cli + override):
+                    self.entry.main()
+                specs = self.entry.backtest_bar_specs(run.call_args.args[0])
+                self.assertEqual(specs["option"].ohlc_policy, expected)
+                self.assertEqual(specs["future"].ohlc_policy, "reject")
+
     def test_real_m5_input_keeps_futures_m1_and_shifts_only_start_labeled_options(self):
         import pandas as pd
         from bomber.framework.dataprep.bars import read_bar_frame

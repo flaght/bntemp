@@ -15,11 +15,15 @@ from .events import FillEvent
 
 @dataclass(frozen=True)
 class SharedRiskBudget:
-    """按归属绝对量计预算，反向策略不能靠账户净额绕过限制。"""
-    max_gross_quantity: Decimal
-    max_gross_notional: Decimal
+    """按归属绝对量计预算；账户独立执行可用双None关闭聚合预算，策略须有限。"""
+    max_gross_quantity: Decimal | None
+    max_gross_notional: Decimal | None
 
     def __post_init__(self):
+        if self.max_gross_quantity is None and self.max_gross_notional is None:
+            return  # 仅账户级独立执行可显式关闭聚合预算；策略预算仍须声明。
+        if self.max_gross_quantity is None or self.max_gross_notional is None:
+            raise ValueError("联合总量与名义预算须同时为null或有限正数")
         for name in ("max_gross_quantity", "max_gross_notional"):
             value = Decimal(str(getattr(self, name)))
             if not value.is_finite() or value <= 0:
@@ -27,8 +31,12 @@ class SharedRiskBudget:
             object.__setattr__(self, name, value)
 
     def state(self):
-        return {name: str(getattr(self, name)) for name in
+        return {name: None if getattr(self, name) is None else str(getattr(self, name)) for name in
                 ("max_gross_quantity", "max_gross_notional")}
+
+    @property
+    def is_unlimited(self):
+        return self.max_gross_quantity is None and self.max_gross_notional is None
 
 
 class _SharedAccountBackend:
@@ -80,6 +88,8 @@ class SharedAccountExecutionService(AccountExecutionService):
         self.instrument_scope = instrument_scope
         if execution_mode not in {"netted", "independent"}:
             raise ValueError("共享执行模式须为netted或independent")
+        if budget.is_unlimited and execution_mode != "independent":
+            raise ValueError("仅按策略限制须使用independent独立归属订单")
         self.execution_mode = execution_mode
         if execution_mode == "independent":
             from .ctp.limit_planner import CtpLimitPlanner, IndependentCtpLimitPlanner
@@ -89,7 +99,8 @@ class SharedAccountExecutionService(AccountExecutionService):
             from .ctp.independent_risk import IndependentCtpRiskManager
             if client.risk_manager is None:
                 raise ValueError("独立订单须配置原风控")
-            client.risk_manager = IndependentCtpRiskManager(client.risk_manager, self.position_manager)
+            client.risk_manager = IndependentCtpRiskManager(client.risk_manager, self.position_manager,
+                strategy_limits=lambda sid: self._ports[sid].instrument_limits)
         self.budget, self.clock_ns, self.max_events = budget, clock_ns, max_events
         self._ports = {}
         self._suspended = set()
@@ -110,6 +121,8 @@ class SharedAccountExecutionService(AccountExecutionService):
         """启动前注册明确的逻辑键到真实合约映射；不同策略使用不同端口。"""
         if not strategy_id.strip():
             raise ValueError("策略身份不能为空")
+        if budget.is_unlimited:
+            raise ValueError("策略自身总量与名义预算必须为有限正数")
         routes = dict(routes)
         if not routes or any(not key.strip() or instrument not in self.instrument_limits
                              for key, instrument in routes.items()):
@@ -132,6 +145,8 @@ class SharedAccountExecutionService(AccountExecutionService):
         return port
 
     def _check_budget(self, rows, budget, now_ns):
+        if budget.is_unlimited:
+            return  # 本策略预算已单独核验；不读取其他策略的行情或聚合其仓位。
         quantity = notional = Decimal(0)
         for row in rows:
             amount = abs(Decimal(str(row["quantity"])))

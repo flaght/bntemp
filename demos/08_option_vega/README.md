@@ -265,6 +265,8 @@ python -u demos/08_option_vega/run_backtest.py \
 
 `summary.json`记录`bar_specs`、各类时间标签和`execution_timing`。缺少开仓时点的真实三腿行情仍报错；到期实际残仓仍由公共现金结算模块处理。
 
+期权OHLC默认严格拒绝（`option_ohlc_policy: reject`）。若研究数据存在高低价未包围开收价的异常，可显式在启动YAML中设置`option_ohlc_policy: expand_range`，或传`--option-ohlc-policy expand_range`，复用公共读取器在内存中将high扩为原OHLC最大值、low扩为最小值。原始Feather不改写，open、close、volume及时间保持原值；零成交量Bar不因此删除。读取器保留`source_high/source_low`并在`input_issues.json`写入`OHLC_RANGE_EXPANDED`警告，`input_coverage.json`记录读取策略，`summary.json`记录实际选项。此项仅影响期权文件回测，期货仍严格拒绝。扩展区间是明确的研究修整假设，可能影响原生Bar撮合及收益；volume=0不能证明哪一个价格正确，正式数据仍需核对来源。
+
 ### 到期现金结算
 
 期权使用公共`OptionCashSettlementModule`，IF/IH/IM期货对冲仓使用同一公共流程的`FutureCashSettlementModule`。
@@ -466,6 +468,17 @@ python -u -m scripts.integration.options.shared \
 
 保留原账户、信号检查点和策略参数。不能通过空状态或手改JSON接管已有仓位。公共日历控制交易窗口，共享执行支持同进程及不同进程布局；具体配置见[共享账户入口](../../scripts/integration/shared_account/README.md)。正常停止保留成交仓位，按一次Ctrl+C后等待撤单核验与保存完成。
 
+08旧账本加入已有Hybrid共享账户前，可先执行只读合并预检：
+
+```bash
+python -u -m scripts.integration.shared_account.join_option \
+  --hybrid-config demos/10_hybrid_transformer/config/shared_rb_p.json \
+  --option-state /实际路径/原08归属检查点.json \
+  --strategy-limits-only
+```
+
+该入口读取带校验和的原账户及全部Hybrid信号文件，不连接柜台、不改写状态、不开放交易。输出原账户限额、按各策略归属绝对数量相加的总仓、旧08状态格式及日期、Hybrid信号版本，以及期权在已保存外部基线中的数量；基线不是当前柜台核验。`--strategy-limits-only`将拟迁移配置的联合手数/名义金额上限报告为null，保留原TD每日订单上限，原Hybrid配置仍按原身份核对且不改写。此时RB多2手及两笔期权各空1手的合计4手只是归属诊断，不是共享配额，不妨碍P或08按自身限额交易；不设置一个更大的虚假账户上限。省略该开关时仍检查原有限联合预算。当前零仓的P信号文件同样必须保留。`can_start_orders`始终为false：该命令只提供迁移准备信息，联合账本迁移和Hybrid/MO不同交易时段的混合常驻接入尚未完成，不能用它替代正式交易入口。现有Hybrid宿主仅支持Hybrid策略，08常驻共享入口仅支持08策略，不得将两份配置拼接后直接启动。
+
 关注`分钟行情汇总`、`分钟决策汇总`与心跳。迟到的新Bar可只更新健康，不回填旧决策；真实过期、断流或账户冲突仍停止。模拟现金结算不用于生成Live柜台事实。
 
 ## 4. 自定义特征
@@ -579,6 +592,7 @@ python -u -m demos.08_option_vega.feature.example_dolphindb \
 | `--option-bar-minutes` | CLI 1，M5模板5 | 仅支持1或5；声明源文件周期，不聚合、不补齐 |
 | `--bar-timestamp` | `end` | 交易腿源标签start/end；start按各自真实周期右移到完成时点 |
 | `--options-bar-timestamp` | 继承bar_timestamp；M5模板end | 仅覆盖期权标签，M5起点标签右移5分钟 |
+| `--option-ohlc-policy` | `reject` | `expand_range`显式扩展期权高低价并记录修整警告；原文件不变，可能影响撮合 |
 | `--execution-timing` | CLI native，M5模板next_market | native保留原撮合；next_market等待本合约下一真实Bar，不承诺下一开盘价 |
 | `--index-feature-file` | 必填，可由YAML提供 | 标准CSV/Parquet及同名manifest；业务日期、代码、Schema、可见时间均须匹配 |
 | `--index-value-field` | CLI沿用Bar投影close；模板index_blend | 选择Schema内非空数值字段，可选close/ma20/ma60/index_blend等实际字段；仅回测支持 |
