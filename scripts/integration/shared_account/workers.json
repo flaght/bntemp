@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "trading_day": "20261110",
+  "environment": "realtime",
+  "execution_mode": "independent",
+  "position_scope": "strategy_instruments",
+  "existing_position_policy": "preserve_external",
+  "seconds": 86400,
+  "account_state_file": "../../../demos/10_hybrid_transformer/results/live/state/account_rb_p.json",
+  "report_dir": "results/workers",
+  "account_env_file": "../../../work2/env2",
+  "account": {
+    "client_id": "hybrid-transformer-live",
+    "max_gross_quantity": null,
+    "max_gross_notional": null,
+    "max_session_orders": 200,
+    "limit_offset_ticks": 1
+  },
+  "strategy_configs": [
+    "../../../demos/10_hybrid_transformer/config/workers.json",
+    "../../../demos/08_option_vega/config/workers.json"
+  ],
+  "registration": {
+    "source_account_config": "../../../demos/10_hybrid_transformer/config/shared_rb_p.json",
+    "option_checkpoint": null,
+    "option_signal": null
+  }
+}

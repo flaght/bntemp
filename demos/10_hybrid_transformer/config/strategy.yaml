@@ -1,0 +1,11 @@
+experiment_setups:
+  workers_hybrid:
+    description: "Hybrid RB/P独立worker；复用原模型、手数、批次和检查点"
+    config: scripts/integration/shared_account/workers.json
+    role: worker
+    kind: hybrid_transformer
+    prepare_seconds: 600
+    run_forever: true
+    connect: true
+    enable_orders: true
+    confirm_simnow: true

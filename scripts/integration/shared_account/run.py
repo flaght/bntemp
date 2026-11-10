@@ -8,7 +8,8 @@ import time
 import os
 from types import SimpleNamespace
 
-from .config import read_config, validate_budget_increase, ctp_instrument_max_age_seconds, strategy_report_dir
+from .config import (read_config, validate_budget_increase, ctp_instrument_max_age_seconds,
+                     strategy_report_dir, strategy_environment)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
@@ -74,9 +75,11 @@ def build_host(config, *, resume, diagnostics=None, read_only=False, strategy_pr
     driver = host = None
     try:
         # 配置先解析，再连接账户；行情选择来自公共配置，不能仅扫描08的argv。
-        arguments = [(row, *strategy_arguments(row, config,
-            resume=(Path(row["state_file"]).is_file() if strategy_processes else resume)))
-            for row in config["strategies"]]
+        arguments = []
+        for row in config['strategies']:
+            with strategy_environment(config, row['strategy_id']):
+                arguments.append((row, *strategy_arguments(row, config,
+                    resume=(Path(row['state_file']).is_file() if strategy_processes else resume))))
         account_config = config["account"]
         order_budget = account_config["max_session_orders"] if session_order_budget is None else session_order_budget
         if isinstance(order_budget, bool) or not isinstance(order_budget, int) or not 0 < order_budget <= account_config["max_session_orders"]:
@@ -113,7 +116,8 @@ def build_host(config, *, resume, diagnostics=None, read_only=False, strategy_pr
             context = LiveRunContext(driver.trading_day, resources)
             lifecycle = SimpleNamespace(transport=transport, md_front=md_front)
             # 每个MD拥有独立flow目录；同策略类型也可以多实例。
-            inputs = prepare_strategy_inputs(row, entry, args, context, lifecycle)
+            with strategy_environment(config, row['strategy_id']):
+                inputs = prepare_strategy_inputs(row, entry, args, context, lifecycle)
             if row["kind"] != "option_vega":
                 prepared_references[row["strategy_id"]] = inputs.references.spec
             upstream = getattr(inputs, "upstream", getattr(inputs, "ctp_upstream", None))
@@ -163,9 +167,10 @@ def build_host(config, *, resume, diagnostics=None, read_only=False, strategy_pr
             service.event_journal = ExecutionEventJournal([row["strategy_id"] for row in config["strategies"]])
         sessions = []
         for row, entry, args, inputs in prepared:
-            session = assemble_strategy_session(entry, args, inputs, service=service,
-                driver=driver, strategy_id=row["strategy_id"],
-                prepared_reference=prepared_references.get(row["strategy_id"]), execution_only=strategy_processes)
+            with strategy_environment(config, row['strategy_id']):
+                session = assemble_strategy_session(entry, args, inputs, service=service,
+                    driver=driver, strategy_id=row["strategy_id"],
+                    prepared_reference=prepared_references.get(row["strategy_id"]), execution_only=strategy_processes)
             session.client.ready_check = session.runner.session_ready
             sessions.append(SharedStrategySession(session, Path(row["state_file"]),
                 identity=shared_strategy_identity(row, config, session)))

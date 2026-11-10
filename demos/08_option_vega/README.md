@@ -486,9 +486,40 @@ python -u -m scripts.integration.shared_account.join_option \
 
 公共入口`scripts.integration.shared_account.run_workers`复用原server/worker及IPC执行链：一个账户服务、RB worker、P worker、08 worker。各策略独立计算信号和管理归属；同一合约可以属于多个策略。
 
-启动YAML新增`workers_account`、`workers_hybrid`、`workers_option`三个ID。依赖声明`config/workers.json`只引用原Hybrid `shared_rb_p.json`和08 `live_simnow`。RB/P模型、参数、手数、信号文件不改；08手数由`vega_live.json`决定。
+三个启动YAML分别属于公共账户、10和08，对应`workers_account`、`workers_hybrid`、`workers_option`，统一引用公共目录的
+`scripts/integration/shared_account/workers.json`。08与10是平行策略，分别拥有自己的worker配置：
 
-`strategy_limits_only: true`显式取消运行服务的联合手数/名义限制，每策略限额仍生效。TD每日报单上限原样继承服务器Hybrid配置，原值200则继续200；本地模板100不能代替服务器200。Hybrid原配置文件不改。首次注册会更新账户账本中的策略注册信息，并保留原代次备份；不是保持账户文件字节不变。
+```text
+scripts/integration/shared_account/workers.json  公共TD、200笔额度及策略文件列表
+├── demos/08_option_vega/config/workers.json     08环境、参数入口、自己的信号文件
+└── demos/10_hybrid_transformer/config/workers.json  Hybrid环境，引用原RB/P参数
+```
+
+公共配置的`strategy_configs`平级引用两个策略文件；调换顺序不改变各策略参数或账户限额。
+RB/P模型、手数和信号路径仍复用`shared_rb_p.json`，不复制或改写原配置。
+08仅声明自己的`strategies`，`argv`加载本目录`strategy.yaml`的`live_simnow`，手数由`vega_live.json`决定。
+
+08的`config/workers.json`配置自己的env：
+
+```json
+"env_file": "../../../work1/env1"
+```
+
+10的`config/workers.json`同级声明`env_file: ../../../work2/env2`及`strategies_file: shared_rb_p.json`。
+路径相对于各自JSON，因此分别对应项目`pro/work1/env1`和`pro/work2/env2`，也支持绝对路径。
+公共配置独立声明`account_env_file`，当前使用`../../../work2/env2`作为唯一TD连接的环境。
+账户服务准备各策略日历、参考合约及Feed时也使用对应env，不能只给worker切换DDB。
+显式env的同名变量优先于进程已有变量，不再读取项目根目录`.env`；未声明的CTP/模型变量仍继承。
+DDB变量在读取显式文件前清理，防止08漏填某个键时回退到Hybrid的另一组连接；文件须完整声明
+所需`DDB_MARKET_*`、`DDB_REFERENCE_*`或兼容`DDB_*`。不存在的文件会报错，不静默使用根目录配置。
+原配置未指定env路径时保留旧的导出变量优先、根`.env`仅补缺行为。文件内容和密码不进入运行JSON或日志。
+以上配置用于统一启动、分别启动和首次注册。启动YAML也平级管理：公共账户使用
+`scripts/integration/shared_account/launch.yaml`，10使用本策略`config/strategy.yaml`，08使用自己的`config/strategy.yaml`。
+
+公共账户`max_gross_quantity`和`max_gross_notional`均为null，每个策略自己的限额仍生效。
+TD每日额度在公共配置独立设为200，不由08或10的策略文件决定。
+账户client_id和账本暂时保留原历史名称及路径以兼容恢复，名称不表示账户服务属于Hybrid。
+首次注册会更新账户账本中的策略注册信息，并保留原代次备份；不是保持账户文件字节不变。
 
 **首次切换只做一次注册。**先正常停止原Hybrid及任何08交易进程，等待撤单、回报及保存完成。同步新代码后，先核对来源文件：
 
@@ -499,12 +530,15 @@ export IMPLUSE_VERSION=all
 
 /workspace/worker/env/chs-live/bin/python -u \
   -m scripts.integration.shared_account.register_worker \
-  --config demos/08_option_vega/config/workers.json \
+  --config scripts/integration/shared_account/workers.json \
   --trading-day 20261110 \
   --option-checkpoint /workspace/worker/pj/Chrono/nautilus_trader_demo/pro_new/tests/results/gap08-realtime-simnow/state-1791869411336135873.json
 ```
 
-`20261110`须替换成CTP实际返回的交易日，夜盘不能按自然日期猜测。默认信号路径为原08账户文件名追加`.vega-signal.json`；不同时加`--option-signal`。也可在`workers.json`配置`option_checkpoint`和`option_signal`。新worker信号使用`results/live/state/worker_signal.json`，不能用旧账户文件代替。注册器接收原08共享成交检查点，模型/Recording或原生单策略格式会拒绝。
+`20261110`须替换成CTP实际返回的交易日，夜盘不能按自然日期猜测。默认信号路径为原08账户文件名追加`.vega-signal.json`；不同时加`--option-signal`。
+也可在公共配置的`registration`中配置`option_checkpoint`和`option_signal`；`source_account_config`仅用于首次核对原账户，不作为日常运行基类。
+新08 worker信号使用本策略`results/live/state/worker_signal.json`，不能用旧账户文件代替。
+注册器接收原08共享成交检查点，模型/Recording或原生单策略格式会拒绝。
 
 文件检查通过后，**同一命令末尾追加`--connect --apply`**，进行禁单柜台核验和注册。不运行策略、不授权报单；保留历史订单ID、成本、原归属和Hybrid信号/批次。核验全部自有多空份额、今昨仓与无活动订单，通过后原子提交账户文件并生成`.before-rollover-g*.json`备份。原08来源文件不改写。原仓缺失、未决订单/请求/未确认事件、参数冲突均拒绝。已注册后不能重复导入旧仓。
 
@@ -512,12 +546,12 @@ export IMPLUSE_VERSION=all
 错误中的`checkpoint`为已保存原值，`config`为当前源配置值；例如原TD额度200而部署模板为100，
 应核对并恢复原源配置，不能修改检查点来绕过。取消联合手数/名义限制也不允许隐式改变TD额度。
 
-**分别启动：**各终端先进入同一项目目录、导出对应DDB/CTP环境；导出变量优先于`.env`。账户及Hybrid环境需安装模型依赖和PyYAML。终端1先启动账户服务：
+**分别启动：**各终端先进入同一项目目录，并确认各自`env_file`及公共`account_env_file`指向完整配置。账户及Hybrid环境需安装模型依赖和PyYAML。终端1先启动账户服务：
 
 ```bash
 PYTHONPATH=.:/workspace/worker/pj/KiChaos IMPLUSE_VERSION=all \
   /workspace/worker/env/chs-live/bin/python -u -m scripts.integration.shared_account.run_workers \
-  --config-file demos/08_option_vega/config/strategy.yaml --config-id workers_account
+  --config-file scripts/integration/shared_account/launch.yaml --config-id workers_account
 ```
 
 终端2启动Hybrid RB/P worker：
@@ -525,7 +559,7 @@ PYTHONPATH=.:/workspace/worker/pj/KiChaos IMPLUSE_VERSION=all \
 ```bash
 PYTHONPATH=.:/workspace/worker/pj/KiChaos IMPLUSE_VERSION=all \
   /workspace/worker/env/chs-live/bin/python -u -m scripts.integration.shared_account.run_workers \
-  --config-file demos/08_option_vega/config/strategy.yaml --config-id workers_hybrid
+  --config-file demos/10_hybrid_transformer/config/strategy.yaml --config-id workers_hybrid
 ```
 
 终端3启动08 worker：
@@ -536,14 +570,14 @@ PYTHONPATH=. /workspace/worker/env/uv-nautilus/bin/python -u \
   --config-file demos/08_option_vega/config/strategy.yaml --config-id workers_option
 ```
 
-三者默认常驻。也可不用启动YAML，指定`--config demos/08_option_vega/config/workers.json`，分别使用`--role account`、`--role worker --kind hybrid_transformer`、`--role worker --kind option_vega`，显式加`--run-forever --connect --enable-orders --confirm-simnow`。只启动一个策略可用`--role worker --strategy-id 策略ID`，可重复指定。各终端默认通过账户检查点旁`workers/current.json`发现当日服务；若覆盖`--runtime-dir`，各终端必须一致，令牌不打印。
+三者默认常驻。也可不用启动YAML，指定`--config scripts/integration/shared_account/workers.json`，分别使用`--role account`、`--role worker --kind hybrid_transformer`、`--role worker --kind option_vega`，显式加`--run-forever --connect --enable-orders --confirm-simnow`。只启动一个策略可用`--role worker --strategy-id 策略ID`，可重复指定。各终端默认通过账户检查点旁`workers/current.json`发现当日服务；若覆盖`--runtime-dir`，各终端必须一致，令牌不打印。
 
 **统一启动：**以下一条命令自动创建上述独立进程，与分别启动方式二选一：
 
 ```bash
 PYTHONPATH=.:/workspace/worker/pj/KiChaos IMPLUSE_VERSION=all \
   /workspace/worker/env/chs-live/bin/python -u -m scripts.integration.shared_account.run_workers \
-  --config demos/08_option_vega/config/workers.json --role all --prepare-seconds 600 \
+  --config scripts/integration/shared_account/workers.json --role all --prepare-seconds 600 \
   --run-forever --connect --enable-orders --confirm-simnow
 ```
 

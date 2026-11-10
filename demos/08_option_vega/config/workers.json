@@ -1,12 +1,9 @@
 {
-  "base_config": "../../10_hybrid_transformer/config/shared_rb_p.json",
-  "strategy_limits_only": true,
-  "option_checkpoint": null,
-  "option_signal": null,
-  "option": {
+  "env_file": "../../../work1/env1",
+  "strategies": [{
     "strategy_id": "option-vega-live",
     "kind": "option_vega",
     "state_file": "../results/live/state/worker_signal.json",
     "argv": ["--config-file", "strategy.yaml", "--config-id", "live_simnow"]
-  }
+  }]
 }

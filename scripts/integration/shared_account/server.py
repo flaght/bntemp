@@ -6,7 +6,7 @@ from datetime import datetime
 import secrets
 import time
 
-from .config import read_config, ctp_instrument_max_age_seconds
+from .config import read_config, ctp_instrument_max_age_seconds, load_environment
 
 
 def capture_execution_failure(host):
@@ -106,6 +106,7 @@ def _main(argv):
     parser.add_argument("--enable-orders", action="store_true")
     parser.add_argument("--confirm-simnow", action="store_true")
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument('--env-file', type=Path, help='账户env文件；各策略来源由strategy_env_files分别指定')
     parser.add_argument("--activate-at", type=datetime.fromisoformat, help=argparse.SUPPRESS)
     parser.add_argument("--remaining-orders", type=int, help="持续调度从账户订单历史扣除后的本窗口额度")
     args = parser.parse_args(argv)
@@ -128,11 +129,10 @@ def _main(argv):
 
 def _run(args, config, stop_event):
     from bomber.framework.trader.runtime.live.continuous import StopRequested, wait_for_open
-    from dotenv import load_dotenv
-    from .run import build_host, PROJECT_ROOT
+    from .run import build_host
     from bomber.framework.trader.execution.ipc import AccountExecutionProtocol, UnixExecutionServer, encode
     from bomber.framework.trader.runtime.reports import LiveRunReport
-    load_dotenv(PROJECT_ROOT / ".env")
+    load_environment(getattr(args, 'env_file', None) or config.get('account_env_file'))
     report = LiveRunReport(config["report_dir"], prefix="shared-account-server", metadata={"config": config})
     report.begin()
     host = server = None

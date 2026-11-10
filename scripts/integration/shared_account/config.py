@@ -7,6 +7,42 @@ import math
 import re
 from copy import deepcopy
 from pathlib import Path
+from contextlib import contextmanager
+import os
+
+
+def load_environment(path=None):
+    """显式env覆盖同名变量，隔离DDB回退；未指定时保留旧根目录.env行为。"""
+    from dotenv import load_dotenv
+    selected = path or os.environ.get('BOMBER_EXECUTION_ENV_FILE')
+    if selected is None:
+        load_dotenv(Path(__file__).resolve().parents[3]/'.env')
+        return
+    selected = Path(selected).expanduser().resolve()
+    if not selected.is_file():
+        raise ValueError(f'指定的环境文件不存在: {selected}')
+    # 防止08缺少某个DDB变量时，混入账户/Hybrid的另一组连接。
+    for key in tuple(os.environ):
+        if key.startswith('DDB_'):
+            del os.environ[key]
+    load_dotenv(selected, override=True)
+    os.environ['BOMBER_EXECUTION_ENV_FILE'] = str(selected)
+
+
+@contextmanager
+def strategy_environment(config, strategy_id):
+    """仅在控制线程构造输入时使用；Provider/Feed捕获自己的连接，运行期不切全局环境。"""
+    path = config.get('strategy_env_files', {}).get(strategy_id)
+    if path is None:
+        yield
+        return
+    previous = dict(os.environ)
+    try:
+        load_environment(path)
+        yield
+    finally:
+        os.environ.clear()
+        os.environ.update(previous)
 
 
 PROTECTED = frozenset(("--connect", "--mode", "--enable-orders", "--confirm-simnow", "--resume",
@@ -38,9 +74,26 @@ def resolve_config(config, path):
     allowed = {"version", "trading_day", "environment", "replay_md_trading_day", "seconds",
         "account_state_file", "report_dir", "account", "strategies", "position_scope", "execution_mode",
         "existing_position_policy", "ctp_instrument_max_age_seconds", "history_missing_policy",
-        "strategy_history_minutes"}
+        "strategy_history_minutes", "env_file", "account_env_file", "strategy_env_files"}
     if set(config) - allowed or config.get("version") != 1:
         raise ValueError("共享配置版本无效或存在未知字段")
+    paths_by_id = config.get('strategy_env_files', {})
+    if not isinstance(paths_by_id, dict) or set(paths_by_id)-{r['strategy_id'] for r in config['strategies']}:
+        raise ValueError('strategy_env_files须为已声明策略ID到env路径的映射')
+    def env_path(value):
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError('env路径须为非空字符串')
+        return str((path.parent/Path(value).expanduser()).resolve())
+    if config.get('env_file') is not None:
+        config['env_file'] = env_path(config['env_file'])
+        if config.get('account_env_file') is None:
+            config['account_env_file'] = config['env_file']
+        paths_by_id = {**{r['strategy_id']: config['env_file'] for r in config['strategies']}, **paths_by_id}
+        config['strategy_env_files'] = paths_by_id
+    if config.get('account_env_file') is not None:
+        config['account_env_file'] = env_path(config['account_env_file'])
+    if 'strategy_env_files' in config:
+        config['strategy_env_files'] = {sid: env_path(value) for sid, value in paths_by_id.items()}
     ctp_instrument_max_age_seconds(config)
     if "history_missing_policy" in config and config["history_missing_policy"] not in ("fail", "allow"):
         raise ValueError("history_missing_policy须为fail或allow")

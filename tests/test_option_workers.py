@@ -10,6 +10,7 @@ from types import SimpleNamespace as NS
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 import json
+import os
 import unittest
 
 from tests import test_hybrid_shared_layout as fixture
@@ -30,12 +31,13 @@ def dt(text):
 class WorkerLaunchTests(unittest.TestCase):
     def test_declaration_preserves_hybrid_paths_parameters_and_daily_td_limit(self):
         root = Path(__file__).resolve().parents[1]
-        path = root/'demos/08_option_vega/config/workers.json'
+        path = root/'scripts/integration/shared_account/workers.json'
         config, sources = run_workers.load_config(path)
         base = run_workers.read_config(sources['base_config'])
         self.assertEqual(config['strategies'][:-1], base['strategies'])
         self.assertEqual(config['account_state_file'], base['account_state_file'])
-        self.assertEqual(config['account']['max_session_orders'], base['account']['max_session_orders'])
+        self.assertEqual(config['account']['max_session_orders'], 200)
+        self.assertEqual(config['account']['client_id'], base['account']['client_id'])
         self.assertIsNone(config['account']['max_gross_quantity'])
         self.assertIsNone(config['account']['max_gross_notional'])
         from scripts.integration.shared_account.factories import strategy_arguments
@@ -46,6 +48,8 @@ class WorkerLaunchTests(unittest.TestCase):
         self.assertEqual(args.config.max_option_lots, 1)
         self.assertEqual(args.config.max_total_option_lots, 2)
         self.assertEqual(args.config.max_future_lots, 1)
+        self.assertEqual(config['account_env_file'],str(root/'work2/env2'))
+        self.assertEqual(config['strategy_env_files']['option-vega-live'],str(root/'work1/env1'))
 
     def calendars(self):
         def calendar(windows):
@@ -159,11 +163,134 @@ class WorkerLaunchTests(unittest.TestCase):
         root=Path(__file__).resolve().parents[1]
         from contextlib import redirect_stdout,redirect_stderr
         from io import StringIO
-        args=['--config',str(root/'demos/08_option_vega/config/workers.json')]
+        args=['--config',str(root/'scripts/integration/shared_account/workers.json')]
         with redirect_stdout(StringIO()),patch.object(run_workers,'load_calendars',side_effect=AssertionError('不得查询')):
             run_workers.main(args+['--role','worker','--kind','option_vega'])
         with redirect_stderr(StringIO()),self.assertRaises(SystemExit):
             run_workers.main(args+['--role','account','--kind','option_vega'])
+
+    def test_strategy_declarations_are_peers_and_do_not_supply_public_account_limits(self):
+        root=Path(__file__).resolve().parents[1]
+        path=root/'scripts/integration/shared_account/workers.json'
+        template=json.loads(path.read_text())
+        for name in ('account_state_file','report_dir','account_env_file'):
+            template[name]=str((path.parent/template[name]).resolve())
+        template['strategy_configs']=[str((path.parent/p).resolve()) for p in template['strategy_configs']]
+        template['registration']['source_account_config']=str((path.parent/template['registration']['source_account_config']).resolve())
+        with TemporaryDirectory() as directory:
+            file=Path(directory)/'workers.json'
+            file.write_text(json.dumps(template))
+            before,_=run_workers.load_config(file)
+            template['strategy_configs'].reverse()
+            file.write_text(json.dumps(template))
+            after,_=run_workers.load_config(file)
+            self.assertEqual(before['account'],after['account'])
+            self.assertEqual({r['strategy_id']:r for r in before['strategies']},
+                             {r['strategy_id']:r for r in after['strategies']})
+            self.assertEqual(before['strategy_env_files'],after['strategy_env_files'])
+            hybrid=run_workers.read_config(root/'demos/10_hybrid_transformer/config/shared_rb_p.json')
+            hybrid['account']['max_session_orders']=999
+            alternate=Path(directory)/'hybrid.json';alternate.write_text(json.dumps(hybrid))
+            wrapper=Path(directory)/'hybrid-workers.json'
+            wrapper.write_text(json.dumps(dict(strategies_file=str(alternate),env_file=str(root/'work2/env2'))))
+            template['strategy_configs'][1]=str(wrapper)
+            file.write_text(json.dumps(template))
+            loaded,_=run_workers.load_config(file)
+            self.assertEqual(loaded['account']['max_session_orders'],200)
+            self.assertEqual(loaded['account'],before['account'])
+
+    def test_startup_yaml_belongs_to_each_strategy_and_public_service_separately(self):
+        from bomber.framework.cli import load_config as load_setup
+        root=Path(__file__).resolve().parents[1]
+        profiles=[('scripts/integration/shared_account/launch.yaml','workers_account','account',None),
+            ('demos/10_hybrid_transformer/config/strategy.yaml','workers_hybrid','worker','hybrid_transformer'),
+            ('demos/08_option_vega/config/strategy.yaml','workers_option','worker','option_vega')]
+        for filename,sid,role,kind in profiles:
+            setup=load_setup(root/filename,sid)
+            self.assertEqual(setup['config'],'scripts/integration/shared_account/workers.json')
+            self.assertEqual((setup['role'],setup.get('kind')),(role,kind))
+        import yaml
+        option=yaml.safe_load((root/profiles[2][0]).read_text())['experiment_setups']
+        self.assertNotIn('workers_account',option)
+        self.assertNotIn('workers_hybrid',option)
+
+    def test_legacy_composition_still_reads_without_rewriting_original_files(self):
+        root=Path(__file__).resolve().parents[1]
+        config,_=run_workers.load_config(root/'scripts/integration/shared_account/workers.json')
+        legacy=dict(base_config=str(root/'demos/10_hybrid_transformer/config/shared_rb_p.json'),
+            option=config['strategies'][-1],strategy_limits_only=True)
+        with TemporaryDirectory() as directory:
+            path=Path(directory)/'legacy.json';path.write_text(json.dumps(legacy))
+            raw=path.read_bytes()
+            loaded,_=run_workers.load_config(path)
+            self.assertEqual({r['strategy_id'] for r in loaded['strategies']},
+                             {r['strategy_id'] for r in config['strategies']})
+            self.assertEqual(path.read_bytes(),raw)
+
+
+class WorkerEnvironmentTests(unittest.TestCase):
+    def setUp(self):
+        self.temp=TemporaryDirectory();self.addCleanup(self.temp.cleanup)
+        self.root=Path(self.temp.name)
+        self.hybrid=self.root/'hybrid.env';self.option=self.root/'option.env'
+        self.hybrid.write_text('DDB_MARKET_HOST=hybrid-host\nDDB_REFERENCE_HOST=hybrid-reference\n')
+        self.option.write_text('DDB_HOST=option-host\nDDB_PORT=8902\nDDB_USERNAME=fixture\nDDB_PASSWORD=fixture\n')
+        self.environment=patch.dict(os.environ,{'CTP_ACCOUNT_ID':'common-account','IMPLUSE_VERSION':'all'},clear=True)
+        self.environment.start();self.addCleanup(self.environment.stop)
+
+    def test_each_provider_captures_its_own_source_without_legacy_ddb_fallback_leak(self):
+        from scripts.integration.shared_account.config import load_environment,strategy_environment
+        from bomber.framework.dolphindb import DolphinDbConnectionConfig
+        load_environment(self.hybrid)
+        before=dict(os.environ)
+        with strategy_environment({'strategy_env_files':{'08':str(self.option)}},'08'):
+            market=DolphinDbConnectionConfig.from_env(purpose='market')
+            reference=DolphinDbConnectionConfig.from_env(purpose='reference')
+            self.assertEqual(os.environ['CTP_ACCOUNT_ID'],'common-account')
+            self.assertEqual(os.environ['IMPLUSE_VERSION'],'all')
+            self.assertNotIn('DDB_REFERENCE_HOST',os.environ)
+        self.assertEqual(market.host,'option-host')
+        self.assertEqual(reference.host,'option-host')
+        self.assertEqual(dict(os.environ),before)
+
+    def test_explicit_environment_is_inherited_by_child_loader_without_loading_root_dotenv(self):
+        from scripts.integration.shared_account.config import load_environment
+        from dotenv import load_dotenv
+        with patch('dotenv.load_dotenv',wraps=load_dotenv) as loader:
+            load_environment(self.option)
+            load_environment()  # 子进程入口继承选择标记，不补读项目根目录。
+        self.assertEqual([Path(call.args[0]) for call in loader.call_args_list],[self.option.resolve(),self.option.resolve()])
+        self.assertEqual(os.environ['DDB_HOST'],'option-host')
+
+    def test_missing_file_and_failed_preparation_do_not_change_account_environment(self):
+        from scripts.integration.shared_account.config import load_environment,strategy_environment
+        load_environment(self.hybrid)
+        before=dict(os.environ)
+        with self.assertRaisesRegex(ValueError,'环境文件不存在'):
+            load_environment(self.root/'missing.env')
+        self.assertEqual(dict(os.environ),before)
+        with self.assertRaisesRegex(RuntimeError,'preparation failed'):
+            with strategy_environment({'strategy_env_files':{'08':str(self.option)}},'08'):
+                raise RuntimeError('preparation failed')
+        self.assertEqual(dict(os.environ),before)
+
+    def test_server_calendar_preparation_reads_both_envs_and_restores_account_environment(self):
+        from scripts.integration.shared_account.config import load_environment
+        load_environment(self.hybrid)
+        before=dict(os.environ);seen=[]
+        config=dict(strategies=[dict(strategy_id='10',kind='hybrid_transformer',state_file='missing-a'),
+            dict(strategy_id='08',kind='option_vega',state_file='missing-b')],
+            strategy_env_files={'10':str(self.hybrid),'08':str(self.option)})
+        args=NS(product='RB',calendar_id='china.sse',no_session_overrides=True,option_product='MO')
+        entry=NS(session_inputs=lambda args:args,validate_calendar=lambda *args:None)
+        def load(inputs):
+            seen.append((os.getenv('DDB_HOST'),os.getenv('DDB_MARKET_HOST')))
+            return NS()
+        with patch('scripts.integration.shared_account.factories.strategy_arguments',return_value=(entry,args)), \
+                patch('bomber.framework.dataprep.session_inputs.load_session_inputs',side_effect=load):
+            run_workers.load_calendars(config)
+        self.assertEqual(seen,[(None,'hybrid-host'),('option-host',None)])
+        self.assertEqual(dict(os.environ),before)
 
 
 class WorkerRegistrationTests(unittest.TestCase):

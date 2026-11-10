@@ -10,7 +10,7 @@ import json
 import time
 import logging
 
-from .config import read_config, strategy_report_dir
+from .config import read_config, strategy_report_dir, load_environment
 
 
 def session_reference_is_current(session):
@@ -72,6 +72,7 @@ def _main(argv):
     parser.add_argument("--confirm-simnow", action="store_true")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument('--log-level', choices=('DEBUG', 'INFO', 'WARNING', 'ERROR'), default='INFO')
+    parser.add_argument('--env-file', type=Path, help='本策略env文件；不补读根目录.env')
     parser.add_argument("--activate-at", type=datetime.fromisoformat, help=argparse.SUPPRESS)
     parser.add_argument("--stop-at", type=datetime.fromisoformat,
         help="本策略窗口终点（含时区）；正常保存、撤单并保留归属仓位")
@@ -104,8 +105,6 @@ def _run(args, config, stop_event):
     row = next(row for row in config["strategies"] if row["strategy_id"] == args.strategy_id)
     from bomber.framework.trader.runtime.live.continuous import StopRequested, wait_for_open
     from bomber.framework.trader.execution.contracts import MarketDataUnavailable, OrderBudgetExhausted
-    from dotenv import load_dotenv
-    from .run import PROJECT_ROOT
     from .factories import strategy_arguments, assemble_strategy_session, prepare_strategy_inputs, shared_strategy_identity
     from bomber.framework.trader.execution.ipc import UnixExecutionConnection
     from bomber.framework.trader.execution.ipc_client import RemoteAccountService, RemoteTraderSession
@@ -114,7 +113,7 @@ def _run(args, config, stop_event):
     from bomber.framework.trader.runtime.live.local import strategy_state_lock
     from bomber.framework.trader.runtime.live.channels.ctp import required
     from bomber.framework.trader.runtime.reports import LiveRunReport
-    load_dotenv(PROJECT_ROOT / ".env")
+    load_environment(getattr(args, 'env_file', None) or config.get('strategy_env_files', {}).get(args.strategy_id))
     identity = {"strategy_id": row["strategy_id"], "kind": row["kind"], "argv": row["argv"],
         "trading_day": config["trading_day"], "environment": config["environment"],
         "replay_md_trading_day": config.get("replay_md_trading_day"), "execution_mode": "independent"}

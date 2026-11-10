@@ -620,11 +620,20 @@ snapshot.stop_reconciliation的errors列出各轮错误及code/retryable；queri
 `--role worker --kind hybrid_transformer`／`--role worker --kind option_vega`。
 08专用入口`demos.08_option_vega.run_worker`只委托公共worker，不创建TD连接。
 
-启动参数仍放08的`config/strategy.yaml`，依赖声明为`config/workers.json`，引用原Hybrid配置。
-原RB/P参数、手数及信号文件保持不变；联合持仓/名义限制可显式关闭，TD每日额度继承原值。
+公共账户声明为本目录`workers.json`，`strategy_configs`平级引用08和10各自的`config/workers.json`。
+公共账户启动参数在本目录`launch.yaml`，08与10的启动参数分别在各自`config/strategy.yaml`。
+08文件包含自己的env及策略行；10文件包含自己的env并引用原`shared_rb_p.json`的策略行。
+原RB/P参数、手数和信号路径不改写；公共TD限额独立设为每日200笔，联合持仓/名义限制为null。
 首次添加策略必须正常停机，使用`register_worker`依据原08共享成交检查点禁单核验、注册并保留备份，
 不能把原Hybrid账户文件直接当三策略文件恢复，也不能把旧08仓位默认为零。
 原生单策略/模型检查点不隐式转换。注册后不再并行运行原独立TD入口。
+
+各策略文件独立声明`env_file`，公共账户声明`account_env_file`，相对路径以各自JSON为基准。
+公共账户准备策略参考资料时也按策略
+使用对应环境；worker子进程独立加载自己的文件。显式env不补读根`.env`，同名变量以文件为准，
+DDB变量隔离，未指定env的旧配置保持原行为。只保存路径，不将env内容写入报告或检查点。
+公共`registration.source_account_config`只用于首次核对历史账户配置，日常运行不继承它的限额。
+旧`base_config + option`组合声明仍可读取，但新模板统一采用平级策略引用。
 
 完整首次注册、三个终端、统一启动及停机命令见
 [08使用说明](../../../demos/08_option_vega/README.md#08与hybrid分别启动worker)。
