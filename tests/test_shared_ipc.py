@@ -646,6 +646,18 @@ class SharedIpcTests(unittest.TestCase):
             self.assertEqual(new_service.position_manager.position("one", "main"), 1)
             new_protocol.stop_owner("one")
 
+    def test_describe_advertises_heartbeat_without_attaching_or_changing_the_account(self):
+        from copy import deepcopy
+        with nullcontext(self.enterContext(TemporaryDirectory())) as directory:
+            _, _, service, transport, protocol = self.prepare(Path(directory)/'account.json')
+            previous = deepcopy(service.snapshot_state())
+            description = self.call(protocol, 'one', 'describe', {})
+            self.assertIn('preparation_heartbeat', description['capabilities'])
+            self.assertEqual(description['lease_seconds'], protocol.lease_seconds)
+            self.assertEqual(service.snapshot_state(), previous)
+            self.assertFalse(protocol.leases)
+            self.assertFalse(transport.sent)
+
     def test_preparation_heartbeat_renews_only_owner_and_never_enables_or_acknowledges(self):
         from copy import deepcopy
         from unittest.mock import patch

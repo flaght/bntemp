@@ -29,7 +29,21 @@ def validate_session_ready(session):
     else:
         reference_ok = True
     if getattr(runner, "failure", None) or not reference_ok or not runner.session_ready():
-        raise RuntimeError(getattr(runner, "failure", None) or "会话准备后参考、行情或执行失效，保持闭闸")
+        from .health import readiness_failure_context
+        detail = readiness_failure_context(runner)
+        reason = getattr(runner, "failure", None) or "会话准备后参考、行情或执行失效，保持闭闸"
+        raise RuntimeError(f"{reason}: {detail}")
+
+
+def refresh_preparation_inputs(session):
+    """闭闸准备时先完成耗时查询，最后取得当前执行状态，再核验就绪。"""
+    session.references.refresh()
+    poll = getattr(session.runner, "poll_live_inputs", None)
+    if callable(poll):
+        poll()
+    drain = getattr(session.client, "drain_events", None)
+    if callable(drain):
+        drain()
 
 
 def prepare_strategy_history(session, *, require_ready=True):
@@ -47,13 +61,7 @@ def prepare_strategy_history(session, *, require_ready=True):
         return False
     if pause_requested(session):
         return False
-    session.references.refresh()
-    drain = getattr(session.client, "drain_events", None)
-    if callable(drain):
-        drain()
-    poll = getattr(runner, "poll_live_inputs", None)
-    if callable(poll):
-        poll()
+    refresh_preparation_inputs(session)
     if require_ready:
         validate_session_ready(session)
     return True

@@ -178,6 +178,21 @@ class LiveLifecycleTests(unittest.TestCase):
         self.assertFalse(controller.resume_ready)
         self.assertFalse(session.runner.accept_bars)
 
+    def test_final_execution_failure_names_the_channel_and_keeps_orders_closed(self):
+        from bomber.framework.trader.runtime.live.contracts import SessionReadiness
+        from bomber.framework.trader.runtime.live.channels.ctp import CtpExecutionChannel
+        _, session, controller, _ = self.build()
+        driver = NS(trading_day='20261028', _connected=False, is_simnow_session=False)
+        readiness = SessionReadiness(CtpExecutionChannel(driver, '20261028', require_orders=True))
+        session.runner._session_check = readiness
+        session.runner.session_ready = lambda: bool(readiness())
+        with self.assertRaisesRegex(RuntimeError, 'EXECUTION_DISCONNECTED.*EXECUTION_NOT_AUTHORIZED'):
+            activate_live_session(controller, session, authorize=session.client.arm_demo)
+        session.client.arm_demo.assert_not_called()
+        session.runner.begin_bars.assert_not_called()
+        self.assertFalse(session.runner.accept_bars)
+        self.assertFalse(self.path.exists())
+
     def test_stable_component_mismatch_blocks_commit_and_authorization(self):
         _, session, controller, component = self.build()
         component.invalid = True

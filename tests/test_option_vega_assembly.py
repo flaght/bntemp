@@ -626,7 +626,7 @@ class LiveYamlConfigTests(unittest.TestCase):
         self.assertEqual(args.market_volume_mode, "cumulative")
         self.assertEqual(args.index_dataset, "index.minute")
         self.assertEqual(args.index_code, "000852")
-        self.assertEqual(args.option_slot, "14:00")
+        self.assertEqual(args.option_slot, "13:36")
         self.assertEqual(args.config.nav, Decimal("40000000"))
         self.assertEqual(args.execution_policy.account_reconciliation.value, "off")
         self.assertFalse(hasattr(args, "option_bar_minutes"))

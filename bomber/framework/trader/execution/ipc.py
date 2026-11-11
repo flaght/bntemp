@@ -211,7 +211,8 @@ class AccountExecutionProtocol:
         action, data = message.get("action"), message.get("data", {})
         port = self.service._ports[sid]
         if action == "describe":
-            return {"state": self.state(sid)}
+            return {"state": self.state(sid), "capabilities": ["preparation_heartbeat"],
+                    "lease_seconds": self.lease_seconds}
         if action == 'configure':
             if self.configure is None or sid in self.leases:
                 raise ValueError('此账户不接受执行声明刷新，或策略已有租约')

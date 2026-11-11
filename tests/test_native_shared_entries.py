@@ -175,6 +175,86 @@ class NativeEntryTests(unittest.TestCase):
 
 
 class RemoteRuntimeTests(unittest.TestCase):
+    def test_option_preparation_checks_contract_lifetime_using_the_remote_td_day(self):
+        from tests.test_option_vega_assembly import ReferenceService
+        from bomber.framework.dataprep.sources import ReferenceSourceFactory
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            credentials = root/'credentials.json'
+            credentials.write_text(json.dumps(dict(strategy_id='vega', socket=str(root/'exec.sock'),
+                key='fixture', configuration={})))
+            # 八月估值资料中的九月合约，在十月TD日必须由08原生预检拒绝。
+            args = NS(valuation_day='20260813', calendar_id='china.cffex', reference_source='csv',
+                opt_basic=None, fut_basic=None, option_product='MO', future_product='IM', index_code='000852',
+                reference_refresh_seconds=5, reference_max_observation_seconds=30, reference_timeout=15,
+                flatten_day=None, mode='simnow')
+            runtime = RemoteStrategyRuntime('vega', root/'signal.json', credentials, '20261009', {},
+                lambda service, driver, context: vega.prepare_inputs(args, context, None), Mock(), Mock())
+            connection = Mock()
+            connection.call.return_value = {'state': dict(trading_day='20261009'),
+                'capabilities':['preparation_heartbeat'], 'lease_seconds':30}
+            with patch('bomber.framework.trader.execution.ipc.UnixExecutionConnection', return_value=connection), \
+                    patch('bomber.framework.trader.execution.ipc_client.RemoteAccountService'), \
+                    patch('bomber.framework.trader.execution.ipc_client.RemoteTraderSession'), \
+                    patch.object(ReferenceSourceFactory, 'create'), \
+                    patch('bomber.framework.dataprep.live_options.LiveOptionReferences', return_value=ReferenceService()), \
+                    self.assertRaisesRegex(ValueError, '回放合约在实际TD日不可交易'):
+                runtime.run(Event())
+            connection.call.assert_called_once_with('describe', {})
+            self.assertFalse((root/'signal.json').exists())
+
+    def test_old_account_process_is_rejected_before_loading_models_or_attaching(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            credentials = root/'credentials.json'
+            credentials.write_text(json.dumps(dict(strategy_id='rb', socket=str(root/'exec.sock'),
+                key='fixture', configuration={})))
+            prepare, report = Mock(), Mock()
+            runtime = RemoteStrategyRuntime('rb', root/'signal.json', credentials, '20261110', {},
+                prepare, Mock(), report)
+            connection = Mock()
+            connection.call.return_value = {'state': dict(trading_day='20261110', source_revision=0, ack=0)}
+            with patch('bomber.framework.trader.execution.ipc.UnixExecutionConnection', return_value=connection), \
+                    self.assertRaisesRegex(RuntimeError, '更新文件不会更新已运行的进程'):
+                runtime.run(Event())
+            prepare.assert_not_called()
+            connection.call.assert_called_once_with('describe', {})
+            self.assertFalse((root/'signal.json').exists())
+            self.assertIn('无需重新迁移', report.write.call_args.kwargs['fields']['failure'])
+
+    def test_heartbeat_failure_remains_visible_when_history_also_loses_the_lease(self):
+        from bomber.framework.trader.runtime.live.remote import PreparationLease
+        called = Event()
+        ping = Mock()
+        def fail(*args):
+            called.set()
+            raise RuntimeError('未知执行协议动作')
+        ping.call.side_effect = fail
+        original = NS(path=Path('/tmp/unused.sock'), sid='rb', key='key', lease='lease-token')
+        lease = PreparationLease(original, interval=.001)
+        primary = RuntimeError('策略连接租约失效')
+        with patch('bomber.framework.trader.execution.ipc.UnixExecutionConnection', return_value=ping), \
+                self.assertRaises(RuntimeError) as caught:
+            with lease:
+                self.assertTrue(called.wait(2))
+                raise primary
+        self.assertIs(caught.exception, primary)
+        self.assertIn('策略准备期间续租失败: 未知执行协议动作', primary.__notes__)
+        self.assertEqual(lease.snapshot()['failure'], '未知执行协议动作')
+        self.assertEqual(lease.snapshot()['renewals'], 0)
+        self.assertFalse(lease.thread.is_alive())
+
+    def test_first_heartbeat_is_confirmed_without_waiting_for_the_timer(self):
+        from bomber.framework.trader.runtime.live.remote import PreparationLease
+        original = NS(path=Path('/tmp/unused.sock'), sid='rb', key='key', lease='lease-token')
+        ping = Mock()
+        with patch('bomber.framework.trader.execution.ipc.UnixExecutionConnection', return_value=ping):
+            with PreparationLease(original, interval=60) as lease:
+                lease.confirm()
+                self.assertEqual(lease.snapshot()['renewals'], 1)
+        ping.call.assert_called_once_with('heartbeat', {})
+        self.assertFalse(lease.thread.is_alive())
+
     def test_preparation_heartbeat_failure_keeps_gate_closed_and_joins_thread(self):
         from bomber.framework.trader.runtime.live.remote import PreparationLease
         called = Event()
@@ -210,7 +290,8 @@ class RemoteRuntimeTests(unittest.TestCase):
             report = Mock()
             runtime = RemoteStrategyRuntime('rb',root/'signal.json',credentials,'20261110',{},
                 lambda *args:(session,{}),Mock(),report)
-            connection = NS(call=lambda *args:{'state':dict(trading_day='20261110', source_revision=0, ack=0)})
+            connection = NS(call=lambda *args:{'state':dict(trading_day='20261110', source_revision=0, ack=0),
+                'capabilities':['preparation_heartbeat'], 'lease_seconds':30})
             with patch('bomber.framework.trader.execution.ipc.UnixExecutionConnection', return_value=connection), \
                     patch('bomber.framework.trader.execution.ipc_client.RemoteAccountService'), \
                     patch('bomber.framework.trader.execution.ipc_client.RemoteTraderSession'), \
@@ -233,6 +314,7 @@ class RemoteRuntimeTests(unittest.TestCase):
                 credentials.write_text(json.dumps(dict(strategy_id=sid, socket=str(root/'exec.sock'),
                     key='fixture', configuration={})))
                 def prepare(service, driver, context):
+                    self.assertEqual(context.trading_day, identity['trading_day'])
                     state = dict(source_revision=2, ack=0, positions={sid:quantity})
                     port = NS(state=state, cursor=0, received_events=[], price_sync={})
                     port.set_cursor = lambda cursor: setattr(port, 'cursor', cursor)
@@ -260,7 +342,8 @@ class RemoteRuntimeTests(unittest.TestCase):
                 return RemoteStrategyRuntime(sid, store.path, credentials, '20261110', identity,
                     prepare, Mock(), Mock(), resume=True, seconds=.01)
             def describe(path, sid, key):
-                return NS(call=lambda *_: {'state': dict(trading_day='20261110', source_revision=2, ack=0)})
+                return NS(call=lambda *_: {'state': dict(trading_day='20261110', source_revision=2, ack=0),
+                    'capabilities':['preparation_heartbeat'], 'lease_seconds':30})
             with patch('bomber.framework.trader.execution.ipc.UnixExecutionConnection', side_effect=describe), \
                     patch('bomber.framework.trader.execution.ipc_client.RemoteAccountService'), \
                     patch('bomber.framework.trader.execution.ipc_client.RemoteTraderSession'), \
@@ -328,7 +411,7 @@ class NativeHybridIpcTests(unittest.TestCase):
                 patch('bomber.framework.trader.runtime.live.channels.ctp.required',return_value='fixture'):
             runtime = hybrid.build_shared_runtime(config,row,self.root/'credentials.json',resume=False)
             session,identity = runtime.prepare(self.service,self.account.driver,
-                LiveRunContext(resources=resources,trading_day=datetime(2026,10,13).date()))
+                LiveRunContext(resources=resources,trading_day='20261013'))
             self.assertEqual(identity,shared_strategy_identity(row,config,session))
             self.assertEqual(session.strategy.strategy_id,'hybrid-rb')
             self.assertEqual(session.strategy.config.max_contracts,2)
@@ -336,6 +419,12 @@ class NativeHybridIpcTests(unittest.TestCase):
             self.assertIs(session.runner.shared_signal,session.signal_checkpoint)
 
     def test_real_rb_p_runners_trade_and_save_through_one_account_in_same_process(self):
+        self.run_real_rb_p()
+
+    def test_preopen_reference_query_ages_the_mirror_but_not_the_lease(self):
+        self.run_real_rb_p(expire_preparation_observation=True)
+
+    def run_real_rb_p(self, *, expire_preparation_observation=False):
         import threading
         import time
         from bomber.framework.trader.execution.ipc import AccountExecutionProtocol, UnixExecutionServer
@@ -370,8 +459,19 @@ class NativeHybridIpcTests(unittest.TestCase):
             def prepare(service, driver, context, product=product, sid=sid):
                 session = self.session(product, service=service, driver=driver)
                 sessions[sid] = session
-                session.references.refresh = lambda: None
+                def refresh():
+                    if expire_preparation_observation:
+                        # 模拟数据库查询期间经过31秒；账户租约仍由心跳维持，
+                        # 回到控制线程时必须重新poll账户，而不能直接判TD断线。
+                        session.client._observed = time.monotonic()-31
+                session.references.refresh = refresh
                 session.runner.session_ready = lambda: session.client.is_reconciled
+                poll_inputs = session.runner.poll_live_inputs
+                def poll_preparation_inputs():
+                    poll_inputs()
+                    if expire_preparation_observation and not session.runner.accept_bars:
+                        session.client._observed = time.monotonic()-31
+                session.runner.poll_live_inputs = poll_preparation_inputs
                 prepare_history = session.runner.prepare_history
                 def slow_history():
                     result = prepare_history()
@@ -385,6 +485,7 @@ class NativeHybridIpcTests(unittest.TestCase):
                     return result
                 session.runner.prepare_history = slow_history
                 def begin():
+                    self.assertTrue(session.client.is_reconciled)
                     session.runner.accept_bars = True
                     prepared.wait(timeout=5)
                     # 使用订阅/预热完成后的分钟，保留Runner的首次完整Bar闸门。
@@ -401,6 +502,7 @@ class NativeHybridIpcTests(unittest.TestCase):
                     if len(filled) == 2: stop.set()
             runtimes.append(RemoteStrategyRuntime(sid, root/(sid+'.json'), credentials, '20261013',
                 {'strategy_id':sid}, prepare, Mock(), Mock(), seconds=5,
+                activate_at=datetime.now(ZONE)-timedelta(seconds=1) if expire_preparation_observation else None,
                 restore_fills_received=False, poll_session=poll))
         thread.start()
         try:

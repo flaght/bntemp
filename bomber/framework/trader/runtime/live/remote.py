@@ -26,23 +26,43 @@ class PreparationLease:
         self.interval = PREPARATION_HEARTBEAT_SECONDS if interval is None else interval
         self.stopped = Event()
         self.failure = None
+        self.renewals = 0
+        self.last_renewed = None
         self.thread = Thread(target=self._run, name='strategy-preparation-lease', daemon=True)
 
-    def _run(self):
+    def confirm(self):
+        """attach后立即验证一次，不能等长预热结束才发现服务不接受续租。"""
         from bomber.framework.trader.execution.ipc import UnixExecutionConnection
-        connection = None
+        self.check()
+        token = getattr(self.connection, 'lease', None)
+        if token is None:
+            return  # Runner尚未attach，不创建或接管租约。
+        try:
+            connection = UnixExecutionConnection(self.connection.path, self.connection.sid,
+                self.connection.key, timeout=5)
+            connection.lease = token
+            connection.call('heartbeat', {})
+            self.renewals += 1
+            self.last_renewed = time.monotonic()
+        except Exception as error:
+            self.failure = error
+            self.check()
+
+    def check(self):
+        if self.failure is not None:
+            raise RuntimeError(f'策略准备期间续租失败: {self.failure}') from self.failure
+
+    def snapshot(self):
+        return {'renewals': self.renewals,
+            'last_renewal_age_seconds': None if self.last_renewed is None else
+                time.monotonic() - self.last_renewed,
+            'failure': str(self.failure) if self.failure is not None else None}
+
+    def _run(self):
         while not self.stopped.wait(self.interval):
-            token = getattr(self.connection, 'lease', None)
-            if token is None:
-                continue  # Runner尚未attach，不创建或接管租约。
             try:
-                if connection is None:
-                    connection = UnixExecutionConnection(self.connection.path, self.connection.sid,
-                        self.connection.key, timeout=5)
-                connection.lease = token
-                connection.call('heartbeat', {})
-            except Exception as error:
-                self.failure = error
+                self.confirm()
+            except Exception:
                 return
 
     def __enter__(self):
@@ -52,11 +72,25 @@ class PreparationLease:
     def __exit__(self, kind, error, traceback):
         self.stopped.set()
         self.thread.join(timeout=11)
-        if kind is None:
-            if self.thread.is_alive():
-                raise RuntimeError('准备续租线程未退出，拒绝开放策略决策')
-            if self.failure is not None:
-                raise RuntimeError(f'策略准备期间续租失败: {self.failure}') from self.failure
+        if self.thread.is_alive():
+            message = '准备续租线程未退出，拒绝开放策略决策'
+            if kind is None:
+                raise RuntimeError(message)
+            error.add_note(message)
+        if self.failure is not None:
+            if kind is None:
+                self.check()
+            error.add_note(f'策略准备期间续租失败: {self.failure}')
+
+
+def validate_preparation_protocol(description):
+    if 'preparation_heartbeat' not in description.get('capabilities', ()):
+        raise RuntimeError('账户服务进程未支持准备心跳协议；更新文件不会更新已运行的进程。'
+            '请正常停止08、10，再停止并重启账户服务，随后启动策略；保留现有账本和信号文件，无需重新迁移')
+    seconds = description.get('lease_seconds')
+    if (isinstance(seconds, bool) or not isinstance(seconds, (int, float))
+            or not seconds > PREPARATION_HEARTBEAT_SECONDS):
+        raise RuntimeError('账户服务租约期限必须大于策略准备心跳间隔')
 
 
 def resolve_strategy_rows(rows, path, *, path_arguments=()):
@@ -281,6 +315,7 @@ class RemoteStrategyRuntime:
         session, failure, shutdown_failure, status = None, None, None, "failed"
         stop_reason = None
         save = None
+        preparation_lease = None
         with ExitStack() as resources:
             try:
                 if stop_event.is_set():
@@ -299,14 +334,15 @@ class RemoteStrategyRuntime:
                 if credentials["strategy_id"] != self.strategy_id:
                     raise ValueError("客户端凭据不属于本策略")
                 connection = UnixExecutionConnection(Path(credentials["socket"]), self.strategy_id, credentials["key"])
-                state = connection.call("describe", {})["state"]
+                description = connection.call("describe", {})
+                validate_preparation_protocol(description)
+                state = description["state"]
                 if state["trading_day"] != self.trading_day:
                     raise ValueError("账户服务交易日不一致")
                 service = RemoteAccountService(connection, credentials["configuration"], state)
                 service.allow_reconfigure = bool(credentials.get('allow_reconfigure', False))
                 driver = RemoteTraderSession(service, self.trading_day)
-                context = LiveRunContext(resources=resources,
-                    trading_day=datetime.strptime(self.trading_day, "%Y%m%d").date())
+                context = LiveRunContext(resources=resources, trading_day=self.trading_day)
                 session, identity = self.prepare(service, driver, context)
                 port = session.client
                 if persisted and persisted.payload["identity"] != identity:
@@ -353,36 +389,33 @@ class RemoteStrategyRuntime:
                         from bomber.framework.trader.runtime.live.continuous import LiveWindowContext
                         session.runner.window_context = LiveWindowContext(None, window, stop_event,
                             source_day=self.trading_day, resume=self.resume)
-                with PreparationLease(connection):
+                preparation_lease = PreparationLease(connection)
+                with preparation_lease:
                     session.runner.start()
+                    preparation_lease.confirm()
                     from bomber.framework.trader.runtime.live.shared import prepare_strategy_history
+                    from .lifecycle import refresh_preparation_inputs, validate_session_ready
                     activate_at = self.activate_at
                     if activate_at is not None:
                         if prepare_strategy_history(session, require_ready=False) is False:
                             raise StopRequested()
                         def poll_preparation():
+                            preparation_lease.check()
                             if stop_at is not None and datetime.now(stop_at.tzinfo) >= stop_at:
                                 raise StopRequested()
                             if session.runner.failure:
                                 raise RuntimeError(session.runner.failure)
-                            port.drain_events()
-                            session.references.refresh()
-                            poll = getattr(session.runner, "poll_live_inputs", None)
-                            if callable(poll):
-                                poll()
+                            refresh_preparation_inputs(session)
                         wait_for_open(activate_at, stop_event, poll=poll_preparation)
                     ready_seconds = self.ready_seconds
                     until_ready = time.monotonic() + ready_seconds
                     while not session.runner.session_ready():
+                        preparation_lease.check()
                         if stop_event.is_set() or stop_at is not None and datetime.now(stop_at.tzinfo) >= stop_at:
                             raise StopRequested()
                         if session.runner.failure:
                             raise RuntimeError(session.runner.failure)
-                        port.drain_events()
-                        session.references.refresh()
-                        poll = getattr(session.runner, "poll_live_inputs", None)
-                        if callable(poll):
-                            poll()
+                        refresh_preparation_inputs(session)
                         if time.monotonic() >= until_ready:
                             context = capture_session_failure(session)
                             raise RuntimeError(f"策略未在期限内取得健康行情/参考/账户: {context}")
@@ -395,8 +428,7 @@ class RemoteStrategyRuntime:
                         if prepare_strategy_history(session) is False:
                             raise StopRequested()
                     else:
-                        from bomber.framework.trader.runtime.live.lifecycle import validate_session_ready
-                        session.references.refresh()
+                        refresh_preparation_inputs(session)
                         validate_session_ready(session)
                     if stop_event.is_set():
                         raise StopRequested()
@@ -421,7 +453,8 @@ class RemoteStrategyRuntime:
             except StopRequested:
                 status = "completed"
             except BaseException as error:
-                failure = str(error) or type(error).__name__
+                failure = '; '.join([str(error) or type(error).__name__,
+                    *getattr(error, '__notes__', ())])
                 if session and getattr(session.runner, "failure_readiness", None) is None:
                     try:
                         capture_session_failure(session)
@@ -452,6 +485,7 @@ class RemoteStrategyRuntime:
                         "stop_reason": stop_reason,
                         **(history_snapshot(session) if session else {}),
                         "failure_readiness": getattr(session.runner, "failure_readiness", None) if session else None,
+                        "preparation_lease": preparation_lease.snapshot() if preparation_lease else None,
                         "verification": "remote_strategy_runtime", "strategy_id": self.strategy_id,
                         "positions": session.client.state["positions"] if session else None,
                         "cursor": session.client.cursor if session else None,
