@@ -223,6 +223,7 @@ class CtpTdApiTransport:
                 self.broker_id, self.investor_id,
                 str(login.get("TradingDay", "")),
                 int(login["MaxOrderRef"]),
+                int(login.get("FrontID", 0)), int(login.get("SessionID", 0)),
             )
             confirmation = self._request("settlement", "reqSettlementInfoConfirm", {
                 "BrokerID": self.broker_id, "InvestorID": self.investor_id,
@@ -457,6 +458,8 @@ class CtpTdApiTransport:
                     self._insert_requests.pop(key, None)
         self._order_push({
             **identity, "OrderSubmitStatus": "4",
+            "FrontID": self._session.front_id if self._session else 0,
+            "SessionID": self._session.session_id if self._session else 0,
             "StatusMsg": f"CTP报单拒绝 {error_id}: {(error or {}).get('ErrorMsg', '')}",
         })
 
@@ -602,6 +605,10 @@ class CtpTdApiTransport:
             if (str(row.get("BrokerID", "")) != self.broker_id
                     or str(row.get("InvestorID", "")) != self.investor_id):
                 raise RuntimeError("CTP订单回报账户不匹配")
+            accept = getattr(self, "accept_order", None)
+            if accept is not None and not accept(row):
+                continue
+            self._last_orders[str(row.get("OrderRef", ""))] = dict(row)
             status = str(row.get("OrderStatus", ""))
             ref = str(row.get("OrderRef", ""))
             key = f"CTP-{session.broker_id}-{session.investor_id}-{session.trading_day}-{ref}"

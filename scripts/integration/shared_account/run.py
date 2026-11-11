@@ -56,7 +56,7 @@ def validate_td_preflight(config, driver, *, md_front, td_front, diagnostics):
 
 
 def build_host(config, *, resume, diagnostics=None, read_only=False, strategy_processes=False,
-               session_order_budget=None):
+               session_order_budget=None, direct=False):
     from bomber.framework.trader.execution.ctp import CtpNativeTraderDriver, CtpTdApiTransport
     from bomber.framework.trader.execution.builders import build_ctp_portfolio_execution
     from bomber.framework.trader.execution.shared import SharedAccountExecutionService, SharedRiskBudget
@@ -64,6 +64,11 @@ def build_host(config, *, resume, diagnostics=None, read_only=False, strategy_pr
     from bomber.framework.trader.runtime.live.channels.ctp import (build_simnow_transport, required,
         assert_flat_account, assert_account_ready, validate_replay_environment)
     from bomber.framework.trader.runtime.live.channels.ctp_shared import CtpSharedAccountLifecycle
+    if direct:
+        from bomber.framework.trader.execution.ctp.independent import (
+            IndependentCtpDriver as CtpNativeTraderDriver, IndependentTdTransport as CtpTdApiTransport)
+        from bomber.framework.trader.runtime.live.channels.ctp_independent import (
+            IndependentCtpLifecycle as CtpSharedAccountLifecycle)
     from bomber.framework.trader.runtime.live.shared import SharedAccountLiveHost, SharedStrategySession
     from bomber.framework.trader.runtime.live.contracts import LiveRunContext
     from bomber.framework.trader.runtime.live.recovery import InstrumentPositionScope
@@ -84,13 +89,19 @@ def build_host(config, *, resume, diagnostics=None, read_only=False, strategy_pr
         order_budget = account_config["max_session_orders"] if session_order_budget is None else session_order_budget
         if isinstance(order_budget, bool) or not isinstance(order_budget, int) or not 0 < order_budget <= account_config["max_session_orders"]:
             raise ValueError("运行窗口订单额度须为不超过原账户配置的正整数")
+        flow_suffix = ''
+        if direct:
+            import hashlib
+            flow_suffix = '-direct-'+hashlib.sha256('|'.join(sorted(row['strategy_id'] for row in config['strategies'])).encode()).hexdigest()[:12]
         transport = build_simnow_transport(CtpTdApiTransport, client_id=account_config["client_id"],
-            flow_path=f"/tmp/{account_config['client_id']}-td")
+            flow_path=f"/tmp/{account_config['client_id']}{flow_suffix}-td")
         market_uses_ctp = any(source_config(args).source == "ctp" for row, entry, args in arguments)
         md_front = required("CTP_MD_ADDRESS") if market_uses_ctp else None
         if config["environment"] == "replay":
             validate_replay_environment(md_front, transport.front, transport.production_mode)
-        CtpSharedAccountLifecycle.acquire(resources, transport, environment="simnow")
+        CtpSharedAccountLifecycle.acquire(resources, transport, environment="simnow",
+            **({'strategy_ids': [] if config.get('direct_locks_held') else
+                [row['strategy_id'] for row in config['strategies']]} if direct else {}))
         from bomber.framework.trader.runtime.live.local import strategy_state_lock
         resources.enter_context(strategy_state_lock(Path(config["account_state_file"])))
         driver_holder = {}
@@ -101,7 +112,7 @@ def build_host(config, *, resume, diagnostics=None, read_only=False, strategy_pr
         driver = CtpNativeTraderDriver(transport.client_id, transport.account_id, transport,
             enable_simnow_orders=not read_only, max_session_orders=order_budget,
             disconnect_handler=disconnected)
-        driver.new_order_budget_window = session_order_budget is not None
+        driver.new_order_budget_window = direct or session_order_budget is not None
         driver.start(lambda report: None)
         validate_td_preflight(config, driver, md_front=md_front, td_front=transport.front,
                               diagnostics=diagnostics)
@@ -156,7 +167,8 @@ def build_host(config, *, resume, diagnostics=None, read_only=False, strategy_pr
             limit_offset_ticks=account_config["limit_offset_ticks"],
             account_reconciliation=(AccountReconciliationMode.OBSERVE if preserve_external else AccountReconciliationMode.STRICT),
             instrument_scope=position_scope,
-            generic_close_venues=("DCE", "CZCE", "CFFEX"), generic_close_today_first_venues=("DCE", "CZCE", "CFFEX"))
+            generic_close_venues=("DCE", "CZCE", "CFFEX"),
+            generic_close_today_first_venues=(() if direct else ("DCE", "CZCE", "CFFEX")))
         driver_holder["client"] = execution.client
         service = SharedAccountExecutionService(execution.client, prices=execution.prices,
             instrument_limits=limits, budget=budget, instrument_scope=position_scope,

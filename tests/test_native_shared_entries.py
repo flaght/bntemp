@@ -222,6 +222,74 @@ class RemoteRuntimeTests(unittest.TestCase):
             self.assertFalse((root/'signal.json').exists())
             self.assertIn('无需重新迁移', report.write.call_args.kwargs['fields']['failure'])
 
+    def test_heartbeat_timeout_is_retryable_inside_original_lease_and_then_recovers(self):
+        now = [100.0]
+        original = NS(path=Path('/tmp/unused.sock'), sid='rb', key='key', lease='token',
+            lease_confirmation=('token',100.0))
+        ping = Mock()
+        ping.call.side_effect = [TimeoutError('fixture slow reply'), {}]
+        with patch.object(native.time, 'monotonic', side_effect=lambda:now[0]), \
+                patch('bomber.framework.trader.execution.ipc.UnixExecutionConnection', return_value=ping):
+            lease = native.StrategyConnectionLease(original)
+            lease.activate()
+            self.assertIsNone(lease.failure)
+            self.assertTrue(lease.snapshot()['pending_renewal'])
+            self.assertEqual(lease.snapshot()['transient_failures'], 1)
+            now[0] = 110.0
+            lease.confirm()
+            self.assertFalse(lease.snapshot()['pending_renewal'])
+            self.assertEqual(lease.renewals, 1)
+            self.assertEqual(ping.call.call_args_list, [unittest.mock.call('keepalive', {})]*2)
+            self.assertEqual(ping.lease, 'token')
+
+    def test_main_rpc_confirmation_extends_retry_budget_but_other_token_cannot(self):
+        now = [100.0]
+        original = NS(path=Path('/tmp/unused.sock'), sid='rb', key='key', lease='token',
+            lease_confirmation=('token',100.0))
+        ping = Mock()
+        ping.call.side_effect = TimeoutError('fixture slow reply')
+        with patch.object(native.time, 'monotonic', side_effect=lambda:now[0]), \
+                patch('bomber.framework.trader.execution.ipc.UnixExecutionConnection', return_value=ping):
+            lease = native.StrategyConnectionLease(original)
+            lease.activate()
+            original.lease_confirmation = ('token',125.0)
+            now[0] = 131.0
+            lease.check()  # Heartbeat has no new reply, but main poll proved this token valid.
+            self.assertIsNone(lease.failure)
+            original.lease_confirmation = ('another-token',150.0)
+            now[0] = 156.0
+            with self.assertRaisesRegex(RuntimeError, '未在租约有效期内收到续租确认'):
+                lease.check()
+            original.lease_confirmation = ('token',156.0)
+            with self.assertRaises(RuntimeError):
+                lease.check()  # A declared fatal failure never auto-rearms.
+
+    def test_missing_heartbeat_and_main_replies_expire_at_lease_deadline(self):
+        now = [100.0]
+        original = NS(path=Path('/tmp/unused.sock'), sid='rb', key='key', lease='token')
+        ping = Mock()
+        ping.call.side_effect = TimeoutError('fixture slow reply')
+        with patch.object(native.time, 'monotonic', side_effect=lambda:now[0]), \
+                patch('bomber.framework.trader.execution.ipc.UnixExecutionConnection', return_value=ping):
+            lease = native.StrategyConnectionLease(original)
+            lease.activate()
+            now[0] = 129.0
+            lease.check()
+            now[0] = 130.0
+            with self.assertRaisesRegex(RuntimeError, '未在租约有效期内收到续租确认'):
+                lease.check()
+
+    def test_server_rejection_is_fatal_even_after_retryable_timeout(self):
+        original = NS(path=Path('/tmp/unused.sock'), sid='rb', key='key', lease='token')
+        ping = Mock()
+        ping.call.side_effect = [TimeoutError('fixture slow reply'), RuntimeError('策略连接租约失效')]
+        with patch('bomber.framework.trader.execution.ipc.UnixExecutionConnection', return_value=ping):
+            lease = native.StrategyConnectionLease(original)
+            lease.activate()
+            with self.assertRaisesRegex(RuntimeError, '策略连接租约失效'):
+                lease.confirm()
+        self.assertEqual(ping.call.call_count, 2)
+
     def test_preparation_only_server_cannot_be_used_for_runtime_heartbeats(self):
         from bomber.framework.trader.runtime.live.remote import validate_connection_protocol
         with self.assertRaisesRegex(RuntimeError, '准备及运行期心跳协议'):
@@ -488,7 +556,10 @@ class NativeHybridIpcTests(unittest.TestCase):
     def test_runtime_heartbeats_survive_slow_begin_bars_and_poll_without_main_connection_lock(self):
         self.run_real_rb_p(slow_runtime=True)
 
-    def run_real_rb_p(self, *, expire_preparation_observation=False, slow_runtime=False):
+    def test_temporary_account_pause_does_not_stop_either_runner_on_first_heartbeat_timeout(self):
+        self.run_real_rb_p(slow_account=True)
+
+    def run_real_rb_p(self, *, expire_preparation_observation=False, slow_runtime=False, slow_account=False):
         import threading
         import time
         from bomber.framework.trader.execution.ipc import AccountExecutionProtocol, UnixExecutionServer
@@ -502,12 +573,16 @@ class NativeHybridIpcTests(unittest.TestCase):
         server = UnixExecutionServer(root/'exec.sock', protocol); self.addCleanup(server.close)
         running, stop, filled, failures, sessions = Event(), Event(), set(), [], {}
         warmed = set()
+        paused, reports = Event(), []
         prepared = Barrier(2)
         running.set()
         def control():
             try:
                 while running.is_set():
                     server.poll(); protocol.poll()
+                    if slow_account and self.transport.sent and not paused.is_set():
+                        paused.set()
+                        time.sleep(.12)  # > .05s心跳RPC超时，但 < .3s租约。
                     for ref in list(self.transport.active): self.transport.fill(ref)
                     time.sleep(.002)
             except BaseException as error:
@@ -572,25 +647,37 @@ class NativeHybridIpcTests(unittest.TestCase):
                 if session.client.position_manager.position(sid,key) == quantity:
                     filled.add(sid)
                     if len(filled) == 2: stop.set()
+            report = Mock()
+            reports.append(report)
             runtimes.append(RemoteStrategyRuntime(sid, root/(sid+'.json'), credentials, '20261013',
-                {'strategy_id':sid}, prepare, Mock(), Mock(), seconds=5,
+                {'strategy_id':sid}, prepare, Mock(), report, seconds=5,
                 activate_at=datetime.now(ZONE)-timedelta(seconds=1) if expire_preparation_observation else None,
                 restore_fills_received=False, poll_session=poll))
         thread.start()
         try:
             with patch('subprocess.Popen', side_effect=AssertionError('不得创建子进程')), \
-                    patch.object(native, 'CONNECTION_HEARTBEAT_SECONDS', .02):
+                    patch.object(native, 'CONNECTION_HEARTBEAT_SECONDS', .02), \
+                    patch.object(native, 'CONNECTION_HEARTBEAT_TIMEOUT_SECONDS', .05 if slow_account else 5):
                 run_remote_group(runtimes, stop)
             self.assertFalse(failures, failures)
             self.assertEqual(filled, {'hybrid-rb','hybrid-p'})
             self.assertEqual(warmed, filled)
             self.assertEqual(self.transport.starts, 1)
             self.assertEqual(len(self.transport.sent), 2)
+            if slow_account:
+                self.assertTrue(paused.is_set())
+                lease_reports = [report.write.call_args.kwargs['fields']['connection_lease'] for report in reports]
+                self.assertGreater(sum(row['transient_failures'] for row in lease_reports), 0)
+                self.assertTrue(all(row['failure'] is None for row in lease_reports))
             for sid in filled:
                 saved = JsonStateStore(root/(sid+'.json')).load().payload
                 self.assertGreater(saved['cursor'], 0)
                 self.assertIn('signal', saved)
                 self.assertEqual(len(sessions[sid].strategy.holdings.active), 1)
+        except BaseException as error:
+            if failures:
+                error.add_note('离线账户控制线程异常: '+repr(failures))
+            raise
         finally:
             running.clear(); thread.join(2)
 

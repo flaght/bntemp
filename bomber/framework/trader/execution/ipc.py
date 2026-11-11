@@ -354,9 +354,27 @@ class UnixExecutionConnection:
         self.path, self.sid, self.key, self.timeout = path, sid, key, timeout
         self.lease = None
         self._lock = threading.RLock()
+        self._lease_observation_lock = threading.Lock()
+        self._lease_confirmation = None
+
+    @property
+    def lease_confirmation(self):
+        with self._lease_observation_lock:
+            return self._lease_confirmation
+
+    def observe_lease(self, token, sent_at):
+        # 不获取主RPC锁：主连接可能在等待回复，心跳仍须能记录确认。
+        # 采用请求发出时间而非响应时间，避免把排队耗时额外加在服务端租期上。
+        with self._lease_observation_lock:
+            if token != self.lease:
+                return
+            previous = self._lease_confirmation
+            if previous is None or previous[0] != token or sent_at > previous[1]:
+                self._lease_confirmation = (token, sent_at)
 
     def call(self, action, data, *, request_id=None):
         with self._lock, socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+            sent_at, token = time.monotonic(), self.lease
             connection.settimeout(self.timeout)
             connection.connect(str(self.path))
             connection.sendall(encode({"version": 1, "strategy_id": self.sid, "key": self.key,
@@ -368,4 +386,7 @@ class UnixExecutionConnection:
             result = response["result"]
             if action == "attach":
                 self.lease = result["lease"]
+                token = self.lease
+            if action in {'attach', 'heartbeat', 'keepalive', 'poll', 'submit', 'continue', 'cancel'}:
+                self.observe_lease(token, sent_at)
             return result

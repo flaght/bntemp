@@ -39,6 +39,8 @@ class CtpTraderSession:
     investor_id: str
     trading_day: str
     max_order_ref: int
+    front_id: int = 0
+    session_id: int = 0
 
     def __post_init__(self) -> None:
         if not self.broker_id or not self.investor_id or not self.trading_day:
@@ -537,6 +539,9 @@ class CtpNativeTraderDriver:
         except Exception as error:
             if not send_started:
                 self._budget_used -= 1
+            if send_started and getattr(self, 'preserve_ambiguous_sends', False):
+                self.on_disconnect(-1)
+                raise AmbiguousOrderSubmission('CTP发送结果不明，保留写前关联及冻结，重连后查询') from error
             if self._sequences.get(order_ref, 0) > 0:
                 self.on_disconnect(-1)
                 raise AmbiguousOrderSubmission(

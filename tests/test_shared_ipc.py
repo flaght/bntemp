@@ -679,6 +679,37 @@ class SharedIpcTests(unittest.TestCase):
             self.assertFalse(transport.sent)
             protocol.stop_owner('one'); protocol.stop_owner('two')
 
+    def test_rpc_lease_confirmation_uses_send_time_not_late_reply_or_non_owner_actions(self):
+        from unittest.mock import Mock, patch
+        from bomber.framework.trader.execution.ipc import UnixExecutionConnection
+        connection = UnixExecutionConnection('/tmp/unused.sock', 'one', 'key')
+        connection.lease = 'token'
+        clock = [100.0]
+        def response(_):
+            clock[0] += 10  # simulate delayed reply
+            return {'ok':True, 'result':{}}
+        with patch('bomber.framework.trader.execution.ipc.socket.socket') as factory, \
+                patch('bomber.framework.trader.execution.ipc.time.monotonic', side_effect=lambda:clock[0]), \
+                patch('bomber.framework.trader.execution.ipc.receive', side_effect=response):
+            factory.return_value.__enter__.return_value = Mock()
+            connection.call('poll', {})
+            self.assertEqual(connection.lease_confirmation, ('token',100.0))
+            connection.call('describe', {})
+            self.assertEqual(connection.lease_confirmation, ('token',100.0))
+            connection.observe_lease('another-token', 200)
+            connection.observe_lease('token', 99)
+            self.assertEqual(connection.lease_confirmation, ('token',100.0))
+            connection.call('keepalive', {})
+            self.assertEqual(connection.lease_confirmation, ('token',120.0))
+            connection.call('stop', {})
+            self.assertEqual(connection.lease_confirmation, ('token',120.0))
+        with patch('bomber.framework.trader.execution.ipc.socket.socket'), \
+                patch('bomber.framework.trader.execution.ipc.receive', return_value={
+                    'ok':False, 'error':'策略连接租约失效'}):
+            with self.assertRaisesRegex(RuntimeError, '租约失效'):
+                connection.call('poll', {})
+        self.assertEqual(connection.lease_confirmation, ('token',120.0))
+
     def test_runtime_keepalive_preserves_owner_but_cannot_extend_ready_or_mutate_execution(self):
         from copy import deepcopy
         from unittest.mock import patch

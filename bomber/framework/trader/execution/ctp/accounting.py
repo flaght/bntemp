@@ -7,6 +7,7 @@ from typing import Mapping
 
 from bomber.framework.market.basic.base import InstrumentId
 from bomber.framework.trader.execution.contracts import ExecutionReport, ExecutionReportType
+from bomber.framework.trader.execution.contracts import PositionEffect
 from bomber.framework.trader.execution.ctp.ledger import (
     CtpFillResult,
     CtpPositionLedger,
@@ -99,7 +100,9 @@ class CtpExecutionAccounting:
             self.ledger.apply_fill(
                 report.instrument_id,
                 report.order_side,
-                report.position_effect,
+                (PositionEffect(report.metadata['owned_close_bucket'])
+                 if report.position_effect is PositionEffect.CLOSE and 'owned_close_bucket' in report.metadata
+                 else report.position_effect),
                 report.filled_quantity,
                 report.fill_price,
                 multiplier,

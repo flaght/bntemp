@@ -1,5 +1,36 @@
 # 08：期权Vega策略
 
+## 独立CTP进程（新入口）
+
+与10同时运行时使用 `run_direct.py`，无需启动 `demos/shared_account/account.py`。
+先正常停止旧08、10及旧账户服务，保留全部原状态文件。
+
+```bash
+PYTHONPATH=.:/workspace/worker/pj/KiChaos IMPLUSE_VERSION=all \
+  /workspace/worker/env/chs-live/bin/python -u demos/08_option_vega/run_direct.py \
+  --connect --enable-orders --confirm-simnow --run-forever
+```
+
+默认读取本目录 `config/.env`、`config/strategy.yaml` 的 `live_simnow`，
+新策略ID为 `option-vega-direct`，成交账本和信号分别保存在
+`results/direct/state.json`、`results/direct/signal.json`。首次零归属启动，
+以后自动从这两个新文件恢复。原08检查点、信号及柜台残留仓位不会被接管或自动平掉。
+
+按原 `FrontID + SessionID + OrderRef` 保存策略关联，取得 `ExchangeID + OrderSysID`
+后匹配成交。重连查询活动单和真实成交，补记漏回报、去重后才重新授权；
+网络断开可重建会话重试三次。跨日结转本策略今昨仓，存在未结束过夜订单时闭闸等待核验。
+冻结按策略/合约/方向/今昨桶持久化，部分成交只消耗相应冻结，撤单只释放剩余量。
+平仓分阶段先昨后今，反手在平仓成交后才开新方向。
+SHFE/INE使用明确平昨/平今；DCE/CZCE/CFFEX发送通用平仓，逻辑归属按昨优先扣减，
+物理桶仍由交易所规则决定。
+
+`demos/shared_account/account.json` 仅提供纯账户设置；默认两进程共用
+`demos/shared_account/results/daily_orders.sqlite3` 原子累计同账户200笔日限额，
+无需额外服务。不要为两个进程指定不同的 `--counter-file`，也不要清除计数文件。
+账户总量/名义限额须为null，各策略原有有限风控及柜台资金核验继续生效。
+不带三个连接授权参数运行同一文件，可离线检查配置。
+现有 `run_live.py` 及其原运行方式保留。
+
 以**回测、Live、自定义特征**为三条主线。两个入口使用相同的策略、风险校验机制和特征契约，执行与仓位由`bomber/framework`负责。默认MO认购、同月IM和000852指数；IV与Delta使用同月期货价格，选约/增仓/退出/对冲保持原strategy1逻辑。
 
 本文对应当前代码与随附配置，历史交付文档中的命令不作为当前默认值。阅读入口：

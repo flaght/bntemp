@@ -1,5 +1,37 @@
 # HybridTransformer 主力合约策略层（按品种外部配置）
 
+## 独立CTP进程（新入口）
+
+`run_direct.py` 在本进程运行原RB/P两个实例，自己连接CTP，无需独立账户服务。
+先正常停止旧08、10，再停止旧账户服务，使原委托终结、原状态落盘；保留原文件。
+在另一个终端启动08的 `run_direct.py`，两个新进程启动顺序不限。
+
+```bash
+PYTHONPATH=.:/workspace/worker/pj/KiChaos IMPLUSE_VERSION=all \
+  /workspace/worker/env/chs-live/bin/python -u demos/10_hybrid_transformer/run_direct.py \
+  --connect --enable-orders --confirm-simnow --run-forever
+```
+
+默认读取 `config/instances_rb_p.json`、`config/.env` 及纯账户设置
+`demos/shared_account/account.json`。保留策略ID `hybrid-transformer-live`、`hybrid-p-live`，
+继续使用 `results/live/state/rb_signal.json`、`p_signal.json`。
+首次从 `account.json` 指向的**最新公共账户账本**提取RB/P成交归属、成本、目标版本和事件游标，
+柜台核验通过后写入本目录 `results/direct/state.json`；原公共账本只读。
+其他路径用 `--import-state /实际路径/state.json`。原公共账本缺失或仍有未决订单时拒绝空仓替代恢复。
+以后自动恢复新的本进程账本，不重复从旧账户导入，不再迁移原08检查点。
+
+订单在发送前保存策略ID、原会话身份和今昨冻结，回报仅路由到原所有者。
+重连保留旧会话活动单关联，查询真实成交补记漏回报后才授权；未知归属或证据不全时保留账本并闭闸。
+昨仓先发，确认成交后才发今仓，撤销昨仓单不会跳过昨仓；平完旧方向再开新方向。
+RB使用明确平昨/平今；P等通用平仓市场按逻辑昨优先记账，物理桶遵从交易所规则。
+账户上的其他策略正常成交只刷新外部观测，不改写RB/P归属。
+
+同账户日限额由两进程共用 `demos/shared_account/results/daily_orders.sqlite3`
+原子累计，保留原200笔限制。不要删除该文件，也不要给08/10配置不同的计数路径。
+账户总量/名义限额须为null，各策略原有手数、名义风控和柜台资金核验继续生效。
+不带三个连接授权参数运行同一文件，可离线检查配置。
+现有 `run_live.py`、`run_shared.py` 不改动。
+
 自行调整总持仓与每批手数，见[手数调整操作手册](../../doc/strategies/HYBRID_POSITION_SIZING_GUIDE.md)。
 Live已支持`--max-contracts`与`--entry-contracts`独立配置；默认仍为5手/每批1手。空仓改参数后直接使用原状态文件启动，无需手工迁移手数配置。
 

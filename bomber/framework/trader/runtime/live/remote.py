@@ -17,13 +17,21 @@ from .local import strategy_state_lock
 
 
 CONNECTION_HEARTBEAT_SECONDS = 5
+CONNECTION_HEARTBEAT_TIMEOUT_SECONDS = 5
 
 
 class StrategyConnectionLease:
     """准备及运行期间独立续租；不交付回报、不刷新账户观测或行情健康。"""
-    def __init__(self, connection, *, interval=None):
+    def __init__(self, connection, *, interval=None, lease_seconds=30):
         self.connection = connection
         self.interval = CONNECTION_HEARTBEAT_SECONDS if interval is None else interval
+        self.lease_seconds = lease_seconds
+        self.started_at = time.monotonic()
+        self.confirmed_at = self.started_at
+        self.transient_failures = 0
+        self.last_transient_failure = None
+        self.pending_renewal = False
+        self.timeout = min(CONNECTION_HEARTBEAT_TIMEOUT_SECONDS, lease_seconds)
         self.stopped = Event()
         self._lock = RLock()
         self.phase = "preparing"
@@ -40,13 +48,30 @@ class StrategyConnectionLease:
             token = getattr(self.connection, 'lease', None)
             if token is None:
                 return  # Runner尚未attach，不创建或接管租约。
+            sent_at = time.monotonic()
+            remaining = self.lease_seconds - (sent_at - self._confirmed_at())
+            if remaining <= 0:
+                self.failure = TimeoutError('未在租约有效期内收到续租确认')
+                self.check()
             try:
                 connection = UnixExecutionConnection(self.connection.path, self.connection.sid,
-                    self.connection.key, timeout=5)
+                    self.connection.key, timeout=min(self.timeout, remaining))
                 connection.lease = token
                 connection.call('heartbeat' if self.phase == 'preparing' else 'keepalive', {})
                 self.renewals += 1
                 self.last_renewed = time.monotonic()
+                self.confirmed_at = max(self.confirmed_at, sent_at)
+                observe = getattr(self.connection, 'observe_lease', None)
+                if callable(observe):
+                    observe(token, sent_at)
+                self.pending_renewal = False
+            except (OSError, ConnectionError) as error:
+                # 心跳可安全重试；单次socket超时不证明租约已经丢失。
+                # 主连接的成功回复也能确认同一token仍有效，但不重试任何业务请求。
+                self.transient_failures += 1
+                self.last_transient_failure = f'{type(error).__name__}: {error}'
+                self.pending_renewal = True
+                self.check()
             except Exception as error:
                 self.failure = error
                 self.check()
@@ -58,12 +83,29 @@ class StrategyConnectionLease:
             self.phase = "running"
             self.confirm()
 
+    def _confirmed_at(self):
+        observation = getattr(self.connection, 'lease_confirmation', None)
+        if (isinstance(observation, tuple) and len(observation) == 2
+                and observation[0] == getattr(self.connection, 'lease', None)
+                and isinstance(observation[1], (int, float))):
+            return max(self.confirmed_at, observation[1])
+        return self.confirmed_at
+
     def check(self):
+        if (self.failure is None and self.pending_renewal
+                and time.monotonic() - self._confirmed_at() >= self.lease_seconds):
+            self.failure = TimeoutError('未在租约有效期内收到续租确认；最近传输异常='
+                + str(self.last_transient_failure))
         if self.failure is not None:
             raise RuntimeError(f'策略连接续租失败: phase={self.phase} error={self.failure}') from self.failure
 
     def snapshot(self):
         return {'phase': self.phase, 'renewals': self.renewals,
+            'lease_seconds': self.lease_seconds,
+            'lease_confirmation_age_seconds': time.monotonic() - self._confirmed_at(),
+            'transient_failures': self.transient_failures,
+            'last_transient_failure': self.last_transient_failure,
+            'pending_renewal': self.pending_renewal,
             'last_renewal_age_seconds': None if self.last_renewed is None else
                 time.monotonic() - self.last_renewed,
             'failure': str(self.failure) if self.failure is not None else None}
@@ -81,7 +123,7 @@ class StrategyConnectionLease:
 
     def __exit__(self, kind, error, traceback):
         self.stopped.set()
-        self.thread.join(timeout=11)
+        self.thread.join(timeout=2*self.timeout+1)
         if self.thread.is_alive():
             message = '连接续租线程未退出，拒绝继续策略决策'
             if kind is None:
@@ -404,7 +446,7 @@ class RemoteStrategyRuntime:
                         from bomber.framework.trader.runtime.live.continuous import LiveWindowContext
                         session.runner.window_context = LiveWindowContext(None, window, stop_event,
                             source_day=self.trading_day, resume=self.resume)
-                connection_lease = StrategyConnectionLease(connection)
+                connection_lease = StrategyConnectionLease(connection, lease_seconds=description['lease_seconds'])
                 with connection_lease:
                     session.runner.start()
                     connection_lease.confirm()
