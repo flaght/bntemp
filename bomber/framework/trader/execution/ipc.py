@@ -129,7 +129,8 @@ class AccountExecutionProtocol:
         self.journal = service.event_journal
         for sid, port in service._ports.items():
             port.ready_check = lambda sid=sid: bool(self.leases.get(sid, {}).get("ready")
-                and time.monotonic() < self.leases[sid]["deadline"])
+                and time.monotonic() < min(self.leases[sid]["deadline"],
+                    self.leases[sid]["ready_deadline"]))
 
     def state(self, sid):
         with self.service.client._submit_lock:
@@ -211,7 +212,7 @@ class AccountExecutionProtocol:
         action, data = message.get("action"), message.get("data", {})
         port = self.service._ports[sid]
         if action == "describe":
-            return {"state": self.state(sid), "capabilities": ["preparation_heartbeat"],
+            return {"state": self.state(sid), "capabilities": ["preparation_heartbeat", "runtime_heartbeat"],
                     "lease_seconds": self.lease_seconds}
         if action == 'configure':
             if self.configure is None or sid in self.leases:
@@ -238,7 +239,7 @@ class AccountExecutionProtocol:
             self.stopped_acknowledged.discard(sid)
             token = secrets.token_hex(24)
             self.leases[sid] = {"token": token, "ready": False,
-                                "deadline": time.monotonic() + self.lease_seconds}
+                                "deadline": time.monotonic() + self.lease_seconds, "ready_deadline": 0}
             return {"lease": token, "state": self.state(sid)}
         lease = self.leases.get(sid)
         if not lease or not hmac.compare_digest(str(message.get("lease", "")), lease["token"]):
@@ -247,6 +248,10 @@ class AccountExecutionProtocol:
             self.stop_owner(sid)
             raise RuntimeError("策略连接租约已到期")
         lease["deadline"] = time.monotonic() + self.lease_seconds
+        if action == "keepalive":
+            # 只延长进程所有权；主循环的就绪声明仍按原租约时长独立到期。
+            # 不更新价格、确认回报、保存状态、执行旧目标或重开报单闸门。
+            return {}
         if action == "heartbeat":
             # 准备线程可独立续租；不声明行情就绪、不推进游标或执行旧目标。
             lease["ready"] = False
@@ -261,6 +266,7 @@ class AccountExecutionProtocol:
             # 不用旧价更新账户，也不能让回报交付被行情同步阻断；报单仍严格校验。
             expired = self._update_prices(port, data.get("prices", {}), discard_expired=True)
             lease["ready"] = bool(data.get("ready", False))
+            lease["ready_deadline"] = lease["deadline"]
             self.journal.acknowledge(sid, data["cursor"])
             self.service._save()
             with self.service.client._submit_lock:
@@ -279,6 +285,7 @@ class AccountExecutionProtocol:
                 lease["ready"] = False
                 raise RuntimeError("策略行情/参考尚未就绪")
             self._update_prices(port, data["prices"])
+            lease["ready_deadline"] = lease["deadline"]
             lease["ready"] = ready  # 价格/路由校验完成后更新，拒绝请求不解除旧闭闸。
             if action == "continue":
                 port.continue_target(sid, data["target_key"], data["now_ns"],

@@ -653,6 +653,7 @@ class SharedIpcTests(unittest.TestCase):
             previous = deepcopy(service.snapshot_state())
             description = self.call(protocol, 'one', 'describe', {})
             self.assertIn('preparation_heartbeat', description['capabilities'])
+            self.assertIn('runtime_heartbeat', description['capabilities'])
             self.assertEqual(description['lease_seconds'], protocol.lease_seconds)
             self.assertEqual(service.snapshot_state(), previous)
             self.assertFalse(protocol.leases)
@@ -677,6 +678,56 @@ class SharedIpcTests(unittest.TestCase):
             self.assertEqual(service.prices.snapshot(), prices)
             self.assertFalse(transport.sent)
             protocol.stop_owner('one'); protocol.stop_owner('two')
+
+    def test_runtime_keepalive_preserves_owner_but_cannot_extend_ready_or_mutate_execution(self):
+        from copy import deepcopy
+        from unittest.mock import patch
+        with nullcontext(self.enterContext(TemporaryDirectory())) as directory:
+            _, _, service, transport, protocol = self.prepare(Path(directory)/'account.json')
+            one, two = self.attach(protocol, 'one'), self.attach(protocol, 'two')
+            lease = protocol.leases['one']
+            ready_deadline = lease['ready_deadline']
+            peer = deepcopy(protocol.leases['two'])
+            state, journal, prices = service.snapshot_state(), protocol.journal.snapshot_state(), service.prices.snapshot()
+            with patch('bomber.framework.trader.execution.ipc.time.monotonic', return_value=ready_deadline-1), \
+                    patch.object(service, '_save') as save:
+                self.assertTrue(service._ports['one'].ready_check())
+                self.call(protocol, 'one', 'keepalive', {'ready':True, 'cursor':999}, lease=one)
+                self.assertTrue(service._ports['one'].ready_check())
+                self.assertGreater(lease['deadline'], ready_deadline)
+                self.assertEqual(lease['ready_deadline'], ready_deadline)
+                save.assert_not_called()
+            with patch('bomber.framework.trader.execution.ipc.time.monotonic', return_value=ready_deadline+1):
+                self.call(protocol, 'one', 'keepalive', {}, lease=one)
+                self.assertFalse(service._ports['one'].ready_check())
+                self.assertEqual(service.snapshot_state(), state)
+                self.assertEqual(protocol.journal.snapshot_state(), journal)
+                self.assertEqual(service.prices.snapshot(), prices)
+                self.assertEqual(protocol.leases['two'], peer)
+                self.assertFalse(transport.sent)
+                self.call(protocol, 'one', 'poll', {'cursor':0, 'ready':True}, lease=one)
+                self.assertTrue(service._ports['one'].ready_check())
+                self.call(protocol, 'one', 'heartbeat', {}, lease=one)
+                self.call(protocol, 'one', 'keepalive', {'ready':True}, lease=one)
+                self.assertFalse(service._ports['one'].ready_check())
+            protocol.stop_owner('one'); protocol.stop_owner('two')
+
+    def test_runtime_keepalive_cannot_revive_expired_or_replaced_owner(self):
+        from unittest.mock import patch
+        with nullcontext(self.enterContext(TemporaryDirectory())) as directory:
+            _, _, service, transport, protocol = self.prepare(Path(directory)/'account.json')
+            old = self.attach(protocol, 'one')
+            deadline = protocol.leases['one']['deadline']
+            with patch('bomber.framework.trader.execution.ipc.time.monotonic', return_value=deadline+1):
+                with self.assertRaisesRegex(RuntimeError, '租约已到期'):
+                    self.call(protocol, 'one', 'keepalive', {}, lease=old)
+            self.assertNotIn('one', protocol.leases)
+            new = self.attach(protocol, 'one')
+            with self.assertRaisesRegex(ValueError, '租约失效'):
+                self.call(protocol, 'one', 'keepalive', {}, lease=old)
+            self.assertEqual(protocol.leases['one']['token'], new)
+            self.assertFalse(transport.sent)
+            protocol.stop_owner('one')
 
     def test_failed_remote_stop_is_not_sent_again_during_runner_cleanup(self):
         from bomber.framework.trader.execution.ipc_client import RemoteAccountService

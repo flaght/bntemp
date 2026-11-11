@@ -98,7 +98,7 @@ class ProcessCliTests(unittest.TestCase):
             state = {'trading_day':'20261105','source_revision':0,'ack':0,'positions':{},'reconciled':False}
             connection = Mock()
             connection.call.return_value = {'state':state,
-                'capabilities':['preparation_heartbeat'], 'lease_seconds':30}
+                'capabilities':['preparation_heartbeat', 'runtime_heartbeat'], 'lease_seconds':30}
             port = Mock()
             port.state, port.cursor, port.received_events = state, 0, []
             runner = SimpleNamespace(accept_bars=False, failure=None, _submit_lock=RLock(),
