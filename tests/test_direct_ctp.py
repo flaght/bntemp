@@ -12,6 +12,8 @@ from datetime import datetime, timedelta, timezone
 from threading import Event
 from types import SimpleNamespace as NS
 import unittest
+import csv
+import json
 
 from tests import test_hybrid_shared_layout  # 初始化SDK兼容测试环境。
 from tests import test_shared_account as fixture
@@ -26,6 +28,102 @@ class DirectCtpTests(unittest.TestCase):
     submit = fixture.SharedAccountTests.submit
     request = fixture.SharedAccountTests.request
     client = fixture.SharedAccountTests.client
+
+    def option_report(self, account, service, directory, *, prepared=True):
+        app=import_module('demos.direct_ctp')
+        session=NS(strategy=NS(strategy_id='one',signals=[],option_goals={},future_goals={},last_decision={}),
+            runner=NS(failure=None,frame_audit=[],position_manager=service.position_manager),
+            references=NS(instrument_ids={str(self.instrument):self.instrument}),session_identity={'config':{'nav':'40000000'}})
+        item=NS(strategy_id='one',session=session)
+        host=NS(account=account,service=service,strategies={'one':item},_prepared=prepared)
+        app.configure_direct_reports(host,dict(report_dir=str(directory),trading_day='20261013',
+            strategies=[dict(strategy_id='one',kind='option_vega')]))
+        return host,session,host.direct_reports[0]
+
+    def test_direct_daily_report_exports_real_fills_owned_positions_and_signals_without_new_bar(self):
+        with TemporaryDirectory() as directory:
+            root=Path(directory)
+            account,service,broker,(one,two)=self.make(root/'state.json')
+            self.start(account,service,one);two.start()
+            self.submit(two,1);broker.fill(broker.sent[-1]['OrderRef'])
+            host,session,adapter=self.option_report(account,service,root/'reports')
+            session.strategy.signals=[{'action':'WAIT','reason':'no entry'}, {'action':'ENTRY','targets':{'MO':'-1'}}]
+            adapter.record()
+            self.submit(one,2);broker.fill(broker.sent[-1]['OrderRef'])
+            checkpoint=(root/'state.json').read_bytes()
+            adapter.record();adapter.record()
+            path=adapter.report.path
+            with (path/'fills.csv').open(newline='') as stream:fills=list(csv.DictReader(stream))
+            self.assertEqual(len(fills),1)
+            self.assertEqual((fills[0]['strategy_id'],fills[0]['quantity']),('one','2'))
+            self.assertEqual(D(fills[0]['price']),3000)
+            self.assertEqual(fills[0]['trading_day'],'20261013')
+            with (path/'orders.csv').open(newline='') as stream:orders=list(csv.DictReader(stream))
+            self.assertTrue(any(row['status']=='FILLED' for row in orders))
+            snapshot=json.loads((path/'positions.json').read_text())
+            self.assertEqual(snapshot['positions'],[dict(strategy_id='one',instrument_id=str(self.instrument),quantities=['2','0','0','0'])])
+            self.assertEqual(len((path/'signals.jsonl').read_text().splitlines()),2)
+            self.assertIn('FillEvent',(path/'events.txt').read_text())
+            self.assertEqual((root/'state.json').read_bytes(),checkpoint)
+            self.assertFalse((path/'sessions.jsonl').exists())
+            session.finish_report();session.finish_report()
+            self.assertEqual(len((path/'sessions.jsonl').read_text().splitlines()),1)
+            self.assertTrue((path/'strategy_state.json').exists())
+            self.assertEqual(path.name,'one-20261013')
+            one.stop();two.stop();account.stop()
+
+    def test_daily_report_restart_backfills_unexported_fills_without_duplicate_trade_rows(self):
+        with TemporaryDirectory() as directory:
+            root=Path(directory)
+            account,service,broker,(one,_) = self.make(root/'state.json')
+            self.start(account,service,one)
+            self.submit(one,2);broker.fill(broker.sent[-1]['OrderRef'])
+            _,session,first=self.option_report(account,service,root/'reports')
+            first.record();session.finish_report()
+            events=(first.report.path/'events.txt').read_bytes()
+            _,restarted,second=self.option_report(account,service,root/'reports')
+            second.record()
+            self.assertEqual((second.report.path/'events.txt').read_bytes(),events)
+            self.submit(one,0,revision=2);broker.fill(broker.sent[-1]['OrderRef'])
+            second.record();restarted.finish_report()
+            self.assertEqual(first.report.path,second.report.path)
+            with (second.report.path/'fills.csv').open(newline='') as stream:rows=list(csv.DictReader(stream))
+            self.assertEqual(len(rows),2)
+            self.assertEqual(len({row['event_id'] for row in rows}),2)
+            self.assertEqual(len((second.report.path/'sessions.jsonl').read_text().splitlines()),2)
+            with (second.report.path/'positions.csv').open(newline='') as stream:positions=list(csv.DictReader(stream))
+            self.assertEqual(positions[-1]['long_today'],'0')
+            one.stop();account.stop()
+
+    def test_unprepared_daily_report_does_not_replace_previous_position_or_strategy_snapshot(self):
+        with TemporaryDirectory() as directory:
+            root=Path(directory)
+            account,service,broker,(one,_) = self.make(root/'state.json')
+            self.start(account,service,one)
+            self.submit(one,2);broker.fill(broker.sent[-1]['OrderRef'])
+            _,session,first=self.option_report(account,service,root/'reports')
+            session.finish_report()
+            previous={name:(first.report.path/name).read_bytes() for name in ('positions.json','strategy_state.json','fills.csv')}
+            _,failed,second=self.option_report(account,service,root/'reports',prepared=False)
+            second.record();failed.finish_report()
+            for name,value in previous.items():self.assertEqual((second.report.path/name).read_bytes(),value)
+            self.assertEqual(json.loads((second.report.path/'summary.json').read_text())['status'],'failed')
+            one.stop();account.stop()
+
+    def test_night_session_report_uses_td_day_instead_of_calendar_date(self):
+        stamp=int(datetime(2026,10,12,13,5,tzinfo=timezone.utc).timestamp()*1e9)
+        with TemporaryDirectory() as directory,patch('time.time_ns',return_value=stamp):
+            root=Path(directory)
+            account,service,broker,(one,_) = self.make(root/'state.json')
+            self.start(account,service,one)
+            self.submit(one,1);broker.fill(broker.sent[-1]['OrderRef'])
+            _,session,adapter=self.option_report(account,service,root/'reports')
+            session.finish_report()
+            with (adapter.report.path/'fills.csv').open(newline='') as stream:row=next(csv.DictReader(stream))
+            self.assertEqual(row['trading_day'],'20261013')
+            self.assertTrue(row['report_time'].startswith('2026-10-12T21:05:00'))
+            self.assertEqual(adapter.report.path.name,'one-20261013')
+            one.stop();account.stop()
 
     def test_vega_connected_entry_loads_calendar_from_provider_and_dispatches_direct_window(self):
         app=import_module('demos.direct_ctp')

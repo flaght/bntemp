@@ -9,8 +9,157 @@ from pathlib import Path
 from types import SimpleNamespace
 import json
 import logging
+import csv
+import os
+import time
+from zoneinfo import ZoneInfo
 
 PROJECT = Path(__file__).resolve().parent.parent
+
+
+class DirectStrategyReport:
+    """直连模式的只读交易日归档；journal是来源，报告从不参与交易恢复。"""
+    def __init__(self, host, item, report):
+        self.host, self.item, self.report = host, item, report
+        self.sid = item.strategy_id
+        self.events = getattr(item.session, 'shared_events', [])
+        self.owns_events = not hasattr(item.session, 'shared_events')
+        self.cursor = 0
+        self.rows = {'orders.csv':[], 'fills.csv':[], 'positions.csv':[]}
+        self.seen = {}
+        self.known_instruments = set()
+        self.last_positions = None
+        self.finished = False
+        for name in ('orders.csv','fills.csv'):
+            path = report.path/name
+            self.seen[name] = set()
+            if path.exists():
+                with path.open(newline='') as stream:
+                    self.seen[name] = {row['event_id'] for row in csv.DictReader(stream)}
+        path = report.path/'positions.csv'
+        if path.exists():
+            with path.open(newline='') as stream:
+                self.known_instruments = {row['instrument_id'] for row in csv.DictReader(stream)}
+        report.metadata.update(execution='direct_ctp',strategy_id=self.sid)
+
+    @staticmethod
+    def wall_time(ns):
+        return datetime.fromtimestamp(ns/1e9,ZoneInfo('Asia/Shanghai')).isoformat()
+
+    def record(self):
+        if self.finished or not self.host._prepared:
+            return
+        service = self.host.service
+        with service.client._submit_lock:
+            journal = service.event_journal
+            incoming = deepcopy(journal.events[self.sid][self.cursor:])
+            self.cursor += len(incoming)
+            buckets = self.host.account.driver.buckets.snapshot_state()
+            relevant = {row['instrument_id'] for row in buckets['positions'] if row['strategy_id'] == self.sid}
+            relevant.update(row['instrument_id'] for row in buckets['frozen'].values() if row['strategy_id'] == self.sid)
+            working = {str(instrument):str(service.position_manager.attribution.working_quantity(
+                service.client_id,instrument,self.sid,key)) for key,instrument in service._ports[self.sid].routes.items()
+                if str(instrument) in relevant}
+        from bomber.framework.trader.execution.ipc import decode_event
+        fresh = []
+        for row in incoming:
+            event = row['event']
+            identity = event['identity']
+            # 夜盘按柜台委托的交易日归档，不按本机自然日期分目录。
+            if identity['client_order_id'].rsplit('-',2)[-2] != self.report.trading_day:
+                continue
+            name = 'fills.csv' if row['type'] == 'FillEvent' else 'orders.csv'
+            if event['event_id'] in self.seen[name]:
+                continue
+            record = dict(event_id=event['event_id'],strategy_id=self.sid,
+                instrument_id=identity['instrument_id'],client_order_id=identity['client_order_id'],
+                venue_order_id=identity.get('venue_order_id'),side=event['side'],ts_event=event['ts_event'],
+                report_time=self.wall_time(event['ts_event']))
+            if name == 'fills.csv':
+                record.update(trade_id=event['trade_id'],position_effect=event.get('position_effect'),
+                    quantity=event['quantity'],price=event['price'],commission=event.get('commission'),
+                    commission_currency=event.get('commission_currency'),
+                    ctp_trade_date=event.get('metadata',{}).get('ctp_trade_date'),
+                    ctp_trade_time=event.get('metadata',{}).get('ctp_trade_time'))
+            else:
+                record.update(status=event['status'],order_quantity=event['order_quantity'],
+                    cumulative_filled=event['cumulative_filled'],reason=event.get('reason'))
+            self.rows[name].append(record)
+            self.seen[name].add(event['event_id'])
+            fresh.append(row)
+        for name in ('orders.csv','fills.csv'):
+            self.report.record_csv(name,self.rows[name])
+        if self.owns_events:
+            self.events.extend(decode_event(row) for row in fresh)
+        self.report.record(self.item.session,self.events)
+        positions = [row for row in buckets['positions'] if row['strategy_id'] == self.sid]
+        frozen = {key:row for key,row in buckets['frozen'].items() if row['strategy_id'] == self.sid}
+        snapshot = dict(positions=positions,frozen=frozen,
+            working={key:value for key,value in working.items() if Decimal(value)})
+        if snapshot != self.last_positions:
+            stamp = time.time_ns()
+            by_instrument = {row['instrument_id']:row['quantities'] for row in positions}
+            self.known_instruments.update(by_instrument)
+            self.known_instruments.update(row['instrument_id'] for row in frozen.values())
+            for instrument in sorted(self.known_instruments):
+                values = by_instrument.get(instrument,['0']*4)
+                freezes = [row['buckets'] for row in frozen.values() if row['instrument_id'] == instrument]
+                names = ('long_today','long_yesterday','short_today','short_yesterday')
+                self.rows['positions.csv'].append(dict(strategy_id=self.sid,instrument_id=instrument,
+                    snapshot_time=self.wall_time(stamp),ts_snapshot=stamp,
+                    **dict(zip(names,values)),
+                    **{'frozen_'+name:str(sum((Decimal(row[n]) for row in freezes),Decimal(0))) for n,name in enumerate(names)},
+                    working_quantity=working.get(instrument,'0')))
+            self.report.record_csv('positions.csv',self.rows['positions.csv'])
+            document = dict(trading_day=self.report.trading_day,run_id=self.report.run_id,
+                strategy_id=self.sid,snapshot_time=self.wall_time(stamp),
+                scope='strategy_owned_report_not_recovery_checkpoint',**snapshot)
+            temporary = self.report.path/('positions.json.'+self.report.run_id+'.tmp')
+            temporary.write_text(json.dumps(document,ensure_ascii=False,indent=2)+'\n')
+            os.replace(temporary,self.report.path/'positions.json')
+            self.last_positions = snapshot
+
+    def finish(self, *, status=None, failure=None):
+        if self.finished:
+            return
+        self.record()
+        session = self.item.session
+        failure = failure or session.runner.failure
+        if not self.host._prepared:
+            status = status or 'failed'
+            failure = failure or '策略尚未完成准备及授权'
+        self.report.write(status=status or ('failed' if failure else 'completed'),
+            fields={'failure':failure,'strategy_id':self.sid},
+            session=session if self.host._prepared else None,events=self.events)
+        if hasattr(session,'shared_report'):
+            session.shared_report = None
+        self.finished = True
+
+
+def configure_direct_reports(host, config):
+    reports = []
+    for row in config['strategies']:
+        item = host.strategies[row['strategy_id']]
+        session = item.session
+        if row['kind'] == 'option_vega':
+            from importlib import import_module
+            report = import_module('demos.08_option_vega.reports').OptionLiveReport(config['report_dir'],
+                prefix=item.strategy_id,trading_day=config['trading_day'],
+                metadata={'mode':'simnow','strategy_parameters':session.session_identity.get('config',{})})
+            report.begin()
+        else:
+            report = session.shared_report
+        adapter = DirectStrategyReport(host,item,report)
+        session.finish_report = adapter.finish
+        reports.append(adapter)
+    host.direct_reports = reports
+
+
+def record_direct_reports(host):
+    for report in getattr(host,'direct_reports',()):
+        report.record()
+
+
 def project_hybrid(payload, account):
     """从最新公共成交账本提取RB/P；原文件、信号版本、成交成本保持不变。"""
     from bomber.framework.trader import persistence as storage
@@ -163,6 +312,7 @@ def build_direct_host(config, *, import_state=None, counter_file=None):
             if Path(filename).is_file():
                 counter.seed(JsonStateStore(filename).load().payload)
         account.driver.daily_counter = counter
+        configure_direct_reports(host,config)
         return host
     except BaseException:
         host.account.driver.stop()
@@ -175,6 +325,11 @@ def dispose_disconnected(host):
     host.service._checkpoint = None
     host.service._cancel_owner = lambda sid: None
     host.service.suspend_strategy = lambda sid: None
+    for report in getattr(host,'direct_reports',()):
+        try:
+            report.finish(status='disconnected',failure='CTP连接中断；仅保留最后有效恢复账本')
+        except Exception:
+            logging.exception('断线会话的交易日报告写入失败')
     for item in host.strategies.values():
         with item.session.runner._submit_lock:
             item.session.runner.accept_bars = False
@@ -191,8 +346,8 @@ def run_window(config, window, stop, *, import_state, counter_file):
     attempts = 0
     while not stop.is_set() and datetime.now(window.end.tzinfo) < window.end:
         host = None
-        from bomber.framework.trader.runtime.reports import LiveRunReport
-        report = LiveRunReport(config['report_dir'],prefix='direct-ctp',metadata={
+        from bomber.framework.trader.runtime.reports import TradingDayLiveReport
+        report = TradingDayLiveReport(config['report_dir'],prefix='direct-ctp-runtime',trading_day=window.trading_day,metadata={
             'trading_day':window.trading_day,'strategies':[row['strategy_id'] for row in config['strategies']]})
         report.begin()
         status, failure = 'failed', None
@@ -204,8 +359,10 @@ def run_window(config, window, stop, *, import_state, counter_file):
                     raise StopRequested()
             host.preparation_check = check_preparation
             host.start()
+            record_direct_reports(host)
             while not stop.is_set() and datetime.now(window.end.tzinfo) < window.end:
                 host.poll()
+                record_direct_reports(host)
                 stop.wait(0.05)
             host.stop()
             status = 'completed'
