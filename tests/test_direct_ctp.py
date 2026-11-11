@@ -27,6 +27,46 @@ class DirectCtpTests(unittest.TestCase):
     request = fixture.SharedAccountTests.request
     client = fixture.SharedAccountTests.client
 
+    def test_vega_connected_entry_loads_calendar_from_provider_and_dispatches_direct_window(self):
+        app=import_module('demos.direct_ctp')
+        session_inputs=import_module('bomber.framework.dataprep.session_inputs')
+        from bomber.framework.calendars.sessions import TradingWindow
+        calendar=NS(binding=NS(asset_type='OPTION',hours_code='MO'),segments=(),overrides=())
+        now=datetime.now(timezone.utc)
+        window=TradingWindow('20261111',now,now+timedelta(hours=1),'test')
+        stop=Event()
+        test=self
+        class Continuous:
+            def __init__(self, selected_calendar, factory, **kwargs):
+                test.assertIs(selected_calendar,calendar)
+                test.assertTrue(kwargs['run_forever'])
+                self.factory=factory
+            def run(self):
+                return self.factory(window,stop).run()
+        with TemporaryDirectory() as directory, \
+                patch('scripts.integration.shared_account.config.load_environment') as load_env, \
+                patch.object(session_inputs,'load_session_inputs',return_value=calendar) as load_calendar, \
+                patch('bomber.framework.trader.runtime.live.channels.ctp.required',return_value='direct-entry-fixture'), \
+                patch('bomber.framework.trader.runtime.live.continuous.ContinuousPositionRuntime',Continuous), \
+                patch.object(app,'run_window',return_value={'status':'completed'}) as run_window, \
+                patch.object(app,'build_direct_host',side_effect=AssertionError('不能连接CTP')):
+            root=Path(directory)
+            result=app.main('option_vega',['--connect','--enable-orders','--confirm-simnow','--run-forever',
+                '--env-file',str(root/'.env'),'--account-state-file',str(root/'state.json'),
+                '--state-file',str(root/'signal.json')])
+            self.assertEqual(result,{'status':'completed'})
+            load_env.assert_called_once_with(root/'.env')
+            load_calendar.assert_called_once()
+            declaration=load_calendar.call_args.args[0]
+            self.assertEqual((declaration.product,declaration.asset_type),('MO','OPTION'))
+            run_window.assert_called_once()
+            current,selected_window,event=run_window.call_args.args
+            self.assertEqual(current['strategies'][0]['strategy_id'],'option-vega-direct')
+            self.assertEqual(current['trading_day'],'20261111')
+            self.assertEqual(selected_window.end,window.end-timedelta(seconds=30))
+            self.assertIs(event,stop)
+            self.assertIsNone(run_window.call_args.kwargs['import_state'])
+
     def make(self, path, *, generic_close_venues=()):
         modules = self.native_modules()
         direct = import_module('bomber.framework.trader.execution.ctp.independent')

@@ -319,9 +319,10 @@ def main(kind, argv=None):
     if kind == 'hybrid_transformer':
         calendar = import_module('demos.10_hybrid_transformer.run_shared').load_calendar(config)
     else:
+        from bomber.framework.dataprep.session_inputs import load_session_inputs
         entry = import_module('demos.08_option_vega.run_live')
         business = entry.shared_arguments(rows[0],config,resume=options.state_file.is_file())
-        calendar = entry.load_session_inputs(entry.session_inputs(business))
+        calendar = load_session_inputs(entry.session_inputs(business))
         entry.validate_calendar(calendar,business.option_product)
     with ExitStack() as resources, StopSignal() as stop:
         resources.enter_context(strategy_state_lock(config['account_state_file']+'.direct-owner'))
