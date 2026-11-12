@@ -415,6 +415,8 @@ def main(kind, argv=None):
     parser.add_argument('--counter-file',type=Path,default=PROJECT/'demos/shared_account/results/daily_orders.sqlite3')
     parser.add_argument('--import-state',type=Path,help='10首次接续的最新公共账户成交账本，原文件只读')
     parser.add_argument('--prepare-seconds',type=int,default=600)
+    parser.add_argument('--stop-before-close-seconds', type=int, default=180,
+        help='每个交易时段结束前提前多少秒停止策略报单并撤单对账（默认180，0表示到时段结束才停机）')
     parser.add_argument('--run-forever',action='store_true')
     if kind == 'hybrid_transformer':
         parser.add_argument('--config',type=Path,default=demo/'config/instances_rb_p.json')
@@ -428,6 +430,8 @@ def main(kind, argv=None):
     options = parser.parse_args(argv)
     if options.prepare_seconds < 0:
         parser.error('prepare-seconds须为非负整数')
+    if options.stop_before_close_seconds < 0:
+        parser.error('stop-before-close-seconds须为非负整数')
     account = read_account_config(options.account_config)
     if account['environment'] != 'realtime' or account['execution_mode'] != 'independent':
         parser.error('直连入口要求realtime和independent')
@@ -493,8 +497,14 @@ def main(kind, argv=None):
             resources.enter_context(strategy_state_lock(str(source)+'.continuous-owner'))
             resources.enter_context(strategy_state_lock(source))
         def factory(window,event):
+            stop_before_close_seconds = options.stop_before_close_seconds
+            if stop_before_close_seconds >= (window.end - window.start).total_seconds():
+                print(f'收盘缓冲覆盖整个交易时段，跳过 TD={window.trading_day} segment={window.segment_id}',
+                    flush=True)
+                return SimpleNamespace(run=lambda: {'status': 'skipped'})
             current = {**config, 'trading_day':window.trading_day}
-            own_window = replace(window,end=window.end-timedelta(seconds=30))
+            own_window = replace(window, end=window.end - timedelta(seconds=stop_before_close_seconds))
+            print(f'直连停机时间: {own_window.end.isoformat()}，提前 {stop_before_close_seconds} 秒', flush=True)
             return SimpleNamespace(run=lambda:run_window(current,own_window,event,
                 import_state=source,counter_file=options.counter_file))
         print(f"本进程直连CTP：{[r['strategy_id'] for r in rows]}；昨仓优先；无需账户服务",flush=True)

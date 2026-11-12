@@ -161,7 +161,7 @@ class DirectCtpTests(unittest.TestCase):
             current,selected_window,event=run_window.call_args.args
             self.assertEqual(current['strategies'][0]['strategy_id'],'option-vega-direct')
             self.assertEqual(current['trading_day'],'20261111')
-            self.assertEqual(selected_window.end,window.end-timedelta(seconds=30))
+            self.assertEqual(selected_window.end,window.end-timedelta(seconds=180))
             self.assertIs(event,stop)
             self.assertIsNone(run_window.call_args.kwargs['import_state'])
 
