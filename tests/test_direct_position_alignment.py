@@ -1,5 +1,9 @@
 """当前仓位人工对齐：真实Hybrid批次、直连恢复及备份，柜台使用离线替身。"""
 from copy import deepcopy
+from contextlib import ExitStack, nullcontext, redirect_stderr
+from datetime import datetime, timedelta, timezone
+from io import StringIO
+from threading import Event
 from dataclasses import replace
 from decimal import Decimal
 from importlib import import_module
@@ -202,6 +206,68 @@ class DirectPositionAlignmentTests(unittest.TestCase):
                 expected={str(self.rb):Decimal(0),str(self.p):Decimal(2)},transport=transport)
         self.assertEqual((self.root/'account.json').read_bytes(),original)
         self.assertFalse(list(self.root.glob('*.bak')))
+
+
+    def test_original_launch_entry_aligns_once_before_continuous_windows(self):
+        from bomber.framework.calendars.sessions import TradingWindow
+        saved, _, _, _ = self.pending_checkpoint()
+        direct_path = self.root/'direct-state.json'
+        JsonStateStore(direct_path).save(saved.payload, expected_generation=0)
+        rows = [dict(strategy_id=sid, kind='hybrid_transformer', state_file=str(self.root/(sid+'.json')), argv=[])
+                for sid in ('hybrid-rb','hybrid-p')]
+        account_config = dict(account_state_file=str(self.root/'old-shared.json'), environment='realtime',
+            execution_mode='independent', account=dict(max_gross_quantity=None,max_gross_notional=None))
+        now = datetime.now(timezone.utc)
+        window = TradingWindow('20261113',now,now+timedelta(hours=1),'test')
+        effects = []
+        class Continuous:
+            def __init__(self, calendar, factory, **kwargs): self.factory = factory
+            def run(self):
+                self.factory(window, Event()).run()
+                return self.factory(window, Event()).run()
+        def align(**kwargs): effects.append('alignment')
+        def run_window(*args, **kwargs):
+            effects.append('window')
+            return {'status':'completed'}
+        with ExitStack() as stack:
+            stack.enter_context(patch('bomber.framework.account_config.read_account_config',return_value=account_config))
+            stack.enter_context(patch('scripts.integration.shared_account.config.resolve_config',return_value={'strategies':rows}))
+            load_env=stack.enter_context(patch('scripts.integration.shared_account.config.load_environment'))
+            stack.enter_context(patch.object(import_module('demos.10_hybrid_transformer.run_shared'),'load_calendar'))
+            stack.enter_context(patch('bomber.framework.trader.runtime.live.continuous.ContinuousPositionRuntime',Continuous))
+            stack.enter_context(patch('bomber.framework.trader.runtime.live.continuous.StopSignal',side_effect=lambda:nullcontext(Event())))
+            stack.enter_context(patch('bomber.framework.trader.runtime.live.local.strategy_state_lock',side_effect=lambda *a:nullcontext()))
+            stack.enter_context(patch('bomber.framework.trader.runtime.live.channels.ctp.account_lock',side_effect=lambda *a,**k:nullcontext()))
+            stack.enter_context(patch('bomber.framework.trader.runtime.live.channels.ctp.required',return_value='offline'))
+            transport=Mock()
+            build=stack.enter_context(patch('bomber.framework.trader.runtime.live.channels.ctp.build_simnow_transport',return_value=transport))
+            reconcile=stack.enter_context(patch.object(repair,'reconcile',side_effect=align))
+            run=stack.enter_context(patch.object(app,'run_window',side_effect=run_window))
+            arguments=['--connect','--enable-orders','--confirm-simnow','--run-forever',
+                '--account-state-file',str(direct_path),'--align-positions','p2701.DCE=2','rb2701.SHFE=0']
+            self.assertEqual(app.main('hybrid_transformer',arguments),{'status':'completed'})
+            self.assertEqual(effects,['alignment','window','window'])
+            reconcile.assert_called_once_with(state_file=direct_path,rows=rows,
+                expected={'p2701.DCE':Decimal(2),'rb2701.SHFE':Decimal(0)},transport=transport)
+            load_env.assert_called_once()
+            self.assertEqual(build.call_args.kwargs['client_id'],'account')
+            # 柜台核验失败必须在行情/交易窗口之前结束。
+            reconcile.side_effect=RuntimeError('柜台仓位变化')
+            run.reset_mock()
+            with self.assertRaisesRegex(RuntimeError,'柜台仓位变化'):
+                app.main('hybrid_transformer',arguments)
+            run.assert_not_called()
+
+    def test_alignment_launch_rejects_offline_or_duplicate_contract_declarations(self):
+        with patch.object(repair,'reconcile') as reconcile:
+            for arguments in (
+                ['--align-positions','p2701.DCE=2','rb2701.SHFE=0'],
+                ['--connect','--align-positions','p2701.DCE=2','P2701.dce=2'],
+            ):
+                with self.subTest(arguments=arguments),redirect_stderr(StringIO()),self.assertRaises(SystemExit) as caught:
+                    app.main('hybrid_transformer',arguments)
+                self.assertEqual(caught.exception.code,2)
+            reconcile.assert_not_called()
 
 
 if __name__=='__main__':

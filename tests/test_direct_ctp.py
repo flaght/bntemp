@@ -300,6 +300,39 @@ class DirectCtpTests(unittest.TestCase):
             self.assertFalse(broker.sent)
             one.stop();account.stop()
 
+    def test_concurrent_foreign_trade_uses_one_position_snapshot_and_keeps_each_owner(self):
+        with TemporaryDirectory() as directory:
+            account,service,broker,(one,two) = self.make(Path(directory)/'state.json')
+            self.start(account,service,one);two.start()
+            self.submit(one,2);broker.fill(broker.sent[-1]['OrderRef'])
+            self.submit(two,-1);broker.fill(broker.sent[-1]['OrderRef'])
+            ledger = account.ledger.state()
+            positions = service.position_manager.state()
+            query = broker.query_position_details
+            def foreign_trade_after_snapshot():
+                rows = query()
+                # 其他进程在完整回报之后成交，且交易的是本进程也在管理的合约。
+                broker.gross[str(self.instrument)] = (5, 3)
+                broker.gross['IF2611.CFFEX'] = (1, 0)
+                return rows
+            with patch.object(broker,'query_position_details',side_effect=foreign_trade_after_snapshot) as details, \
+                    patch.object(broker,'query_gross_positions',side_effect=AssertionError('不能另查总仓')):
+                account._next_check = 0
+                account.poll()
+                details.assert_called_once_with()
+                self.assertEqual(account.external_gross,{})
+                details.reset_mock()
+                account._next_check = 0
+                account.poll()
+                details.assert_called_once_with()
+            self.assertEqual(account.external_gross,{str(self.instrument):(3,2),'IF2611.CFFEX':(1,0)})
+            self.assertEqual(account.ledger.state(),ledger)
+            self.assertEqual(service.position_manager.state(),positions)
+            self.assertEqual(service.position_manager.position('one','main'),2)
+            self.assertEqual(service.position_manager.position('two','main'),-1)
+            self.assertEqual(len(broker.sent),2)
+            one.stop();two.stop();account.stop()
+
     def test_account_counter_is_atomic_across_independent_connections_and_restarts(self):
         direct=import_module('bomber.framework.trader.execution.ctp.independent')
         with TemporaryDirectory() as directory:

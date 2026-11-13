@@ -3,6 +3,7 @@
 import time
 import os
 import logging
+import json
 from copy import deepcopy
 from decimal import Decimal
 
@@ -56,6 +57,7 @@ class CtpSharedAccountLifecycle:
         self.stop_failure_reason = None
         self.stop_query_attempts = 0
         self.stop_query_errors = []
+        self._position_query = None
 
     @staticmethod
     def acquire(resources, transport, *, environment):
@@ -81,7 +83,11 @@ class CtpSharedAccountLifecycle:
             with self.client._submit_lock:
                 if before != (self.ledger.state(), self.execution.positions.state()):
                     continue
-                self._validate_account_snapshot(gross, buckets, active)
+                try:
+                    self._validate_account_snapshot(gross, buckets, active)
+                except Exception as error:
+                    self._log_position_failure(error, gross, buckets)
+                    raise
                 return gross, active
         raise RuntimeError("共享账户权威查询期间成交持续变化，保留账本并重新核验")
 
@@ -126,19 +132,66 @@ class CtpSharedAccountLifecycle:
             raise RuntimeError("首期共享恢复要求柜台无活动订单；未知或漏成交须先对账")
 
     def _observe_positions(self, *, external_only=False):
-        gross = occupied_positions(self.transport)
-        allowed = set(gross) | (set() if self.position_scope is None else self.position_scope.instruments)
-        buckets = position_buckets(self.transport.query_position_details(), allowed)
-        observed = {key: (row.quantities[0] + row.quantities[1], row.quantities[2] + row.quantities[3])
-                    for key, row in buckets.items()}
+        # 总仓和今昨桶必须取自同一次完整查询。两次查询之间其他进程的成交
+        # 不会改变本进程账本，不能依赖 _validate_account 的本地成交重试消除竞态。
+        started_ns, started = time.time_ns(), time.monotonic()
+        rows = tuple(self.transport.query_position_details())
+        self._position_query = {"started_at_ns": started_ns, "completed_at_ns": time.time_ns(),
+            "elapsed_seconds": round(time.monotonic() - started, 6), "row_count": len(rows),
+            "trading_day": self.expected_day}
+        allowed = {f"{row.get('InstrumentID', '')}.{row.get('ExchangeID', '')}" for row in rows}
+        if self.position_scope is not None:
+            allowed |= self.position_scope.instruments
+        try:
+            parsed = position_buckets(rows, allowed)
+        except Exception as error:
+            self._log_position_failure(error, {}, {}, rows=rows)
+            raise
+        buckets = {key: row.quantities for key, row in parsed.items()}
+        # 独立按原始 Position 累加，不用今昨桶反推总仓，以保留解析一致性检查。
+        # position_buckets 已验证非零行的合约、方向、投机标志和整数数量。
+        gross = {}
+        for row in rows:
+            quantity = Decimal(str(row["Position"]))
+            if not quantity:
+                continue
+            key = f"{row['InstrumentID']}.{row['ExchangeID']}"
+            long, short = gross.get(key, (Decimal(0), Decimal(0)))
+            gross[key] = (long + quantity, short) if str(row["PosiDirection"]) == "2" else (long, short + quantity)
+        observed = {key: (q[0] + q[1], q[2] + q[3]) for key, q in buckets.items()}
         # 在线查询期间管理合约可正常成交；停机/恢复才比较其完整总仓。
         if external_only:
             observed, expected = self.position_scope.external(observed), self.position_scope.external(gross)
         else:
             expected = gross
         if observed != expected:
-            raise RuntimeError("共享账户权威总仓与今昨明细不一致")
-        return gross, {key: row.quantities for key, row in buckets.items()}
+            error = RuntimeError("共享账户权威总仓与今昨明细不一致")
+            self._log_position_failure(error, gross, buckets)
+            raise error
+        return gross, buckets
+
+    def _log_position_failure(self, error, gross, buckets, *, rows=None):
+        """记录柜台快照及本进程账本；本进程归属不要求等于全账户仓位。"""
+        names = ("long_today", "long_yesterday", "short_today", "short_yesterday")
+        local = {str(key): tuple(getattr(row, name) for name in names)
+                 for key, row in self.ledger.state().positions.items()}
+        positions = []
+        for key in sorted(gross.keys() | buckets.keys() | local.keys()):
+            long, short = gross.get(key, (0, 0))
+            q = buckets.get(key, (0, 0, 0, 0))
+            positions.append({"instrument_id": key, "counter_gross": {"long": long, "short": short},
+                "counter_buckets": dict(zip(names, q)),
+                "bucket_totals_minus_gross": {"long": q[0] + q[1] - long, "short": q[2] + q[3] - short},
+                "local_ledger_buckets": dict(zip(names, local.get(key, (0, 0, 0, 0))))})
+        diagnostic = {"reason": str(error), "query": self._position_query,
+            "strategy_ids": sorted(self.service._ports), "positions": positions}
+        if rows is not None:
+            # 明细解析失败时只记录持仓字段，不能把账户身份或其他原始回报带入日志。
+            fields = ("InstrumentID", "ExchangeID", "PosiDirection", "HedgeFlag",
+                      "PositionDate", "Position", "TodayPosition", "YdPosition")
+            diagnostic["position_rows"] = [{key: row[key] for key in fields if key in row} for row in rows]
+        logging.getLogger("CtpPositionReconciliation").error(
+            "CTP持仓核验差异: %s", json.dumps(diagnostic, ensure_ascii=False, default=str))
 
     def _validate_external(self, gross, buckets):
         if self.position_scope is None:

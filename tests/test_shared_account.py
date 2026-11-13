@@ -1037,6 +1037,91 @@ class SharedAccountTests(unittest.TestCase):
             self.assertEqual(account.external_gross[str(self.instrument)], (0, 1))
             account.stop()
 
+    def test_position_observation_uses_one_complete_query_for_gross_and_today_yesterday(self):
+        modules = self.native_modules()
+        with TemporaryDirectory() as directory:
+            path = Path(directory)/"account.json"
+            account, _, transport, _, _ = self.native_account(path, modules)
+            def row(symbol, venue, direction, date, quantity, **extra):
+                return dict(InstrumentID=symbol, ExchangeID=venue, PosiDirection=direction,
+                    PositionDate=date, Position=quantity, HedgeFlag="1", **extra)
+            rows = (
+                row("MO2611-C-6800", "CFFEX", "3", "1", "1"),
+                row("MO2611-C-6800", "CFFEX", "3", "2", "2"),
+                row("rb2701", "SHFE", "2", "1", "2"),
+                row("rb2701", "SHFE", "2", "2", "3"),
+                row("p2701", "DCE", "3", "1", "5", TodayPosition="2", YdPosition="9"),
+                row("MA701", "CZCE", "2", "1", "4", TodayPosition="1", YdPosition="8"),
+                row("sc2612", "INE", "3", "2", "1"),
+                row("unused", "SHFE", "2", "1", "0"),
+            )
+            with patch.object(transport, "query_position_details", return_value=rows) as query, \
+                    patch.object(transport, "query_gross_positions", side_effect=AssertionError("禁止第二次持仓查询")):
+                gross, buckets = account._observe_positions()
+            query.assert_called_once_with()
+            self.assertEqual(gross, {"MO2611-C-6800.CFFEX": (0, 3), "rb2701.SHFE": (5, 0),
+                "p2701.DCE": (0, 5), "MA701.CZCE": (4, 0), "sc2612.INE": (0, 1)})
+            self.assertEqual(buckets, {"MO2611-C-6800.CFFEX": (0, 0, 1, 2), "rb2701.SHFE": (2, 3, 0, 0),
+                "p2701.DCE": (0, 0, 2, 3), "MA701.CZCE": (1, 3, 0, 0), "sc2612.INE": (0, 0, 0, 1)})
+            self.assertFalse(path.exists())
+
+    def test_position_parse_failure_logs_query_and_safe_rows_and_does_not_save(self):
+        modules = self.native_modules()
+        with TemporaryDirectory() as directory:
+            path = Path(directory)/"account.json"
+            account, _, transport, _, _ = self.native_account(path, modules)
+            row = dict(InstrumentID="p2701", ExchangeID="DCE", PosiDirection="3", PositionDate="1",
+                Position="3", TodayPosition="4", HedgeFlag="1", InvestorID="private-investor")
+            with patch.object(transport, "query_position_details", return_value=(row,)), \
+                    self.assertLogs("CtpPositionReconciliation", level="ERROR") as logs, \
+                    self.assertRaisesRegex(RuntimeError, "TodayPosition"):
+                account._observe_positions()
+            diagnostic = json.loads(logs.records[0].args[0])
+            self.assertEqual(diagnostic["query"]["row_count"], 1)
+            self.assertLessEqual(diagnostic["query"]["started_at_ns"], diagnostic["query"]["completed_at_ns"])
+            self.assertEqual(diagnostic["query"]["trading_day"], "20261013")
+            self.assertEqual(diagnostic["position_rows"][0]["InstrumentID"], "p2701")
+            self.assertNotIn("private-investor", logs.output[0])
+            self.assertFalse(path.exists())
+
+    def test_position_total_bucket_difference_logs_quantities_from_the_same_query(self):
+        modules = self.native_modules()
+        with TemporaryDirectory() as directory:
+            account, _, transport, _, _ = self.native_account(Path(directory)/"account.json", modules)
+            key = str(self.instrument)
+            transport.gross = {key: (0, 3)}
+            with patch.object(modules.lifecycle, "position_buckets", return_value={
+                    key: NS(quantities=(Decimal(0), Decimal(0), Decimal(1), Decimal(1)))}), \
+                    self.assertLogs("CtpPositionReconciliation", level="ERROR") as logs, \
+                    self.assertRaisesRegex(RuntimeError, "权威总仓与今昨明细不一致"):
+                account._observe_positions()
+            row = json.loads(logs.records[0].args[0])["positions"][0]
+            self.assertEqual(row["instrument_id"], key)
+            self.assertEqual(row["counter_gross"], {"long": "0", "short": "3"})
+            self.assertEqual(row["counter_buckets"]["short_yesterday"], "1")
+            self.assertEqual(row["bucket_totals_minus_gross"]["short"], "-1")
+
+    def test_real_owned_ledger_mismatch_is_still_rejected_and_logged(self):
+        modules = self.native_modules()
+        with TemporaryDirectory() as directory:
+            path = Path(directory)/"account.json"
+            account, service, transport, (one, _), _ = self.native_account(path, modules)
+            account.start(resume=False); service.start(); one.start(); account.authorize()
+            self.submit(one, 2); transport.fill(transport.sent[-1]["OrderRef"])
+            before = path.read_bytes()
+            transport.gross[str(self.instrument)] = (1, 0)
+            with self.assertLogs("CtpPositionReconciliation", level="ERROR") as logs, \
+                    self.assertRaisesRegex(RuntimeError, "柜台总仓与保存CTP账本不一致"):
+                account._validate_account()
+            diagnostic = json.loads(logs.records[0].args[0])
+            row = next(row for row in diagnostic["positions"] if row["instrument_id"] == str(self.instrument))
+            self.assertEqual(row["counter_gross"]["long"], "1")
+            self.assertEqual(row["local_ledger_buckets"]["long_today"], "2")
+            self.assertEqual(service.position_manager.position("one", "main"), 2)
+            self.assertEqual(path.read_bytes(), before)
+            transport.gross[str(self.instrument)] = (2, 0)
+            one.stop(); account.stop()
+
     def test_repeated_stop_after_contribution_frozen_does_not_persist_draining_again(self):
         modules = self.native_modules()
         with TemporaryDirectory() as directory:

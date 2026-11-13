@@ -419,7 +419,10 @@ def main(kind, argv=None):
         help='每个交易时段结束前提前多少秒停止策略报单并撤单对账（默认180，0表示到时段结束才停机）')
     parser.add_argument('--run-forever',action='store_true')
     if kind == 'hybrid_transformer':
+        alignment_entry = import_module('demos.10_hybrid_transformer.reconcile_direct_positions')
         parser.add_argument('--config',type=Path,default=demo/'config/instances_rb_p.json')
+        parser.add_argument('--align-positions', nargs='+', type=alignment_entry.parse_position,
+            help='本次启动先按当前实际仓位对齐，再继续交易，例如 p2701.DCE=2 rb2701.SHFE=0')
     else:
         parser.add_argument('--strategy-id',default='option-vega-direct')
         parser.add_argument('--state-file',type=Path,default=demo/'results/direct/signal.json')
@@ -428,6 +431,12 @@ def main(kind, argv=None):
     for flag in ('connect','enable-orders','confirm-simnow'):
         parser.add_argument('--'+flag,action='store_true')
     options = parser.parse_args(argv)
+    alignment_positions = getattr(options, 'align_positions', None)
+    if alignment_positions:
+        if not options.connect:
+            parser.error('align-positions须配合connect，在柜台核验后执行')
+        if len({instrument.casefold() for instrument, _ in alignment_positions}) != len(alignment_positions):
+            parser.error('align-positions不能重复声明同一合约')
     if options.prepare_seconds < 0:
         parser.error('prepare-seconds须为非负整数')
     if options.stop_before_close_seconds < 0:
@@ -477,6 +486,19 @@ def main(kind, argv=None):
     from bomber.framework.trader.runtime.live.channels.ctp import account_lock, required
     load_environment(options.env_file)
     logging.basicConfig(level=logging.INFO,format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
+    if alignment_positions:
+        from bomber.framework.trader.persistence import JsonStateStore
+        from bomber.framework.trader.runtime.live.channels.ctp import build_simnow_transport
+        from bomber.framework.trader.execution.ctp import CtpTdApiTransport
+        saved = JsonStateStore(options.account_state_file).load()
+        if saved is None:
+            raise FileNotFoundError(options.account_state_file)
+        client_id = next(iter(saved.payload['ctp_drivers']))
+        transport = build_simnow_transport(CtpTdApiTransport, client_id=client_id,
+            flow_path='/tmp/bomber-hybrid-position-alignment')
+        alignment_entry.reconcile(state_file=options.account_state_file, rows=rows,
+            expected=dict(alignment_positions), transport=transport)
+        print('当前仓位已对齐，继续启动直连策略', flush=True)
     if kind == 'hybrid_transformer':
         calendar = import_module('demos.10_hybrid_transformer.run_shared').load_calendar(config)
     else:
