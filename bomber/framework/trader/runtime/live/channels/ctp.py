@@ -464,7 +464,8 @@ class CtpSessionLifecycle:
                 f"readiness={readiness_details(session)}")
         if not getattr(session.references, "refresh_on_event", True):
             session.references.refresh()
-        session.references.snapshot(time.time_ns())
+        if not getattr(session.references, "reduce_only", False):
+            session.references.snapshot(time.time_ns())
         reference_check = getattr(session.runner, "reference_is_current", None)
         if (not reference_check() if callable(reference_check) else
                 session.references.spec != session.runner.fixed_spec):

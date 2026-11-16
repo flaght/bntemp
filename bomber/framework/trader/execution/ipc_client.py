@@ -44,6 +44,7 @@ class RemoteStrategyExecutionClient:
         self.client_id, self.account_id = service.client_id, service.account_id
         self.position_manager, self._configuration = service.position_manager, configuration
         self.ready_check = lambda: False
+        self.reduce_only_check = lambda: False
         self._started = self._stopping = False
         self._stop_failure = None
         self._handlers, self._pending = [], []
@@ -121,14 +122,14 @@ class RemoteStrategyExecutionClient:
         if not self._started:
             return  # begin_stop已排空并确认回报；不能再轮询已关闭的租约。
         result = self.service.connection.call("poll", {"cursor": self.cursor,
-            "ready": bool(not self._stopping and self.ready_check()), "prices": self.price_state(fresh_only=True)})
+            "ready": bool(not self._stopping and self.ready_check()), "reduce_only": bool(self.reduce_only_check()), "prices": self.price_state(fresh_only=True)})
         if result.get("expired_prices"):
             self.price_sync["expired_observations"] += len(result["expired_prices"])
             self.price_sync["last_expired"] = result["expired_prices"]
         self.sync(result["state"])
         self.deliver(result["events"], completed)
         if result["events"]:
-            self.service.connection.call("poll", {"cursor": self.cursor, "ready": bool(not self._stopping and self.ready_check())})
+            self.service.connection.call("poll", {"cursor": self.cursor, "ready": bool(not self._stopping and self.ready_check()), "reduce_only": bool(self.reduce_only_check())})
         stopped = self.state.get("execution_stop")
         if stopped:
             from .contracts import MarketDataUnavailable, OrderBudgetExhausted
@@ -149,7 +150,7 @@ class RemoteStrategyExecutionClient:
         if self._stopping or request.strategy_id != self.strategy_id:
             raise RuntimeError("策略身份不符或已经停止")
         result = self.service.connection.call("submit", {"request": wire(request), "prices": self.price_state(),
-            "ready": bool(self.ready_check())})
+            "ready": bool(self.ready_check()), "reduce_only": bool(self.reduce_only_check())})
         self.sync(result["state"])
 
     def continue_target(self, strategy_id, target_key, now_ns, *, instrument_id):
@@ -158,7 +159,7 @@ class RemoteStrategyExecutionClient:
         if strategy_id != self.strategy_id or self.routes.get(target_key) != instrument_id:
             raise ValueError("远程执行路由不属于本策略")
         result = self.service.connection.call("continue", {"target_key": target_key, "now_ns": now_ns,
-            "instrument_id": str(instrument_id), "prices": self.price_state(), "ready": bool(self.ready_check())})
+            "instrument_id": str(instrument_id), "prices": self.price_state(), "ready": bool(self.ready_check()), "reduce_only": bool(self.reduce_only_check())})
         self.sync(result["state"])
 
     def cancel_strategy(self, strategy_id):

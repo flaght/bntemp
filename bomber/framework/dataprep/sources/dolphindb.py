@@ -77,6 +77,7 @@ class DolphinDbReferenceSource(ReferenceDataSource):
         self.config = config
         self._factory = session_factory or _session_factory
         self._session = None
+        self._reconnect_needed = False
         self._lock = RLock()
 
     def open(self):
@@ -162,12 +163,21 @@ class DolphinDbReferenceSource(ReferenceDataSource):
             raise TypeError("查询需要 ReferenceQuery")
         script = self._script(dataset, query)
         with self._lock:
+            if self._reconnect_needed:
+                self.close()
+                self.open()
+                self._reconnect_needed = False
             if self._session is None:
                 raise ReferenceSourceError("须先显式 open() 数据源")
             try:
                 frame = self._session.run(script)
-            except Exception:
-                raise ReferenceSourceError(f"DolphinDB {dataset.value} 查询失败；禁止解释为空数据") from None
+            except Exception as error:
+                self._reconnect_needed = True
+                message = str(error).replace(self.config.password, '***').replace(self.config.username, '***')
+                raise ReferenceSourceError(
+                    f"DolphinDB {dataset.value} 查询失败: endpoint={self.config.host}:{self.config.port} "
+                    f"database={self.config.database} table={self._table(dataset)} "
+                    f"error={type(error).__name__}: {message[:1000]}") from None
         if len(frame) > self.config.max_rows:
             raise ReferenceSourceError("参考查询超过行数上限，请缩小范围；不会返回截断资料")
         return normalize_dolphindb_frame(frame, dataset, query,

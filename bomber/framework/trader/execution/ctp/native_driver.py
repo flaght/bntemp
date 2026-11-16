@@ -11,6 +11,7 @@ from typing import Any, Callable, Mapping, Protocol
 
 from bomber.framework.market.basic.base import InstrumentId
 from bomber.framework.trader.execution.contracts import (
+    PositionEffect,
     AmbiguousOrderSubmission,
     OrderBudgetExhausted,
     ExecutionReport,
@@ -557,13 +558,15 @@ class CtpNativeTraderDriver:
                 self.on_disconnect(-1)
             raise
 
-    def cancel_strategy(self, strategy_id: str) -> None:
+    def cancel_strategy(self, strategy_id: str, *, opening_only: bool = False) -> None:
         self._require_connected()
         if self._recovery_checkpoint is not None or self._replaying_recovery:
             raise RuntimeError("CTP活动订单关联尚未经过柜台权威快照恢复")
         if not self._enable_test_orders:
             raise RuntimeError("原生CTP Driver默认禁单；本阶段只读")
         for order_ref, (_, order) in tuple(self._orders.items()):
+            if opening_only and order.position_effect is not PositionEffect.OPEN:
+                continue
             if order.strategy_id == strategy_id or any(
                     leg["strategy_id"] == strategy_id for leg in order.metadata.get("allocation_legs", ())):
                 self.transport.cancel_order(order_ref)

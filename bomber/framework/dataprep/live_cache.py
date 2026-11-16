@@ -1,4 +1,4 @@
-"""控制线程发布参考快照；行情线程只读缓存，刷新失败不沿用旧版本。"""
+"""控制线程发布参考快照；行情线程只读缓存，调用方可显式允许查询失败时使用有效缓存。"""
 
 from copy import deepcopy
 from threading import RLock
@@ -12,9 +12,10 @@ class LiveReferenceCache:
         self._lock = RLock()
         self._value = None
         self._failure = None
+        self._refresh_failure = None
         self._clock_high_water_ns = None
 
-    def refresh(self, loader, validate=None):
+    def refresh(self, loader, validate=None, *, transient_errors=()):
         try:
             # 查询不持提交锁；快照、条款、manifest作为一个版本发布。
             value = loader()
@@ -26,10 +27,15 @@ class LiveReferenceCache:
             with self.publication_lock, self._lock:
                 self._value = (value[0], value[1], manifest)
                 self._failure = None
+                self._refresh_failure = None
                 if validate:
                     validate()
+            return True
         except Exception as error:
             with self._lock:
+                if isinstance(error, transient_errors) and self._value is not None and self._failure is None:
+                    self._refresh_failure = str(error)
+                    return False
                 self._failure = str(error)
             raise
 
@@ -53,7 +59,7 @@ class LiveReferenceCache:
                     failure = "参考缓存观测过期或时钟回退"
                 self._clock_high_water_ns = max(now, self._clock_high_water_ns or now)
             return {**result, "ready": failure is None and self._value is not None,
-                    "failure": failure}
+                    "failure": failure, "refresh_failure": self._refresh_failure}
 
     def snapshot(self, as_of_ns):
         with self._lock:

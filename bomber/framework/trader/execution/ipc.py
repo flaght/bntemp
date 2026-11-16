@@ -128,6 +128,7 @@ class AccountExecutionProtocol:
             service.event_journal = ExecutionEventJournal(keys)
         self.journal = service.event_journal
         for sid, port in service._ports.items():
+            port.reduce_only_check = lambda sid=sid: bool(self.leases.get(sid, {}).get("reduce_only"))
             port.ready_check = lambda sid=sid: bool(self.leases.get(sid, {}).get("ready")
                 and time.monotonic() < min(self.leases[sid]["deadline"],
                     self.leases[sid]["ready_deadline"]))
@@ -265,6 +266,7 @@ class AccountExecutionProtocol:
             # 客户端筛选后，排队/传输可让临界参考价过期。只丢弃该观测，
             # 不用旧价更新账户，也不能让回报交付被行情同步阻断；报单仍严格校验。
             expired = self._update_prices(port, data.get("prices", {}), discard_expired=True)
+            lease["reduce_only"] = bool(data.get("reduce_only", False))
             lease["ready"] = bool(data.get("ready", False))
             lease["ready_deadline"] = lease["deadline"]
             self.journal.acknowledge(sid, data["cursor"])
@@ -285,6 +287,7 @@ class AccountExecutionProtocol:
                 lease["ready"] = False
                 raise RuntimeError("策略行情/参考尚未就绪")
             self._update_prices(port, data["prices"])
+            lease["reduce_only"] = bool(data.get("reduce_only", lease.get("reduce_only", False)))
             lease["ready_deadline"] = lease["deadline"]
             lease["ready"] = ready  # 价格/路由校验完成后更新，拒绝请求不解除旧闭闸。
             if action == "continue":

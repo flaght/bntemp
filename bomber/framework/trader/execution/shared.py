@@ -372,9 +372,23 @@ class SharedAccountExecutionService(AccountExecutionService):
                                  for row in rows}
                 if not owned_targets:
                     continue
+                reference_reducing = self._ports[sid].reduce_only_check()
+                if reference_reducing:
+                    clipped = []
+                    for row in rows:
+                        owned = self.position_manager.position(sid, row['target_key'])
+                        wanted = Decimal(row['quantity'])
+                        if owned >= 0:
+                            quantity = min(max(wanted, Decimal(0)), owned)
+                        else:
+                            quantity = max(min(wanted, Decimal(0)), owned)
+                        clipped.append({**row, 'quantity': str(quantity)})
+                    rows = tuple(clipped)
+                    owned_targets = {self._ports[sid].routes[row['target_key']]: Decimal(row['quantity']) for row in rows}
                 self.client.submit_targets(replace(request, strategy_id=sid, targets=owned_targets, ts_event=now,
                     metadata={**metadata, "position_attribution": rows,
-                              "shared_execution_mode": "independent"}))
+                              "shared_execution_mode": "independent",
+                              "market_health_mode": "REDUCE_ONLY" if reference_reducing else metadata["market_health_mode"]}))
             return
         self.client.submit_targets(replace(request, targets=targets, ts_event=now,
             metadata=metadata, deadline_ns=deadline))
@@ -413,6 +427,11 @@ class SharedAccountExecutionService(AccountExecutionService):
                         check(1)
                 except OrderBudgetExhausted as error:
                     self.stop_for_order_budget(error)
+            for port in self._ports.values():
+                reducing = bool(port.reduce_only_check())
+                if reducing and not port._reduce_only_active and port._started and driver is not None:
+                    driver.cancel_strategy(port.strategy_id, opening_only=True)
+                port._reduce_only_active = reducing
             now = self.clock_ns()
             with self._lock:
                 expired = [sid for sid, source in self._sources.items()
@@ -639,6 +658,8 @@ class SharedStrategyExecutionClient:
         self.position_manager = service.position_manager
         self.instrument_limits = instrument_limits
         self.ready_check = lambda: True
+        self.reduce_only_check = lambda: False
+        self._reduce_only_active = False
         self._started = False
         self._events, self._handlers = deque(), []
         self._lock = threading.RLock()

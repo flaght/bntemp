@@ -344,6 +344,15 @@ class HybridLiveRunner(SessionRoleLiveRunner):
             self.expire_due()
         return super().publish(feed_id, event)
 
+    def continue_execution_target(self, strategy_id, target_key, as_of_ns, **kwargs):
+        if getattr(self.references, 'reduce_only', False):
+            target = self.target_store.get(strategy_id)
+            wanted = target.targets.get(target_key, Decimal(0)) if target else Decimal(0)
+            owned = self.position_manager.position(strategy_id, target_key)
+            if wanted * owned < 0 or abs(wanted) > abs(owned):
+                return False
+        return super().continue_execution_target(strategy_id, target_key, as_of_ns, **kwargs)
+
     def _submit_locked(self, intent):
         """提交策略目标前检查通道与旧在途订单；intent表示目标而非已成交仓位。"""
         if not self.session_ready():
@@ -355,6 +364,10 @@ class HybridLiveRunner(SessionRoleLiveRunner):
             self.client.cancel_strategy(intent.strategy_id)
         # 执行风控使用当前提交时间，原信号分钟留在metadata中供追踪。
         metadata = {**intent.metadata, 'signal_bar_ns': intent.ts_event}
+        if getattr(self.references, 'reduce_only', False):
+            metadata['reference_reduce_only'] = True
+            if not getattr(self, 'shared_execution', False):
+                metadata['market_health_mode'] = 'REDUCE_ONLY'
         if getattr(self, 'shared_execution', False):
             # 与账户目标同代保存批次，覆盖账户先保存、worker尚未来得及保存的恢复窗口。
             metadata['hybrid_signal_state'] = self.shared_signal.snapshot_state()
@@ -383,7 +396,8 @@ class HybridLiveRunner(SessionRoleLiveRunner):
                         self._waiting_execution_price = True
                     return
                 self._waiting_execution_price = False
-            if (due and min(due) == boundary and self.strategy.last_prediction is not None
+            if (not getattr(self.references, 'reduce_only', False)
+                    and due and min(due) == boundary and self.strategy.last_prediction is not None
                     and self.strategy.last_processed_ns < boundary - 1):
                 # 模型已就绪，但到期分钟的Bar/推理尚未到：等本分钟信号后一次计算净目标。
                 # 不用上一分钟的方向续持，也不先平再开。缺失整根分钟则下一边界仍按时钟退出；
@@ -512,6 +526,7 @@ def assemble(inputs, lifecycle, *, product: str, release_path: Path, directions_
     feed.register_bar_handler(execution.prices.on_market_event)
     runner.execution_prices = execution.prices
     runner.calendar, runner.strategy, runner.client = calendar, strategy, execution.client
+    execution.client.reduce_only_check = lambda: bool(getattr(references, 'reduce_only', False))
     runner.continuous_window, runner.model_seed = window, model_seed
     runner.continuous_stop_event = stop_event
     runner.model_identity = model_identity(release_path=release_path, directions_file=directions_file,

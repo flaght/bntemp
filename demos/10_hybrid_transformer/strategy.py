@@ -138,6 +138,7 @@ class HybridTransformerStrategy(StrategyTemplate):
             assignment = self.data_hub.snapshot(timestamp)
             main = assignment.instrument(self.config.product, "main").lower()
         except SectorDataUnavailable:
+            self.last_prediction = None
             self.unavailable_events += 1
             self.on_time(completed_minute_ns(timestamp))
             return
@@ -183,6 +184,12 @@ class HybridTransformerStrategy(StrategyTemplate):
             # 模型预热错误或坏行情不能阻止已有批次到期。
             self.on_time(completed_minute_ns(timestamp))
             raise
+
+        if getattr(self.data_hub, 'reduce_only', False):
+            # 推理期间资料也可能过期；旧批次按原时间到期，不续持或增加批次。
+            signal = None
+            admission_due = False
+            self.last_prediction = None
 
         # 每根有效主力 bar 都推进到期账本；预热或非开仓时点也不能延长旧批次。
         try:
