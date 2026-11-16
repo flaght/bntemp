@@ -55,7 +55,12 @@ class LiveReferenceCache:
                 limit = result["freshness_policy"]["max_observation_age_seconds"]
                 if self._clock_high_water_ns is not None and now < self._clock_high_water_ns:
                     failure = self._failure = "参考缓存时钟回退"
-                elif not 0 <= age <= limit * 1_000_000_000:
+                elif age < 0:
+                    failure = "参考缓存观测过期或时钟回退"
+                elif result.get("valid_until_ns") is not None:
+                    if now >= result["valid_until_ns"]:
+                        failure = "日度参考资料已超过本交易日有效期"
+                elif age > limit * 1_000_000_000:
                     failure = "参考缓存观测过期或时钟回退"
                 self._clock_high_water_ns = max(now, self._clock_high_water_ns or now)
             return {**result, "ready": failure is None and self._value is not None,

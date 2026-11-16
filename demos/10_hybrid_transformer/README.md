@@ -229,7 +229,7 @@ fees = CommissionConfig(
 - 模型已经产生过有效预测而到期分钟Bar尚未送达时，独立时钟在当分钟保留到期批次，打印`Hybrid到期等待`，待该分钟信号完成后合并；不会用上一分钟方向续持。如果整根到期分钟缺失，到下一边界仍由时钟退出，迟到旧Bar不得补开。恢复冷模型或模型异常沿用原到期/故障处理。
 - 手数参数变化时，启动恢复会在本地空仓、无在途且管理合约柜台空仓后自动暂存新配置，复用框架恢复备份与提交，不重置订单历史；已有旧仓或批次则保留原检查点并提示先按原参数处理，绝不改写未到期批次。
 - `main()` 将解析结果逐项转换为显式关键字参数传给 `build_runtime()`；不传命令行Namespace。命令行未声明的查询超时、报单上限、名义金额、限价偏移及执行政策沿用函数默认值：15秒、100笔、1000000、1跳、fills/off。需调整时在代码调用中显式传入对应关键字参数。
-- `prepare_inputs()` 默认参考超时15秒、刷新5秒。主力/条款参考库沿用 `DDB_REFERENCE_DATABASE`，通常为 `dfs://bomber_daily`。时段库独立配置，依次采用显式 `trading_hours_database`、`DDB_TRADING_HOURS_DATABASE`、默认 `dfs://bomber_static`；表沿用 `DDB_TRADING_HOURS_TABLE`，默认 `fut_trading_session`。不再把参考库自动当作时段库。
+- `prepare_inputs()` 默认参考超时15秒。期限结构、主力合约、合约条款和复权因子在会话启动时读取并校验，固定至该交易日最后一个交易时段结束，盘中不再查询，也不受原30秒观测期限影响。夜盘按交易日归属计算，不在自然日午夜失效。重启、休盘后的新会话和跨交易日都会重新读取校验；首次读取失败仍报错，不用旧日资料冒充新日版本。资料到期后沿用仅减仓处理，行情、历史预热和CTP回报的原有时效检查继续有效。主力/条款参考库沿用 `DDB_REFERENCE_DATABASE`，通常为 `dfs://bomber_daily`。时段库独立配置，依次采用显式 `trading_hours_database`、`DDB_TRADING_HOURS_DATABASE`、默认 `dfs://bomber_static`；表沿用 `DDB_TRADING_HOURS_TABLE`，默认 `fut_trading_session`。不再把参考库自动当作时段库。
 - 日历默认 `china.sse`，可用 `BOMBER_CALENDAR_ID` 指定；时段表和例外表沿用 `DDB_TRADING_HOURS_TABLE`、`DDB_SESSION_OVERRIDES_TABLE`。没有例外时仍需显式 `--no-session-overrides`。
 
 DolphinDB 连接按用途分离：实时订阅和历史分钟查询使用 `DDB_MARKET_HOST/PORT/USERNAME/PASSWORD`；

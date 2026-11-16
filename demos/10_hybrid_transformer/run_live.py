@@ -23,6 +23,7 @@ from types import SimpleNamespace
 
 from dotenv import load_dotenv
 from bomber.framework.calendars import SessionRulesCheckpoint
+from bomber.framework.calendars.sessions import datetime_ns
 from bomber.framework.dataprep.history import FuturesMinuteArchive
 from bomber.framework.dataprep.live_cached_role import CachedRoleReferences
 from bomber.framework.dataprep.live_references import live_factor_policy
@@ -220,12 +221,12 @@ def prepare_inputs(context, lifecycle, *, product: str, expected_source_day: str
     source.open()
     # references回答：当前main角色是谁、合约乘数/最小变动价位是什么、资料是否有效。
     # 参考资料来源固定为DolphinDB；这与market_config选择的实时行情来源相互独立。
-    references = CachedRoleReferences(SourceRoleReferences(source, product=product,
+    references = SourceRoleReferences(source, product=product,
         trading_day=context.trading_day, started_ns=time.time_ns(),
         factor_date_basis='source', factor_availability=live_factor_policy('source', 'observed-on-read'),
         refresh_seconds=refresh_seconds, allowed_venues=('SHFE', 'INE', 'DCE'),
         required_currency='CNY', freshness=ReferenceFreshnessPolicy(
-            expected_source_day=datetime.strptime(expected_source_day, '%Y%m%d').date())))
+            expected_source_day=datetime.strptime(expected_source_day, '%Y%m%d').date()))
     context.references = references
     assignment = references.snapshot(time.time_ns())
     if assignment.source_day.strftime('%Y%m%d') != expected_source_day:
@@ -242,6 +243,17 @@ def prepare_inputs(context, lifecycle, *, product: str, expected_source_day: str
         overrides_table=os.getenv('DDB_SESSION_OVERRIDES_TABLE') or None,
         no_overrides=no_session_overrides),
         purpose=DataSourcePurpose.LIVE_REFERENCE)
+    # 主力、期限结构、合约条款和复权因子按交易日固定，盘中不轮询数据库。
+    # 使用交易日历最后一个时段的结束时间；夜盘跨自然日不会提前失效。
+    windows = calendar.windows(context.trading_day)
+    if not windows:
+        raise ValueError('交易日历缺少本交易日时段，无法固定日度基础资料')
+    valid_until = max(window.end for window in windows)
+    references = CachedRoleReferences(references, valid_until_ns=datetime_ns(valid_until))
+    context.references = references
+    print(f'Hybrid日度基础资料: product={product} TD={context.trading_day} '
+          f'source_day={assignment.source_day} valid_until={valid_until.isoformat()}；'
+          '盘中复用，重启或新交易会话重新校验', flush=True)
     # upstream是厂商原始入口：CTP提供深度，DolphinDB提供来源分钟。
     # assemble稍后会把它包装成模型需要的完整期货CustomBar。
     upstream = create_market_feed(market_config, 'hybrid-market', lifecycle=lifecycle,

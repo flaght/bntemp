@@ -13,7 +13,11 @@ from .live_role import FileRoleReferences
 class CachedRoleReferences:
     refresh_on_event = False
 
-    def __init__(self, references):
+    def __init__(self, references, *, valid_until_ns=None):
+        # 日度资料可由调用方按交易日历固定有效期；未指定时保留滚动刷新。
+        if valid_until_ns is not None and (type(valid_until_ns) is not int or valid_until_ns <= 0):
+            raise ValueError("日度参考有效期须为正整数纳秒")
+        self._valid_until_ns = valid_until_ns
         self.source = references
         for key in ("product", "role", "trading_day", "started_ns", "paths",
                     "factor_date_basis", "factor_availability"):
@@ -33,13 +37,20 @@ class CachedRoleReferences:
         self._published.publication_lock = value
 
     def refresh(self):
+        if self._valid_until_ns is not None and self._published.value is not None:
+            # 不重新读取、不推迟截止时间；到期由新交易日会话重新加载。
+            _ = self.reduce_only
+            return
         now = time.time_ns()
         if now < self._retry_at_ns:
             return
         previous_failure = self._published.manifest.get("refresh_failure")
         def load():
             assignment = self.source.snapshot(time.time_ns())
-            return assignment, self.source.spec, self.source.manifest
+            manifest = dict(self.source.manifest)
+            if self._valid_until_ns is not None:
+                manifest.update(refresh_policy="trading-day", valid_until_ns=self._valid_until_ns)
+            return assignment, self.source.spec, manifest
         refreshed = self._published.refresh(load, transient_errors=(ReferenceSourceError,))
         if not refreshed:
             self._retry_at_ns = time.time_ns() + self._retry_seconds * 1_000_000_000
