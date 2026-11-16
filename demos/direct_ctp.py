@@ -341,6 +341,18 @@ def dispose_disconnected(host):
     host.resources.close()
 
 
+def _can_reconnect(host, error, attempts):
+    """仅重建可恢复连接；归属/回报冲突不能被查询超时重试分支绕过。"""
+    if host is not None:
+        if host.service.client.report_errors:
+            return False
+        reason = getattr(host.account.driver, 'last_disconnect', None)
+        if reason is not None:
+            # CTP SDK的网络读写、心跳和错误报文断线；-1等本地冲突保持闭闸。
+            return reason['reason'] in {0x1001, 0x1002, 0x2001, 0x2002, 0x2003}
+    return attempts > 0 and isinstance(error, (ConnectionError, TimeoutError))
+
+
 def run_window(config, window, stop, *, import_state, counter_file):
     from bomber.framework.trader.runtime.live.continuous import wait_for_open, StopRequested
     attempts = 0
@@ -377,18 +389,23 @@ def run_window(config, window, stop, *, import_state, counter_file):
             return {'status':'completed'}
         except Exception as error:
             failure = str(error)
-            reason = getattr(host.account.driver, 'last_disconnect', None) if host is not None else None
-            retry = reason is not None and reason['reason'] != -1 and not host.service.client.report_errors
-            retry = retry or (attempts > 0 and isinstance(error,(ConnectionError,TimeoutError)))
+            retry = not stop.is_set() and _can_reconnect(host, error, attempts)
             if host is not None:
                 if retry or not host.account.driver.is_simnow_authenticated:
                     dispose_disconnected(host)
                 else:
                     try:
                         host.stop()
-                    except Exception:
+                    except Exception as stop_error:
+                        # 首次查询超时时连接可能仍显示在线；停机排空期间才收到断线。
+                        # 必须在销毁连接前重读原因，保留原账本和计数文件重建宿主。
+                        retry = not stop.is_set() and _can_reconnect(host, stop_error, attempts)
+                        logging.getLogger('DirectCtpRecovery').warning(
+                            '停机核验失败: original_error=%s stop_error=%s disconnect=%s reconnect=%s',
+                            error, stop_error, getattr(host.account.driver, 'last_disconnect', None), retry)
                         dispose_disconnected(host)
-                        raise
+                        if not retry:
+                            raise
             if not retry or attempts >= 3:
                 raise
             attempts += 1

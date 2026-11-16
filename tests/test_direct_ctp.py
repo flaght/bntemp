@@ -569,6 +569,193 @@ class DirectCtpTests(unittest.TestCase):
             self.assertIsNone(old.service._checkpoint)
             new.stop.assert_called_once()
 
+    def test_independent_query_failures_disarm_without_rewriting_positions_checkpoint_or_counter(self):
+        errors=import_module('bomber.framework.trader.execution.ctp.query_errors')
+        direct=import_module('bomber.framework.trader.execution.ctp.independent')
+        cases=[(stage,TimeoutError(stage+' timeout')) for stage in ('account','positions','orders')]
+        cases += [('orders',errors.CtpQueryRejected('orders','reqQryOrder',999,-2))]
+        for stage,error in cases:
+            with self.subTest(stage=stage,error=str(error)),TemporaryDirectory() as directory:
+                path=Path(directory)/'state.json'
+                account,service,broker,(one,two)=self.make(path)
+                counter=direct.DailyOrderCounter(Path(directory)/'counter.sqlite3','9999:demo',2)
+                account.driver.daily_counter=counter
+                self.start(account,service,one);two.start()
+                self.submit(one,2);broker.fill(broker.sent[-1]['OrderRef'])
+                self.submit(two,-1);broker.fill(broker.sent[-1]['OrderRef'])
+                before=path.read_bytes();ledger=account.ledger.state()
+                buckets=deepcopy(account.driver.buckets.snapshot_state())
+                method={'account':'query_account','positions':'query_position_details','orders':'query_active_orders'}[stage]
+                with patch.object(broker,method,side_effect=error):
+                    account._next_check=0
+                    with self.assertRaises(type(error)) as caught:account.poll()
+                self.assertIs(caught.exception,error)
+                self.assertEqual(account.query_failure,str(error))
+                self.assertFalse(account.client.is_armed)
+                self.assertTrue(service.position_manager.is_recovery_required(service.client_id))
+                self.assertEqual(account.ledger.state(),ledger)
+                self.assertEqual(account.driver.buckets.snapshot_state(),buckets)
+                self.assertEqual(path.read_bytes(),before)
+                self.assertEqual(service.position_manager.position('one','main'),2)
+                self.assertEqual(service.position_manager.position('two','main'),-1)
+                with self.assertRaises(direct.OrderBudgetExhausted):counter.check('20261013')
+                self.assertEqual(len(broker.sent),2)
+                account.driver.stop()
+
+    def test_query_timeout_can_finish_authoritative_stop_after_late_fill_without_rearming(self):
+        with TemporaryDirectory() as directory:
+            path=Path(directory)/'state.json'
+            account,service,broker,(one,_)=self.make(path)
+            self.start(account,service,one)
+            self.submit(one,2);ref=broker.sent[-1]['OrderRef']
+            broker.fill(ref,1)
+            with patch.object(broker,'query_active_orders',side_effect=TimeoutError('orders timeout')):
+                account._next_check=0
+                with self.assertRaises(TimeoutError):account.poll()
+            self.assertFalse(account.client.is_armed)
+            self.assertTrue(account.driver.buckets.frozen)
+            broker.fill(ref,1)  # 旧连接仍有效，迟到真实成交仍按原订单归属入账。
+            one.stop();account.stop()
+            self.assertEqual(account.final_active_orders,0)
+            self.assertEqual(service.position_manager.position('one','main'),2)
+            self.assertFalse(account.client.is_armed)
+            self.assertFalse(account.driver.buckets.frozen)
+            self.assertEqual(len(broker.sent),1)
+            owned=json.loads(path.read_text())['payload']['positions']['attribution']['owned']
+            self.assertEqual(sum(D(row['quantity']) for row in owned if row['strategy_id']=='one'),2)
+
+    def test_timeout_then_stop_disconnect_restores_real_owners_and_original_daily_counter(self):
+        app=import_module('demos.direct_ctp')
+        direct=import_module('bomber.framework.trader.execution.ctp.independent')
+        class Stop(Event):
+            def wait(self,timeout=None):return self.is_set()
+        stop=Stop();now=datetime.now(timezone.utc)
+        window=NS(start=now-timedelta(minutes=1),end=now+timedelta(minutes=1),trading_day='20261013')
+        with TemporaryDirectory() as directory:
+            root=Path(directory);path=root/'state.json';signal=root/'signal.json';counter_file=root/'counter.sqlite3'
+            signal.write_text('{"original_signal":true}')
+            account,service,broker,(one,two)=self.make(path)
+            account.driver.daily_counter=direct.DailyOrderCounter(counter_file,'9999:demo',2)
+            self.start(account,service,one);two.start()
+            self.submit(one,2);broker.fill(broker.sent[-1]['OrderRef'])
+            self.submit(two,-1);broker.fill(broker.sent[-1]['OrderRef'])
+            before=path.read_bytes();signal_before=signal.read_bytes();gross=deepcopy(broker.gross)
+            old=NS(account=account,service=service,strategies={},resources=NS(close=Mock()),
+                start=Mock(),snapshot=lambda:{})
+            def poll():
+                with patch.object(broker,'query_active_orders',side_effect=TimeoutError('orders timeout')):
+                    account._next_check=0;account.poll()
+            old.poll=poll
+            def stop_old():
+                self.assertFalse(account.client.is_armed)
+                account.driver.on_disconnect(0x2001)
+                raise RuntimeError('CTP等待旧查询结束时前置断开')
+            old.stop=Mock(side_effect=stop_old)
+            restored=[]
+            def build(config,**kwargs):
+                self.assertEqual(config['account_state_file'],str(path))
+                self.assertEqual(kwargs['counter_file'],counter_file)
+                self.assertEqual(signal.read_bytes(),signal_before)
+                if not restored:
+                    restored.append(old)
+                    return old
+                self.assertEqual(path.read_bytes(),before)
+                self.assertIsNone(service._checkpoint)
+                next_account,next_service,transport,(port,second)=self.make(path)
+                transport.gross=deepcopy(gross)
+                next_account.driver.daily_counter=direct.DailyOrderCounter(counter_file,'9999:demo',2)
+                def start():
+                    self.start(next_account,next_service,port,resume=True);second.start()
+                    self.assertEqual(next_service.position_manager.position('one','main'),2)
+                    self.assertEqual(next_service.position_manager.position('two','main'),-1)
+                    self.assertEqual(next_account.driver.buckets.quantities('one',self.instrument),[2,0,0,0])
+                    self.assertEqual(next_account.driver.buckets.quantities('two',self.instrument),[0,0,1,0])
+                    with self.assertRaises(direct.OrderBudgetExhausted):next_account.driver.daily_counter.check('20261013')
+                    self.assertFalse(transport.sent)
+                def finish():
+                    port.stop();second.stop();next_account.stop()
+                new=NS(account=next_account,service=next_service,start=start,poll=stop.set,
+                    stop=Mock(side_effect=finish),snapshot=lambda:{})
+                restored.append(new)
+                return new
+            config=dict(report_dir=directory,account_state_file=str(path),strategies=[{'strategy_id':'one'}])
+            with patch.object(app,'build_direct_host',side_effect=build) as factory:
+                self.assertEqual(app.run_window(config,window,stop,import_state=None,counter_file=counter_file),
+                    {'status':'completed'})
+            self.assertEqual(factory.call_count,2)
+            self.assertEqual(factory.call_args_list[0],factory.call_args_list[1])
+            self.assertEqual(signal.read_bytes(),signal_before)
+            old.stop.assert_called_once();restored[1].stop.assert_called_once()
+
+    def test_stop_failure_without_recoverable_disconnect_does_not_reconnect(self):
+        app=import_module('demos.direct_ctp')
+        for reason,report_errors in ((None,()),(-1,()),(0x2001,('ownership conflict',))):
+            with self.subTest(reason=reason,report_errors=report_errors),TemporaryDirectory() as directory:
+                now=datetime.now(timezone.utc)
+                window=NS(start=now,end=now+timedelta(minutes=1),trading_day='20261116')
+                driver=NS(last_disconnect=None,is_simnow_authenticated=True)
+                host=NS(account=NS(driver=driver),service=NS(client=NS(report_errors=())),
+                    start=Mock(),poll=Mock(side_effect=TimeoutError('orders timeout')),snapshot=lambda:{})
+                def fail_stop():
+                    driver.last_disconnect=None if reason is None else {'reason':reason}
+                    host.service.client.report_errors=report_errors
+                    raise RuntimeError('stop reconciliation failed')
+                host.stop=Mock(side_effect=fail_stop)
+                with patch.object(app,'build_direct_host',return_value=host) as build, \
+                        patch.object(app,'dispose_disconnected') as dispose:
+                    with self.assertRaisesRegex(RuntimeError,'stop reconciliation failed'):
+                        app.run_window(dict(report_dir=directory,strategies=[]),window,Event(),
+                            import_state=None,counter_file=Path(directory)/'counter.sqlite3')
+                self.assertEqual(build.call_count,1);dispose.assert_called_once_with(host)
+
+    def test_stop_disconnect_then_query_timeouts_exhaust_three_reconnect_attempts(self):
+        app=import_module('demos.direct_ctp')
+        class Stop(Event):
+            def wait(self,timeout=None):return self.is_set()
+        now=datetime.now(timezone.utc)
+        window=NS(start=now,end=now+timedelta(minutes=1),trading_day='20261116')
+        def make_host():
+            driver=NS(last_disconnect=None,is_simnow_authenticated=True)
+            host=NS(account=NS(driver=driver),service=NS(client=NS(report_errors=())),start=Mock(),
+                poll=Mock(side_effect=TimeoutError('orders timeout')),snapshot=lambda:{})
+            def fail_stop():
+                driver.last_disconnect={'reason':0x2001}
+                raise RuntimeError('heartbeat timeout during stop')
+            host.stop=Mock(side_effect=fail_stop)
+            return host
+        hosts=[make_host() for _ in range(4)]
+        with TemporaryDirectory() as directory,patch.object(app,'build_direct_host',side_effect=hosts) as build, \
+                patch.object(app,'dispose_disconnected') as dispose:
+            with self.assertRaises(TimeoutError):
+                app.run_window(dict(report_dir=directory,strategies=[]),window,Stop(),
+                    import_state=None,counter_file=Path(directory)/'counter.sqlite3')
+        self.assertEqual(build.call_count,4)
+        self.assertEqual(dispose.call_count,4)
+        hosts[0].stop.assert_called_once()
+
+    def test_query_timeout_during_reconnect_cannot_override_ownership_or_report_conflict(self):
+        app=import_module('demos.direct_ctp')
+        class Stop(Event):
+            def wait(self,timeout=None):return self.is_set()
+        for reason,reports in ((-1,()),(0x2001,('report conflict',))):
+            with self.subTest(reason=reason,reports=reports),TemporaryDirectory() as directory:
+                now=datetime.now(timezone.utc)
+                window=NS(start=now,end=now+timedelta(minutes=1),trading_day='20261116')
+                def host(code,errors,error):
+                    return NS(account=NS(driver=NS(last_disconnect={'reason':code},is_simnow_authenticated=False)),
+                        service=NS(client=NS(report_errors=errors)),start=Mock(),stop=Mock(),
+                        poll=Mock(side_effect=error),snapshot=lambda:{})
+                old=host(0x2001,(),RuntimeError('network disconnect'))
+                conflicted=host(reason,reports,TimeoutError('query timeout after conflict'))
+                with patch.object(app,'build_direct_host',side_effect=[old,conflicted]) as build, \
+                        patch.object(app,'dispose_disconnected') as dispose:
+                    with self.assertRaisesRegex(TimeoutError,'after conflict'):
+                        app.run_window(dict(report_dir=directory,strategies=[]),window,Stop(),
+                            import_state=None,counter_file=Path(directory)/'counter.sqlite3')
+                self.assertEqual(build.call_count,2)
+                self.assertEqual(dispose.call_count,2)
+                conflicted.stop.assert_not_called()
+
     def test_preparation_that_crosses_stop_boundary_never_enters_poll_or_trading(self):
         app=import_module('demos.direct_ctp')
         now=datetime.now(timezone.utc)

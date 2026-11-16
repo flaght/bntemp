@@ -9,6 +9,7 @@ from .ctp_shared import CtpSharedAccountLifecycle
 from .ctp_owned import external_partition
 from .ctp import account_lock
 from bomber.framework.trader.execution.ctp.independent import StrategyBuckets, YesterdayFirstPlanner
+from bomber.framework.trader.execution.ctp.query_errors import CtpQueryRejected
 
 
 class IndependentCtpLifecycle(CtpSharedAccountLifecycle):
@@ -136,8 +137,17 @@ class IndependentCtpLifecycle(CtpSharedAccountLifecycle):
                 or self.execution.positions.is_recovery_required(self.service.client_id)):
             raise RuntimeError('直连CTP断开或执行状态不明，策略闭闸')
         if time.monotonic() >= self._next_check:
-            self.client.refresh_account_state()
-            self._validate_account()
+            try:
+                self.client.refresh_account_state()
+                self._validate_account()
+            except Exception as error:
+                # 本地超时不代表旧请求已结束；先闭闸，再由停机排空或断线恢复核验。
+                if self.query_failure is None and (isinstance(error, TimeoutError)
+                        or isinstance(error, CtpQueryRejected) and error.retryable):
+                    self.query_failure = str(error)
+                self.client.disarm('independent_position_check_failed')
+                self.execution.positions.mark_recovery_required(self.service.client_id)
+                raise
             self._next_check = time.monotonic()+self.reconcile_seconds
 
 
