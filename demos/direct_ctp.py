@@ -309,6 +309,13 @@ def prepare_payload(account, payload):
         if old.get('managed_instruments') != new.get('managed_instruments'):
             _extend_option_scope(account, result, old, new)
             candidate['managed_instruments'] = deepcopy(new['managed_instruments'])
+    elif old['strategies'] != new['strategies']:
+        if old['strategies'].keys() != new['strategies'].keys():
+            raise ValueError('直连恢复不能更改策略集合')
+        for sid in new['strategies']:
+            if old['strategies'][sid] != new['strategies'][sid]:
+                validate_strategy_identity(old['strategies'][sid], new['strategies'][sid])
+        candidate['strategies'] = deepcopy(new['strategies'])
     if candidate != new:
         raise ValueError('直连恢复配置不一致: '+','.join(identity_difference_paths(candidate,new)))
     client = account.service.client_id

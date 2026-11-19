@@ -34,6 +34,52 @@ class OptionSharedRolloverTests(unittest.TestCase):
     setUp = fixture.MigrationTests.setUp
     identity = fixture.MigrationTests.identity
 
+    def test_market_age_change_preserves_same_day_strategy_identity_and_rejects_other_changes(self):
+        old = dict(strategy_id=CLIENT, kind="option_vega", trading_day="20261119", environment="realtime",
+            routes={"unchanged": True}, reference=dict(config={"max_market_age_seconds": 300, "max_option_lots": 1},
+                sources={"market": {"channel": "dolphindb", "table": "stream_cffex_1min", "max_age_seconds": 120},
+                         "index": {"dataset_id": "index.minute"}}))
+        new = deepcopy(old)
+        new["reference"]["sources"]["market"]["max_age_seconds"] = 300
+        before = deepcopy(old)
+        rollover.validate_strategy_identity(old, new)
+        self.assertEqual(old, before)
+        for field in ("table", "index", "lots", "routes", "over_limit"):
+            bad = deepcopy(new)
+            if field == "table": bad["reference"]["sources"]["market"]["table"] = "other"
+            elif field == "index": bad["reference"]["sources"]["index"]["dataset_id"] = "other"
+            elif field == "lots": bad["reference"]["config"]["max_option_lots"] = 100
+            elif field == "routes": bad["routes"] = {"changed": True}
+            else: bad["reference"]["sources"]["market"]["max_age_seconds"] = 301
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                rollover.validate_strategy_identity(old, bad)
+
+    def test_market_age_change_cross_day_keeps_source_and_risk_validation(self):
+        old, new = deepcopy(self.identity), deepcopy(self.new_identity)
+        old["sources"]["market"] = deepcopy(new["sources"]["market"])
+        old["sources"]["market"]["max_age_seconds"] = 120
+        old["labels"] = deepcopy(new["labels"])
+        new["sources"]["market"]["max_age_seconds"] = 300
+        new["config"]["max_market_age_seconds"] = old["config"]["max_market_age_seconds"] = 300
+        previous = dict(strategy_id=CLIENT, kind="option_vega", trading_day=old["td_day"],
+            environment="realtime", reference=old, routes={"routes":{},"limits":{},"budget":{"max_gross_notional":"100"}})
+        current = deepcopy(previous); current.update(trading_day=new["td_day"], reference=new)
+        before = deepcopy(previous)
+        rollover.validate_strategy_identity(previous, current)
+        self.assertEqual(previous, before)
+        current["reference"]["sources"]["market"]["table"] = "different-source"
+        with self.assertRaises(ValueError): rollover.validate_strategy_identity(previous, current)
+
+    def test_market_age_exception_does_not_apply_to_hybrid(self):
+        for day in ("20261119", "20261120"):
+            old = dict(strategy_id="hybrid-transformer-live", kind="hybrid_transformer", trading_day="20261119",
+                environment="realtime", routes={}, reference={"sources":{"market":{
+                    "channel":"dolphindb", "max_age_seconds":120}}, "config":{"max_market_age_seconds":300}})
+            new = deepcopy(old); new["trading_day"] = day
+            new["reference"]["sources"]["market"]["max_age_seconds"] = 300
+            with self.subTest(day=day), self.assertRaises(ValueError):
+                rollover.validate_strategy_identity(old, new)
+
     def test_changed_strategy_and_risk_settings_report_paths_without_identity_values(self):
         module = import_module("demos.08_option_vega.recovery")
         old, new = deepcopy(self.identity), deepcopy(self.new_identity)

@@ -550,7 +550,8 @@ class DirectCtpTests(unittest.TestCase):
         old,service,broker,(one,two)=self.make(path)
         reference=dict(mode='simnow',environment='realtime',td_day='20261013',valuation_day='2026-10-13',
             policy=dict(version=1,account_reconciliation='strict',position_source='fills'),
-            calendar_manifest={'calendar_id':'china.cffex'},sources={'market':{'channel':'dolphindb'}},labels={})
+            config={'max_market_age_seconds':300},calendar_manifest={'calendar_id':'china.cffex'},
+            sources={'market':{'channel':'dolphindb','max_age_seconds':120}},labels={})
         identity=dict(account={'client_id':'account'},environment='realtime',trading_day='20261013',
             managed_instruments=sorted(old.position_scope.instruments),strategies={
                 port.strategy_id:dict(strategy_id=port.strategy_id,kind='option_vega' if port is one else 'hybrid_transformer',
@@ -585,6 +586,25 @@ class DirectCtpTests(unittest.TestCase):
         account.driver.daily_counter=counter
         return NS(app=app,path=path,payload=payload,original=original,account=account,service=target,
             transport=transport,port=port,second=second,current=current,added=added,counter=counter)
+
+    def test_same_day_market_age_change_restores_original_checkpoint_owners_and_daily_count(self):
+        with TemporaryDirectory() as directory:
+            case=self.option_scope_recovery(directory)
+            account,service,broker,(one,two)=self.make(case.path)
+            identity=deepcopy(case.payload['component_states']['session_identity']['identity'])
+            identity['strategies']['one']['reference']['sources']['market']['max_age_seconds']=300
+            account.manager.state_components['session_identity'].identity=identity
+            account.import_transform=lambda data:case.app.prepare_payload(account,data)
+            broker.gross=deepcopy(case.transport.gross)
+            account.start_preparation(resume=True)
+            self.assertEqual(case.path.read_bytes(),case.original)
+            self.assertEqual(service.position_manager.position('one','main'),-1)
+            self.assertEqual(service.position_manager.position('two','main'),2)
+            service.start();one.start();two.start();account.authorize()
+            with self.assertRaises(import_module('bomber.framework.trader.execution.ctp.independent').OrderBudgetExhausted):
+                case.counter.check('20261013')
+            self.assertFalse(broker.sent)
+            one.stop();two.stop();account.stop()
 
     def test_cross_day_option_scope_additions_restore_owners_zero_targets_and_keep_daily_count(self):
         with TemporaryDirectory() as directory:

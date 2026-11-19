@@ -127,6 +127,7 @@ experiment_setups:
       future_product: IM
       index_code: "000852"
       market_config: demos/08_option_vega/config/market_dolphindb.json
+      market_bar_max_age_seconds: 300
       index_source: dolphindb-dfs
       index_feature_config: demos/08_option_vega/feature/index.json
       index_dataset: index.minute

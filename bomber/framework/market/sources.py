@@ -22,8 +22,9 @@ class MarketSourceConfig:
     def __post_init__(self):
         if self.source not in {"file", "ctp", "bn-ws", "dolphindb"}:
             raise ValueError("未知market-source")
-        if not math.isfinite(self.max_age_seconds) or not 60 < self.max_age_seconds <= 120:
-            raise ValueError("分钟行情时效须在(60,120]秒")
+        max_age_limit = 300 if self.source == "dolphindb" else 120
+        if not math.isfinite(self.max_age_seconds) or not 60 < self.max_age_seconds <= max_age_limit:
+            raise ValueError(f"分钟行情时效须在(60,{max_age_limit}]秒")
         if self.source == "dolphindb":
             if not self.table:
                 raise ValueError("DolphinDB行情须配置共享分钟流表market-bar-table；禁止猜测表名")

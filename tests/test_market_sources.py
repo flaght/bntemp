@@ -53,6 +53,14 @@ class ConfigTests(unittest.TestCase):
             with self.subTest(values=values), self.assertRaises(ValueError):
                 MarketSourceConfig(**values)
 
+    def test_dolphin_explicit_300_second_age_preserves_other_source_defaults(self):
+        values=dict(source="dolphindb",table="minute_stream",timestamp_label="end",volume_mode="per-bar")
+        self.assertEqual(MarketSourceConfig(**values).max_age_seconds,120)
+        self.assertEqual(MarketSourceConfig(**values,max_age_seconds=300).max_age_seconds,300)
+        for age in (60,301,float("nan"),float("inf")):
+            with self.subTest(age=age),self.assertRaises(ValueError):
+                MarketSourceConfig(**values,max_age_seconds=age)
+
     def test_live_file_and_non_ctp_replay_fail(self):
         for args in (NS(market_source="file"), NS(market_source="bn-ws", simnow_environment="replay")):
             with self.subTest(args=args), self.assertRaises(ValueError):
