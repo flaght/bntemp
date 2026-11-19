@@ -285,7 +285,7 @@ class HybridAssemblyTests(unittest.TestCase):
                      patch.object(live.DolphinDbReferenceConfig,'from_env',return_value=reference_config) as config, \
                      patch.object(live.ReferenceSourceFactory,'create_for',return_value=source), \
                      patch.object(live,'SourceRoleReferences',return_value=references), \
-                     patch.object(live,'CachedRoleReferences',side_effect=lambda value:value), \
+                     patch.object(live,'CachedRoleReferences',side_effect=lambda value, **kw:value) as cache, \
                      patch.object(live,'load_session_inputs',return_value=calendar()) as load_hours, \
                      patch.object(live,'create_market_feed',return_value=upstream):
                     result=live.prepare_inputs(context,NS(),product='RB',expected_source_day='20261027',
@@ -297,6 +297,8 @@ class HybridAssemblyTests(unittest.TestCase):
                 self.assertEqual(actual.exchange,'SHFE')
                 self.assertTrue(actual.no_overrides)
                 config.assert_called_once_with(database='dfs://bomber_daily',read_timeout_seconds=15)
+                self.assertEqual(cache.call_args.kwargs['valid_until_ns'],
+                    max(live.datetime_ns(w.end) for w in result.calendar.windows(context.trading_day)))
                 self.assertIs(result.upstream,upstream)
                 source.open.assert_called_once()
             source.close.assert_called_once()

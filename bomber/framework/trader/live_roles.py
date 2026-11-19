@@ -1,6 +1,7 @@
 """单策略固定角色在线路由及会话守卫；不依赖具体策略或柜台实现。"""
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import time
 
 from bomber.framework.datahub.sector_roles import SectorDataUnavailable
@@ -177,6 +178,13 @@ class SessionRoleLiveRunner(FixedRoleLiveRunner):
             ((now + minute - 1) // minute + 1) * minute - 1)
         self.accept_bars = True
 
+    def on_outdated_bar(self, feed_id, event, now_ns):
+        """默认仍拒绝过期/未来Bar；业务Runner可只接管过期分钟的历史更新。"""
+        bar_time = datetime.fromtimestamp(event.ts_event / 1e9, timezone.utc).isoformat()
+        now_time = datetime.fromtimestamp(now_ns / 1e9, timezone.utc).isoformat()
+        raise RuntimeError(f"分钟Bar与墙钟不匹配；默认不接受历史回放: "
+            f"bar_time={bar_time} now={now_time} delay_seconds={(now_ns-event.ts_event)/1e9:.6f}")
+
     def publish(self, feed_id, event):
         if not isinstance(event, (Bar, CustomBar)) or not self.accept_bars:
             return
@@ -186,16 +194,18 @@ class SessionRoleLiveRunner(FixedRoleLiveRunner):
             try:
                 if not self.session_ready():
                     raise RuntimeError("MD／TD会话失效、交易日不一致或行情停滞")
-                if not 0 <= self._clock_ns() - event.ts_event <= 120_000_000_000:
-                    raise RuntimeError("分钟Bar与墙钟不匹配；默认不接受历史回放")
+                now = self._clock_ns()
+                if not 0 <= now - event.ts_event <= 120_000_000_000:
+                    return self.on_outdated_bar(feed_id, event, now)
                 if getattr(self.references, "refresh_on_event", True):
                     self.references.refresh()
                 if not self.reference_is_current():
                     self.close_role_gate("角色合约或条款变更，固定路由闭闸并要求重新核对")
                 if not self.session_ready():
                     raise RuntimeError("参考资料刷新后MD／TD会话已失效或行情停滞")
-                if not 0 <= self._clock_ns() - event.ts_event <= 120_000_000_000:
-                    raise RuntimeError("参考资料刷新后分钟Bar已过期")
+                now = self._clock_ns()
+                if not 0 <= now - event.ts_event <= 120_000_000_000:
+                    return self.on_outdated_bar(feed_id, event, now)
                 return super().publish(feed_id, event)
             except Exception as error:
                 self.failure = str(error)

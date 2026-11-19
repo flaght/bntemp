@@ -73,6 +73,83 @@ class ReferenceRetryTests(unittest.TestCase):
             self.assertFalse(refs.reduce_only)
             self.assertTrue(refs.manifest['ready'])
 
+
+    def test_daily_reference_uses_one_validated_version_across_midnight_and_reloads_for_new_td(self):
+        from tests.test_reference_sources import FakeSession
+        from bomber.framework.dataprep.sources.dolphindb import DolphinDbReferenceSource, DolphinDbReferenceConfig
+        from bomber.framework.dataprep.live_role import SourceRoleReferences
+        from bomber.framework.dataprep.reference_freshness import ReferenceFreshnessPolicy
+        from zoneinfo import ZoneInfo
+        from datetime import datetime
+        zone = ZoneInfo('Asia/Shanghai')
+        def ns(text):
+            return int(datetime.fromisoformat(text).replace(tzinfo=zone).timestamp()) * 10**9
+        now = [ns('2026-09-21 21:00:00')]
+        deadline = ns('2026-09-22 15:00:00')
+        sdk = FakeSession()
+        sdk.data['fut_adjustment_factors']['date'] = '2026-09-21'
+        source = DolphinDbReferenceSource(DolphinDbReferenceConfig('fixture', 8902, 'user', 'secret'),
+            session_factory=lambda **kwargs:sdk)
+        source.open()
+        self.addCleanup(source.close)
+        def provider(day, expected):
+            return SourceRoleReferences(source, product='RB', trading_day=day,
+                started_ns=now[0], factor_date_basis='source', factor_availability='observed-on-read',
+                freshness=ReferenceFreshnessPolicy(expected_source_day=expected), clock_ns=lambda:now[0])
+        with patch('time.time_ns', side_effect=lambda:now[0]):
+            refs = CachedRoleReferences(provider('20260922', date(2026,9,21)), valid_until_ns=deadline)
+            assignment = refs.snapshot(now[0])
+            observed = refs.manifest['observed_at_ns']
+            calls = len(sdk.calls)
+            # 即使数据库断线、源表被更新，盘中固定版本也不重新查询。
+            sdk.fail = True
+            for point in ('2026-09-21 23:00:00','2026-09-22 00:01:00',
+                          '2026-09-22 09:00:00','2026-09-22 14:59:59'):
+                now[0] = ns(point)
+                refs.refresh()
+                self.assertIs(refs.snapshot(now[0]), assignment)
+                self.assertFalse(refs.reduce_only)
+                self.assertEqual(refs.manifest['observed_at_ns'], observed)
+                self.assertEqual(refs.manifest['valid_until_ns'], deadline)
+                self.assertEqual(len(sdk.calls), calls)
+            with self.assertRaises(SectorDataUnavailable):
+                refs.snapshot(assignment.available_ns - 1)
+            now[0] = deadline
+            with self.assertLogs('bomber.framework.dataprep.live_cached_role', level='WARNING'):
+                refs.refresh()
+            self.assertTrue(refs.reduce_only)
+            with self.assertRaisesRegex(SectorDataUnavailable, '本交易日'):
+                refs.snapshot(now[0])
+            self.assertEqual(len(sdk.calls), calls)
+            # 新交易日必须重新读取，且继续核对声明的资料来源日。
+            sdk.fail = False
+            sdk.data['fut_contract']['date'] = '2026-09-22'
+            sdk.data['fut_adjustment_factors']['date'] = '2026-09-22'
+            now[0] = ns('2026-09-22 21:00:00')
+            next_refs = CachedRoleReferences(provider('20260923', date(2026,9,22)),
+                valid_until_ns=ns('2026-09-23 15:00:00'))
+            self.assertGreater(len(sdk.calls), calls)
+            self.assertEqual(next_refs.snapshot(now[0]).trading_day, date(2026,9,23))
+            self.assertEqual(next_refs.snapshot(now[0]).source_day, date(2026,9,22))
+            with self.assertRaisesRegex(SectorDataUnavailable, '来源日不符'):
+                provider('20260923', date(2026,9,21))
+
+    def test_daily_reference_does_not_bypass_clock_rollback_or_initial_load_error(self):
+        now = [10_000_000_000]
+        cache = LiveReferenceCache(clock_ns=lambda:now[0])
+        assignment = NS(effective_ns=1, available_ns=1)
+        cache.refresh(lambda:(assignment, 'spec', dict(observed_at_ns=now[0], valid_until_ns=100_000_000_000)))
+        now[0] += 40_000_000_000
+        self.assertIs(cache.snapshot(now[0]), assignment)
+        now[0] -= 1_000_000_000
+        with self.assertRaisesRegex(RuntimeError, '时钟回退'):
+            cache.snapshot(now[0])
+        source = NS(product='RB', role='main', trading_day=date(2026,11,16), started_ns=1, paths=(),
+            factor_date_basis='source', factor_availability='observed-on-read',
+            snapshot=Mock(side_effect=ReferenceSourceError('initial query failed')))
+        with self.assertRaisesRegex(ReferenceSourceError, 'initial query failed'):
+            CachedRoleReferences(source, valid_until_ns=100_000_000_000)
+
     def test_source_reconnects_after_query_failure_and_reports_redacted_original_error(self):
         module=import_module('bomber.framework.dataprep.sources.dolphindb')
         first, second = Mock(), Mock()

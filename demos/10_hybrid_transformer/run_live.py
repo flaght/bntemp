@@ -15,6 +15,7 @@ from datetime import datetime
 from decimal import Decimal
 import hashlib
 import json
+import logging
 import math
 import os
 from pathlib import Path
@@ -23,7 +24,7 @@ from types import SimpleNamespace
 
 from dotenv import load_dotenv
 from bomber.framework.calendars import SessionRulesCheckpoint
-from bomber.framework.calendars.sessions import datetime_ns
+from bomber.framework.calendars.sessions import datetime_ns, ns_datetime
 from bomber.framework.dataprep.history import FuturesMinuteArchive
 from bomber.framework.dataprep.live_cached_role import CachedRoleReferences
 from bomber.framework.dataprep.live_references import live_factor_policy
@@ -325,6 +326,61 @@ class HybridLiveRunner(SessionRoleLiveRunner):
                 disarm('scheduled_pause_or_stop')
         return paused
 
+    @property
+    def reduce_only(self):
+        return bool(getattr(self, '_bar_backlog', False) or getattr(self.references, 'reduce_only', False))
+
+    def signal_is_current(self, timestamp):
+        """推理完成后再检查一次；过期结果不得建立或续期批次。"""
+        now = self._clock_ns()
+        delay = now - timestamp
+        detail = (f'product={self.strategy.config.product} instrument={self.bound_instrument} '
+                  f'bar_time={ns_datetime(timestamp, self.calendar.zone).isoformat()} '
+                  f'now={ns_datetime(now, self.calendar.zone).isoformat()} delay_seconds={delay/1e9:.6f}')
+        if delay < 0:
+            raise RuntimeError('分钟Bar时间来自未来: ' + detail)
+        if delay > 120_000_000_000:
+            self._bar_backlog = True
+            self.strategy.last_prediction = None
+            if getattr(self, '_last_delayed_bar_ns', None) != timestamp:
+                self._last_delayed_bar_ns = timestamp
+                logging.getLogger(__name__).warning('Hybrid过期分钟仅更新历史，暂停新开仓: %s', detail)
+            return False
+        if getattr(self, '_bar_backlog', False):
+            self._bar_backlog = False
+            logging.getLogger(__name__).warning('Hybrid实时分钟恢复，允许新信号开仓: %s', detail)
+        return True
+
+    def _warm_model_bar(self, event):
+        if event.ts_event <= max(self.history_last_ns, self.strategy.last_processed_ns):
+            return
+        from bomber.framework.market.futures import futures_bar_values
+        values = futures_bar_values(event, contract_multiplier=self.strategy.config.contract_multiplier)
+        self.strategy.predictor.warm_history([*self.strategy.predictor.workflow.history,
+            {'trade_time': event.factors['trade_time'], 'code': self.strategy.config.product, **values}])
+        self.history_last_ns = event.ts_event
+
+    def on_outdated_bar(self, feed_id, event, now_ns):
+        bar = event.bar if isinstance(event, CustomBar) else event
+        binding = self._role_binding
+        if (event.ts_event > now_ns or binding is None or feed_id != binding.feed_id
+                or bar.bar_type.instrument_id != self.bound_instrument):
+            return super().on_outdated_bar(feed_id, event, now_ns)
+        window = self.calendar.window(ns_datetime(event.ts_event, self.calendar.zone))
+        if window is None or window.trading_day != self.expected_day:
+            raise RuntimeError('积压分钟不属于当前交易日，禁止当作实时模型历史')
+        if event.ts_event <= max(self.history_last_ns, self.strategy.last_processed_ns):
+            return
+        if not self.reference_is_current():
+            self.close_role_gate('角色合约或条款变更，固定路由闭闸并要求重新核对')
+        self.signal_is_current(event.ts_event)
+        if isinstance(event, CustomBar):
+            self._warm_model_bar(event)
+        drain = getattr(self.client, 'drain_events', None)
+        if callable(drain):
+            drain()  # 积压期间继续确认成交/撤单，并向IPC账户传递仅减仓状态。
+        self.expire_due()  # 使用当前时钟与真实有效报价，不按旧分钟推迟原到期时间。
+
     def publish(self, feed_id, event):
         """处理新旧窗口交接，再由父类把已完成CustomBar交给策略。"""
         window = getattr(self, 'continuous_window', None)
@@ -332,11 +388,7 @@ class HybridLiveRunner(SessionRoleLiveRunner):
                 or self._clock_ns() >= int(window.end.timestamp()*1e9)):
             # 正常收盘只保存最后一个已封闭模型分钟，不产生休市后的新目标。
             if isinstance(event, CustomBar) and event.ts_event > self.history_last_ns:
-                from bomber.framework.market.futures import futures_bar_values
-                values = futures_bar_values(event, contract_multiplier=self.strategy.config.contract_multiplier)
-                self.strategy.predictor.warm_history([*self.strategy.predictor.workflow.history,
-                    {'trade_time': event.factors['trade_time'], 'code': self.strategy.config.product, **values}])
-                self.history_last_ns = event.ts_event
+                self._warm_model_bar(event)
             return None
         if isinstance(event, CustomBar):
             # 历史窗口已经包含的分钟不能再次触发预测和开仓。
@@ -344,20 +396,19 @@ class HybridLiveRunner(SessionRoleLiveRunner):
                 return
             if self.accept_bars and event.ts_event < self.first_complete_bar_ns:
                 # 启动边界内的交接分钟只更新模型窗口，不经策略回调生成批次。
-                from bomber.framework.market.futures import futures_bar_values
-                values = futures_bar_values(event, contract_multiplier=self.strategy.config.contract_multiplier)
-                rows = list(self.strategy.predictor.workflow.history)
-                rows.append({"trade_time": event.factors["trade_time"], "code": self.strategy.config.product, **values})
-                self.strategy.predictor.warm_history(rows)
-                self.history_last_ns = event.ts_event
+                self._warm_model_bar(event)
                 return
         elif self.orders and isinstance(event, Bar) and event.bar_type.instrument_id == self.bound_instrument:
             # 原生Bar先更新执行参考价，再退出已过期旧仓；伴生模型分钟随后才能生成新目标。
-            self.expire_due()
-        return super().publish(feed_id, event)
+            if 0 <= self._clock_ns() - event.ts_event <= 120_000_000_000:
+                self.expire_due()
+        result = super().publish(feed_id, event)
+        if getattr(self, '_bar_backlog', False):
+            self.expire_due()  # 推理期间越过有效期时，丢弃信号后仍检查到期。
+        return result
 
     def continue_execution_target(self, strategy_id, target_key, as_of_ns, **kwargs):
-        if getattr(self.references, 'reduce_only', False):
+        if self.reduce_only:
             target = self.target_store.get(strategy_id)
             wanted = target.targets.get(target_key, Decimal(0)) if target else Decimal(0)
             owned = self.position_manager.position(strategy_id, target_key)
@@ -376,7 +427,7 @@ class HybridLiveRunner(SessionRoleLiveRunner):
             self.client.cancel_strategy(intent.strategy_id)
         # 执行风控使用当前提交时间，原信号分钟留在metadata中供追踪。
         metadata = {**intent.metadata, 'signal_bar_ns': intent.ts_event}
-        if getattr(self.references, 'reduce_only', False):
+        if self.reduce_only:
             metadata['reference_reduce_only'] = True
             if not getattr(self, 'shared_execution', False):
                 metadata['market_health_mode'] = 'REDUCE_ONLY'
@@ -408,7 +459,7 @@ class HybridLiveRunner(SessionRoleLiveRunner):
                         self._waiting_execution_price = True
                     return
                 self._waiting_execution_price = False
-            if (not getattr(self.references, 'reduce_only', False)
+            if (not self.reduce_only
                     and due and min(due) == boundary and self.strategy.last_prediction is not None
                     and self.strategy.last_processed_ns < boundary - 1):
                 # 模型已就绪，但到期分钟的Bar/推理尚未到：等本分钟信号后一次计算净目标。
@@ -538,7 +589,8 @@ def assemble(inputs, lifecycle, *, product: str, release_path: Path, directions_
     feed.register_bar_handler(execution.prices.on_market_event)
     runner.execution_prices = execution.prices
     runner.calendar, runner.strategy, runner.client = calendar, strategy, execution.client
-    execution.client.reduce_only_check = lambda: bool(getattr(references, 'reduce_only', False))
+    execution.client.reduce_only_check = lambda: runner.reduce_only
+    strategy.live_signal_check = runner.signal_is_current
     runner.continuous_window, runner.model_seed = window, model_seed
     runner.continuous_stop_event = stop_event
     runner.model_identity = model_identity(release_path=release_path, directions_file=directions_file,

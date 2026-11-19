@@ -74,6 +74,7 @@ class HybridTransformerStrategy(StrategyTemplate):
         super().__init__(strategy_id)
         self.data_hub = data_hub
         self.predictor = predictor
+        self.live_signal_check = None  # Live装配注入时效复查；回测不受墙钟约束。
         self.config = config
         if calendar.product.upper() != config.product:
             raise ValueError("持仓交易日历与策略品种不一致")
@@ -161,6 +162,13 @@ class HybridTransformerStrategy(StrategyTemplate):
 
             model_bar = {"trade_time": trade_time, "code": self.config.product, **values}
             prediction = self.predictor.on_bar(model_bar)
+            if self.live_signal_check is not None and not self.live_signal_check(timestamp):
+                # 行情已经进入模型历史；耗时推理得到的旧信号不进入批次账本。
+                self.last_prediction = None
+                self.last_processed_ns = timestamp
+                self.bars_used += 1
+                self._save_checkpoint()
+                return
 
             predicted_z = signal = None
             if prediction is not None:
