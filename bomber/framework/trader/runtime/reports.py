@@ -28,7 +28,7 @@ class LiveRunReport:
             indent=2, default=str) + "\n", encoding="utf-8")
         if session is not None:
             (self.path / "events.txt").write_text("\n".join(map(str, events)) + "\n", encoding="utf-8")
-        print(f"停机结果: {result}\n记录目录: {self.path}", flush=True)
+        print(f"停机结果: {status}\n记录目录: {self.path}", flush=True)
         return result
 
 
@@ -122,5 +122,5 @@ class TradingDayLiveReport(LiveRunReport):
             self._sync(stream)
         (self.path / "summary.json").write_text(json.dumps(result, ensure_ascii=False,
             indent=2, default=str) + "\n", encoding="utf-8")
-        print(f"停机结果: {result}\n记录目录: {self.path}", flush=True)
+        print(f"停机结果: {status}\n记录目录: {self.path}", flush=True)
         return result
