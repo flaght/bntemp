@@ -165,7 +165,7 @@ class DirectCtpTests(unittest.TestCase):
             self.assertIs(event,stop)
             self.assertIsNone(run_window.call_args.kwargs['import_state'])
 
-    def make(self, path, *, generic_close_venues=()):
+    def make(self, path, *, generic_close_venues=(), extra_instruments=()):
         modules = self.native_modules()
         direct = import_module('bomber.framework.trader.execution.ctp.independent')
         life = import_module('bomber.framework.trader.runtime.live.channels.ctp_independent')
@@ -173,7 +173,7 @@ class DirectCtpTests(unittest.TestCase):
                 patch.object(modules.lifecycle,'CtpSharedAccountLifecycle',life.IndependentCtpLifecycle):
             account,service,broker,ports,resources = self.native_account(path,modules,
                 scoped=True,preserve_external=True,execution_mode='independent',
-                generic_close_venues=generic_close_venues)
+                generic_close_venues=generic_close_venues,extra_instruments=extra_instruments)
         connect = broker.connect
         broker.connect = lambda *args: replace(connect(*args),front_id=1,session_id=2)
         raw = broker.raw
@@ -543,6 +543,91 @@ class DirectCtpTests(unittest.TestCase):
             self.assertEqual(target.position_manager.position('one','main'),2)
             self.assertFalse(transport.sent)
             port.stop();other.stop()
+
+    def option_scope_recovery(self, directory):
+        app=import_module('demos.direct_ctp')
+        root=Path(directory);path=root/'state.json'
+        old,service,broker,(one,two)=self.make(path)
+        reference=dict(mode='simnow',environment='realtime',td_day='20261013',valuation_day='2026-10-13',
+            policy=dict(version=1,account_reconciliation='strict',position_source='fills'),
+            calendar_manifest={'calendar_id':'china.cffex'},sources={'market':{'channel':'dolphindb'}},labels={})
+        identity=dict(account={'client_id':'account'},environment='realtime',trading_day='20261013',
+            managed_instruments=sorted(old.position_scope.instruments),strategies={
+                port.strategy_id:dict(strategy_id=port.strategy_id,kind='option_vega' if port is one else 'hybrid_transformer',
+                    trading_day='20261013',environment='realtime',argv=[],routes=port.configuration(),
+                    reference=deepcopy(reference) if port is one else 'fixed') for port in (one,two)})
+        old.manager.state_components['session_identity'].identity=deepcopy(identity)
+        counter=import_module('bomber.framework.trader.execution.ctp.independent').DailyOrderCounter(
+            root/'counter.sqlite3','9999:demo',2)
+        old.driver.daily_counter=counter
+        self.start(old,service,one);two.start()
+        self.submit(one,-1);broker.fill(broker.sent[-1]['OrderRef'])
+        self.submit(two,2);broker.fill(broker.sent[-1]['OrderRef'])
+        one.stop();two.stop();old.stop()
+        original=path.read_bytes();payload=old.manager.repository.load().payload
+        added=tuple(type(self.instrument).from_str(code) for code in ('MO2611-C-5400.CFFEX','MO2612-C-5400.CFFEX'))
+        account,target,transport,(port,second)=self.make(path,extra_instruments=added)
+        port.routes.update({str(i):i for i in added})
+        second.instrument_limits={self.instrument:second.instrument_limits[self.instrument]}
+        account.expected_day=account.driver.book.day=account.driver.buckets.day='20261014'
+        current=deepcopy(identity);current.update(trading_day='20261014',managed_instruments=sorted(account.position_scope.instruments))
+        for p in (port,second):
+            row=current['strategies'][p.strategy_id]
+            row.update(trading_day='20261014',routes=p.configuration())
+        current['strategies']['one']['reference'].update(td_day='20261014',valuation_day='2026-10-14')
+        account.manager.state_components['session_identity'].identity=current
+        account.import_transform=lambda data:app.prepare_payload(account,data)
+        connect=transport.connect
+        transport.connect=lambda *args:replace(connect(*args),trading_day='20261014')
+        transport.gross=deepcopy(broker.gross)
+        details=transport.query_position_details
+        transport.query_position_details=lambda:[dict(row,TodayPosition=0,PositionDate='2') for row in details()]
+        account.driver.daily_counter=counter
+        return NS(app=app,path=path,payload=payload,original=original,account=account,service=target,
+            transport=transport,port=port,second=second,current=current,added=added,counter=counter)
+
+    def test_cross_day_option_scope_additions_restore_owners_zero_targets_and_keep_daily_count(self):
+        with TemporaryDirectory() as directory:
+            case=self.option_scope_recovery(directory)
+            before=deepcopy(case.payload)
+            transformed=case.app.prepare_payload(case.account,case.payload)
+            self.assertEqual(case.payload,before)
+            self.assertEqual(case.path.read_bytes(),case.original)
+            self.assertEqual(transformed['positions'],before['positions'])
+            self.assertEqual(transformed['orders'],before['orders'])
+            shared=transformed['component_states']['shared_account']
+            source=shared['sources']['one']
+            for instrument in case.added:self.assertEqual(source['targets'][str(instrument)],'0')
+            self.assertEqual(source['revision'],before['component_states']['shared_account']['sources']['one']['revision'])
+            self.start(case.account,case.service,case.port,resume=True);case.second.start()
+            self.assertEqual(case.service.position_manager.position('one','main'),-1)
+            self.assertEqual(case.service.position_manager.position('two','main'),2)
+            self.assertEqual(case.account.driver.buckets.quantities('one',self.instrument),[0,0,0,1])
+            for instrument in case.added:
+                self.assertEqual(case.account.ledger.snapshot(instrument).net_position,0)
+                self.assertEqual(case.service.position_manager.position('one',str(instrument)),0)
+            with self.assertRaises(import_module('bomber.framework.trader.execution.ctp.independent').OrderBudgetExhausted):
+                case.counter.check('20261013')
+            self.assertFalse(case.transport.sent)
+            case.port.stop();case.second.stop();case.account.stop()
+
+    def test_option_scope_addition_rejects_other_changes_and_keeps_original_checkpoint(self):
+        for fault in ('same_day','removed','old_limit','budget','hybrid','unknown_scope','frozen'):
+            with self.subTest(fault=fault),TemporaryDirectory() as directory:
+                case=self.option_scope_recovery(directory)
+                if fault=='same_day':case.current['trading_day']='20261013';case.account.expected_day='20261013'
+                elif fault=='removed':case.current['managed_instruments'].remove(str(self.instrument))
+                elif fault=='old_limit':
+                    case.current['strategies']['one']['routes']['limits'][str(self.instrument)]['max_abs_position']='999'
+                elif fault=='budget':case.current['account']['max_session_orders']=999
+                elif fault=='hybrid':case.current['strategies']['two']['argv']=['changed']
+                elif fault=='unknown_scope':case.current['managed_instruments'].append('OTHER.SHFE')
+                else:case.payload['component_states']['strategy_buckets']['frozen']['old-order']={}
+                before=deepcopy(case.payload)
+                with self.assertRaises(ValueError):case.app.prepare_payload(case.account,case.payload)
+                self.assertEqual(case.payload,before)
+                self.assertEqual(case.path.read_bytes(),case.original)
+                self.assertFalse(case.transport.sent)
 
     def test_network_disconnect_rebuilds_host_from_same_files_without_stopping_stale_account(self):
         app=import_module('demos.direct_ctp')

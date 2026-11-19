@@ -241,6 +241,51 @@ def project_hybrid(payload, account):
     return result
 
 
+def _extend_option_scope(account, payload, old, new):
+    """跨日只新增08候选路由；旧持仓、成交、目标版本及计数均不重建。"""
+    before, after = set(old.get('managed_instruments', ())), set(new.get('managed_instruments', ()))
+    if not before < after:
+        raise ValueError('直连自动恢复仅支持新增08候选，管理范围移除须另行核验')
+    shared = payload['component_states']['shared_account']
+    current = account.service.snapshot_state()['shared']['routes']
+    added_instruments = set()
+    for sid, declaration in current.items():
+        previous = shared['shared']['routes'][sid]
+        if previous == declaration:
+            continue
+        if new['strategies'][sid]['kind'] != 'option_vega':
+            raise ValueError('直连管理范围变化包含非08路由')
+        routes, old_routes = declaration['routes'], previous['routes']
+        if (not old_routes.keys() <= routes.keys()
+                or any(routes[key] != instrument or declaration['limits'][instrument] != previous['limits'][instrument]
+                       for key, instrument in old_routes.items())):
+            raise ValueError('08新增候选不能移除或改变原路由及限额')
+        expected = deepcopy(previous)
+        expected.update(routes=deepcopy(routes), limits=deepcopy(declaration['limits']))
+        if expected != declaration or declaration != new['strategies'][sid]['routes']:
+            raise ValueError('08新增候选不能改变原预算或策略声明')
+        added = {key: instrument for key, instrument in routes.items() if key not in old_routes}
+        if set(added.values()) & before:
+            raise ValueError('新增08候选不能重绑定已有管理合约')
+        added_instruments.update(added.values())
+        source = shared['sources'].get(sid)
+        if source:
+            for key, instrument in added.items():
+                source['targets'][instrument] = '0'
+                source['rows'].append(dict(strategy_id=sid, target_key=key, instrument_id=instrument, quantity='0'))
+                payload['portfolio']['contributions'][sid].append(dict(
+                    key={'client_id': account.service.client_id, 'instrument_id': instrument}, quantity='0'))
+    if after - before != added_instruments - before:
+        raise ValueError('新增管理合约必须全部来自已校验的08候选路由')
+    shared['shared']['routes'] = deepcopy(current)
+    shared['shared']['managed_instruments'] = sorted(after)
+    shared['known_instruments'] = sorted(after)
+    payload['portfolio']['known_keys'] = [dict(client_id=account.service.client_id, instrument_id=i) for i in sorted(after)]
+    payload['component_states']['external_positions']['managed_instruments'] = sorted(after)
+    logging.getLogger('DirectCtpRecovery').info(
+        '08跨日新增候选，原归属与目标版本保留，待柜台核验后提交: added=%s', sorted(after-before))
+
+
 def prepare_payload(account, payload):
     """仅推进交易日，结转本策略逻辑今昨桶；柜台核验在恢复后统一完成。"""
     from bomber.framework.trader.runtime.live.recovery import identity_difference_paths
@@ -254,11 +299,16 @@ def prepare_payload(account, payload):
     if old['trading_day'] > day:
         raise ValueError('不能回退策略交易日')
     if old['trading_day'] != day:
+        if old['strategies'].keys() != new['strategies'].keys():
+            raise ValueError('直连跨日不能更改策略集合')
         for sid in new['strategies']:
             previous = deepcopy(old['strategies'][sid])
             previous['trading_day'] = old['trading_day']
             validate_strategy_identity(previous, new['strategies'][sid])
         candidate.update(trading_day=day, strategies=deepcopy(new['strategies']))
+        if old.get('managed_instruments') != new.get('managed_instruments'):
+            _extend_option_scope(account, result, old, new)
+            candidate['managed_instruments'] = deepcopy(new['managed_instruments'])
     if candidate != new:
         raise ValueError('直连恢复配置不一致: '+','.join(identity_difference_paths(candidate,new)))
     client = account.service.client_id
