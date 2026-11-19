@@ -58,6 +58,101 @@ class LateBarHealthTests(unittest.TestCase):
         if flush:
             s.runner.flush_frames()
 
+    def preparing_with_restored_position(self):
+        old = self.setup_session(held=True)
+        old.runner.stop()
+        self.now = ns("2026-08-13 13:00") + 1_270_000_000
+        s, _ = self.build(resume=True, config=old.strategy.config)
+        s.manager.restore()
+        s.runner.replay = False
+        s.runner.source_age_ns["market"] = 300_000_000_000
+        s.runner.start()
+        self.assertFalse(s.runner.accept_bars)
+        self.assertIsNone(s.runner.warm_started_ns)
+        self.assertEqual(s.strategy.position(str(s.references.instrument_ids[OPTION])), -1)
+        return s
+
+    def test_lunch_tail_is_ignored_until_all_required_inputs_are_fresh_without_rewriting_checkpoint(self):
+        s = self.preparing_with_restored_position()
+        checkpoint = self.path.read_bytes()
+        owned = deepcopy(s.runner.position_manager.attribution.state())
+        observations = dict(s.runner.observations)
+        prices = {key:s.runner.prices.get(instrument) for key,instrument in s.references.instrument_ids.items()}
+        counts = (s.strategy.frames, s.strategy.submissions, s.strategy.fills_received)
+        with self.assertLogs("OptionMarketInputs", level="INFO") as logs:
+            for key in (OPTION, "IM2609", "000852"):
+                self.publish(s, key, "2026-08-13 11:30")
+        self.assertIn("闭闸等待新鲜行情", "\n".join(logs.output))
+        self.assertEqual(s.runner.ignored_preparation_bars, 3)
+        self.assertEqual(s.runner.bar_time_audit[-1]["action"], "IGNORED_PREPARATION")
+        self.assertIsNone(s.runner.failure)
+        self.assertFalse(s.runner.session_ready())
+        self.assertFalse(s.runner.accept_bars)
+        self.assertEqual(s.runner.observations, observations)
+        self.assertFalse(s.runner.frames.pending or s.runner.frame_audit)
+        self.assertEqual(s.runner.position_manager.attribution.state(), owned)
+        for key,instrument in s.references.instrument_ids.items():
+            self.assertEqual(s.runner.prices.get(instrument),prices[key])
+        self.now = ns("2026-08-13 13:01") + 5_000_000_000
+        for key in (OPTION, "IM2609", "000852"):
+            self.publish(s, key, "2026-08-13 13:01")
+            if key != "000852":self.assertFalse(s.runner.session_ready())
+        self.assertTrue(s.runner.session_ready())
+        fresh = dict(s.runner.observations)
+        self.publish(s, OPTION, "2026-08-13 11:30")
+        self.assertEqual(s.runner.observations, fresh)
+        self.assertTrue(s.runner.session_ready())
+        self.assertFalse(s.runner.accept_bars)  # 健康就绪也不自行授权，仍由宿主开放决策。
+        self.assertFalse(s.runner.frames.pending or s.runner.frame_audit)
+        self.assertEqual((s.strategy.frames,s.strategy.submissions,s.strategy.fills_received),counts)
+        self.assertEqual(s.runner.position_manager.attribution.state(),owned)
+        self.assertEqual(self.path.read_bytes(),checkpoint)
+        s.runner.begin_bars()
+        self.assertTrue(s.runner.accept_bars)
+
+    def test_preparation_wait_still_times_out_when_fresh_held_bar_never_arrives(self):
+        s = self.preparing_with_restored_position()
+        before = self.path.read_bytes()
+        self.publish(s,OPTION,"2026-08-13 11:30")
+        readiness = import_module("bomber.framework.trader.runtime.live.readiness")
+        clock = iter((0,0,0,91))
+        with self.assertRaisesRegex(RuntimeError,"90秒内行情/执行未就绪"):
+            readiness.wait_for_session_ready(s,90,monotonic=lambda:next(clock),sleep=lambda _:None)
+        self.assertFalse(s.runner.accept_bars)
+        self.assertIsNone(s.runner.failure)
+        self.assertEqual(self.path.read_bytes(),before)
+
+    def test_preparation_future_wrong_day_and_invalid_price_still_fail(self):
+        for minute,price,reason in (("2026-08-13 13:01",40,"实时Bar过期或尚未收盘"),
+                                    ("2026-08-12 11:30",40,"估值日期不一致"),
+                                    ("2026-08-13 11:30",0,"有限正数")):
+            with self.subTest(minute=minute,price=price):
+                s = self.preparing_with_restored_position()
+                before = self.path.read_bytes()
+                with self.assertRaisesRegex(ValueError,reason):self.publish(s,OPTION,minute,price)
+                self.assertIsNotNone(s.runner.failure)
+                self.assertFalse(s.runner.observations or s.runner.accept_bars)
+                self.assertEqual(s.runner.ignored_preparation_bars,0)
+                self.assertEqual(self.path.read_bytes(),before)
+
+    def test_running_keeps_300_second_held_bar_limit_after_preparation(self):
+        s = self.preparing_with_restored_position()
+        self.now = ns("2026-08-13 13:01") + 5_000_000_000
+        for key in (OPTION,"IM2609","000852"):self.publish(s,key,"2026-08-13 13:01")
+        self.assertTrue(s.runner.session_ready())
+        s.runner.begin_bars()
+        self.now = ns("2026-08-13 13:06")
+        for key in ("IM2609","000852"):self.publish(s,key,"2026-08-13 13:06")
+        s.runner.poll_live_inputs()  # 刚好300秒仍健康。
+        self.now += 1
+        with self.assertRaisesRegex(RuntimeError,"必需行情失效.*MO2609-C-6600"):
+            s.runner.poll_live_inputs()
+        self.assertFalse(s.runner.accept_bars)
+        self.assertEqual(s.strategy.position(str(s.references.instrument_ids[OPTION])), -1)
+        with self.assertRaisesRegex(ValueError,"实时Bar过期"):
+            self.publish(s,OPTION,"2026-08-13 13:01")
+        self.assertEqual(s.runner.ignored_preparation_bars,0)
+
     def test_reported_100ms_late_bar_keeps_held_health_without_changing_closed_decision(self):
         s = self.setup_session(held=True)
         self.missing_1032(s)

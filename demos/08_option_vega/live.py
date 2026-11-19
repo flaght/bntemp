@@ -88,6 +88,7 @@ class OptionSessionRunner(UnifiedStrategyRunner):
         self.frame_audit = []
         self.bar_time_audit = []
         self.ignored_stale_candidate_bars = 0
+        self.ignored_preparation_bars = 0
         self.late_bar_health_updates = 0
         self._heartbeat_minute = None
         self.fixed_ids = frozenset(references.instrument_ids.values())
@@ -151,7 +152,11 @@ class OptionSessionRunner(UnifiedStrategyRunner):
         return self.references.snapshot().fingerprint == self.references.fingerprint
 
     def session_ready(self):
-        return not self.failure and self.reference_is_current() and bool(self.readiness())
+        ready = not self.failure and self.reference_is_current() and bool(self.readiness())
+        if ready and not self.replay and self.source_age_ns and self.warm_started_ns is None:
+            # 分钟流整体健康不代表持仓腿已有新鲜Bar；准备阶段不能借用运行期预热宽限。
+            return not self.stale_instruments()
+        return ready
 
     def begin_bars(self):
         with self._frame_lock:
@@ -192,16 +197,27 @@ class OptionSessionRunner(UnifiedStrategyRunner):
                 max_age_ns = self.source_age_ns.get(feed_id, self.market_age_ns)
                 if not self.replay and not 0 <= age <= max_age_ns:
                     required = self.strategy is None or key in self.strategy.required_market_keys()
-                    # LAST在下一次成交才封闭旧桶。未持有候选的过期桶不进入
-                    # 帧或价格缓存；必需腿及未来时间仍是会话硬错误。
-                    ignore = age > max_age_ns and not required
+                    # 初次订阅/午休恢复可能先收到上一时段尾Bar。准备阶段只跳过
+                    # 同日过期Bar，不能刷新健康或开放决策；运行后的必需腿仍严格检查。
+                    preparing = (not self.accept_bars and self.warm_started_ns is None and self.failure is None)
+                    ignore_preparation = age > max_age_ns and preparing
+                    ignore = age > max_age_ns and (ignore_preparation or not required)
                     audit = {"key": key, "source_id": feed_id, "source_ns": event.ts_event,
                         "valuation_ns": valuation, "received_ns": now,
                         "age_seconds": age / 1e9, "max_age_seconds": max_age_ns / 1e9,
-                        "required": required, "action": "IGNORED_CANDIDATE" if ignore else "REJECTED",
+                        "required": required, "action": "IGNORED_PREPARATION" if ignore_preparation else (
+                            "IGNORED_CANDIDATE" if ignore else "REJECTED"),
                         "reason": "STALE_BAR" if age > max_age_ns else "FUTURE_BAR"}
                     self.bar_time_audit.append(audit)
                     del self.bar_time_audit[:-32]
+                    if ignore_preparation:
+                        price = Decimal(str(event.close.as_decimal()))
+                        if not price.is_finite() or price <= 0:
+                            audit.update(action="REJECTED", reason="INVALID_PRICE")
+                            raise ValueError("行情价格须为有限正数")
+                        self.ignored_preparation_bars += 1
+                        logger.info("准备阶段忽略过期Bar，闭闸等待新鲜行情: %s", audit)
+                        return
                     if ignore:
                         self.ignored_stale_candidate_bars += 1
                         logger.warning("候选过期Bar已忽略: %s", audit)
