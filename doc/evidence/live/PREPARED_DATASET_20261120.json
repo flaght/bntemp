@@ -132,6 +132,23 @@
         "reason": "No module named 'bomber.backtest'"
       },
       "source_log_sha256": "a5561e5c069789010fbb4020cff52e02ef22f41ebd97590473a85923d347b4e2"
+    },
+    {
+      "recorded_date": "2026-11-20",
+      "environment": "XY; user-pasted native-test traceback",
+      "status": "failed_report_comparison_pending_rerun",
+      "suite_tests_run": 3,
+      "failures": 1,
+      "failure": "orders.csv.init_id differs in all 8 rows: random order initialization event UUIDs",
+      "cause": "Previous comparator fix covered settlement UUIDs but omitted init_id",
+      "fix": "Add explicit init_id exclusion after auditing native MarketOrder/OrderFilled/Position/AccountState report schemas; retain unnamed CSV account event-time index; compare every report column using subTests to expose all remaining differences in one run",
+      "changed_runtime": false,
+      "full_report_equivalence_passed": false,
+      "local_fix_checks": {
+        "passed": 4,
+        "native_test_skipped": 1,
+        "reason": "No module named 'bomber.backtest'"
+      }
     }
   ]
 }
