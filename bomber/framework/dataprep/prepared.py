@@ -339,8 +339,10 @@ class PreparedDataset:
                 for (identifier, key), row in self._by_key.items() if identifier == spec_id
                 and start_day <= key.trading_day <= end_day and predicate(key.symbol)}
 
-    def load(self, plan, *, specs, products, context=None, copy_frames=True):
+    def load(self, plan, *, specs, products, context=None, copy_frames=True, frame_format="pandas"):
         import pyarrow.feather as feather
+        if frame_format not in {"pandas", "arrow"}:
+            raise ValueError("Prepared frame format must be pandas/arrow")
         identifiers = {kind: self.validate_spec(kind, products[kind], spec) for kind, spec in specs.items()}
         indexed = {key: _artifact(self.root, row["data_file"])
                    for (identifier, key), row in self._by_key.items()
@@ -367,13 +369,20 @@ class PreparedDataset:
                         or metadata.get(b"prepared_partition_id") != artifact["partition_id"].encode()):
                     fail("PREPARED_INTEGRITY", "Prepared partition schema/identity differs", source=path)
                 for key, row in sources:
-                    with _measure("prepared_frame_restore"):
+                    with _measure("prepared_frame_restore" if frame_format == "pandas" else "prepared_arrow_restore"):
                         columns = json.loads(row["columns"])
-                        frame = table.slice(row["offset"], row["rows"]).select(columns).to_pandas()
-                        frame.attrs = json.loads(row["attrs"])
-                        frame.flags.allows_duplicate_labels = row["duplicate_labels"]
-                        if copy_frames:
-                            frame = frame.copy(deep=True)
+                        selected_table = table.slice(row["offset"], row["rows"]).select(columns)
+                        if frame_format == "arrow":
+                            from .columnar import ArrowBarFrame
+                            frame = ArrowBarFrame(selected_table, attrs=json.loads(row["attrs"]),
+                                                  duplicate_labels=row["duplicate_labels"])
+                            _count("prepared_arrow_sources")
+                        else:
+                            frame = selected_table.to_pandas()
+                            frame.attrs = json.loads(row["attrs"])
+                            frame.flags.allows_duplicate_labels = row["duplicate_labels"]
+                            if copy_frames:
+                                frame = frame.copy(deep=True)
                     issues = tuple(self._issues[_source_id(row)])
                     result = BarLoadResult(key, path, frame, specs[key.asset_kind], issues)
                     results[key] = SourceSpec(result)

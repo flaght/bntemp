@@ -216,6 +216,12 @@ def run_case(args):
     phase = _start_phase("输入路径解析与配置校验")
     args = resolve_backtest_paths(args)
     bar_specs = backtest_bar_specs(args)
+    native_batch = getattr(args, "bar_parser", "prepared") == "native_batch"
+    if native_batch:
+        if getattr(args, "data_mode", "raw") != "prepared":
+            raise ValueError("--bar-parser native_batch须同时使用--data-mode prepared")
+        from bomber.framework.market.replay.native_batch import require_native_batch
+        require_native_batch()
     prepared_dataset = None
     if getattr(args, "data_mode", "raw") == "prepared":
         from bomber.framework.dataprep.prepared import PreparedDataset
@@ -330,6 +336,7 @@ def run_case(args):
         {"option": args.opt_dir, "future": args.fut_dir}, plan,
         specs=bar_specs, copy_frames=False, prepared_dataset=prepared_dataset,
         products={"option": args.option_product, "future": args.future_product},
+        frame_format="arrow" if native_batch else "pandas",
     )
     prepared = {(source.result.key.trading_day, source.result.key.symbol): source.result for source in bundle.sources}
     frames = {identity: source.frame for identity, source in prepared.items()}
@@ -428,8 +435,12 @@ def run_case(args):
         phase = _start_phase("已准备行情注册到回放源")
         for identity in sorted(frames):
             # This run owns these frames and does not mutate them after validation.
-            add_prepared_bar_source(feed, prepared[identity], all_ids[identity[1]], copy_frame=False,
-                fast_parse=getattr(args, "bar_parser", "prepared") == "prepared")
+            if native_batch:
+                from bomber.framework.market.replay.native_batch import add_arrow_bar_source
+                add_arrow_bar_source(feed, prepared[identity], all_ids[identity[1]])
+            else:
+                add_prepared_bar_source(feed, prepared[identity], all_ids[identity[1]], copy_frame=False,
+                    fast_parse=getattr(args, "bar_parser", "prepared") == "prepared")
         performance.count("option_bar_files", sum(key in contracts for _, key in frames))
         performance.count("future_bar_files", sum(key in future_rows for _, key in frames))
         _finish_phase("已准备行情注册到回放源", phase)
@@ -623,8 +634,8 @@ def main():
         help="期权OHLC异常默认拒绝；expand_range仅在读取时扩展高低价并记录警告，可能影响撮合")
     parser.add_argument("--execution-timing", choices=("native", "next_market"), default="native",
         help="默认保留原生撮合；next_market等待本合约下一根真实Bar，期权M5不会阻塞期货M1")
-    parser.add_argument("--bar-parser", choices=("generic", "prepared"), default="prepared",
-        help="prepared复用标准化整数时钟、合约及BarType；generic沿用通用解析器，用于同机结果/性能对照")
+    parser.add_argument("--bar-parser", choices=("generic", "prepared", "native_batch"), default="prepared",
+        help="prepared沿用逐行转换；native_batch从prepared Arrow列调用已有原生批量接口；generic为通用对照")
     parser.add_argument("--index-precision", type=int, default=4)
     parser.add_argument("--starting-balance", type=Decimal, default=Decimal("40000000"))
     parser.add_argument("--nav", type=Decimal)

@@ -114,7 +114,7 @@ class FileReplayFeed(MarketDataFeed):
 
         started = perf_counter()
         rows_read = 0
-        loaded: list[tuple[int, ParsedEvent]] = []
+        loaded: list[tuple[int, MarketEvent]] = []
         sequence = 0
         for source in self._sources:
             path = Path(source.path).expanduser().resolve()
@@ -123,6 +123,24 @@ class FileReplayFeed(MarketDataFeed):
             source.parser.reset()
             position = 0
             try:
+                batch_loader = getattr(source.parser, "load_bar_batch", None)
+                if batch_loader is not None:
+                    if source.kind != "bar":
+                        raise DataLoadError("Native bar batches require a bar source")
+                    bars = batch_loader(source.reader, ParserContext(path, 1, self.get_instrument_meta),
+                                        self.performance)
+                    rows_read += len(bars)
+                    if bars:
+                        subscribed = self._subscribed(ParsedEvent(DataType.BAR,
+                            source.parser.instrument_id, bars[0], source.parser.bar_spec))
+                        for position, bar in enumerate(bars, 1):
+                            if not isinstance(bar, Bar):
+                                raise ParserContext(path, position, self.get_instrument_meta).error(
+                                    "Native bar batch returned a non-Bar object")
+                            if subscribed:
+                                loaded.append((sequence, bar))
+                                sequence += 1
+                    continue
                 rows = source.reader.read(path)
                 for position, row in rows:
                     rows_read += 1
@@ -131,7 +149,7 @@ class FileReplayFeed(MarketDataFeed):
                     for parsed in parsed_events:
                         _validate_source_event(source.kind, parsed, context)
                         if self._subscribed(parsed):
-                            loaded.append((sequence, parsed))
+                            loaded.append((sequence, parsed.payload))
                             sequence += 1
             except DataLoadError:
                 raise
@@ -147,8 +165,8 @@ class FileReplayFeed(MarketDataFeed):
             self.performance.count("replay_events", len(loaded))
         started = perf_counter()
         # 按历史时间排序，相同时间保留原文件顺序。
-        loaded.sort(key=lambda item: (item[1].payload.ts_init, item[0]))
-        self._events = tuple(item[1].payload for item in loaded)
+        loaded.sort(key=lambda item: (item[1].ts_init, item[0]))
+        self._events = tuple(item[1] for item in loaded)
         if self.performance is not None:
             self.performance.add("replay_event_sort", perf_counter() - started)
         return self._events

@@ -1,5 +1,13 @@
 # Bomber 校验清单与历史证据索引
 
+2026-11-20新增显式原生批量Bar路径：prepared Feather→Arrow来源视图→已有Cython批量接口。
+不新增Bar缓存，不修改原生内核或现有快照格式；默认逐行路径保留。
+94项相关测试通过，新增两项原生验收因本机缺少编译扩展跳过，待XY执行；额外demo-10
+两项夹具错误已在原始回放代码上复现，不登记为通过。见
+[XY用法](../../demos/08_option_vega/README.md#原生批量bar验证先复用已有cython接口)、
+[范围与限制](live/NATIVE_BAR_BATCH_20261120.json)、
+[源码校验清单](checksums/NATIVE_BAR_BATCH_20261120_SHA256.txt)。源码由用户通过GitHub同步，无同步包。
+
 2026-11-20新增离线版本化Feather日分区及08 raw/prepared切换：
 [准备、核验与2024～2026对照命令](../../demos/08_option_vega/README.md#离线准备feather与原始路径对照)、
 [验证范围](live/PREPARED_DATASET_20261120.json)、

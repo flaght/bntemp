@@ -1,7 +1,7 @@
 {
   "recorded_date": "2026-11-20",
   "timezone": "Asia/Shanghai",
-  "status": "local_input_tests_passed_server_acceptance_pending",
+  "status": "xy_2026_prepared_performance_measured_financial_report_comparison_pending",
   "baseline_commit": "b56c7a92352352fb8fdd955c169f3b35dfd4bf04",
   "implementation": {
     "files": [
@@ -87,10 +87,8 @@
     "reproduce": "python doc/evidence/commands/PREPARED_DATASET_BENCHMARK_20261120.py"
   },
   "pending": [
-    "Run full prepared SHA256 audit and exact raw-frame comparison on current 2024-2026 machine",
-    "Pass the native acceptance test without skips",
-    "Run raw/prepared backtests with identical range/data/policies/strategy and compare full financial reports",
-    "Measure total startup, directory scan, loading, conversion, alignment, replay and total runtime on that machine",
+    "Compare same-run-range raw/prepared complete financial reports, including prices, quantities, fees, timestamps, statuses, settlements, positions and account equity",
+    "Prepare a separate actual 2024-2026 dataset with matching index features and repeat integrity/source-frame/backtest verification",
     "Only after current-machine acceptance, repeat deployment and measurement on DX"
   ],
   "log_sha256": {
@@ -149,6 +147,146 @@
         "native_test_skipped": 1,
         "reason": "No module named 'bomber.backtest'"
       }
+    },
+    {
+      "recorded_date": "2026-11-20",
+      "environment": "XY; user-pasted test result",
+      "status": "passed",
+      "suite_tests_run": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "elapsed_seconds": 0.846,
+      "native_fixture": {
+        "events": 65,
+        "frames": 23,
+        "orders": 8,
+        "fills": 8,
+        "trading_days": 3,
+        "directory_scans": 0,
+        "prepared_sources_loaded": 10,
+        "prepared_partition_files_read": 6,
+        "prepared_rows_loaded": 65,
+        "prepared_load_seconds": 0.025625,
+        "prepared_snapshot_open_seconds": 0.002975,
+        "run_case_seconds": 0.120647
+      },
+      "validated_reports": [
+        "orders.csv",
+        "fills.csv",
+        "positions.csv",
+        "account.csv",
+        "signals.csv",
+        "settlements.csv",
+        "future_settlements.csv"
+      ],
+      "scope": "Native next_market and expiry settlement fixture, plus four comparator tests; excludes generated identities and normalizes only settlement UUID suffixes in last_trade_id",
+      "full_report_equivalence_passed": true,
+      "limitations": "Temporary three-day fixture; full 2024-2026 source equality, financial results and performance remain pending"
     }
-  ]
+  ],
+  "server_dataset_preparation": {
+    "recorded_date": "2026-11-20",
+    "environment": "XY",
+    "status": "passed",
+    "seconds": 640.599,
+    "snapshot_id": "013ed41be6a04a9c8d6bd493d4d10cd4",
+    "requested": [
+      "2026-01-01",
+      "2026-10-21"
+    ],
+    "source_files": 55646,
+    "rows": 2817696,
+    "partitions": 382,
+    "reused_partitions": 0,
+    "root": "/workspace/data/temp_bomber1/dx1/data/prepared/mo-im-2024-2026-v1",
+    "manifest_sha256": "8a222a882914670ee42199a70276e489063f803a08978f8de4afb1c9b8687aff",
+    "full_integrity": {
+      "status": "passed",
+      "seconds": 6.285,
+      "verification": "full"
+    },
+    "raw_frame_comparison": {
+      "status": "passed",
+      "equal": true,
+      "source_files_compared": 55646,
+      "rows_compared": 2817696,
+      "seconds": 1553.58,
+      "verification": "full"
+    },
+    "scope": "Actual 2026-only snapshot; directory label does not imply 2024-2026 coverage. Backtest performance and financial reports for this full interval not yet verified."
+  },
+  "server_full_interval_performance": {
+    "recorded_date": "2026-11-20",
+    "environment": "XY Python 3.12.14; l1-indexed-validation-v1",
+    "requested": [
+      "2026-01-01",
+      "2026-10-21"
+    ],
+    "trading_days": 191,
+    "replay_events": 1488480,
+    "decision_frames": 45839,
+    "max_notional": "1000000000",
+    "snapshot_id": "013ed41be6a04a9c8d6bd493d4d10cd4",
+    "comparisons": {
+      "run_case": {
+        "raw_seconds": 478.109184,
+        "prepared_seconds": 357.84544,
+        "saved_seconds": 120.263744,
+        "reduction_percent": 25.154
+      },
+      "process": {
+        "raw_seconds": 496.283,
+        "prepared_seconds": 368.138,
+        "saved_seconds": 128.145,
+        "reduction_percent": 25.821
+      },
+      "load": {
+        "raw_seconds": 191.686472,
+        "prepared_seconds": 64.050384,
+        "saved_seconds": 127.636088,
+        "reduction_percent": 66.586
+      },
+      "load_with_prepared_open": {
+        "raw_seconds": 191.686472,
+        "prepared_seconds": 69.88951899999999,
+        "saved_seconds": 121.796953,
+        "reduction_percent": 63.54
+      },
+      "conversion_and_sort": {
+        "raw_seconds": 56.045,
+        "prepared_seconds": 57.174,
+        "saved_seconds": -1.129,
+        "reduction_percent": -2.014
+      },
+      "feature_alignment": {
+        "raw_seconds": 10.210893,
+        "prepared_seconds": 13.310192,
+        "saved_seconds": -3.099299,
+        "reduction_percent": -30.353
+      },
+      "replay_dispatch_including_engine": {
+        "raw_seconds": 198.004757,
+        "prepared_seconds": 197.209933,
+        "saved_seconds": 0.794824,
+        "reduction_percent": 0.401
+      }
+    },
+    "prepared": {
+      "orders": 1527,
+      "fills": 1546,
+      "entries": 179,
+      "directory_scans": 0,
+      "partition_files_read": 390,
+      "partition_rows_read": 2817696,
+      "sources_loaded": 27954,
+      "rows_loaded": 1488480,
+      "snapshot_open_seconds": 5.839135,
+      "frame_restore_seconds": 47.233272,
+      "partition_read_seconds": 15.27247,
+      "report": "demos/08_option_vega/results/prepared-input-check/MO/20260101-20261021/e941156e-952b-4daa-af6d-d77ef095463b"
+    },
+    "validation": "Native small fixture and exact full-source normalized-frame comparison passed previously; full-interval raw/prepared financial reports have not yet been compared",
+    "limitations": "One sequential raw/prepared run; cache/system load uncontrolled. Timings are nested: index read is included in snapshot open, partition read/restore in load, decisions in engine/dispatch. This is 2026 only, not 2024-2026."
+  }
 }

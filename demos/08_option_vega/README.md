@@ -1126,6 +1126,67 @@ PYTHONPATH=. "$VEGA_PYTHON" -u scripts/prepare_market_data.py \
 增量准备仍读取源内容指纹并完整核验旧快照；只复用源集合、内容、文件版本及政策均未变的日分区。
 准备成本单独记录。旧snapshot不会随raw修订而改变；须显式切换新版本。
 
+### 原生批量Bar验证（先复用已有Cython接口）
+
+新增显式选项`--bar-parser native_batch`，要求同时使用`--data-mode prepared`。
+默认仍为`prepared`逐行路径。现有Feather快照、manifest、规范化规则及策略参数保持兼容，
+无需重新准备已核验的2026数据。本轮没有新增Bar缓存或修改编译内核。
+
+新路径将每个逻辑来源保留为Arrow切片，按需为开仓同步检查读取单独时间列；回放直接提取
+OHLCV和双时钟数组，调用安装内核已有的`Bar.from_raw_arrays_to_list()`，避免恢复整张
+Pandas表和构造逐行字典/ParsedEvent。全局仍按原ts_init及来源顺序排序，逐事件推进引擎。
+
+现有原生浮点构造与旧路径的字符串舍入口径不同，所以批量调用前仍保留Python定精度
+格式化。普通精度0～8且定点整数范围可安全往返时使用批量路径；更大数值或更高精度回退
+原解析器。亚微秒事件时钟保留旧通用解析器的行为。所有回退有独立计数，不静默计为批量成功。
+BarType及合约精度随每次加载重新绑定。价格、成交量、OHLC及可用时间检查使用列数组执行。
+
+通过GitHub同步本轮源码和测试后，在XY原pro目录执行：
+
+```bash
+export VEGA_PYTHON=/workspace/worker/env/uv-nautilus/bin/python
+export VEGA_PREPARED_ROOT=/workspace/data/temp_bomber1/dx1/data/prepared/mo-im-2024-2026-v1
+
+PYTHONPATH=. "$VEGA_PYTHON" - <<'PY'
+from bomber.framework.market.replay.native_batch import Bar, require_native_batch
+require_native_batch()
+print('原生批量接口可用:', Bar.from_raw_arrays_to_list)
+PY
+
+PYTHONPATH=. "$VEGA_PYTHON" -m unittest tests.test_native_batch -v
+PYTHONPATH=. "$VEGA_PYTHON" -m unittest tests.test_native_batch_native -v
+```
+
+原生组的两项验收必须实际执行并通过。第一项对照价格、数量、精度、底层raw整数、双时钟
+和舍入边界；第二项对照逐行/批量两次完整临时回测的订单、成交、信号、持仓、账户、
+期权及期货结算。缺少批量API会明确失败，缺少整个编译SDK才会skipped，均不能算验收通过。
+
+上述现有快照的实际范围为2026-01-01～2026-10-21，目录名不代表包含2024。
+原生验收通过后，保持同一YAML、日期和10亿元名义金额上限，执行：
+
+```bash
+/usr/bin/time -v env PYTHONPATH=. "$VEGA_PYTHON" -u demos/08_option_vega/run_backtest.py \
+  --config-file demos/08_option_vega/config/strategy.yaml --config-id m5_index_blend \
+  --start-day 2026-01-01 --end-day 2026-10-21 \
+  --data-mode prepared --prepared-root "$VEGA_PREPARED_ROOT" --prepared-verify metadata \
+  --bar-parser native_batch --max-notional 1000000000 \
+  --option-ohlc-policy expand_range --log-level WARNING \
+  --report-dir demos/08_option_vega/results/native-batch-input-check
+```
+
+对照原逐行prepared基线`run_case=357.845440s`、转换55.682368s、表恢复47.233272s。
+重复计时时将上面`native_batch`改为`prepared`并另选report-dir；同时比较进程峰值RSS。
+Arrow切片可能保留同分区未选行的缓冲区，减少Pandas对象不保证峰值内存同步下降。
+
+新增计时`prepared_arrow_restore`、`native_batch_array_prepare`、`native_batch_rounding`、
+`native_batch_construct`及异常路径`native_batch_fallback`。前者在prepared_load内，后四项
+在replay_event_conversion内，嵌套计时不能相加。数量关注`prepared_arrow_sources`、
+`native_batch_sources/rows`、`native_batch_fallback_sources/rows`及具体回退原因。
+正常全量路径应看到批量行数与回放行数对应，且不再出现逐来源`prepared_frame_restore`；
+若有回退，先核对原因，不能将其当作完整批量转换性能。
+
+本机仅完成SDK实体替身下的Python路径验证；真实原生精度、完整金融结果和性能待XY验收。
+
 ### 长区间回测进度与特征缓存
 
 `Registered Strategy`后会先转换、排序全部文件Bar，再预处理特征帧，之后才推进模拟撮合。

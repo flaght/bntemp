@@ -1,0 +1,80 @@
+{
+  "recorded_date": "2026-11-20",
+  "timezone": "Asia/Shanghai",
+  "status": "local_regression_passed_native_and_full_performance_pending",
+  "baseline_commit": "edf255e4a3776ff842fca98fc788a26036aad930",
+  "files": [
+    "bomber/framework/dataprep/columnar.py",
+    "bomber/framework/dataprep/prepared.py",
+    "bomber/framework/dataprep/scenarios/option_chain.py",
+    "bomber/framework/market/replay/base.py",
+    "bomber/framework/market/replay/native_batch.py",
+    "demos/08_option_vega/run_backtest.py",
+    "tests/test_native_batch.py",
+    "tests/test_native_batch_native.py",
+    "bomber/framework/dataprep/README.md",
+    "demos/08_option_vega/README.md"
+  ],
+  "entry": {
+    "flag": "--bar-parser native_batch",
+    "requires": "--data-mode prepared",
+    "default": "prepared",
+    "native_api": "Bar.from_raw_arrays_to_list",
+    "native_cache_created": false,
+    "native_source_or_binary_changes": false,
+    "snapshots_compatible": true,
+    "normalizer_sha256": "7e8c9eacb0dd01a76b1a792b0c59cb9e02c3c6a6bc69fb67905ccacac589e54c"
+  },
+  "local_validation": {
+    "related_tests": 94,
+    "failures": 0,
+    "errors": 0,
+    "native_acceptance_tests": 2,
+    "native_acceptance_skipped": 2,
+    "native_reason": "No module named 'bomber.backtest'",
+    "checks": [
+      "exact Arrow/Pandas round trip including entry clocks and source diagnostics",
+      "same source order and ts_init tie order through actual Python replay feed",
+      "ordinary batch path avoids whole DataFrame restoration and per-row parser",
+      "legacy formatting before native double rounding; high precision/large magnitude fallback",
+      "submicrosecond generic fallback and availability clocks",
+      "empty sources, subscription filtering, metadata rebind on forced reload",
+      "finite/positive/OHLC/availability validation and explicit missing-API failure",
+      "CLI native_batch and 1-billion max_notional override"
+    ]
+  },
+  "additional_regression": {
+    "tests": 79,
+    "errors": 2,
+    "baseline_same_errors": true,
+    "names": [
+      "test_demo_entry_uses_framework_parser_and_builds_execution_once_for_two_days (tests.test_bar_parsers.BarParserTests.test_demo_entry_uses_framework_parser_and_builds_execution_once_for_two_days)",
+      "test_demo_passes_explicit_fee_multipliers_to_framework_without_multiplying_them (tests.test_bar_parsers.BarParserTests.test_demo_passes_explicit_fee_multipliers_to_framework_without_multiplying_them)"
+    ],
+    "reason": "Existing demo-10 SDK-fixture lambda lacks execution_timing argument; reproduced with original committed replay feed"
+  },
+  "rounding_contract": "Use exact legacy Python float fixed-decimal formatting. Native double-array construction only for precisions 0..8 and integer units <=2**50 with scaled-float error <=0.25; otherwise use existing parser.",
+  "performance_measurements": "No native speed claim: real SDK not available locally. Array prep, rounding, construction and fallback have batch-level timings inside replay_event_conversion; Arrow view restoration inside prepared_load.",
+  "reference_server_baseline": {
+    "requested": [
+      "2026-01-01",
+      "2026-10-21"
+    ],
+    "events": 1488480,
+    "frames": 45839,
+    "row_frame_restore_seconds": 47.233272,
+    "row_event_conversion_seconds": 55.682368,
+    "run_case_seconds": 357.84544,
+    "max_notional": "1000000000"
+  },
+  "server_acceptance": [
+    "Existing API capability check",
+    "Two native tests must execute without skips",
+    "Real 2026 prepared vs native_batch run: complete financial reports, event sequence, fallback counts, wall time and peak RSS"
+  ],
+  "limits": [
+    "Arrow source views can retain unselected rows in partition buffers; measure peak RSS",
+    "Python fixed-decimal formatting remains intentionally until an equivalent faster rounding method is proven",
+    "Native batches construct objects only; engine still advances each event in original order"
+  ]
+}

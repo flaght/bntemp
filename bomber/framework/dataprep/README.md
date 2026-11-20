@@ -55,6 +55,12 @@ SHA256，`verify_all()`核验全部分区。准备/传输验收使用full；计�
 
 脚本、2024～2026对照及服务器核验见[08说明](../../../demos/08_option_vega/README.md#离线准备feather与原始路径对照)。
 
+`PreparedDataset.load(..., frame_format="arrow")`可显式返回`columnar.ArrowBarFrame`只读来源视图，
+默认仍返回Pandas。它保存原列、元数据和分区行范围，`datetime`按需只恢复时间列，
+`to_pandas()`显式恢复完整表。此选项用于原生批量回放，不修改已有快照格式或规范化指纹。
+Arrow视图共享分区缓冲区，可能保留未选行；须结合RSS评估内存，而非仅根据表数量判断。
+原生接入、精度边界及XY验证见[批量Bar说明](../../../demos/08_option_vega/README.md#原生批量bar验证先复用已有cython接口)。
+
 2026-11-02源码入口整理：[Framework总览](../README.md)说明与market／datahub／trader的边界。本层现同时承担文件输入、Live参考准备、历史Provider和特征导入导出；旧“本地输入层”是第一阶段命名，不表示Live禁止读取数据库。公共路径解析器保留环境配置能力，01／03／04／08等要求显式路径的回测入口通过use_environment=False单独约束，不能混同为所有调用方均改变默认值。
 
 当前还包括[期权最终结算资料加载](option_settlements.py)：读取显式标准终值文件或到期日日行情，交给执行层现金结算组件；不根据基础条款或普通收盘价猜终值。输入准备、特征计算、信号和订单执行分别由各自组件负责。下方既有验收记录仍按对应日期／版本生效，本次未重跑。
