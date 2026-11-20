@@ -30,12 +30,13 @@ def read_research_frame(path, key, day, kind, bar_timestamp):
 
 
 def prepare_option_chain(paths, plan, *, specs=None, context=None, copy_frames=True,
-                         prepared_dataset=None, products=None, frame_format="pandas"):
+                         prepared_dataset=None, products=None, frame_format="pandas", replay_inputs=None):
     if prepared_dataset is not None:
         if specs is None or products is None:
             raise ValueError("Prepared option chains require explicit specs and products")
         return prepared_dataset.load(plan, specs=specs, products=products,
-                                     context=context, copy_frames=copy_frames, frame_format=frame_format)
+                                     context=context, copy_frames=copy_frames, frame_format=frame_format,
+                                     replay_inputs=replay_inputs)
     if frame_format != "pandas":
         raise ValueError("Arrow source views require a prepared dataset")
     index = {}

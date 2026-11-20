@@ -1,0 +1,143 @@
+{
+  "status": "python_and_feather_regressions_passed_native_and_xy_validation_pending",
+  "baseline_commit": "b57a83be95280ed7a324f6aaa7a17a0e7b02a660",
+  "files": [
+    "bomber/framework/dataprep/columnar.py",
+    "bomber/framework/dataprep/prepared.py",
+    "bomber/framework/dataprep/replay_inputs.py",
+    "bomber/framework/dataprep/scenarios/option_chain.py",
+    "bomber/framework/datahub/features/prepared_frames.py",
+    "bomber/framework/market/replay/native_batch.py",
+    "demos/08_option_vega/feature/backtest.py",
+    "demos/08_option_vega/run_backtest.py",
+    "scripts/prepare_replay_inputs.py",
+    "scripts/check_replay_inputs.py",
+    "tests/test_replay_inputs.py",
+    "tests/test_replay_inputs_native.py",
+    "demos/08_option_vega/README.md",
+    "doc/evidence/README.md"
+  ],
+  "scope": {
+    "format": "bomber-replay-inputs-v1",
+    "preparation_script": "scripts/prepare_replay_inputs.py --output NEW_ROOT [original backtest args]",
+    "audit_script": "scripts/check_replay_inputs.py --replay-inputs ROOT",
+    "reuse_flags": "--data-mode prepared --bar-parser native_batch --replay-inputs ROOT",
+    "old_rule": "OHLCV fixed decimal formatting at actual instrument price/quantity precision, then native fixed-point representation; unrelated to derived fields",
+    "offline": [
+      "Full parent partition verification, legacy precision formatting, finite/positive/OHLC/availability/safe-roundtrip checks",
+      "Every Bar raw OHLCV value and precision, both clocks and BarType compared to the original row parser before atomic publication",
+      "Original minute grouping, frame closure and visible feature revision matching; persist READY/SKIPPED, deadlines, decision/as-of clocks and Decimal observations"
+    ],
+    "backtest": [
+      "Exact parent/source/config/feature/code/native identity and actual instrument precision compatibility",
+      "Certified float64/uint64 source arrays; no repeated rounding or row-data scans",
+      "Restore frames and reference the currently loaded and verified feature records without recomputing matches",
+      "Writable array copies, native construction, stable event sorting, per-event engine progression and original strategy remain"
+    ],
+    "identity": [
+      "parent snapshot ID + manifest SHA",
+      "requested range + exact source keys",
+      "feature file content/mapping + schema + selected field",
+      "wait/max-age/index rules",
+      "conversion/frame implementation source hashes",
+      "native Bar/Price/Quantity binary hashes and raw units",
+      "per-source instrument/bar spec/precision"
+    ],
+    "compatibility": "Existing normalized prepared snapshots retained; bars.py/contracts.py unchanged; no native source/binary changes or archive"
+  },
+  "local_validation": {
+    "related_tests": {
+      "tests": 104,
+      "failures": 0,
+      "errors": 0,
+      "seconds": 5.72,
+      "modules": [
+        "tests.test_replay_inputs",
+        "tests.test_native_batch",
+        "tests.test_prepared_dataset",
+        "tests.test_prepared_bar_parser",
+        "tests.test_bar_preparation_vectorization",
+        "tests.test_multiperiod_inputs",
+        "tests.test_dataprep_common",
+        "tests.test_backtest_performance"
+      ]
+    },
+    "feature_regression": {
+      "tests": 55,
+      "failures": 0,
+      "errors": 0,
+      "seconds": 0.235,
+      "modules": [
+        "tests.test_option_feature_backtest.FeatureBacktestTests",
+        "tests.test_feature_store_index",
+        "tests.test_feature_datahub"
+      ],
+      "environment": "existing offline SDK entity fixture bootstrap; actual Python feature and frame implementations"
+    },
+    "new_native_tests": {
+      "tests": 1,
+      "skipped": 1,
+      "reason": "No module named 'bomber.backtest'"
+    },
+    "previous_native_tests": {
+      "tests": 2,
+      "skipped": 2,
+      "reason": "No module named 'bomber.backtest'"
+    },
+    "compileall": "passed",
+    "git_diff_check": "passed",
+    "native_report_equality_or_speed_claimed": false
+  },
+  "existing_offline_collection": {
+    "tests": 226,
+    "failures": 3,
+    "errors": 6,
+    "same_failures_with_committed_run_backtest_entry": true,
+    "baseline_method": "Existing offline SDK fixture; substitute git HEAD run_backtest source in memory; compare all failed test identities",
+    "failure_identities": [
+      "test_public_client_applies_settlement_to_account_attribution_and_strategy_once (tests.test_option_vega_settlement.VegaSettlementTests.test_public_client_applies_settlement_to_account_attribution_and_strategy_once)",
+      "test_delayed_partial_fill_hedges_filled_lots_without_resending_option (tests.test_option_vega_assembly.AssemblyTests.test_delayed_partial_fill_hedges_filled_lots_without_resending_option)",
+      "test_mapped_replay_reaches_recording_target_and_model_owned_fill (tests.test_option_vega_assembly.AssemblyTests.test_mapped_replay_reaches_recording_target_and_model_owned_fill) (mode='model')",
+      "test_missing_held_leg_waits_then_fails_without_erasing_position (tests.test_option_vega_assembly.AssemblyTests.test_missing_held_leg_waits_then_fails_without_erasing_position)",
+      "test_model_owns_option_fills_then_hedges_actual_position (tests.test_option_vega_assembly.AssemblyTests.test_model_owns_option_fills_then_hedges_actual_position)",
+      "test_model_restore_preserves_position_and_does_not_reopen_same_day (tests.test_option_vega_assembly.AssemblyTests.test_model_restore_preserves_position_and_does_not_reopen_same_day)",
+      "test_example_yaml_starts_same_m5_case_without_long_cli_or_source_connections (tests.test_option_feature_backtest.BacktestYamlConfigTests.test_example_yaml_starts_same_m5_case_without_long_cli_or_source_connections)",
+      "test_startup_yaml_keeps_strategy_fields_in_json_dependencies (tests.test_option_feature_backtest.BacktestYamlConfigTests.test_startup_yaml_keeps_strategy_fields_in_json_dependencies)",
+      "test_strategy_json_cannot_set_authorization_and_still_checks_business_values (tests.test_option_vega_assembly.LiveYamlConfigTests.test_strategy_json_cannot_set_authorization_and_still_checks_business_values) (values={'max_option_lots': 0})"
+    ]
+  },
+  "normalizer_files_unchanged": {
+    "bomber/framework/dataprep/bars.py": "2619b00c2820853db3b92a93097536e18c86e3effdc5bab9c28722f201fd9627",
+    "bomber/framework/dataprep/contracts.py": "3064bdb8dadc8112f170b4e6082199e828a18c269faa741eb93a62d8b11d2b59"
+  },
+  "reference_xy_baseline": {
+    "requested": [
+      "2026-01-01",
+      "2026-10-21"
+    ],
+    "max_notional": "1000000000",
+    "events": 1488480,
+    "frames": 45839,
+    "rounding_seconds": 7.625829,
+    "feature_alignment_seconds": 9.798951,
+    "event_conversion_seconds": 16.334059,
+    "run_case_seconds": 260.359606,
+    "process_seconds": 264.583,
+    "new_artifact_full_interval_measurement": "pending"
+  },
+  "native_acceptance_to_run_on_xy": [
+    "python -m unittest tests.test_replay_inputs_native -v must execute without skips",
+    "Fixture proves preparation does not advance engine and warm run uses neither rounding/data checks nor frame recomputation",
+    "Compare native cold/warm feature frames and orders/fills/positions/accounts/signals/option/future settlement reports, preserving financial/time/status and actual trade identities",
+    "Prepare real 2026 inputs, independent full integrity check, then compare complete financial results and wall time to same-config native_batch baseline"
+  ],
+  "limits": [
+    "No compiled native SDK on this machine; native and complete server financial equivalence not yet verified",
+    "Only the 08 single EXACT index requirement is supported by this frame codec",
+    "Metadata checks trust an immutable published artifact after separate full audit; full read hashes are optional per run",
+    "Preparation uses the slower original row parser once for complete native certification",
+    "Native objects are still constructed during replay; frame object/Decimal restoration and native SDK hashing have nonzero cost",
+    "No promise that all 7.63s rounding or all 9.80s feature preparation disappear from wall time",
+    "Current parent directory name includes 2024 but actual existing requested range is 2026 only"
+  ]
+}

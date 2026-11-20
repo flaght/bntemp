@@ -38,3 +38,15 @@ class ArrowBarFrame:
         frame.attrs = self.attrs.copy()
         frame.flags.allows_duplicate_labels = self.duplicate_labels
         return frame
+
+
+class CertifiedArrowFrame(ArrowBarFrame):
+    """Only the replay-input artifact loader supplies this prepared representation.
+
+    Its OHLCV have already been rounded and checked against native raw values;
+    its clocks are uint64. This is distinct from ordinary normalized input.
+    """
+
+    def __init__(self, table, *, certificate):
+        super().__init__(table)
+        self.certificate = certificate

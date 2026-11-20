@@ -1,7 +1,7 @@
 {
   "recorded_date": "2026-11-20",
   "timezone": "Asia/Shanghai",
-  "status": "local_regression_passed_native_and_full_performance_pending",
+  "status": "xy_full_batch_run_completed_financial_equivalence_pending",
   "baseline_commit": "edf255e4a3776ff842fca98fc788a26036aad930",
   "files": [
     "bomber/framework/dataprep/columnar.py",
@@ -76,5 +76,112 @@
     "Arrow source views can retain unselected rows in partition buffers; measure peak RSS",
     "Python fixed-decimal formatting remains intentionally until an equivalent faster rounding method is proven",
     "Native batches construct objects only; engine still advances each event in original order"
-  ]
+  ],
+  "server_full_interval_result": {
+    "recorded_date": "2026-11-20",
+    "environment": "XY Python 3.12.14; l1-indexed-validation-v1",
+    "requested": [
+      "2026-01-01",
+      "2026-10-21"
+    ],
+    "trading_days": 191,
+    "report": "demos/08_option_vega/results/native-batch-input-check/MO/20260101-20261021/6d16d690-7834-44b1-8214-b610ac7d9042",
+    "counts": {
+      "replay_events": 1488480,
+      "native_batch_rows": 1488480,
+      "native_batch_sources": 27954,
+      "prepared_arrow_sources": 27954,
+      "decision_frames": 45839,
+      "ready_frames": 45839,
+      "skipped_frames": 0,
+      "entries": 179,
+      "orders": 1527,
+      "fills": 1546,
+      "prepared_partition_files_read": 390,
+      "prepared_partition_rows_read": 2817696,
+      "directory_scans": 0
+    },
+    "fallback": "No fallback counters present; native_batch_rows equals all replay events",
+    "timings": {
+      "native_batch_array_prepare": 4.195502,
+      "native_batch_rounding": 7.625829,
+      "native_batch_construct": 1.470816,
+      "prepared_arrow_restore": 1.203057,
+      "prepared_load": 16.83752,
+      "prepared_partition_read": 14.764946,
+      "prepared_snapshot_open": 5.858769,
+      "replay_event_conversion": 16.334059,
+      "replay_event_sort": 0.949504,
+      "feature_alignment": 9.798951,
+      "replay_dispatch_including_engine": 191.982026,
+      "strategy_decision": 32.669863,
+      "run_case": 260.359606,
+      "main": 261.313,
+      "process": 264.583
+    },
+    "comparisons": {
+      "prepared_load": {
+        "before_seconds": 64.050384,
+        "after_seconds": 16.83752,
+        "saved_seconds": 47.212864,
+        "reduction_percent": 73.712
+      },
+      "source_restore": {
+        "before_seconds": 47.233272,
+        "after_seconds": 1.203057,
+        "saved_seconds": 46.030215,
+        "reduction_percent": 97.453
+      },
+      "replay_event_conversion": {
+        "before_seconds": 55.682368,
+        "after_seconds": 16.334059,
+        "saved_seconds": 39.348309,
+        "reduction_percent": 70.666
+      },
+      "replay_event_sort": {
+        "before_seconds": 1.116375,
+        "after_seconds": 0.949504,
+        "saved_seconds": 0.166871,
+        "reduction_percent": 14.948
+      },
+      "replay_dispatch_including_engine": {
+        "before_seconds": 197.209933,
+        "after_seconds": 191.982026,
+        "saved_seconds": 5.227907,
+        "reduction_percent": 2.651
+      },
+      "run_case": {
+        "before_seconds": 357.84544,
+        "after_seconds": 260.359606,
+        "saved_seconds": 97.485834,
+        "reduction_percent": 27.242
+      },
+      "process": {
+        "before_seconds": 368.138,
+        "after_seconds": 264.583,
+        "saved_seconds": 103.555,
+        "reduction_percent": 28.129
+      },
+      "raw_to_batch_run_case": {
+        "before_seconds": 478.109184,
+        "after_seconds": 260.359606,
+        "saved_seconds": 217.749578,
+        "reduction_percent": 45.544
+      },
+      "raw_to_batch_process": {
+        "before_seconds": 496.283,
+        "after_seconds": 264.583,
+        "saved_seconds": 231.7,
+        "reduction_percent": 46.687
+      },
+      "restore_plus_conversion": {
+        "before_seconds": 102.91564,
+        "after_seconds": 17.537116,
+        "saved_seconds": 85.378524,
+        "reduction_percent": 82.96
+      }
+    },
+    "validation": "Full interval completed with the same event/frame/entry/order/fill counts as the preceding prepared baseline; complete financial reports and the new two native acceptance test outputs have not been supplied",
+    "limits": "Single sequential runs, not repeated controlled benchmarks; peak RSS unavailable because /usr/bin/time is not installed. Actual range is 2026 only."
+  }
 }

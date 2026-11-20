@@ -1130,7 +1130,8 @@ PYTHONPATH=. "$VEGA_PYTHON" -u scripts/prepare_market_data.py \
 
 新增显式选项`--bar-parser native_batch`，要求同时使用`--data-mode prepared`。
 默认仍为`prepared`逐行路径。现有Feather快照、manifest、规范化规则及策略参数保持兼容，
-无需重新准备已核验的2026数据。本轮没有新增Bar缓存或修改编译内核。
+无需重新准备已核验的2026数据。首轮批量转换没有新增Bar缓存或修改编译内核；
+后续可选的前置产物见下一节。
 
 新路径将每个逻辑来源保留为Arrow切片，按需为开仓同步检查读取单独时间列；回放直接提取
 OHLCV和双时钟数组，调用安装内核已有的`Bar.from_raw_arrays_to_list()`，避免恢复整张
@@ -1165,7 +1166,8 @@ PYTHONPATH=. "$VEGA_PYTHON" -m unittest tests.test_native_batch_native -v
 原生验收通过后，保持同一YAML、日期和10亿元名义金额上限，执行：
 
 ```bash
-/usr/bin/time -v env PYTHONPATH=. "$VEGA_PYTHON" -u demos/08_option_vega/run_backtest.py \
+TIMEFORMAT='回测进程总耗时：%3R 秒'
+time env PYTHONPATH=. "$VEGA_PYTHON" -u demos/08_option_vega/run_backtest.py \
   --config-file demos/08_option_vega/config/strategy.yaml --config-id m5_index_blend \
   --start-day 2026-01-01 --end-day 2026-10-21 \
   --data-mode prepared --prepared-root "$VEGA_PREPARED_ROOT" --prepared-verify metadata \
@@ -1175,7 +1177,8 @@ PYTHONPATH=. "$VEGA_PYTHON" -m unittest tests.test_native_batch_native -v
 ```
 
 对照原逐行prepared基线`run_case=357.845440s`、转换55.682368s、表恢复47.233272s。
-重复计时时将上面`native_batch`改为`prepared`并另选report-dir；同时比较进程峰值RSS。
+重复计时时将上面`native_batch`改为`prepared`并另选report-dir。上述Bash计时不依赖
+XY缺少的`/usr/bin/time`；它不采集峰值RSS，需另有可用工具时再比较内存。
 Arrow切片可能保留同分区未选行的缓冲区，减少Pandas对象不保证峰值内存同步下降。
 
 新增计时`prepared_arrow_restore`、`native_batch_array_prepare`、`native_batch_rounding`、
@@ -1185,7 +1188,101 @@ Arrow切片可能保留同分区未选行的缓冲区，减少Pandas对象不保
 正常全量路径应看到批量行数与回放行数对应，且不再出现逐来源`prepared_frame_restore`；
 若有回退，先核对原因，不能将其当作完整批量转换性能。
 
-本机仅完成SDK实体替身下的Python路径验证；真实原生精度、完整金融结果和性能待XY验收。
+本机完成SDK实体替身下的Python路径验证。XY随后完成2026完整区间批量回测：
+1488480条事件全部走批量路径、无回退计数，run_case为260.359606s，进程总耗时264.583s；
+上一轮逐行prepared分别为357.845440s和368.138s。表/视图恢复47.233272s→1.203057s，
+事件转换55.682368s→16.334059s，其中原生构造1.470816s、舍入7.625829s。
+这是单轮实测，峰值RSS未采集；事件/帧/开仓/订单/成交数量一致，完整区间逐笔金融报表及
+新增两项原生验收输出仍待核对，不能将计数一致登记为完整金融等价通过。
+
+### 前置原生精度处理与分钟帧匹配
+
+在已有prepared快照之外新增可选的只读产物，不覆盖原始Feather、现有manifest或规范化规则。
+默认路径保持不变；不传`--replay-inputs`就继续使用上一节的批量转换和现场帧装配。
+本轮只修改Python层，继续使用已安装的Cython批量接口，无需重编译内核。
+
+这里的“旧规则”是`make_bar`按合约`price_precision/size_precision`对OHLCV执行的定精度
+字符串舍入规则，以及之后原生Price/Quantity的定点表示；不是指是否包含衍生字段。
+原生Bar仍包含OHLCV、BarType及双时钟，指数/MA等衍生值仍通过特征层提供。
+
+| 工作 | 只在前置准备执行 | 后续回测执行 |
+| --- | --- | --- |
+| 精度与安全往返 | 按旧规则舍入，检查数值、OHLC、时钟及批量安全范围 | 读取已认证的float64 OHLCV和uint64双时钟，不重复逐值舍入/业务数据检查 |
+| 原生一致性 | 每一条与旧逐行解析器对照BarType、双时钟、OHLCV底层raw值及精度；不等则不发布 | 绑定实际合约精度与产物证书，再调用原生批量构造器 |
+| 分钟帧与特征 | 按原函数分组、封闭帧、匹配当时可见修订，保存READY/SKIPPED、期限与决策时钟 | 恢复帧和市场观察值，引用本次已核验特征文件中的原记录；不重跑特征匹配 |
+| 撮合与策略 | 不推进市场事件、不运行策略 | 保持全局稳定排序、逐事件推进、定时回调和原策略 |
+
+产物仍使用Feather，保存的是原生构造器输入数组及帧结果，不是pickle原生Bar对象。
+按日合并已选来源，避免再次读取父快照的未选行及不同Schema分片：
+
+```text
+data/prepared/mo-im-2024-2026-v1/       # 已存在的父快照，保持原样
+data/prepared/mo-im-2026-replay-v1/    # 新的派生产物，须与父目录并列
+    manifest.json
+    native-index.feather
+    native/000001.feather
+    frames.feather
+    observations.feather
+```
+
+manifest绑定父快照ID及内容摘要、请求区间、精确来源集合、特征文件内容/Schema、帧等待期限、
+最大年龄规则、转换及对齐代码版本、原生SDK二进制摘要。变化会明确拒绝复用，须选择新版本目录
+重新准备；合约精度/Bar规格也逐来源核对。只调整名义金额、NAV、Vega预算等而未改变上述输入时
+可以复用。准备时强制完整核验实际读取的父分区，独占临时目录并原子发布，失败不留下可用版本，
+已有输出目录拒绝覆盖。当前编解码器限定08的一项EXACT指数需求。
+
+在XY通过GitHub同步源码后，从pro根目录依次执行。当前父快照**实际只覆盖2026-01-01～2026-10-21**，
+目录名中的2024不代表包含2024数据；以后扩展日期须先生成对应父快照和新的回放输入版本。
+
+```bash
+export VEGA_PYTHON=/workspace/worker/env/uv-nautilus/bin/python
+export VEGA_PREPARED_ROOT=/workspace/data/temp_bomber1/dx1/data/prepared/mo-im-2024-2026-v1
+export VEGA_REPLAY_ROOT=/workspace/data/temp_bomber1/dx1/data/prepared/mo-im-2026-replay-v1
+
+# Python/Feather测试，以及真实SDK下的冷/热回测报表对照
+PYTHONPATH=. "$VEGA_PYTHON" -m unittest tests.test_replay_inputs -v
+PYTHONPATH=. "$VEGA_PYTHON" -m unittest tests.test_replay_inputs_native -v
+
+# 一次性准备；其余参数原样交给08回测入口，不运行策略或推进撮合
+PYTHONPATH=. "$VEGA_PYTHON" -u scripts/prepare_replay_inputs.py \
+  --config-file demos/08_option_vega/config/strategy.yaml --config-id m5_index_blend \
+  --start-day 2026-01-01 --end-day 2026-10-21 --prepared-root "$VEGA_PREPARED_ROOT" \
+  --max-notional 1000000000 --option-ohlc-policy expand_range --log-level WARNING \
+  --output "$VEGA_REPLAY_ROOT"
+
+# 单独完整核验派生产物内容，正式回测仍核对当前行情/特征/参数/SDK身份
+PYTHONPATH=. "$VEGA_PYTHON" scripts/check_replay_inputs.py --replay-inputs "$VEGA_REPLAY_ROOT"
+
+# 复用：保持10亿元名义金额上限及相同区间，使用Bash内置time
+TIMEFORMAT='回测进程总耗时：%3R 秒'
+time env PYTHONPATH=. "$VEGA_PYTHON" -u demos/08_option_vega/run_backtest.py \
+  --config-file demos/08_option_vega/config/strategy.yaml --config-id m5_index_blend \
+  --start-day 2026-01-01 --end-day 2026-10-21 \
+  --data-mode prepared --prepared-root "$VEGA_PREPARED_ROOT" --prepared-verify metadata \
+  --bar-parser native_batch --replay-inputs "$VEGA_REPLAY_ROOT" --max-notional 1000000000 \
+  --option-ohlc-policy expand_range --log-level WARNING \
+  --report-dir demos/08_option_vega/results/replay-ready-input-check
+```
+
+原生测试必须实际运行通过，skipped表示未验收。它验证next_market、M5/M1混合、期权及期货结算、
+信号、账户及逐列财务报表一致，并断言准备阶段不推进引擎、复用阶段不重新舍入/检查或装配帧。
+该临时夹具还验证回测不再依赖父分区行情文件，正式数据仍保留父快照以便追溯。
+本机104项相关测试及55项特征回归通过；新增原生验收因缺少编译SDK跳过，XY完整区间性能和
+财务等价仍待执行。既有226项离线集合的9项失败/错误与原入口对照相同，未登记为通过。
+
+普通计时用metadata只核对版本/来源索引、文件大小、Schema和行数；独立检查脚本用full核验全部
+文件SHA256。需要每次回测重验读取文件内容时用`--prepared-verify full`，相应I/O也计入耗时。
+特征文件仍读取以校验内容及建立当前记录集合，SDK二进制摘要每进程计算一次，产物兼容性检查不省略。
+
+复用后观察`native_ready_sources/rows`与回放来源/行数相等，`prepared_decision_frames`与帧数相等；
+不应出现`native_batch_rounding`、`native_batch_array_prepare`及`prepared_partition_read`。
+新增`replay_input_identity`、`replay_inputs_open`、`native_ready_load`、`native_ready_array_read`及
+`prepared_frames_load`计时；后两项分别嵌套在`replay_event_conversion`与`feature_alignment`内。
+`feature_alignment`此时表示恢复耗时，不能与`prepared_frames_load`相加。
+
+目标是去掉本轮7.625829秒舍入中的重复计算，以及9.798951秒帧装配/匹配中的重复工作，
+不保证这两段耗时全部归零：读取文件、转为原生API所需可写数组、构造Bar、恢复Decimal观察值及
+帧对象仍有成本。以同机冷/热回测的`run_case`、转换、帧恢复和报告对照结果判断实际收益。
 
 ### 长区间回测进度与特征缓存
 

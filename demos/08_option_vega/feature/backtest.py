@@ -11,6 +11,12 @@ from bomber.framework.market.frames import FrameObservation, MinuteFrame
 from . import _index_price, select_index_value_field
 
 
+def frame_preparation_identity():
+    import hashlib
+    from pathlib import Path
+    return hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+
+
 def prepare_feature_frames(events, bundle, binding, records, index_key, wait_ns, max_age_ns=300_000_000_000):
     if not events:
         raise ValueError("回测交易腿文件没有可回放的Bar")
@@ -48,7 +54,7 @@ def build_backtest_runner(**kwargs):
     class OptionFeatureBacktestRunner(UnifiedStrategyRunner):
         """行情照常进入撮合；策略只消费与Live相同的封闭分钟帧。"""
         def __init__(self, *, positions, feed, backend, bundle, binding, records, index_key, wait_seconds,
-                     max_market_age_seconds=300, index_value_field=None, performance=None):
+                     max_market_age_seconds=300, index_value_field=None, performance=None, replay_inputs=None):
             super().__init__(RuntimeMode.HISTORICAL, position_manager=positions)
             self.feed, self.backend = feed, backend
             self.bundle, self.binding, self.records = bundle, binding, records
@@ -62,6 +68,7 @@ def build_backtest_runner(**kwargs):
             self._progress_day = None
             self._progress_wall = 0.0
             self.performance = performance
+            self.replay_inputs = replay_inputs
 
         def run_replay(self):
             started = perf_counter()
@@ -69,9 +76,15 @@ def build_backtest_runner(**kwargs):
             events = self.feed.load_events()
             print(f"[回测进度] 行情事件准备完成：events={len(events)} elapsed={perf_counter()-started:.3f}s", flush=True)
             started = perf_counter()
-            print(f"[回测进度] 开始指数特征对齐：feature_records={len(self.records)}", flush=True)
-            outcomes, self.deadlines = prepare_feature_frames(events, self.bundle,
-                self.binding, self.records, self.index_key, self.wait_ns, self.max_age_ns)
+            if self.replay_inputs is None:
+                print(f"[回测进度] 开始指数特征对齐：feature_records={len(self.records)}", flush=True)
+                outcomes, self.deadlines = prepare_feature_frames(events, self.bundle,
+                    self.binding, self.records, self.index_key, self.wait_ns, self.max_age_ns)
+            else:
+                print("[回测进度] 开始恢复已准备分钟帧与特征匹配结果", flush=True)
+                outcomes, self.deadlines = self.replay_inputs.load_frames(self.records, self.binding)
+                if self.performance is not None:
+                    self.performance.count("prepared_decision_frames", len(outcomes))
             ready = sum(row.status == 'READY' for row in outcomes)
             if self.performance is not None:
                 self.performance.add("feature_alignment", perf_counter() - started)

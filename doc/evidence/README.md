@@ -1,5 +1,13 @@
 # Bomber 校验清单与历史证据索引
 
+新增原生精度及分钟帧前置产物：舍入、数值/时钟检查和逐条原生等价认证在准备阶段执行，
+回测恢复数组、READY/SKIPPED帧及当时可见特征选择。旧prepared快照、默认路径和内核保持兼容。
+104项相关回归及55项特征回归通过；新增原生验收本机缺少编译SDK跳过，XY完整性能与财务等价待验。
+226项既有集合的9项失败/错误在原入口对照中相同。
+见[XY准备及复用命令](../../demos/08_option_vega/README.md#前置原生精度处理与分钟帧匹配)、
+[验证范围](live/REPLAY_INPUT_PREPARATION_V1.json)、
+[源码摘要](checksums/REPLAY_INPUT_PREPARATION_V1_SHA256.txt)。用户通过GitHub同步，无同步包。
+
 2026-11-20新增显式原生批量Bar路径：prepared Feather→Arrow来源视图→已有Cython批量接口。
 不新增Bar缓存，不修改原生内核或现有快照格式；默认逐行路径保留。
 94项相关测试通过，新增两项原生验收因本机缺少编译扩展跳过，待XY执行；额外demo-10
@@ -7,6 +15,8 @@
 [XY用法](../../demos/08_option_vega/README.md#原生批量bar验证先复用已有cython接口)、
 [范围与限制](live/NATIVE_BAR_BATCH_20261120.json)、
 [源码校验清单](checksums/NATIVE_BAR_BATCH_20261120_SHA256.txt)。源码由用户通过GitHub同步，无同步包。
+XY随后完成2026全区间批量回测，1488480条事件全部走批量路径，进程耗时368.138s→264.583s；
+与逐行prepared的事件及交易计数一致，完整区间金融报表等价及新增原生边界验收仍待核对。
 
 2026-11-20新增离线版本化Feather日分区及08 raw/prepared切换：
 [准备、核验与2024～2026对照命令](../../demos/08_option_vega/README.md#离线准备feather与原始路径对照)、

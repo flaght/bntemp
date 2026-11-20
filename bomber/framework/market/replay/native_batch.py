@@ -9,7 +9,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from bomber.framework.dataprep.columnar import ArrowBarFrame
+from bomber.framework.dataprep.columnar import ArrowBarFrame, CertifiedArrowFrame
 from bomber.framework.market.basic.base import Bar, BarType
 from .parsers.base import DataLoadError, ParserContext
 from .parsers.bar.fixed import FixedInstrumentBarParser, PreparedBarParser
@@ -88,15 +88,18 @@ class NativeBarBatchParser:
                 bars.extend(event.payload for event in parser.parse(row, row_context))
             return bars
 
-    def load_bar_batch(self, reader, context, stats=None):
+    def bind(self, context):
         require_native_batch()
-        frame = reader.frame
-        if not isinstance(frame, ArrowBarFrame):
-            raise context.error("Native batches require prepared Arrow source views")
         if self._meta is None:
             self._meta = context.require_meta(self.instrument_id)
         if self._bar_type is None:
             self._bar_type = BarType.from_str(f"{self.instrument_id}-{self.bar_spec}-LAST-EXTERNAL")
+
+    def prepare_arrays(self, frame, context, stats=None):
+        """Uncertified path; also used once by the offline artifact publisher."""
+        self.bind(context)
+        if not isinstance(frame, ArrowBarFrame):
+            raise context.error("Native batches require prepared Arrow source views")
         with _measure(stats, "native_batch_array_prepare"):
             numbers = {name: np.asarray(frame.array(name), dtype=np.float64)
                        for name in ("open", "high", "low", "close", "volume")}
@@ -119,15 +122,36 @@ class NativeBarBatchParser:
             events = np.array(events, dtype=np.uint64, copy=True)
             available = np.array(available, dtype=np.uint64, copy=True)
         if submicro:
-            return self._fallback(frame, context, stats, "submicro_clock")
+            return None, "submicro_clock"
         with _measure(stats, "native_batch_rounding"):
             rounded = [legacy_rounded_array(numbers[name], self._meta.size_precision if name == "volume"
                                            else self._meta.price_precision) for name in numbers]
         if any(values is None for values in rounded):
-            return self._fallback(frame, context, stats, "rounding_range")
+            return None, "rounding_range"
+        return (*rounded, events, available), None
+
+    def load_bar_batch(self, reader, context, stats=None):
+        frame = reader.frame
+        self.bind(context)
+        if isinstance(frame, CertifiedArrowFrame):
+            expected = {"instrument_id": str(self.instrument_id), "bar_spec": self.bar_spec,
+                        "price_precision": self._meta.price_precision, "size_precision": self._meta.size_precision}
+            if frame.certificate != expected:
+                raise context.error("Prepared native input precision/identity changed; prepare a new version")
+            with _measure(stats, "native_ready_array_read"):
+                arrays = tuple(np.array(frame.array(name), dtype=dtype, copy=True)
+                    for name, dtype in (("open", np.float64), ("high", np.float64), ("low", np.float64),
+                        ("close", np.float64), ("volume", np.float64),
+                        ("event_ns", np.uint64), ("available_ns", np.uint64)))
+            _count(stats, "native_ready_sources", 1)
+            _count(stats, "native_ready_rows", len(frame))
+        else:
+            arrays, reason = self.prepare_arrays(frame, context, stats)
+            if reason is not None:
+                return self._fallback(frame, context, stats, reason)
         with _measure(stats, "native_batch_construct"):
             bars = Bar.from_raw_arrays_to_list(self._bar_type, self._meta.price_precision,
-                self._meta.size_precision, *rounded, events, available)
+                self._meta.size_precision, *arrays)
         if len(bars) != len(frame):
             raise context.error("Native batch constructor returned a different number of bars")
         _count(stats, "native_batch_sources", 1)

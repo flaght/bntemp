@@ -339,7 +339,7 @@ class PreparedDataset:
                 for (identifier, key), row in self._by_key.items() if identifier == spec_id
                 and start_day <= key.trading_day <= end_day and predicate(key.symbol)}
 
-    def load(self, plan, *, specs, products, context=None, copy_frames=True, frame_format="pandas"):
+    def load(self, plan, *, specs, products, context=None, copy_frames=True, frame_format="pandas", replay_inputs=None):
         import pyarrow.feather as feather
         if frame_format not in {"pandas", "arrow"}:
             raise ValueError("Prepared frame format must be pandas/arrow")
@@ -350,6 +350,10 @@ class PreparedDataset:
         files, coverage = select_bar_files(indexed, plan.required, plan.optional, plan.requested)
         selected = {key: self._by_key[(identifiers[key.asset_kind],
                     BarFileKey(key.asset_kind, key.symbol, key.trading_day))] for key in files}
+        if replay_inputs is not None:
+            if frame_format != "arrow":
+                raise ValueError("Certified replay inputs require Arrow source views")
+            return replay_inputs.load_selected(self, selected, coverage, plan, specs, context)
         by_partition = defaultdict(list)
         for key, row in selected.items():
             by_partition[row["data_file"]].append((key, row))

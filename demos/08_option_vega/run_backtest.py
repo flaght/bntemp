@@ -217,6 +217,15 @@ def run_case(args):
     args = resolve_backtest_paths(args)
     bar_specs = backtest_bar_specs(args)
     native_batch = getattr(args, "bar_parser", "prepared") == "native_batch"
+    replay_root = getattr(args, "replay_inputs", None)
+    preparation_output = getattr(args, "prepare_replay_inputs", None)
+    if (replay_root is not None or preparation_output is not None) and not native_batch:
+        raise ValueError("回放输入准备/复用须使用--bar-parser native_batch")
+    if preparation_output is not None:
+        if Path(preparation_output).expanduser().exists():
+            raise ValueError("回放输入输出目录已存在，请选择新版本目录")
+        # Certification must read and hash the actual parent partitions once.
+        args.prepared_verify = "full"
     if native_batch:
         if getattr(args, "data_mode", "raw") != "prepared":
             raise ValueError("--bar-parser native_batch须同时使用--data-mode prepared")
@@ -332,11 +341,21 @@ def run_case(args):
     plan = plan_option_chain((BarFileKey(
         "option" if key in contracts else "future", key, day,
     ) for day, key in needed), requested=(args.start_day, args.end_day))
+    replay_inputs, replay_context = None, None
+    if replay_root is not None or preparation_output is not None:
+        from bomber.framework.dataprep.replay_inputs import ReplayInputs, artifact_context
+        frame_module = import_module("demos.08_option_vega.feature.backtest")
+        replay_context = artifact_context(prepared_dataset, plan, bar_specs, index_identity,
+            {"wait_ns": int(args.frame_wait_seconds*1e9), "max_age_ns": int(args.max_market_age_seconds*1e9),
+             "index_key": args.index_code}, frame_module.frame_preparation_identity())
+        if replay_root is not None:
+            replay_inputs = ReplayInputs(replay_root, replay_context, verify=args.prepared_verify)
     bundle = prepare_option_chain(
         {"option": args.opt_dir, "future": args.fut_dir}, plan,
         specs=bar_specs, copy_frames=False, prepared_dataset=prepared_dataset,
         products={"option": args.option_product, "future": args.future_product},
         frame_format="arrow" if native_batch else "pandas",
+        replay_inputs=replay_inputs,
     )
     prepared = {(source.result.key.trading_day, source.result.key.symbol): source.result for source in bundle.sources}
     frames = {identity: source.frame for identity, source in prepared.items()}
@@ -444,6 +463,26 @@ def run_case(args):
         performance.count("option_bar_files", sum(key in contracts for _, key in frames))
         performance.count("future_bar_files", sum(key in future_rows for _, key in frames))
         _finish_phase("已准备行情注册到回放源", phase)
+        if preparation_output is not None:
+            from bomber.framework.dataprep.replay_inputs import publish_replay_inputs
+            frame_module = import_module("demos.08_option_vega.feature.backtest")
+            phase = _start_phase("原生精度认证与分钟帧前置准备")
+            with publish_replay_inputs(preparation_output, replay_context, parent_root=args.prepared_root) as writer:
+                with performance.measure("native_inputs_certification"):
+                    events = writer.write_native(bundle.sources, instruments, feed.get_instrument_meta,
+                                                 progress=lambda message: print(message, flush=True))
+                with performance.measure("decision_frames_preparation"):
+                    outcomes, deadlines = frame_module.prepare_feature_frames(events, index_bundle, index_binding,
+                        index_records, args.index_code, int(args.frame_wait_seconds*1e9), int(args.max_market_age_seconds*1e9))
+                if not outcomes or not any(row.status == "READY" for row in outcomes):
+                    raise ValueError("本区间没有可用READY分钟帧，拒绝发布回放输入产物")
+                writer.write_frames(outcomes, deadlines, index_records, index_binding)
+            _finish_phase("原生精度认证与分钟帧前置准备", phase)
+            print(json.dumps({"status": "passed", "output": str(Path(preparation_output).resolve()),
+                "requested": [str(args.start_day), str(args.end_day)], "sources": len(bundle.sources),
+                "native_rows_certified": len(events), "decision_frames_prepared": len(outcomes)},
+                ensure_ascii=False, indent=2), flush=True)
+            return Path(preparation_output).resolve()
         phase = _start_phase("策略、执行路由与风控装配")
         from bomber.framework.trader.execution.builders import build_simulation_execution
         risk_limits = _signal.risk_limits
@@ -455,7 +494,8 @@ def run_case(args):
             bundle=index_bundle, binding=index_binding, records=index_records,
             index_key=args.index_code, wait_seconds=args.frame_wait_seconds,
             max_market_age_seconds=args.max_market_age_seconds,
-            index_value_field=getattr(args, "index_value_field", None), performance=performance)
+            index_value_field=getattr(args, "index_value_field", None), performance=performance,
+            replay_inputs=replay_inputs)
         strategy = OptionVegaStrategy("option-vega", config, contracts, future_rows, instruments,
             args.index_code, calendar, days[-1], options_by_day, option_last_trade_times=last_trade_times,
             future_last_trade_times=future_last_trade_times)
@@ -522,6 +562,7 @@ def run_case(args):
                 "bar_parser": getattr(args, "bar_parser", "prepared"),
                 "data_mode": getattr(args, "data_mode", "raw"),
                 "prepared_dataset": None if prepared_dataset is None else prepared_dataset.identity,
+                "replay_inputs": None if replay_inputs is None else replay_inputs.identity,
                 "index_feature": index_identity, "frame_wait_seconds": args.frame_wait_seconds,
                 "skipped_index_frames": sum(row["status"] == "SKIPPED" for row in runner.frame_audit),
                 "pending_scheduled_hedges": strategy._pending_scheduled_hedges,
@@ -606,6 +647,11 @@ def main():
     parser.add_argument("--prepared-root", type=Path, help="包含manifest.json的prepared版本目录")
     parser.add_argument("--prepared-verify", choices=("metadata", "full"), default="metadata",
         help="metadata核对版本/索引/分区结构；full另校验本次读取分区的SHA256")
+    replay_group = parser.add_mutually_exclusive_group()
+    replay_group.add_argument("--replay-inputs", type=Path,
+        help="读取已认证原生数组和分钟帧产物；须prepared+native_batch，版本不符明确拒绝")
+    replay_group.add_argument("--prepare-replay-inputs", type=Path,
+        help="只发布新的原生精度认证及分钟帧产物，不运行策略和撮合")
     for name in ("fut-dir", "fut-basic", "opt-basic"):
         parser.add_argument("--" + name, type=Path)
     parser.add_argument("--opt-dir", type=Path,
