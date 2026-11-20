@@ -1,5 +1,5 @@
 {
-  "status": "python_and_feather_regressions_passed_native_and_xy_validation_pending",
+  "status": "xy_native_fixture_passed_and_full_run_completed_financial_equivalence_pending",
   "baseline_commit": "b57a83be95280ed7a324f6aaa7a17a0e7b02a660",
   "files": [
     "bomber/framework/dataprep/columnar.py",
@@ -123,21 +123,188 @@
     "event_conversion_seconds": 16.334059,
     "run_case_seconds": 260.359606,
     "process_seconds": 264.583,
-    "new_artifact_full_interval_measurement": "pending"
+    "new_artifact_full_interval_measurement": "completed; see server_full_interval_result"
   },
   "native_acceptance_to_run_on_xy": [
-    "python -m unittest tests.test_replay_inputs_native -v must execute without skips",
-    "Fixture proves preparation does not advance engine and warm run uses neither rounding/data checks nor frame recomputation",
-    "Compare native cold/warm feature frames and orders/fills/positions/accounts/signals/option/future settlement reports, preserving financial/time/status and actual trade identities",
-    "Prepare real 2026 inputs, independent full integrity check, then compare complete financial results and wall time to same-config native_batch baseline"
+    "Complete full-interval orders/fills/positions/account/signals/option/future settlement report comparison against the same-config native_batch baseline",
+    "Profile frame-file reading, Arrow-to-Python conversion, Decimal/FrameObservation restoration and frame-object construction independently before changing the artifact representation"
   ],
   "limits": [
-    "No compiled native SDK on this machine; native and complete server financial equivalence not yet verified",
+    "No compiled native SDK locally; XY supplied passing native fixture and a completed full-interval run; full-interval financial equivalence remains pending",
     "Only the 08 single EXACT index requirement is supported by this frame codec",
     "Metadata checks trust an immutable published artifact after separate full audit; full read hashes are optional per run",
     "Preparation uses the slower original row parser once for complete native certification",
     "Native objects are still constructed during replay; frame object/Decimal restoration and native SDK hashing have nonzero cost",
     "No promise that all 7.63s rounding or all 9.80s feature preparation disappear from wall time",
     "Current parent directory name includes 2024 but actual existing requested range is 2026 only"
-  ]
+  ],
+  "server_native_acceptance": {
+    "recorded_date": "2026-11-21",
+    "source": "user supplied terminal output",
+    "command": "PYTHONPATH=. /workspace/worker/env/uv-nautilus/bin/python -m unittest tests.test_replay_inputs_native -v",
+    "tests": 1,
+    "skipped": 0,
+    "failures": 0,
+    "errors": 0,
+    "seconds": 0.776,
+    "fixture": {
+      "events": 65,
+      "strategy_frames": 23
+    },
+    "scope": "Real SDK preparation does not replay; warm run skips repeated rounding/data checks/frame matching; financial/settlement reports match on the temporary fixture"
+  },
+  "server_preparation": {
+    "recorded_date": "2026-11-21",
+    "source": "user supplied terminal output",
+    "status": "passed",
+    "root": "/workspace/data/temp_bomber1/dx1/data/prepared/mo-im-2026-replay-v1",
+    "requested": [
+      "2026-01-01",
+      "2026-10-21"
+    ],
+    "sources": 27954,
+    "native_rows_certified": 1488480,
+    "decision_frames_prepared": 45839,
+    "package_id": "80a27ecec8144fd8976d92c557ea3a4f",
+    "manifest_sha256": "5bb3991807eb1c97b0ea58beb4c13d5d2907b9de1c595475346063aa32b7ce6b",
+    "seconds": {
+      "run_case": 114.579883,
+      "main": 117.149,
+      "native_and_frames_phase": 76.854,
+      "native_inputs_certification": 65.34985,
+      "decision_frames_preparation": 10.026443,
+      "independent_full_integrity_audit": 3.096
+    },
+    "independent_audit": "passed full SHA256, schema and row counts"
+  },
+  "server_full_interval_result": {
+    "recorded_date": "2026-11-21",
+    "source": "user supplied terminal output",
+    "environment": "XY Python 3.12.14; streaming_validation_revision l1-indexed-validation-v1",
+    "requested": [
+      "2026-01-01",
+      "2026-10-21"
+    ],
+    "max_notional": "1000000000",
+    "report": "demos/08_option_vega/results/replay-ready-input-check/MO/20260101-20261021/393a061a-95ce-448c-bbc7-27cba3147775",
+    "counts": {
+      "replay_events": 1488480,
+      "native_ready_rows": 1488480,
+      "native_ready_sources": 27954,
+      "native_ready_files_read": 382,
+      "decision_frames": 45839,
+      "prepared_decision_frames": 45839,
+      "ready_frames": 45839,
+      "skipped_frames": 0,
+      "index_feature_records": 45840,
+      "trading_days": 191,
+      "option_contracts": 445,
+      "future_contracts": 14,
+      "entries": 179,
+      "orders": 1527,
+      "fills": 1546,
+      "directory_scans": 0
+    },
+    "timings_seconds": {
+      "feather_disk_read": 0.052495,
+      "feature_alignment": 10.210747,
+      "index_feature_file_read": 3.489156,
+      "market_binding_lookup": 7.585415,
+      "native_batch_construct": 1.434542,
+      "native_ready_array_read": 1.78735,
+      "native_ready_load": 6.298608,
+      "prepared_frames_load": 10.203871,
+      "prepared_index_read": 0.797011,
+      "prepared_snapshot_open": 5.847307,
+      "replay_dispatch_including_engine": 192.78643,
+      "replay_event_conversion": 5.774264,
+      "replay_event_sort": 0.93624,
+      "replay_input_identity": 0.088521,
+      "replay_inputs_open": 0.16651,
+      "run_case": 239.061159,
+      "simulation_add_data": 15.763514,
+      "simulation_backend_prepare": 5.981774,
+      "simulation_clear_data": 3.011186,
+      "simulation_engine_including_decisions": 168.350057,
+      "simulation_run_including_decisions": 138.521725,
+      "strategy_decision": 33.315276,
+      "strategy_position_snapshot": 15.456036,
+      "main": 240.039,
+      "process": 243.482
+    },
+    "comparisons": {
+      "market_loading_phase": {
+        "before_seconds": 22.195,
+        "after_seconds": 12.081,
+        "saved_seconds": 10.114,
+        "reduction_percent": 45.569
+      },
+      "source_loading": {
+        "before_seconds": 16.83752,
+        "after_seconds": 6.298608,
+        "saved_seconds": 10.538912,
+        "reduction_percent": 62.592
+      },
+      "event_conversion": {
+        "before_seconds": 16.334059,
+        "after_seconds": 5.774264,
+        "saved_seconds": 10.559795,
+        "reduction_percent": 64.649
+      },
+      "event_preparation_phase": {
+        "before_seconds": 17.475,
+        "after_seconds": 6.899,
+        "saved_seconds": 10.576,
+        "reduction_percent": 60.521
+      },
+      "feature_computation_or_restore": {
+        "before_seconds": 9.798951,
+        "after_seconds": 10.210747,
+        "saved_seconds": -0.411796,
+        "reduction_percent": -4.202
+      },
+      "replay_dispatch_including_engine": {
+        "before_seconds": 191.982026,
+        "after_seconds": 192.78643,
+        "saved_seconds": -0.804404,
+        "reduction_percent": -0.419
+      },
+      "run_case": {
+        "before_seconds": 260.359606,
+        "after_seconds": 239.061159,
+        "saved_seconds": 21.298447,
+        "reduction_percent": 8.18
+      },
+      "process": {
+        "before_seconds": 264.583,
+        "after_seconds": 243.482,
+        "saved_seconds": 21.101,
+        "reduction_percent": 7.975
+      }
+    },
+    "pre_simulation": {
+      "until_run_phase_seconds": 26.431,
+      "until_simulation_clock_seconds": 43.541,
+      "previous_until_simulation_clock_seconds": 64.595,
+      "method": "Sum printed phase durations plus event preparation and frame restoration; rounded log values"
+    },
+    "amortization": {
+      "estimated_runs": 6,
+      "method": "(114.579883 preparation run_case + 3.096 independent audit) / 21.298447 per-run saving, rounded up; single-run estimate; original parent snapshot preparation excluded"
+    },
+    "interpretation": [
+      "All events use certified native arrays; no native_batch_rounding/native_batch_array_prepare/prepared_partition_read timers reported",
+      "Source packs contain selected rows only: 382 packs vs 390 parent schema shards and 2817696 physical parent rows",
+      "Native loading and conversion save about 21 seconds; native Bar construction remains about 1.43 seconds",
+      "Frame caching has not shown a wall-time gain: frame restoration 10.203871 seconds vs previous frame computation about 9.80 seconds",
+      "Current frame timer includes file I/O, Arrow-to-Python conversion and Decimal/observation/frame object reconstruction; per-component attribution requires profiling",
+      "Dispatch/engine/strategy remains approximately 192.79 seconds, about 80.64 percent of run_case"
+    ],
+    "validation": "Full run completed; event/frame/entry/order/fill counts match the same-config native_batch baseline; full-interval financial reports not yet compared",
+    "limits": [
+      "Sequential single runs, not repeated controlled benchmarks",
+      "Peak RSS not collected",
+      "Financial equivalence passed only on the separate temporary native fixture, not the full interval"
+    ]
+  }
 }

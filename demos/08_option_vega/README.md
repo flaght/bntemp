@@ -1267,8 +1267,9 @@ time env PYTHONPATH=. "$VEGA_PYTHON" -u demos/08_option_vega/run_backtest.py \
 原生测试必须实际运行通过，skipped表示未验收。它验证next_market、M5/M1混合、期权及期货结算、
 信号、账户及逐列财务报表一致，并断言准备阶段不推进引擎、复用阶段不重新舍入/检查或装配帧。
 该临时夹具还验证回测不再依赖父分区行情文件，正式数据仍保留父快照以便追溯。
-本机104项相关测试及55项特征回归通过；新增原生验收因缺少编译SDK跳过，XY完整区间性能和
-财务等价仍待执行。既有226项离线集合的9项失败/错误与原入口对照相同，未登记为通过。
+本机104项相关测试及55项特征回归通过；本机缺少编译SDK，原生组最初跳过。XY随后提供
+新增原生验收1项通过（0.776s），临时撮合和报表等价通过；完整区间逐笔财务对照仍待核验。
+既有226项离线集合的9项失败/错误与原入口对照相同，未登记为通过。
 
 普通计时用metadata只核对版本/来源索引、文件大小、Schema和行数；独立检查脚本用full核验全部
 文件SHA256。需要每次回测重验读取文件内容时用`--prepared-verify full`，相应I/O也计入耗时。
@@ -1283,6 +1284,61 @@ time env PYTHONPATH=. "$VEGA_PYTHON" -u demos/08_option_vega/run_backtest.py \
 目标是去掉本轮7.625829秒舍入中的重复计算，以及9.798951秒帧装配/匹配中的重复工作，
 不保证这两段耗时全部归零：读取文件、转为原生API所需可写数组、构造Bar、恢复Decimal观察值及
 帧对象仍有成本。以同机冷/热回测的`run_case`、转换、帧恢复和报告对照结果判断实际收益。
+
+2026-11-21用户补充XY完整区间实测：前置准备run_case=114.579883s，其中逐条原生认证
+65.349850s、帧准备10.026443s；1488480行和45839帧全部准备成功，独立完整核验3.096s通过。
+产物package_id=`80a27ecec8144fd8976d92c557ea3a4f`，manifest SHA256为
+`5bb3991807eb1c97b0ea58beb4c13d5d2907b9de1c595475346063aa32b7ce6b`。
+
+| 同一2026区间/10亿元上限 | 普通native_batch | 复用回放输入 |
+| --- | --- | --- |
+| 行情加载校验阶段 | 22.195s | 12.081s |
+| 事件转换 | 16.334059s | 5.774264s |
+| 特征计算/帧恢复 | 9.798951s | 10.210747s |
+| 模拟分发、引擎及策略 | 191.982026s | 192.786430s |
+| run_case | 260.359606s | 239.061159s |
+| 进程总耗时 | 264.583s | 243.482s |
+
+单轮run_case节省21.298447s（8.18%），进程节省21.101s（7.98%）；按本轮差值约6次回测可
+摊平一次性准备及独立核验成本。此处没有把首次父快照准备计入两者之一。
+382个新分区只包含1488480条已选行情，原路径读取390个Schema分片、2817696条物理行。
+原生数组读取1.787350s，构造1.434542s，不再出现重复舍入/业务检查计时。
+45839帧、179次选约、1527订单、1546成交计数相同，不能仅凭计数认定完整财务等价。
+
+分钟帧复用未显示提速：恢复10.203871s，包含文件读取、Arrow转Python集合、Decimal及
+FrameObservation/FeatureSnapshot/StrategyFrame对象恢复；当前计时不能进一步归因。
+下一步先用独立诊断拆分这些成本，再决定优化恢复表示。该轮实测记录未改运行代码。
+模拟分发192.786430s约占run_case的80.64%，这一段未因输入前置而明显改变。
+
+### 公共帧恢复分项诊断
+
+分项计时位于公共DataHub/dataprep模块，08策略和信号源码未改；详细字段及后续Cython边界见
+[公共服务说明](../../bomber/framework/datahub/README.md#公共帧恢复分项计时)。本轮先计时，尚未新增Cython实现。
+以下命令只恢复现有v1帧，不运行策略/撮合，不用重新导出数据，使用该产物对应的自定义特征声明：
+
+```bash
+cd /workspace/worker/pj/Chrono/nautilus_trader_demo/pro || exit 1
+
+PYTHONPATH=. /workspace/worker/env/uv-nautilus/bin/python -u \
+  scripts/profile_prepared_frames.py \
+  --replay-inputs /workspace/data/temp_bomber1/dx1/data/prepared/mo-im-2026-replay-v1 \
+  --feature-config /workspace/worker/pj/Chrono/nautilus_trader_demo/pro/demos/feature/index-research-20260101-20261021-1794209274/index-blend.csv.dataset.json \
+  --verify metadata --repeat 1 \
+  --output demos/08_option_vega/results/frame-restore-profile.json
+```
+
+`runs[0].timings`拆出两个文件读取、两张Arrow表转Python、引用检查、Decimal转换、观察值装配和帧对象装配。
+`runs[0].counters.prepared_observation_rows`给出真实观察值数量；`setup_performance`是特征输入等准备成本，
+不计入10秒帧恢复。需要观察重复波动可改`--repeat 3`，这些重复会复用操作系统缓存。
+
+计时版公共源码已变更，旧产物的`current_implementation_matches_artifact=false`为预期。
+诊断只核验可读格式、文件和特征身份，不放宽正式回测的源码/SDK检查；正式回测会拒绝旧代码指纹。
+本轮先用上面的独立诊断取得细项，无需为计时重建产物。以后在新源码下正式回测时，需要新建
+`mo-im-2026-replay-v2`等回放输入版本，父prepared快照保持原样。
+
+本地新增独立诊断测试5项通过，验证自定义标量特征、精确Decimal表示、修订选择、SKIPPED帧、
+旧版本只读诊断、来源/Schema变化拒绝、损坏文件拒绝和产物写入保护；相关回归104项及公共特征回归40项通过。
+真实SDK验收新增分项统计断言，本机缺少原生扩展跳过，须在XY独立进程重跑。
 
 ### 长区间回测进度与特征缓存
 

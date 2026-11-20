@@ -10,6 +10,44 @@ DataHub定义不可变参考资料与特征记录，按业务时间、可见时�
 
 08回测与默认DFS Live已共用指数特征声明和可见时间契约，接入在应用装配中完成；通用接口已有不表示所有业务与来源组合均已实际验收。
 
+## 公共帧恢复分项计时
+
+已准备特征帧的读取和恢复在公共组件中测量：`dataprep/replay_inputs.py`负责文件读取，
+`features/prepared_frames.py`负责帧及引用，`features/restoration.py`负责与数据集无关的价格和
+市场观察值批量恢复。没有把策略选约或信号逻辑移入公共组件；自定义标量特征也走同一恢复入口。
+本轮增加计时和独立诊断，尚未实现新的Cython后端。
+
+| 统计项 | 测量范围 |
+| --- | --- |
+| `prepared_frames_table_read` | 帧Feather读取和大小/Schema/行数检查 |
+| `prepared_observations_table_read` | 合约观察值Feather读取及对应检查 |
+| `prepared_frames_to_python` | 帧Arrow Table转Python字典列表 |
+| `prepared_observations_to_python` | 观察值Arrow Table转Python列列表 |
+| `prepared_frame_reference_checks` | 帧顺序、范围、期限和特征记录可见性检查，建立期限映射 |
+| `prepared_observation_decimal` | 每帧批量价格字符串转Decimal，保留原精度表示 |
+| `prepared_observation_objects` | FrameObservation构造、合约字典组装及重复键检查 |
+| `prepared_frame_objects` | FeatureQuery/Snapshot、StrategyFrame和FrameOutcome装配，包括不可变市场字典副本 |
+
+`prepared_frames_load`是父级总耗时；`prepared_frames_decode`包含后六项。两层计时不能与
+子项相加。每帧作为一个计时批次，不为每个价格采样时钟，细项先在本地累加再一次写入统计。
+`prepared_frame_rows`、`prepared_observation_rows`、`prepared_observations_restored`及READY/SKIPPED
+计数区分“分钟数”和“实际恢复对象数”。独立报告的`restore_other_seconds`包含循环和计时等剩余成本。
+分离Decimal和对象装配需要暂存每帧的价格列表，诊断耗时可能与原先合并循环有小幅差异。
+
+独立入口`scripts/profile_prepared_frames.py --replay-inputs ROOT --feature-config DATASET_JSON`仅使用公共
+特征声明、文件Provider和帧服务，不加载策略或撮合引擎；支持`--repeat 1..10`、`--verify metadata/full`
+及产物目录外的`--output JSON`。特征输入读取单独记为`setup_performance`，不计入各次帧恢复。
+重复恢复会复用操作系统缓存，不视为冷盘实验。诊断仍保留当前v1单项EXACT帧格式的限制。
+
+诊断允许读取结构兼容的旧v1产物，核验文件大小/Schema/行数（full还核验SHA256）以及特征文件内容、
+数据集、Schema和记录数，报告`current_implementation_matches_artifact`；不核验当前原生SDK，
+也不将诊断成功当作正式回测兼容或金融等价验收。正式回测的源码/SDK指纹检查仍严格执行。
+
+后续Cython实现优先放在公共批量恢复边界，保留同契约的Python路径并对照Decimal、时间、修订及
+READY/SKIPPED结果。先根据实测决定：磁盘读取本身不能靠编译Python循环解决；Arrow已在原生库中
+执行的部分要区分解码和Python对象物化；若瓶颈是数值/时钟批量处理或观察值装配，再评估Cython。
+不能仅将策略代码编译或只对一个数据集做特殊分支就登记公共服务加速。
+
 ## 基础条款
 
 | 能力 | 期货 | 期权 |

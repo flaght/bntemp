@@ -4,11 +4,10 @@ No feature lookup or market regrouping is performed when restoring. This codec
 preserves decision/as-of clocks, revisions, READY/SKIPPED outcomes and Decimal
 representations, not only an event-time join of numeric feature values.
 """
-from decimal import Decimal
-
 from .alignment import FeatureSnapshot
 from .contracts import FeatureQuery
 from .frames import FrameOutcome, StrategyFrame
+from .restoration import restore_market_observations
 
 
 def encode_frames(outcomes, deadlines, records, binding):
@@ -55,15 +54,25 @@ def encode_frames(outcomes, deadlines, records, binding):
     return frame_table, market_table
 
 
-def decode_frames(frame_table, observation_table, records, binding):
-    from bomber.framework.market.frames import FrameObservation
+def decode_frames(frame_table, observation_table, records, binding, *, performance=None):
+    clock = performance.clock if performance is not None else None
+    started = clock() if clock else None
     rows = frame_table.to_pylist()
+    if clock:
+        performance.add("prepared_frames_to_python", clock() - started)
+        started = clock()
     observations = observation_table.to_pydict()
+    if clock:
+        performance.add("prepared_observations_to_python", clock() - started)
+    seconds = dict.fromkeys(("prepared_frame_reference_checks", "prepared_observation_decimal",
+        "prepared_observation_objects", "prepared_frame_objects"), 0.0)
     outcomes, deadlines = [], {}
     fingerprint = binding.spec.fingerprint
     consumed = 0
     previous_event = -1
+    restored_observations, ready = 0, 0
     for row in rows:
+        started = clock() if clock else None
         event, offset, count = row["event_ns"], row["offset"], row["rows"]
         if (event <= previous_event or row["deadline_ns"] < event or offset != consumed
                 or count < 0 or offset+count > len(observation_table)):
@@ -79,18 +88,30 @@ def decode_frames(frame_table, observation_table, records, binding):
             if (record.ts_event != event or record.visible_ns > row["as_of_ns"]
                     or not event <= row["as_of_ns"] <= row["decision_ns"] <= row["deadline_ns"]):
                 raise ValueError("Prepared feature/frame visibility clocks differ")
-            market = {observations["key"][index]: FrameObservation(
-                Decimal(observations["price"][index]), observations["source_id"][index],
-                observations["source_ns"][index], observations["received_ns"][index])
-                for index in range(offset, offset+count)}
-            if len(market) != count:
-                raise ValueError("Prepared market observation keys are duplicated")
+            if clock:
+                seconds["prepared_frame_reference_checks"] += clock() - started
+            market = restore_market_observations(observations, offset, count, clock=clock, seconds=seconds)
+            restored_observations += count
+            ready += 1
+            started = clock() if clock else None
             snapshot = FeatureSnapshot(FeatureQuery(event, row["as_of_ns"]), row["generation"],
                                        {"index": (record,)}, {"index": fingerprint})
             frame = StrategyFrame(row["frame_id"], event, row["decision_ns"], market, snapshot)
         elif row["status"] != "SKIPPED" or count or row["feature_index"] != -1:
             raise ValueError("Invalid prepared frame outcome")
+        elif clock:
+            seconds["prepared_frame_reference_checks"] += clock() - started
+            started = clock()
         outcomes.append(FrameOutcome(row["frame_id"], event, row["status"], frame, row["reason"]))
+        if clock:
+            seconds["prepared_frame_objects"] += clock() - started
     if consumed != len(observation_table):
         raise ValueError("Unreferenced prepared market observations")
+    if performance is not None:
+        for name, elapsed in seconds.items():
+            performance.add(name, elapsed)
+        for name, value in (("prepared_frame_rows", len(rows)), ("prepared_observation_rows", len(observation_table)),
+                            ("prepared_observations_restored", restored_observations),
+                            ("prepared_frames_ready", ready), ("prepared_frames_skipped", len(rows)-ready)):
+            performance.count(name, value)
     return tuple(outcomes), deadlines

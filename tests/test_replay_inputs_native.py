@@ -62,6 +62,13 @@ class ReplayInputNativeTests(unittest.TestCase):
             summary = json.loads((hot/"summary.json").read_text())
             self.assertEqual(stats["counters"]["native_ready_rows"], summary["bars"])
             self.assertEqual(stats["counters"]["prepared_decision_frames"], summary["frames"])
+            self.assertEqual(stats["counters"]["prepared_frame_rows"], stats["counters"]["prepared_decision_frames"])
+            self.assertEqual(stats["counters"]["prepared_frames_ready"], stats["counters"]["ready_frames"])
+            self.assertEqual(stats["counters"]["prepared_observations_restored"], stats["counters"]["prepared_observation_rows"])
+            for name in ("prepared_frames_table_read", "prepared_observations_table_read", "prepared_frames_to_python",
+                         "prepared_observations_to_python", "prepared_frame_reference_checks", "prepared_observation_decimal",
+                         "prepared_observation_objects", "prepared_frame_objects", "prepared_frames_decode"):
+                self.assertIn(name, stats["timings"])
             self.assertNotIn("native_batch_rounding", stats["timings"])
             self.assertNotIn("native_batch_array_prepare", stats["timings"])
             self.assertEqual(json.loads((cold/"feature_frames.json").read_text()),

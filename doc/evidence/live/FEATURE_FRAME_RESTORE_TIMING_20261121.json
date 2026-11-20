@@ -1,0 +1,113 @@
+{
+  "recorded_date": "2026-11-21",
+  "status": "local_regressions_passed_xy_stage_measurements_pending",
+  "baseline_commit": "5fd9cdd8fbb73125c1a280d10616780639203f38",
+  "files": [
+    "bomber/framework/datahub/features/restoration.py",
+    "bomber/framework/datahub/features/prepared_frames.py",
+    "bomber/framework/dataprep/replay_inputs.py",
+    "bomber/framework/dataprep/feature_diagnostics.py",
+    "scripts/profile_prepared_frames.py",
+    "tests/test_feature_frame_diagnostics.py",
+    "tests/test_replay_inputs_native.py",
+    "bomber/framework/datahub/README.md",
+    "demos/08_option_vega/README.md",
+    "doc/evidence/README.md"
+  ],
+  "scope": "Public feature-frame restoration timings and a read-only diagnostics entry; no Cython backend yet",
+  "shared_components": {
+    "dataprep/replay_inputs.py": "Separate frame/observation file reads and total decode; public InputSession performance collector",
+    "datahub/features/prepared_frames.py": "Arrow materialization, reference checks and frame/snapshot construction",
+    "datahub/features/restoration.py": "Dataset-independent decimal and market-observation batches; no strategy identifiers",
+    "dataprep/feature_diagnostics.py": "Local declared custom-feature provider and the same public decoder, no strategy/engine/native SDK required"
+  },
+  "timings": [
+    "prepared_frames_table_read",
+    "prepared_observations_table_read",
+    "prepared_frames_to_python",
+    "prepared_observations_to_python",
+    "prepared_frame_reference_checks",
+    "prepared_observation_decimal",
+    "prepared_observation_objects",
+    "prepared_frame_objects"
+  ],
+  "parents": [
+    "prepared_frames_load",
+    "prepared_frames_decode"
+  ],
+  "counters": [
+    "prepared_frame_rows",
+    "prepared_observation_rows",
+    "prepared_observations_restored",
+    "prepared_frames_ready",
+    "prepared_frames_skipped"
+  ],
+  "collection": "Batch clocks per frame, never per observation; phase durations accumulated locally and each published once. Price and object timing separates the former combined comprehension, using a small price list per frame.",
+  "diagnostic_entry": "scripts/profile_prepared_frames.py --replay-inputs ROOT --feature-config DATASET_JSON --verify metadata --repeat 1 --output EXTERNAL_JSON",
+  "compatibility": {
+    "old_v1_diagnostic": "Supported for unchanged v1 file schema; artifact size/schema/rows and current feature source content/schema/record count verified; full optionally verifies read-file SHA256",
+    "native_or_trading_compatibility_certified": false,
+    "current_implementation_matches_artifact": "Explicitly reported; false expected for existing v1 after timing-code changes",
+    "formal_backtest": "Existing exact source/native context comparison remains unchanged and rejects stale implementation identity",
+    "formal_new_version": "New replay-input version required for formal backtest under changed sources; parent prepared snapshot retained; no regeneration needed to run diagnostics"
+  },
+  "local_tests": {
+    "new_diagnostic": {
+      "tests": 5,
+      "failures": 0,
+      "errors": 0
+    },
+    "related_regression": {
+      "tests": 104,
+      "failures": 0,
+      "errors": 0,
+      "seconds": 5.913
+    },
+    "public_feature_regression": {
+      "tests": 40,
+      "failures": 0,
+      "errors": 0,
+      "seconds": 0.565
+    },
+    "native_acceptance_updated": {
+      "tests": 1,
+      "skipped": 1,
+      "reason": "No module named 'bomber.backtest'"
+    },
+    "environment": "Python 3.12; local validation pandas 3.0.6 / PyArrow 25.0.1 / NumPy 2.5.3",
+    "compileall": "passed",
+    "git_diff_check": "passed"
+  },
+  "checks": [
+    "Measured/unmeasured restore equals declared custom scalar-feature outcomes without Bar projection",
+    "Exact Decimal exponent, visible revision, decision clocks and READY/SKIPPED outcomes preserved",
+    "Old implementation identity works only in read-only diagnostic; ordinary ReplayInputs expected-context mismatch still rejected",
+    "Repeat diagnostics do not read/replay native market inputs and leave every artifact byte unchanged",
+    "Feature schema/content changes and full-check frame corruption rejected",
+    "Standalone CLI works without compiled SDK and protects artifact and feature inputs from report writes"
+  ],
+  "unchanged_sources": [
+    "demos/08_option_vega/strategy.py",
+    "demos/08_option_vega/vega_signal.py",
+    "demos/08_option_vega/run_backtest.py",
+    "demos/08_option_vega/feature/backtest.py",
+    "bomber/framework/dataprep/bars.py",
+    "bomber/framework/dataprep/contracts.py"
+  ],
+  "future_cython_boundary": {
+    "target": "Shared bulk numeric/observation restoration or typed reference-clock validation after XY measurements identify the dominant phase",
+    "contract": "Keep a Python path and compare Decimal values/representations, source/availability clocks, revisions and skipped outcomes",
+    "limits": "Feather I/O and Arrow native-library work are not accelerated by merely compiling Python; Python object allocation/GIL must be measured separately"
+  },
+  "server_reference": {
+    "previous_prepared_frames_load_seconds": 10.203871,
+    "frame_rows": 45839,
+    "observation_rows": "Not yet measured; new counter will report exact count"
+  },
+  "limits": [
+    "No native or full-interval performance claim for these changes",
+    "Diagnostic still uses existing v1 single-EXACT-feature frame format",
+    "Repeated runs reuse OS caches; feature-source setup measured separately from frame restoration",
+    "Timing overhead and separated batches can slightly change wall time relative to original combined loop"
+  ]
+}
