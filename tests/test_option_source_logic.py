@@ -20,7 +20,8 @@ checkpoint = import_module("demos.08_option_vega.vega_signal")
 
 def original():
     tree = ast.parse((Path(__file__).parent / "fixtures/option_vega/strategy1.py").read_text())
-    methods = {"_calc_option_positions", "_evaluate_close", "_calc_remaining_minutes"}
+    methods = {"_calc_option_positions", "_evaluate_close", "_calc_remaining_minutes",
+               "_future_hedge", "_trading_days_between"}
     cls = next(n for n in tree.body if isinstance(n, ast.ClassDef))
     cls.bases = []
     cls.body = [n for n in cls.body if isinstance(n, ast.Assign)
@@ -82,6 +83,24 @@ class SourceLifecycleTests(unittest.TestCase):
             self.f.info.symbol: (fixture.ns(clock),price)}
         self.s._frame(fixture.ns(clock),fixture.ns(clock)+20_000_000_000)
 
+    def legacy_hedge(self, now, strategy=None, ctx=None):
+        """Run the original method with exactly the same held book and inputs."""
+        s, ctx = strategy or self.s, ctx or self.ctx
+        legacy, _ = original()
+        legacy._opt_positions = {key: float(ctx.actual.get(s.instruments[key], 0))
+                                 for key in s.contracts}
+        legacy._fut_positions = {key: float(value) for key, value in s.future_goals.items()}
+        legacy._iv_cache = {key: value[1] for key, value in s.iv_cache.items()}
+        legacy._bar_cache = {key: value[1] for key, value in s.latest.items()}
+        legacy._trading_days = [pd.Timestamp(day) for day in s.trading_days]
+        static = pd.DataFrame([dict(Code=key, strike=info.strike,
+            lastTradingDate=info.last_day, futInstrumentID=info.future, Shibor=s.config.rate)
+            for key, info in s.contracts.items()])
+        legacy._local_data = lambda day: static.copy()
+        with contextlib.redirect_stdout(io.StringIO()):
+            legacy._future_hedge(str(now.date()), now, now.value)
+        return legacy._fut_positions
+
     def test_two_days_add_and_no_automatic_hedge_between_slots(self):
         self.frame("2026-08-13 13:58")
         first = self.s.option_goals[self.f.info.symbol]
@@ -114,15 +133,95 @@ class SourceLifecycleTests(unittest.TestCase):
         self.assertEqual(self.s.option_goals[self.f.info.symbol], -1)
         self.assertLess(self.s.option_goals[new.symbol], 0)
 
-    def test_missing_iv_keeps_existing_protective_future(self):
+    def test_missing_iv_without_cache_clears_month_like_legacy(self):
         self.ctx.actual[self.f.ids[self.f.info.symbol]] = Decimal(-2)
         self.s.option_goals[self.f.info.symbol] = Decimal(-2)
         self.s.future_goals["IM2609"] = Decimal(1)
         self.ctx.actual[self.f.ids["IM2609"]] = Decimal(1)
-        self.frame("2026-08-13 10:00", 10000)
-        self.assertEqual(self.s.future_goals["IM2609"], 1)
+        now = pd.Timestamp("2026-08-13 10:00", tz="Asia/Shanghai")
+        self.s.latest = {"IM2609": (now.value, 6500), self.f.info.symbol: (now.value, 10000)}
+        expected = self.legacy_hedge(now)
+        self.s._frame(now.value, now.value+20_000_000_000)
+        self.assertEqual(self.s.future_goals["IM2609"], expected["IM2609"])
+        self.assertEqual(self.s.future_goals["IM2609"], 0)
         self.assertEqual(self.s.last_decision["hedge_missing_iv"], [self.f.info.symbol])
-        self.assertFalse(self.ctx.intents)
+        self.assertEqual(self.ctx.intents[-1].targets[self.f.ids["IM2609"]], 0)
+        self.assertEqual(self.s.option_goals[self.f.info.symbol], -2)
+
+    def test_missing_iv_does_not_freeze_other_contracts_in_same_month(self):
+        missing = replace(self.f.info, symbol="MO2609-C-6700", strike=6700)
+        self.s.contracts[missing.symbol] = missing
+        self.s.instruments[missing.symbol] = missing.symbol+".CFFEX"
+        self.s.option_goals.update({self.f.info.symbol: Decimal(-4), missing.symbol: Decimal(-2)})
+        self.ctx.actual.update({self.f.ids[self.f.info.symbol]: Decimal(-4),
+                               self.s.instruments[missing.symbol]: Decimal(-2),
+                               self.f.ids["IM2609"]: Decimal(7)})
+        self.s.future_goals["IM2609"] = Decimal(7)
+        now = pd.Timestamp("2026-08-13 10:00", tz="Asia/Shanghai")
+        self.s.latest = {"IM2609": (now.value, 6500), self.f.info.symbol: (now.value, 100),
+                         missing.symbol: (now.value, 10000)}
+        expected = self.legacy_hedge(now)
+        self.s._frame(now.value, now.value+20_000_000_000)
+        self.assertGreater(self.s.future_goals["IM2609"], 0)
+        self.assertNotEqual(self.s.future_goals["IM2609"], 7)
+        self.assertEqual(self.s.future_goals["IM2609"], expected["IM2609"])
+        self.assertEqual(self.s.last_decision["hedge_missing_iv"], [missing.symbol])
+
+    def test_iv_cache_survives_overnight_and_reprices_current_inputs(self):
+        self.s.config = replace(self.s.config, min_time_value=5, max_iv_age_seconds=1)
+        now = pd.Timestamp("2026-08-14 10:00", tz="Asia/Shanghai")
+        cached = (fixture.ns("2026-08-13 10:00"), .25)
+        self.s.iv_cache[self.f.info.symbol] = cached
+        self.s.latest = {"IM2609": (now.value, 6650), self.f.info.symbol: (now.value, 51)}
+        g = self.s._greeks(self.f.info.symbol, now.value, now, hedge=True)
+        years = signal.source_years(now, self.s._remaining_days(now.date(), self.f.info.last_day), hedge=True)
+        expected = signal.source_greeks(6650, 6600, years, .02, .25, (self.f.info.last_day-now.date()).days/365)
+        self.assertEqual(g, expected)
+        self.assertEqual(self.s.iv_cache[self.f.info.symbol], cached)
+
+    def test_unlimited_iv_cache_does_not_bypass_market_quote_age(self):
+        now = pd.Timestamp("2026-08-13 10:00", tz="Asia/Shanghai")
+        self.s.iv_cache[self.f.info.symbol] = (fixture.ns("2026-08-12 10:00"), .25)
+        stale = now.value-301_000_000_000
+        self.s.latest = {"IM2609": (stale, 6500), self.f.info.symbol: (now.value, 1)}
+        with self.assertRaisesRegex(RuntimeError, "持仓计算缺少新鲜行情"):
+            self.s._greeks(self.f.info.symbol, now.value, now, hedge=True)
+
+    def test_191_lot_january_snapshot_matches_legacy_55_lot_goal(self):
+        # Actual 2023-01-17 snapshot: four contracts need the prior successful IV.
+        prices = {6400: 208.2, 6500: 114.8, 6600: 44.8, 6700: 13.2,
+                  6800: 4.2, 6900: 1.4, 7000: 1.0}
+        quantities = {6400: -31, 6500: -58, 6600: -48, 6700: -35, 6800: -8, 6900: -7, 7000: -4}
+        cached = {6400: .2044607161356375, 6800: .1680900269925297,
+                  6900: .1813217418936337, 7000: .2222643433078027}
+        contracts = {f"MO2301-C-{k}": signal.Contract(f"MO2301-C-{k}", "IM2301", k,
+            Decimal(100), date(2022, 10, 1), date(2023, 1, 20), date(2023, 1, 20), Decimal(".2"))
+            for k in prices}
+        ids = {key: key+".CFFEX" for key in (*contracts, "IM2301")}
+        days = tuple(x.date() for x in pd.bdate_range("2023-01-17", "2023-01-20"))
+        s = self.f.Strategy("january-regression", signal.OptionVegaConfig(), contracts,
+            {"IM2301": {"contMultNum": Decimal(200)}}, ids, "000852", days)
+        ctx = fixture.Context()
+        s._bind(ctx)
+        s._start()
+        now = pd.Timestamp("2023-01-17 14:55", tz="Asia/Shanghai")
+        old_ns = fixture.ns("2023-01-16 14:55")
+        for k, price in prices.items():
+            key = f"MO2301-C-{k}"
+            ctx.actual[ids[key]] = Decimal(quantities[k])
+            s.option_goals[key] = Decimal(quantities[k])
+            s.latest[key] = (now.value, price)
+            if k in cached:
+                s.iv_cache[key] = (old_ns, cached[k])
+        s.latest["IM2301"] = (now.value, 6605.2)
+        ctx.actual[ids["IM2301"]] = s.future_goals["IM2301"] = Decimal(3)
+        self.assertEqual(sum(quantities.values()), -191)
+        expected = self.legacy_hedge(now, s, ctx)
+        s._frame(now.value, now.value+5_000_000_000)
+        self.assertEqual(expected["IM2301"], 55)
+        self.assertEqual(s.future_goals["IM2301"], expected["IM2301"])
+        self.assertEqual(ctx.intents[-1].targets[ids["IM2301"]], 55)
+        self.assertNotIn("hedge_missing_iv", s.last_decision)
 
     def test_exit_only_option_slot_uses_same_month_future(self):
         self.s.option_goals[self.f.info.symbol] = Decimal(-1)

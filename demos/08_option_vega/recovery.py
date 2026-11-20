@@ -166,7 +166,19 @@ def source_identity_with_legacy_metadata(sources):
     return result
 
 
+def with_legacy_config_defaults(old, new):
+    """旧检查点缺少后来新增的字段时，只接受与旧行为一致的显式默认值。"""
+    result = deepcopy(old)
+    previous, current = result.get("config", {}), new.get("config", {})
+    # 固定为字段引入前的行为，不能跟随未来版本的默认值变化。
+    for name, default in (("entry_quote_policy", "synchronized"), ("index_signal_minutes", 1)):
+        if name not in previous and name in current and type(current[name]) is type(default) and current[name] == default:
+            previous[name] = default
+    return result
+
+
 def validate_identity(old, new, *, mode="simnow"):
+    old = with_legacy_config_defaults(old, new)
     allowed = {"td_day", "valuation_day", "calendar", "calendar_manifest", "reference_fingerprint", "contracts"}
     if old.get("mode") != mode or new.get("mode") != mode or old.get("environment") != "realtime" or new.get("environment") != "realtime":
         raise ValueError("08跨日自动恢复须使用相同实时执行模式")

@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+import warnings
 from unittest.mock import patch
 
 import pandas as pd
@@ -17,10 +18,33 @@ else:
     NATIVE_ERROR = None
 
 
+def fixture_market_price(frame, mask, price):
+    """临时测试行情先声明浮点OHLC，兼容严格拒绝int列写入小数的pandas。"""
+    columns = ['open', 'high', 'low', 'close']
+    result = frame.astype({column: 'float64' for column in columns})
+    result.loc[mask, columns] = float(price)
+    return result
+
+
+class VegaNativeFixturePreparationTests(unittest.TestCase):
+    def test_fractional_quote_updates_integer_fixture_without_dtype_coercion(self):
+        frame = pd.DataFrame(dict(open=[50, 50], high=[50, 50], low=[50, 50],
+            close=[50, 50], volume=[100, 100]))
+        with warnings.catch_warnings():
+            warnings.simplefilter('error', FutureWarning)
+            result = fixture_market_price(frame, [False, True], .2)
+        for column in ['open', 'high', 'low', 'close']:
+            self.assertEqual(str(result[column].dtype), 'float64')
+            self.assertEqual(result[column].tolist(), [50., .2])
+            self.assertEqual(frame[column].tolist(), [50, 50])
+        self.assertEqual(str(result.volume.dtype), str(frame.volume.dtype))
+        self.assertEqual(result.volume.tolist(), [100, 100])
+
+
 @unittest.skipIf(NATIVE_ERROR is not None, f"需要Bomber编译扩展: {NATIVE_ERROR}")
 class VegaNativeSettlementTests(unittest.TestCase):
     def fixture(self, root, terminal, *, option_bar_minutes=1, execution_timing="native",
-                future_hedge=False, future_terminal=Decimal("6900.13")):
+                future_hedge=False, future_terminal=Decimal("6900.13"), legacy_entry=False):
         module = import_module("demos.08_option_vega.run_backtest")
         features = import_module("demos.08_option_vega.feature")
         from bomber.framework.datahub.features import ExternalDataRecord
@@ -43,6 +67,8 @@ class VegaNativeSettlementTests(unittest.TestCase):
         days = ("2026-09-17", "2026-09-18", "2026-09-21")
         clocks = (("14:00", "14:01", "14:05", "14:06", "14:50", "14:51", "14:55", "15:00")
             if option_bar_minutes == 5 else ("13:58", "13:59", "14:50", "14:51", "14:52"))
+        if legacy_entry:
+            clocks=("13:55","13:58","13:59","14:00","14:01","14:05","14:06","14:50","14:51","14:55","15:00")
         index_path = root / "index.csv"
         bundle, binding = features.index_bundle(DEFAULT_FEATURE_CONFIG, "index.minute", 1, file_path=index_path)
         records = []
@@ -87,11 +113,17 @@ class VegaNativeSettlementTests(unittest.TestCase):
             cli.extend(["--option-slot", "14:00", "--opt-dir", str(root / "kline/opt")])
         if terminal is not None:
             cli.extend(["--option-settlements", str(settlements)])
+        if legacy_entry:
+            cli.extend(["--option-slot","13:58","--entry-quote-policy","latest","--index-value-field","close",
+                "--index-signal-minutes","5",
+                "--max-option-lots","0","--max-total-option-lots","0","--max-future-lots","0"])
         if future_hedge:
             cli.extend(["--nav", "40000000", "--max-option-lots", "10", "--max-total-option-lots", "20",
                 "--hedge-slots", "14:50"])
             if future_terminal is not None:
                 cli.extend(["--future-settlements", str(future_settlements)])
+            if legacy_entry:
+                cli.extend(["--max-option-lots","0","--max-total-option-lots","0","--max-future-lots","0"])
         with patch.object(module, "run_case") as capture, patch("sys.argv", cli):
             module.main()
         return module, capture.call_args.args[0]
@@ -170,6 +202,75 @@ class VegaNativeSettlementTests(unittest.TestCase):
                 execution_timing="next_market", future_hedge=True, future_terminal=None)
             with self.assertRaisesRegex(RuntimeError, "Missing final settlement for held future IM2609"):
                 module.run_case(args)
+
+    def test_option_fill_hedges_on_next_m1_before_scheduled_slot(self):
+        with TemporaryDirectory() as directory:
+            module, args = self.fixture(Path(directory), Decimal(0), option_bar_minutes=5,
+                execution_timing="next_market", future_hedge=True)
+            output = module.run_case(args)
+            fills = pd.read_csv(output / "fills.csv")
+            first_day = "2026-09-17"
+            stamps = pd.to_datetime(fills.ts_event, utc=True).dt.tz_convert("Asia/Shanghai")
+            future = fills[fills.instrument_id.eq("IM2609.CFFEX")
+                & stamps.dt.strftime("%Y-%m-%d").eq(first_day)]
+            first = pd.to_datetime(future.ts_event, utc=True).dt.tz_convert("Asia/Shanghai").min()
+            # 定时对冲仍为14:50；新增14:05期权成交触发的期货应在14:06成交。
+            self.assertEqual(first.strftime("%H:%M"), "14:06")
+            signals = pd.read_csv(output / "signals.csv")
+            self.assertTrue(signals.action.eq("OPTION_FILL_HEDGE").any())
+            summary = json.loads((output / "summary.json").read_text())
+            self.assertEqual(summary["report_errors"], [])
+            self.assertEqual(summary["remaining_positions_or_working"], {})
+
+    def test_legacy_1358_m5_entry_preserves_actual_fill_hedge_and_settlement(self):
+        with TemporaryDirectory() as directory:
+            module,args=self.fixture(Path(directory),Decimal(0),option_bar_minutes=5,
+                execution_timing="next_market",future_hedge=True,legacy_entry=True)
+            output=module.run_case(args)
+            fills=pd.read_csv(output/'fills.csv')
+            stamps=pd.to_datetime(fills.ts_event,utc=True).dt.tz_convert('Asia/Shanghai')
+            day=stamps.dt.strftime('%Y-%m-%d').eq('2026-09-17')
+            option=day&fills.instrument_id.eq('MO2609-C-7000.CFFEX')&fills.order_side.eq('SELL')
+            future=day&fills.instrument_id.eq('IM2609.CFFEX')&fills.order_side.eq('BUY')
+            self.assertEqual(stamps[option].min().strftime('%H:%M'),'14:00')
+            self.assertEqual(stamps[future].min().strftime('%H:%M'),'14:01')
+            params=json.loads((output/'strategy_parameters.json').read_text())
+            self.assertEqual(params['entry_quote_policy'],'latest')
+            self.assertEqual(params['max_total_option_lots'],0)
+            summary=json.loads((output/'summary.json').read_text())
+            self.assertEqual(summary['index_feature']['value_field'],'close')
+            self.assertEqual(summary['report_errors'],[])
+            self.assertEqual(summary['remaining_positions_or_working'],{})
+
+    def test_monthly_timer_runs_previous_month_while_new_month_order_is_inflight(self):
+        with TemporaryDirectory() as directory:
+            root=Path(directory)
+            module,args=self.fixture(root,Decimal(0),option_bar_minutes=5,
+                execution_timing='next_market',future_hedge=True,legacy_entry=True)
+            args.nav='400000000';args.hedge_slots='14:00,14:55'
+            # Sep17 holds Sep options; Sep18 entry rolls to October. A14:00 move
+            # requires rehedging the September inventory while October is filling.
+            for kind,symbol,price in [('fut','IM2609',6500),('opt','MO2609-C-7000',.2)]:
+                path=root/'kline'/kind/'20260918'/f'{symbol}_20260918.feather'
+                frame=pd.read_feather(path)
+                mask=pd.to_datetime(frame.datetime).dt.strftime('%H:%M').ge('14:00')
+                frame=fixture_market_price(frame,mask,price)
+                frame.to_feather(path)
+            output=module.run_case(args)
+            signals=pd.read_csv(output/'signals.csv')
+            stamp=pd.Timestamp('2026-09-18 14:00',tz='Asia/Shanghai').value
+            deferred=signals[signals.signal_ns.eq(stamp)&signals.action.eq('SCHEDULED_HEDGE_DEFERRED')]
+            self.assertFalse(deferred.empty)
+            self.assertTrue(deferred.missing.astype(str).str.contains('IM2610').any())
+            ready=signals[signals.signal_ns.eq(stamp)&signals.action.eq('SCHEDULED_HEDGE_CALCULATED')]
+            self.assertFalse(ready.empty)
+            import ast
+            self.assertTrue(any(ast.literal_eval(value).get('IM2609.CFFEX')=='0'for value in ready.targets))
+            retry=signals[signals.signal_ns.eq(stamp+60_000_000_000)&signals.action.eq('SCHEDULED_HEDGE_CALCULATED')]
+            self.assertTrue(retry.targets.astype(str).str.contains('IM2610').any())
+            summary=json.loads((output/'summary.json').read_text())
+            self.assertEqual(summary['pending_scheduled_hedges'],{})
+            self.assertEqual(summary['remaining_positions_or_working'],{})
 
 
 if __name__ == "__main__":

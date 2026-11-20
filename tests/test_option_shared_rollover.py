@@ -34,6 +34,39 @@ class OptionSharedRolloverTests(unittest.TestCase):
     setUp = fixture.MigrationTests.setUp
     identity = fixture.MigrationTests.identity
 
+    def test_missing_new_entry_fields_restore_only_original_defaults(self):
+        module = import_module("demos.08_option_vega.recovery")
+        old, new = deepcopy(self.identity), deepcopy(self.new_identity)
+        for key in ("entry_quote_policy", "index_signal_minutes"):old["config"].pop(key, None)
+        new["config"].update(entry_quote_policy="synchronized", index_signal_minutes=1)
+        before = deepcopy(old)
+        module.validate_identity(old, new)
+        self.assertEqual(old, before)
+        for key,value in (("entry_quote_policy","latest"),("index_signal_minutes",5),
+                          ("index_signal_minutes",True),("max_option_lots",999)):
+            changed = deepcopy(new);changed["config"][key]=value
+            with self.subTest(key=key,value=value),self.assertRaises(ValueError):
+                module.validate_identity(old, changed)
+        explicit = deepcopy(old);explicit["config"]["entry_quote_policy"]="latest"
+        with self.assertRaises(ValueError):module.validate_identity(explicit,new)
+
+    def test_same_day_legacy_entry_defaults_do_not_allow_strategy_or_hybrid_changes(self):
+        old = dict(strategy_id=CLIENT,kind="option_vega",trading_day="20261120",environment="realtime",
+            routes={"fixed":True},reference={"config":{"max_option_lots":1}})
+        new = deepcopy(old)
+        new["reference"]["config"].update(entry_quote_policy="synchronized",index_signal_minutes=1)
+        before = deepcopy(old)
+        rollover.validate_strategy_identity(old,new)
+        self.assertEqual(old,before)
+        for fault in ("latest","m5","risk","hybrid"):
+            previous,changed=deepcopy(old),deepcopy(new)
+            if fault=="latest":changed["reference"]["config"]["entry_quote_policy"]="latest"
+            elif fault=="m5":changed["reference"]["config"]["index_signal_minutes"]=5
+            elif fault=="risk":changed["reference"]["config"]["max_option_lots"]=100
+            else:previous["kind"]=changed["kind"]="hybrid_transformer"
+            with self.subTest(fault=fault),self.assertRaises(ValueError):
+                rollover.validate_strategy_identity(previous,changed)
+
     def test_market_age_change_preserves_same_day_strategy_identity_and_rejects_other_changes(self):
         old = dict(strategy_id=CLIENT, kind="option_vega", trading_day="20261119", environment="realtime",
             routes={"unchanged": True}, reference=dict(config={"max_market_age_seconds": 300, "max_option_lots": 1},

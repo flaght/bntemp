@@ -12,6 +12,9 @@ def validate_strategy_identity(old, new):
     # 08的运行时行情容忍度不是数据来源变更。同日/跨日、账户/信号恢复共用此一处规则。
     if (previous["kind"] == current["kind"] == "option_vega" and current["environment"] == "realtime"
             and "reference" in previous and "reference" in current):
+        from importlib import import_module
+        previous["reference"] = import_module("demos.08_option_vega.recovery").with_legacy_config_defaults(
+            previous["reference"], current["reference"])
         before = previous["reference"].get("sources", {}).get("market", {})
         after = current["reference"].get("sources", {}).get("market", {})
         if (before.get("channel") == after.get("channel") == "dolphindb"
@@ -23,8 +26,8 @@ def validate_strategy_identity(old, new):
                     or not Decimal(str(value)).is_finite() or not 60 < value <= limit):
                 raise ValueError("恢复行情时效须大于60秒且不超过策略max_market_age_seconds")
             before["max_age_seconds"] = value
-            if previous["trading_day"] == current["trading_day"] and previous == current:
-                return  # 仅此字段变化才允许同日恢复；不改写原检查点。
+        if previous["trading_day"] == current["trading_day"] and old != new and previous == current:
+            return  # 仅运行时效或缺失默认字段兼容；不改写原检查点。
     if not previous["trading_day"] < current["trading_day"] or current["environment"] != "realtime":
         raise ValueError("共享跨日恢复仅支持向前的realtime交易日")
     previous["trading_day"] = current["trading_day"]

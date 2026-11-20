@@ -631,6 +631,33 @@ class DirectCtpTests(unittest.TestCase):
             self.assertFalse(case.transport.sent)
             case.port.stop();case.second.stop();case.account.stop()
 
+    def test_legacy_entry_default_fields_restore_same_and_next_day_without_resetting_positions_or_counter(self):
+        for cross_day in (False,True):
+            with self.subTest(cross_day=cross_day),TemporaryDirectory() as directory:
+                case=self.option_scope_recovery(directory)
+                if cross_day:
+                    account,service,broker,one,two=case.account,case.service,case.transport,case.port,case.second
+                    identity=case.current
+                else:
+                    account,service,broker,(one,two)=self.make(case.path)
+                    identity=deepcopy(case.payload['component_states']['session_identity']['identity'])
+                    broker.gross=deepcopy(case.transport.gross)
+                    account.manager.state_components['session_identity'].identity=identity
+                    account.import_transform=lambda data:case.app.prepare_payload(account,data)
+                identity['strategies']['one']['reference']['config'].update(
+                    entry_quote_policy='synchronized',index_signal_minutes=1)
+                account.start_preparation(resume=True)
+                self.assertEqual(case.path.read_bytes(),case.original)
+                self.assertEqual(service.position_manager.position('one','main'),-1)
+                self.assertEqual(service.position_manager.position('two','main'),2)
+                self.assertEqual(account.driver.buckets.quantities('one',self.instrument),
+                    [0,0,0,1] if cross_day else [0,0,1,0])
+                with self.assertRaises(import_module('bomber.framework.trader.execution.ctp.independent').OrderBudgetExhausted):
+                    case.counter.check('20261013')
+                self.assertFalse(broker.sent)
+                service.start();one.start();two.start();account.authorize()
+                one.stop();two.stop();account.stop()
+
     def test_option_scope_addition_rejects_other_changes_and_keeps_original_checkpoint(self):
         for fault in ('same_day','removed','old_limit','budget','hybrid','unknown_scope','frozen'):
             with self.subTest(fault=fault),TemporaryDirectory() as directory:
