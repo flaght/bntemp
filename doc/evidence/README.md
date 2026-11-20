@@ -1,5 +1,14 @@
 # Bomber 校验清单与历史证据索引
 
+2026-11-20新增离线版本化Feather日分区及08 raw/prepared切换：
+[准备、核验与2024～2026对照命令](../../demos/08_option_vega/README.md#离线准备feather与原始路径对照)、
+[验证范围](live/PREPARED_DATASET_20261120.json)、
+[SHA256清单](checksums/PREPARED_DATASET_20261120_SHA256.txt)。
+源码由用户通过GitHub提交并同步到XY，不提供本轮同步包。
+85项相关测试通过；既有226项大回归仍有与修改前完全相同的9项失败/错误。
+本机400文件加载样本约0.85s→0.26s；不代表完整区间收益。
+原生撮合验收因缺少编译扩展跳过，当前2024～2026机器完整对照及DX验收仍待执行。
+
 2026-11-10新增标准化行情到Bar转换优化：[原理与XY验证](../HANDOFF/demos/HANDOFF_PREPARED_BAR_PARSER_2026-11-10.md)、
 [离线证据](live/PREPARED_BAR_PARSER_20261110.json)、
 [同步清单](checksums/PREPARED_BAR_PARSER_20261110_SHA256.txt)。

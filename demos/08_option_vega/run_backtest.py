@@ -67,7 +67,7 @@ def load_contracts(opt_path, fut_path, option_product, future_product, index_cod
     return contracts, futures
 
 
-def load_backtest_calendar(args):
+def load_backtest_calendar(args, prepared_dataset=None):
     """日期日历独立于行情区间；原生模式保留规则维护范围内的后续日期。"""
     calendar_id = getattr(args, "calendar_id", None)
     if calendar_id:
@@ -80,6 +80,15 @@ def load_backtest_calendar(args):
         return snapshot.days, source
     if args.calendar is not None:
         return load_calendar(args.calendar, args.start_day, args.end_day), str(args.calendar)
+    if prepared_dataset is not None:
+        days = tuple(sorted({date.fromisoformat(row["trading_day"]) for row in prepared_dataset.rows}))
+        if not days or args.start_day < days[0] or args.end_day > days[-1]:
+            raise ValueError("请求区间超出prepared行情日期范围；请显式提供交易日历")
+        session = current_session()
+        if session is not None:
+            session.coverage.calendar_source = "INFERRED_PREPARED_MARKET_DATES"
+            session.coverage.assumptions += ("inferred_calendar_trusts_upstream_market_date_completeness",)
+        return days, "PREPARED_MARKET_DATES"
     return infer_market_calendar((args.fut_dir, args.opt_dir), args.start_day, args.end_day), "MARKET_DATES"
 
 
@@ -103,6 +112,22 @@ def backtest_bar_specs(args):
 
 def resolve_backtest_paths(args):
     """M1固定使用data_root默认目录；自定义opt_dir仅用于真实M5期权。"""
+    mode = getattr(args, "data_mode", "raw")
+    if mode == "prepared":
+        from bomber.framework.dataprep.paths import resolve_paths
+        if getattr(args, "prepared_root", None) is None:
+            raise ValueError("prepared模式须提供--prepared-root")
+        # Reference terms, index features and settlements keep their independent
+        # paths. Original minute-market directories need not exist on this host.
+        paths = resolve_paths(vars(args), env={}, required_files=("opt_basic", "fut_basic"))
+        args.opt_basic, args.fut_basic = paths.opt_basic, paths.fut_basic
+        args.opt_dir, args.fut_dir = paths.opt, paths.fut
+        args.calendar = paths.calendar
+        args.prepared_root = Path(args.prepared_root).expanduser().resolve()
+        return args
+    if mode != "raw":
+        raise ValueError("data-mode须为raw或prepared")
+    # Permit one YAML to retain both roots; data_mode alone chooses the input.
     minutes = getattr(args, "option_bar_minutes", 1)
     if minutes == 1:
         if getattr(args, "data_root", None) is None:
@@ -191,7 +216,16 @@ def run_case(args):
     phase = _start_phase("输入路径解析与配置校验")
     args = resolve_backtest_paths(args)
     bar_specs = backtest_bar_specs(args)
-    print(f"期权行情周期={bar_specs['option'].bar_spec} 实际目录={args.opt_dir}", flush=True)
+    prepared_dataset = None
+    if getattr(args, "data_mode", "raw") == "prepared":
+        from bomber.framework.dataprep.prepared import PreparedDataset
+        prepared_dataset = PreparedDataset(args.prepared_root,
+            verify=getattr(args, "prepared_verify", "metadata"))
+        for kind, product in (("option", args.option_product), ("future", args.future_product)):
+            prepared_dataset.validate_spec(kind, product, bar_specs[kind])
+    print(f"期权行情周期={bar_specs['option'].bar_spec} "
+          f"数据模式={getattr(args, 'data_mode', 'raw')} "
+          f"实际目录={args.opt_dir if prepared_dataset is None else args.prepared_root}", flush=True)
     features = import_module("demos.08_option_vega.feature")
     with performance.measure("index_feature_file_read"):
         index_bundle, index_binding, index_records, index_identity = features.read_index_features(args,
@@ -218,7 +252,7 @@ def run_case(args):
         raise ValueError("手续费须为有限非负数")
     _finish_phase("输入路径解析与配置校验", phase)
     phase = _start_phase("交易日历加载或推导")
-    calendar, calendar_source = load_backtest_calendar(args)
+    calendar, calendar_source = load_backtest_calendar(args, prepared_dataset)
     print(f"交易日来源={calendar_source} 日期范围={calendar[0]}..{calendar[-1]}")
     days = tuple(day for day in calendar if args.start_day <= day <= args.end_day)
     if not days:
@@ -229,8 +263,14 @@ def run_case(args):
         args.option_product, args.future_product, args.index_code)
     _finish_phase("期权与期货基础条款加载", phase)
     phase = _start_phase("行情目录扫描与同月对冲资格组装")
-    opt_paths = inventory(args.opt_dir, args.start_day, args.end_day, lambda key: key in contracts)
-    fut_paths = inventory(args.fut_dir, args.start_day, args.end_day, lambda key: key in future_rows)
+    if prepared_dataset is None:
+        opt_paths = inventory(args.opt_dir, args.start_day, args.end_day, lambda key: key in contracts)
+        fut_paths = inventory(args.fut_dir, args.start_day, args.end_day, lambda key: key in future_rows)
+    else:
+        opt_paths = prepared_dataset.inventory("option", args.option_product, bar_specs["option"],
+            args.start_day, args.end_day, lambda key: key in contracts)
+        fut_paths = prepared_dataset.inventory("future", args.future_product, bar_specs["future"],
+            args.start_day, args.end_day, lambda key: key in future_rows)
     index_minutes = defaultdict(set)
     for record in index_records:
         minute = pd.Timestamp(record.ts_event, tz="UTC").tz_convert("Asia/Shanghai")
@@ -288,7 +328,8 @@ def run_case(args):
     ) for day, key in needed), requested=(args.start_day, args.end_day))
     bundle = prepare_option_chain(
         {"option": args.opt_dir, "future": args.fut_dir}, plan,
-        specs=bar_specs, copy_frames=False,
+        specs=bar_specs, copy_frames=False, prepared_dataset=prepared_dataset,
+        products={"option": args.option_product, "future": args.future_product},
     )
     prepared = {(source.result.key.trading_day, source.result.key.symbol): source.result for source in bundle.sources}
     frames = {identity: source.frame for identity, source in prepared.items()}
@@ -468,6 +509,8 @@ def run_case(args):
                 "option_ohlc_policy": bar_specs["option"].ohlc_policy,
                 "execution_timing": getattr(args, "execution_timing", "native"),
                 "bar_parser": getattr(args, "bar_parser", "prepared"),
+                "data_mode": getattr(args, "data_mode", "raw"),
+                "prepared_dataset": None if prepared_dataset is None else prepared_dataset.identity,
                 "index_feature": index_identity, "frame_wait_seconds": args.frame_wait_seconds,
                 "skipped_index_frames": sum(row["status"] == "SKIPPED" for row in runner.frame_audit),
                 "pending_scheduled_hedges": strategy._pending_scheduled_hedges,
@@ -547,6 +590,11 @@ def main():
     parser.add_argument("--end-day", type=date.fromisoformat, required=True)
     parser.add_argument("--data-root", type=Path,
         help="显式文件根目录；或逐项指定交易腿和基础资料路径，不从环境变量补齐")
+    parser.add_argument("--data-mode", choices=("raw", "prepared"), default="raw",
+        help="raw现场标准化；prepared读取离线校验的版本化Feather分区")
+    parser.add_argument("--prepared-root", type=Path, help="包含manifest.json的prepared版本目录")
+    parser.add_argument("--prepared-verify", choices=("metadata", "full"), default="metadata",
+        help="metadata核对版本/索引/分区结构；full另校验本次读取分区的SHA256")
     for name in ("fut-dir", "fut-basic", "opt-basic"):
         parser.add_argument("--" + name, type=Path)
     parser.add_argument("--opt-dir", type=Path,

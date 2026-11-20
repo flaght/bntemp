@@ -9,6 +9,7 @@ import time
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
+from bomber.framework.datahub.features import FeatureQuery, FeatureUnavailable
 from bomber.framework.market.basic.base import Bar, DataType, InstrumentId
 from bomber.framework.market.frames import MinuteFrameBuffer, minute_close_ns
 from bomber.framework.trader import RuntimeMode, UnifiedStrategyRunner
@@ -265,6 +266,14 @@ class OptionSessionRunner(UnifiedStrategyRunner):
         for key in required:
             limit = self.source_age_ns.get(self.sources[key], self.market_age_ns)
             observation = self.observations.get(key)
+            if not self.replay and not self.accept_bars and self.warm_started_ns is None:
+                for feed in self.feature_query_feeds:
+                    if feed.key == key:
+                        # DFS准备期只有缓存、没有待决策帧，因而尚未投影Bar。
+                        # 只读真实可见记录核验健康；不标记已投影、不写策略缓存，
+                        # 保证开闸后同一分钟仍能按原期限进入正式决策帧。
+                        observation = self._preparation_feature_observation(feed, now, limit)
+                        break
             key_warming = self.warm_started_ns is not None and 0 <= now - self.warm_started_ns <= limit
             if observation is None:
                 invalid = not key_warming
@@ -282,6 +291,23 @@ class OptionSessionRunner(UnifiedStrategyRunner):
             stale.update({key: value for key, value in raw.items()
                 if not warming or value["trading_day"] is not None})
         return stale
+
+    def _preparation_feature_observation(self, feed, now, limit):
+        event = feed.cache.manifest["latest_event_ns"]
+        if event is None:
+            return None
+        try:
+            record = feed.hub.feature_snapshot((feed.requirement,), FeatureQuery(event, now)).latest("value")
+        except FeatureUnavailable:
+            return None
+        valuation = minute_close_ns(record.ts_event, self.labels[self.sources[feed.key]])
+        if (datetime.fromtimestamp(valuation / 1e9, ZoneInfo("Asia/Shanghai")).date()
+                != self.references.service.valuation_day):
+            return None
+        if any(not 0 <= now - stamp <= limit
+                for stamp in (valuation, record.source_ns, record.visible_ns)):
+            return None
+        return valuation, record.visible_ns
 
     def flush_frames(self):
         with self._frame_lock:

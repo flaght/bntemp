@@ -29,7 +29,13 @@ def read_research_frame(path, key, day, kind, bar_timestamp):
     return read_bar_frame(path, spec, BarFileKey(kind, key, day)).frame
 
 
-def prepare_option_chain(paths, plan, *, specs=None, context=None, copy_frames=True):
+def prepare_option_chain(paths, plan, *, specs=None, context=None, copy_frames=True,
+                         prepared_dataset=None, products=None):
+    if prepared_dataset is not None:
+        if specs is None or products is None:
+            raise ValueError("Prepared option chains require explicit specs and products")
+        return prepared_dataset.load(plan, specs=specs, products=products,
+                                     context=context, copy_frames=copy_frames)
     index = {}
     for kind, root in paths.items():
         index.update(scan_bar_files(root, kind))

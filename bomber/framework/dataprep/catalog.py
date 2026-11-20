@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
+import os
 import re
 
 from .contracts import ASSET_KINDS, BarFileKey, CoverageReport
@@ -11,6 +12,25 @@ from .session import current_session, fail
 
 def symbol(value):
     return str(value).strip().split(".")[0].upper()
+
+
+def _feather_names(root):
+    """Same POSIX rglob scope/order, without constructing/sorting every Path.
+
+    walk does not descend through directory symlinks; matching directory entries
+    and file symlinks are still included, just as with rglob('*.feather').
+    Tuple sorting preserves Path's component order (string sorting does not).
+    """
+    if os.name != "posix":
+        return [str(path) for path in sorted(Path(root).rglob("*.feather"))]
+    names = []
+    for parent, directories, files in os.walk(root, followlinks=False):
+        for name in directories + files:
+            if name.endswith(".feather"):
+                names.append(os.path.join(parent, name))
+    prefix = len(root.rstrip(os.sep)) + 1
+    names.sort(key=lambda name: tuple(name[prefix:].split(os.sep)))
+    return names
 
 
 def scan_bar_files(root, asset_kind="future", start_day=None, end_day=None):
@@ -27,24 +47,34 @@ def scan_bar_files(root, asset_kind="future", start_day=None, end_day=None):
         inventory = session.cache[cache_key]
     else:
         inventory = {}
-        for path in sorted(root.rglob("*.feather")):
-            code, separator, label = path.stem.rpartition("_")
+        days, symbols = {}, {}
+        for name in _feather_names(str(root)):
+            parent, basename = os.path.split(name)
+            code, separator, label = basename[:-len(".feather")].rpartition("_")
             if not separator or not re.fullmatch(r"\d{8}", label):
                 continue
-            try:
-                day = date.fromisoformat(f"{label[:4]}-{label[4:6]}-{label[6:]}")
-            except ValueError:
-                fail("INVALID_TIMESTAMP", "Invalid file trading day", source=path)
-            if re.fullmatch(r"\d{8}", path.parent.name) and path.parent.name != label:
-                fail("IDENTITY_MISMATCH", "Directory and filename trading days differ", source=path)
-            key = BarFileKey(asset_kind, symbol(code), day)
+            day = days.get(label)
+            if day is None:
+                try:
+                    day = date.fromisoformat(f"{label[:4]}-{label[4:6]}-{label[6:]}")
+                except ValueError:
+                    fail("INVALID_TIMESTAMP", "Invalid file trading day", source=Path(name))
+                days[label] = day
+            parent_name = os.path.basename(parent)
+            if parent_name != label and re.fullmatch(r"\d{8}", parent_name):
+                fail("IDENTITY_MISMATCH", "Directory and filename trading days differ", source=Path(name))
+            if code not in symbols:
+                symbols[code] = symbol(code)
+            key = BarFileKey(asset_kind, symbols[code], day)
+            path = Path(name)
             if key in inventory:
                 fail("DUPLICATE_FILE", f"Duplicate identity: {key}; first={inventory[key]}", source=path)
             inventory[key] = path
         if session is not None:
             session.cache[cache_key] = inventory
             session.counters["directory_scans"] += 1
-    return {BarFileKey(asset_kind, k.symbol, k.trading_day, k.venue): v for k, v in inventory.items()
+    return {(k if k.asset_kind == asset_kind else BarFileKey(asset_kind, k.symbol, k.trading_day, k.venue)): v
+            for k, v in inventory.items()
             if (start_day is None or k.trading_day >= start_day)
             and (end_day is None or k.trading_day <= end_day)}
 

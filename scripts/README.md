@@ -1,5 +1,11 @@
 # 脚本目录职责
 
+`prepare_market_data.py`从原始Feather创建离线标准化、已校验的版本化行情分区；
+`check_prepared_market_data.py`按交易日将prepared与原始来源逐字段/类型/精度/诊断对照。
+两者仅依赖Python数据准备模块、pandas/numpy/pyarrow（读取YAML另需PyYAML），不加载交易内核、
+不连接数据服务或柜台。准备保留原文件，新版本目录不可覆盖；完整流程见
+[08回测说明](../demos/08_option_vega/README.md#离线准备feather与原始路径对照)。
+
 本目录放置可独立运行的工程工具和通道联调入口，按用途划分。工程维护工具负责源码同步与发布准备，通道联调入口负责验证交易系统连接、账户查询和执行链路。
 
 ```text

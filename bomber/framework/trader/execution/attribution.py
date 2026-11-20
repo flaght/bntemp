@@ -195,16 +195,29 @@ class PositionAttributionLedger:
                         deficits[key] = deficits.get(key, Decimal(0)) - signed
                     reserved[key[1]] = reserved.get(key[1], Decimal(0)) + signed
             instruments = set(targets) | {k[1] for k in deficits}
+            # One request-local view under the same authoritative position lock.
+            # Do not scan all owned rows again for every requested instrument.
+            assigned = {}
+            for key, quantity in self._owned.items():
+                if key[0] == request.client_id:
+                    assigned[key[1]] = assigned.get(key[1], Decimal(0)) + quantity
             for instrument in instruments:
                 instrument_id = InstrumentId.from_str(instrument)
-                if self.unassigned(request.client_id, instrument_id) != 0:
+                if self.positions.account_position(request.client_id, instrument_id) - assigned.get(instrument, Decimal(0)) != 0:
                     raise AttributionError(f"账户有未归属仓位，须先显式接管或对账: {instrument}")
                 if self.positions.working_quantity(request.client_id, instrument_id) != reserved.get(instrument, 0):
                     raise AttributionError(f"账户在途量与归属订单预留不一致: {instrument}")
             transfers = []
+            # Preserve the original global tuple ordering within each instrument.
+            # Re-sorting the entire portfolio twice per instrument made a full
+            # option universe quadratic, even when most targets were explicit 0.
+            by_instrument = {}
+            for key in sorted(deficits):
+                by_instrument.setdefault(key[1], []).append(key)
             for instrument in (() if independent else sorted(instruments)):
-                positive = [k for k in sorted(deficits) if k[1] == instrument and deficits[k] > 0]
-                negative = [k for k in sorted(deficits) if k[1] == instrument and deficits[k] < 0]
+                keys = by_instrument.get(instrument, ())
+                positive = [k for k in keys if deficits[k] > 0]
+                negative = [k for k in keys if deficits[k] < 0]
                 for buy in positive:
                     for sell in negative:
                         quantity = min(deficits[buy], -deficits[sell])
@@ -217,8 +230,8 @@ class PositionAttributionLedger:
             for order in orders:
                 direction = 1 if order.side is OrderSide.BUY else -1
                 remaining, legs = order.quantity, []
-                for key in sorted(deficits):
-                    if key[1] != str(order.instrument_id) or deficits[key] * direction <= 0:
+                for key in by_instrument.get(str(order.instrument_id), ()):
+                    if deficits[key] * direction <= 0:
                         continue
                     quantity = min(remaining, abs(deficits[key]))
                     if quantity:

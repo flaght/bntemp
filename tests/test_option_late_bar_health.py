@@ -122,6 +122,54 @@ class LateBarHealthTests(unittest.TestCase):
         self.assertIsNone(s.runner.failure)
         self.assertEqual(self.path.read_bytes(),before)
 
+    def test_dfs_preparation_reads_real_index_without_consuming_first_running_projection(self):
+        old = self.setup_session(held=True)
+        old.runner.stop()
+        self.now = ns("2026-08-13 13:58") + 1_000_000_000
+        s, _ = self.build(resume=True, config=old.strategy.config, dfs_index=True)
+        s.manager.restore()
+        before = self.path.read_bytes()
+        owned = deepcopy(s.runner.position_manager.attribution.state())
+        s.runner.replay = False
+        s.runner.source_age_ns["market"] = 300_000_000_000
+        s.runner.start()
+        self.publish(s, "IM2609", "2026-08-13 13:58")
+        s.runner.poll_features()
+        self.assertFalse(s.runner.session_ready())
+        self.assertIn(OPTION, s.runner.stale_instruments())
+        self.publish(s, OPTION, "2026-08-13 13:58")
+        feed = s.runner.feature_query_feeds[0]
+        self.assertNotIn("000852", s.runner.observations)
+        self.assertTrue(s.runner.session_ready())
+        self.assertFalse(s.runner.accept_bars or s.runner.frames.pending)
+        self.assertEqual(feed.manifest["emitted_versions"], {})
+        self.assertEqual(s.runner.position_manager.attribution.state(), owned)
+        self.assertEqual(self.path.read_bytes(), before)
+
+        # 准备期只读取缓存作健康核验，正式帧仍能投影同一分钟的真实指数。
+        s.runner.begin_bars()
+        for key in (OPTION, "IM2609"):
+            self.publish(s, key, "2026-08-13 13:58")
+        s.runner.poll_features()
+        self.assertIn("000852", s.runner.frames.pending[ns("2026-08-13 13:58")][1])
+
+    def test_dfs_preparation_stale_or_missing_index_cannot_be_replaced_by_fresh_queries(self):
+        for minutes in (0, 6):
+            with self.subTest(minutes=minutes):
+                self.now = ns("2026-08-13 13:58") + minutes*60_000_000_000 + 1_000_000_000
+                s, _ = self.build(mode="recording", dfs_index=True)
+                if not minutes:
+                    from tests.test_dolphindb_index_features import Session
+                    s.runner.feature_query_feeds[0].cache.provider.transport._factory = lambda **_: Session([])
+                s.runner.replay = False
+                s.runner.source_age_ns["market"] = 300_000_000_000
+                s.runner.start()
+                self.publish(s, "IM2609", "2026-08-13 13:58" if not minutes else "2026-08-13 14:04")
+                s.runner.poll_features()
+                self.assertFalse(s.runner.session_ready())
+                self.assertIn("000852", s.runner.stale_instruments())
+                self.assertFalse(s.runner.accept_bars or s.runner.frames.pending)
+
     def test_preparation_future_wrong_day_and_invalid_price_still_fail(self):
         for minute,price,reason in (("2026-08-13 13:01",40,"实时Bar过期或尚未收盘"),
                                     ("2026-08-12 11:30",40,"估值日期不一致"),

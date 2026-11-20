@@ -1,5 +1,60 @@
 # 公共数据准备层
 
+## 离线准备的版本化Feather行情
+
+`prepared.py`复用`read_bar_frame`的完整标准化/校验，将结果发布为独立只读版本。
+源数据继续保留原来的`kline/fut/YYYYMMDD/合约_日期.feather`布局；prepared按资产、
+品种、周期、交易日合并。同日字段/类型不兼容的来源写入带Schema后缀的额外分片，
+不通过float提升合并大整数，也不丢弃辅助列、原始高低价和诊断。
+
+```text
+prepared/版本号/
+    manifest.json
+    index.feather
+    issues.feather
+    fut/IM/1-MINUTE/20251212.feather
+    opt/MO/5-MINUTE/20251212.feather
+```
+
+索引记录每个原始来源的合约、交易日、分区路径、行范围、字段、元数据、源文件SHA256
+和文件版本。分区额外包含`__prepared_symbol`身份列，恢复时移除它并还原原列顺序及类型。
+已有源文件内的symbol字段原样保留；不把合并分区的物理顺序当作引擎同刻顺序。
+读取返回原有`BarLoadResult/SourceSpec/HistoricalInputBundle`，Feed仍按入口原顺序注册来源。
+`BarLoadResult.path`指向实际prepared分区，使回放不依赖原始行情文件存在；
+覆盖报告保留源文件与分区映射，已记录的异常保留原文件和行号。
+
+公共调用：
+
+```python
+from bomber.framework.dataprep.prepared import PreparedDataset, PreparedSource, build_prepared_dataset
+
+# source.spec必须与回测的BarReadSpec完全一致；准备命令不重采样M1/M5。
+build_prepared_dataset(sources, output, start_day=start, end_day=end)
+dataset = PreparedDataset(output)
+bundle = prepare_option_chain({}, plan, specs=specs, products=products,
+    prepared_dataset=dataset, copy_frames=False)
+```
+
+`--base-snapshot`增量准备会校验旧版本、读取源文件内容指纹，复用完全未变的日分区，
+重建受影响的日分区，始终发布到新目录。准备只暂存当天分区，原始表缓存逐文件释放。
+已有输出不覆盖；发布前在同父目录暂存，完成后原子重命名，失败不发布半成品。
+
+普通读取`verify="metadata"`完整校验index/issues的SHA256、当前规范化代码指纹及
+全部BarReadSpec政策，并检查实际读取分区的大小、Schema、行数和分区身份。
+它依赖版本目录发布后保持只读，不逐字节验证分区内容；`verify="full"`对所读分区再校验
+SHA256，`verify_all()`核验全部分区。准备/传输验收使用full；计时对比须记录核验模式。
+修改raw不会自动改变旧snapshot的含义，须重新准备新版本；读取不扫描原始目录追踪最新值。
+
+本轮规范化指纹来自`bars.py`和`contracts.py`的内容；这两份实现变化后会保守地拒绝旧版本，
+需重新准备。期货/期权基础条款、日历、指数特征、结算资料仍独立加载，不在行情snapshot中。
+
+`prepared_snapshot_open`包含版本打开/索引校验，`prepared_load`包含分区读取和源表恢复，
+子计时为`prepared_index_read/prepared_partition_read/prepared_frame_restore`；嵌套时间不能相加。
+`prepared_partition_files_read/rows_read`表示物理读取量，`prepared_sources_loaded/rows_loaded`
+表示所选逻辑来源和行数。按品种打包后可能读到本次未选合约的同日行，两个口径分别报告。
+
+脚本、2024～2026对照及服务器核验见[08说明](../../../demos/08_option_vega/README.md#离线准备feather与原始路径对照)。
+
 2026-11-02源码入口整理：[Framework总览](../README.md)说明与market／datahub／trader的边界。本层现同时承担文件输入、Live参考准备、历史Provider和特征导入导出；旧“本地输入层”是第一阶段命名，不表示Live禁止读取数据库。公共路径解析器保留环境配置能力，01／03／04／08等要求显式路径的回测入口通过use_environment=False单独约束，不能混同为所有调用方均改变默认值。
 
 当前还包括[期权最终结算资料加载](option_settlements.py)：读取显式标准终值文件或到期日日行情，交给执行层现金结算组件；不根据基础条款或普通收盘价猜终值。输入准备、特征计算、信号和订单执行分别由各自组件负责。下方既有验收记录仍按对应日期／版本生效，本次未重跑。

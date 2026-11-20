@@ -1,0 +1,102 @@
+{
+  "recorded_date": "2026-11-20",
+  "timezone": "Asia/Shanghai",
+  "status": "local_input_tests_passed_server_acceptance_pending",
+  "baseline_commit": "b56c7a92352352fb8fdd955c169f3b35dfd4bf04",
+  "implementation": {
+    "files": [
+      "bomber/framework/dataprep/prepared.py",
+      "bomber/framework/dataprep/scenarios/option_chain.py",
+      "demos/08_option_vega/run_backtest.py",
+      "scripts/prepare_market_data.py",
+      "scripts/check_prepared_market_data.py",
+      "tests/test_prepared_dataset.py",
+      "tests/test_prepared_dataset_native.py",
+      "bomber/framework/dataprep/README.md",
+      "demos/08_option_vega/README.md",
+      "scripts/README.md"
+    ],
+    "native_rebuild_required": false,
+    "strategy_changes": false,
+    "config_yaml_changes": false,
+    "format": "bomber-prepared-bars-v1",
+    "default_mode": "raw",
+    "scope": "Offline versioned normalized Feather partitions and explicit prepared input mode; no replay/strategy/native changes"
+  },
+  "local_input_regression": {
+    "tests_run": 85,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "command": "python -m unittest tests.test_prepared_dataset tests.test_bar_preparation_vectorization tests.test_multiperiod_inputs tests.test_dataprep_common tests.test_backtest_performance tests.test_prepared_bar_parser -v",
+    "assertions": [
+      "exact raw/prepared normalized frames, dtypes and large integer values",
+      "2024/2025/2026 sample dates and explicit date/contract selection",
+      "single timestamp shift and availability clock preservation",
+      "OHLC repair/zero-drop diagnostics and coverage provenance",
+      "read after original market directories removed; no repeated normalization",
+      "same-timestamp replay sequence through actual Python feed/parser with SDK entity fixtures",
+      "immutable atomic publication and incremental partition reuse",
+      "policy/version mismatch, index corruption and full partition corruption checks",
+      "independent CLI preparation/verification/comparison, same backtest YAML data fields"
+    ]
+  },
+  "existing_regression": {
+    "tests_run": 226,
+    "failures": 3,
+    "errors": 6,
+    "baseline_failures": 3,
+    "baseline_errors": 6,
+    "failed_test_names_equal": true,
+    "failed_test_names": [
+      "test_public_client_applies_settlement_to_account_attribution_and_strategy_once (tests.test_option_vega_settlement.VegaSettlementTests.test_public_client_applies_settlement_to_account_attribution_and_strategy_once)",
+      "test_delayed_partial_fill_hedges_filled_lots_without_resending_option (tests.test_option_vega_assembly.AssemblyTests.test_delayed_partial_fill_hedges_filled_lots_without_resending_option)",
+      "test_mapped_replay_reaches_recording_target_and_model_owned_fill (tests.test_option_vega_assembly.AssemblyTests.test_mapped_replay_reaches_recording_target_and_model_owned_fill) (mode='model')",
+      "test_missing_held_leg_waits_then_fails_without_erasing_position (tests.test_option_vega_assembly.AssemblyTests.test_missing_held_leg_waits_then_fails_without_erasing_position)",
+      "test_model_owns_option_fills_then_hedges_actual_position (tests.test_option_vega_assembly.AssemblyTests.test_model_owns_option_fills_then_hedges_actual_position)",
+      "test_model_restore_preserves_position_and_does_not_reopen_same_day (tests.test_option_vega_assembly.AssemblyTests.test_model_restore_preserves_position_and_does_not_reopen_same_day)",
+      "test_example_yaml_starts_same_m5_case_without_long_cli_or_source_connections (tests.test_option_feature_backtest.BacktestYamlConfigTests.test_example_yaml_starts_same_m5_case_without_long_cli_or_source_connections)",
+      "test_startup_yaml_keeps_strategy_fields_in_json_dependencies (tests.test_option_feature_backtest.BacktestYamlConfigTests.test_startup_yaml_keeps_strategy_fields_in_json_dependencies)",
+      "test_strategy_json_cannot_set_authorization_and_still_checks_business_values (tests.test_option_vega_assembly.LiveYamlConfigTests.test_strategy_json_cannot_set_authorization_and_still_checks_business_values) (values={'max_option_lots': 0})"
+    ],
+    "method": "Original committed run_backtest.py loaded into the same SDK-fixture test process with all other working-tree modules unchanged",
+    "limitations": "Existing YAML expectation drift and live readiness/settlement fixture failures remain; broad suite is not reported as passed"
+  },
+  "native_acceptance": {
+    "tests_run": 1,
+    "skipped": 1,
+    "executed": false,
+    "reason": "No module named 'bomber.backtest'",
+    "command": "python -m unittest tests.test_prepared_dataset_native -v",
+    "pending_checks": "Real native M5/M1 next_market matching, order/fill/signal/position/account equality, option/future expiry settlements, no residual exposure"
+  },
+  "local_loading_benchmark": {
+    "source_files": 400,
+    "bars": 19200,
+    "partitions": 10,
+    "initial_preparation_seconds": 1.371131,
+    "raw_load_seconds": 0.853426,
+    "prepared_load_seconds": 0.26141,
+    "reduction_percent": 69.37,
+    "equal": true,
+    "environment": {
+      "pandas": "3.1.1"
+    },
+    "method": "Real synthetic Feather; same source plan, one warmup and three alternating runs; independent InputSessions; OS page cache uncontrolled",
+    "scope": "Input loading only, includes prepared manifest/index validation and source-frame restoration; excludes engine/strategy",
+    "reproduce": "python doc/evidence/commands/PREPARED_DATASET_BENCHMARK_20261120.py"
+  },
+  "pending": [
+    "Run full prepared SHA256 audit and exact raw-frame comparison on current 2024-2026 machine",
+    "Pass the native acceptance test without skips",
+    "Run raw/prepared backtests with identical range/data/policies/strategy and compare full financial reports",
+    "Measure total startup, directory scan, loading, conversion, alignment, replay and total runtime on that machine",
+    "Only after current-machine acceptance, repeat deployment and measurement on DX"
+  ],
+  "log_sha256": {
+    "input_regression": "33b9c3acdb1d5400dea3d9a801902328121e4e68edfb98b76479a888a1a8c2e8",
+    "native_acceptance": "2de7869a2dd7334cfb13f161a213c1b66e583a9560929653696f94c47f0fcab6",
+    "existing_regression": "7ffdb22ab2d24c5ed501da295da9c5eb9d164a65d027ef537e2b6c40416f5297",
+    "baseline_regression": "a1e91e50ceab9effdf006e2ca057e6563e6e08d3f9d34ea7b56f6615f49b291a"
+  }
+}

@@ -1016,6 +1016,116 @@ time env PYTHONPATH=. python -u demos/08_option_vega/run_backtest.py \
 `_run`在批次耗尽时处理定时器；直接按分钟或交易日合并事件会改变同刻回调边界，
 必须单独对照同刻顺序、定时器、next_market和结算后才能采用。本轮尚未改动引擎。
 
+### 离线准备Feather与原始路径对照
+
+08新增`--data-mode {raw,prepared}`，默认raw，原配置可继续运行。prepared由公共数据层
+读取已校验的日/品种/周期Feather分区，不重复执行时间解析、数值/OHLC标准化校验；
+仍执行本次输入覆盖、开仓时刻、清仓时钟、基础条款和原生对象构造的既有检查。
+策略文件、IV/配仓/对冲公式、模拟撮合内核及Live入口未因本轮改动而改变。
+
+先在XY当前2024～2026测试环境验收，再部署DX。源码由用户通过GitHub提交并同步到XY，
+本轮不提供同步包。日期、数据、OHLC政策、解析器、策略配置、
+日历、指数特征和内核必须相同；不要把此前2026短区间或2022起点日志当成本轮基线。
+准备快照记录真实起止日期；以下用2024-01-01开始，结束日沿用当前YAML。
+若本轮日期不同，在raw、准备、prepared三处一致覆盖。
+
+先同步公共`dataprep/prepared.py`、`dataprep/scenarios/option_chain.py`、08 `run_backtest.py`、
+两个scripts和两个新增测试。本轮无需重编译wheel，不覆盖服务器的YAML。
+若公共框架实际从site-packages导入，在项目pro根目录用实际回测Python执行下面的定向同步，
+只更新本轮两个公共文件；使用本地overlay的环境会跳过相同路径：
+
+```bash
+export VEGA_PYTHON=/workspace/worker/env/uv-nautilus/bin/python
+
+PYTHONPATH=. "$VEGA_PYTHON" - <<'PY'
+from pathlib import Path
+from importlib import import_module
+import shutil
+source = Path('bomber/framework/dataprep').resolve()
+target = Path(import_module('bomber.framework.dataprep').__file__).resolve().parent
+for name in ('prepared.py', 'scenarios/option_chain.py'):
+    src, dst = source/name, target/name
+    assert src.is_file(), src
+    if src.resolve() != dst.resolve():
+        shutil.copy2(src, dst)
+    print(name, '->', dst)
+PY
+
+PYTHONPATH=. "$VEGA_PYTHON" -m unittest tests.test_prepared_dataset -v
+PYTHONPATH=. "$VEGA_PYTHON" -m unittest tests.test_prepared_dataset_native -v
+```
+
+第二条原生验收须实际执行且通过，skipped表示缺少编译内核，不能当作撮合验收通过。
+它使用临时数据验证raw/prepared的next_market、信号、费用、到期结算、账户和持仓报告，
+排除每次运行生成的UUID身份字段，不排除价格、数量、状态和时间。
+
+1. 原始模式基线，保留服务器当前其余配置：
+
+```bash
+TIMEFORMAT='回测进程总耗时：%3R 秒'
+time env PYTHONPATH=. "$VEGA_PYTHON" -u demos/08_option_vega/run_backtest.py \
+  --config-file demos/08_option_vega/config/strategy.yaml --config-id m5_index_blend \
+  --start-day 2024-01-01 --data-mode raw --option-ohlc-policy expand_range \
+  --bar-parser prepared --log-level WARNING --report-dir demos/08_option_vega/results/raw-input-check
+```
+
+2. 准备一次新版本。读取同一YAML的数据路径、日期、品种、周期及读取政策，CLI优先。
+`option_bar_minutes: 5`只声明真实M5源，不能将M1文件自动重采样为M5。
+
+```bash
+export VEGA_PREPARED_ROOT=/workspace/data/temp_bomber1/dx1/data/prepared/mo-im-2024-2026-v1
+
+PYTHONPATH=. "$VEGA_PYTHON" -u scripts/prepare_market_data.py \
+  --config-file demos/08_option_vega/config/strategy.yaml --config-id m5_index_blend \
+  --start-day 2024-01-01 --option-ohlc-policy expand_range --output "$VEGA_PREPARED_ROOT"
+```
+
+产物为manifest、index、issues及`fut/IM/1-MINUTE/日期.feather`、
+`opt/MO/5-MINUTE/日期.feather`。字段或类型不同（例如部分合约需保留修整来源列）时，
+当天会有带Schema后缀的额外分片，不强制提升数值类型。源文件和旧版本保持原样。
+准备状态输出真实requested日期、来源数、行数及增量复用分区数；应先核对范围。
+
+3. 完整核验产物，再按日进行原始/准备数据的逐字段对照，内存不同时持有两套全区间表：
+
+```bash
+PYTHONPATH=. "$VEGA_PYTHON" scripts/prepare_market_data.py --verify "$VEGA_PREPARED_ROOT"
+PYTHONPATH=. "$VEGA_PYTHON" -u scripts/check_prepared_market_data.py \
+  --prepared-root "$VEGA_PREPARED_ROOT"
+```
+
+4. 同区间prepared回测。普通计时使用metadata模式；完整分区SHA256已在上步核验，
+要求每次重新校验分区内容时可加`--prepared-verify full`，相应I/O耗时也计入回测：
+
+```bash
+time env PYTHONPATH=. "$VEGA_PYTHON" -u demos/08_option_vega/run_backtest.py \
+  --config-file demos/08_option_vega/config/strategy.yaml --config-id m5_index_blend \
+  --start-day 2024-01-01 --data-mode prepared --prepared-root "$VEGA_PREPARED_ROOT" \
+  --option-ohlc-policy expand_range --bar-parser prepared --log-level WARNING \
+  --report-dir demos/08_option_vega/results/prepared-input-check
+```
+
+可在原YAML加入`data_mode: prepared`和`prepared_root: 版本目录`。改成raw即可回退，
+保留的prepared_root不参与raw读取。prepared模式不要求原分钟目录存在，但基础条款、
+指数特征、日历和结算路径仍须提供。完整BarReadSpec政策不匹配时明确拒绝，不自动改政策。
+
+`summary.json`记录data_mode、快照ID、manifest SHA256和核验模式；performance新增
+`prepared_snapshot_open`（版本/索引打开）与`prepared_load`（分区读取/还原）等统计。
+索引工作会出现在前面的配置阶段，比较时须同时看目录扫描、加载、整个准备过程及run_case，
+不能只取加载阶段一项。Bar转换、特征对齐、逐根推进仍保留，不能将它们的耗时承诺为本轮收益。
+
+新版本增量构建示例（沿用本轮日期和政策，只增加base-snapshot并换新输出目录）：
+
+```bash
+PYTHONPATH=. "$VEGA_PYTHON" -u scripts/prepare_market_data.py \
+  --config-file demos/08_option_vega/config/strategy.yaml --config-id m5_index_blend \
+  --start-day 2024-01-01 --option-ohlc-policy expand_range \
+  --base-snapshot "$VEGA_PREPARED_ROOT" \
+  --output /workspace/data/temp_bomber1/dx1/data/prepared/mo-im-2024-2026-v2
+```
+
+增量准备仍读取源内容指纹并完整核验旧快照；只复用源集合、内容、文件版本及政策均未变的日分区。
+准备成本单独记录。旧snapshot不会随raw修订而改变；须显式切换新版本。
+
 ### 长区间回测进度与特征缓存
 
 `Registered Strategy`后会先转换、排序全部文件Bar，再预处理特征帧，之后才推进模拟撮合。
