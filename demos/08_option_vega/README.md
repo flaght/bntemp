@@ -108,7 +108,7 @@ Recording只记录目标，没有成交持仓；Model的持仓来自模型成交
 
 1. 合约仍在上市区间，尚未达到停止交易时点。
 2. `K > I`，剩余交易日不少于`min_remaining_days`。
-3. 期权、对应同月期货、指数特征的缓存时点都等于本帧时点。
+3. `entry_quote_policy=synchronized`要求三腿缓存时点都等于本帧；`latest`读取当时已完成且未超龄的最新报价，允许13:58读取13:55期权M5，禁止使用14:00未来价格。
 4. 在以上合格合约中取最近的最后交易日，再计算该月份的Greeks。
 5. 每个`delta_targets`档取Delta距离最小的候选；同一合约可命中多个档。
 
@@ -134,7 +134,9 @@ Vega  = phi(d1) × F × sqrt(T) × exp(−r × Tc)
 
 剩余交易日`Ndays`不含当日、包含最后交易日。开仓`T=Ndays/252`；对冲另外加当日剩余分钟`R/(240×252)`。`Tc`为到最后交易日的自然日差/365，用于Vega折现。定价函数保留源代码全天240分钟、15:00结束的期限口径；Live是否在14:57暂停由外部期权日历决定，两者职责不同。
 
-只有`C − max(F−K, 0) >= min_time_value`才尝试新IV。新计算不可用时，可使用`max_iv_age_seconds`内的旧IV，并用当前价格和期限重算Greeks；不会刷新旧IV时间。没有可用IV返回空值，但缺少新鲜期权/期货价格仍报错，不能靠IV缓存绕过行情检查。当前IV算法不额外做搜索区间可达性及最终重定价误差检查。
+只有`C − max(F−K, 0) >= min_time_value`才尝试新IV。新计算不可用时，沿用本策略最近一次成功反解的IV，不限制缓存年龄，与旧版`_iv_cache`一致；仍用当前价格和期限重算Greeks，不刷新旧IV时间。`max_iv_age_seconds`及对应CLI仅为旧配置兼容保留，不再生效。
+
+当次计算与历史缓存都无可用IV时，对冲只跳过该合约，继续汇总同月份其他有效合约，不再冻结整月份期货目标；整月没有有效贡献时该月目标归零。缺少新鲜期权/期货价格仍报错，`max_market_age_seconds`及执行端风控保持原样，不能靠IV缓存绕过行情检查。5点反解门槛、选约、退出、成交与对冲时点、限仓及费用均不因这次IV对齐而改变。当前IV算法不额外做搜索区间可达性及最终重定价误差检查。
 
 ### 1.5 Vega预算与新增手数
 
@@ -173,7 +175,7 @@ E <= 0 → 该期权目标设为0
 
 ### 1.7 Delta对冲与零期货仓
 
-只有到达`hedge_slots`、该日/时点尚未处理、所有期货腿无在途委托时才对冲。按期权的**已成交actual**分同月期货汇总：
+保留原有`hedge_slots`定时对冲：该日/时点登记各月份重算任务，无在途的月份立即重算；仅本月有在途则保留待办，成交后按最新实际持仓及当时已可见报价补做，其他月份不受阻塞。另外，每笔普通期权成交入账后（包括部分成交、全部成交及买入平仓），立即按该月份**已成交actual**重算同月期货目标：
 
 ```text
 exposure_f    = sum(actual_option_lots_i × option_multiplier_i × Delta_i)
@@ -182,9 +184,45 @@ future_goal_f = round(−exposure_f / future_multiplier_f)
 
 例如空1手认购、乘数100、Delta=0.30、期货乘数200，计算`round(0.15)=0`；所以有期权持仓而没有期货仓位不必然异常。空10手时为`round(1.5)=2`。所需手数超过`max_future_lots`时报错，不静默截限。
 
-这是期货最终目标，不是新增买卖量。刚提交但未成交的期权新增不提前纳入；待平但未成交的期权仍属于敞口。普通`on_fill`不会即时触发对冲，通常等下一配置时点。某月任一期权缺少可用IV时，保留该月原期货目标；本次时点仍记为已评估，不在后续任意分钟重放。
+这是期货最终目标，不是新增买卖量。刚提交但未成交的期权新增不提前纳入；待平但未成交的期权仍属于敞口。成交触发仅重算对应月份，不修改期权目标或消费`hedge_sent`中的定时标记。期货已有同方向在途时，执行端按实际仓位加在途量只补不足；若调整方向与尚未结束的在途量冲突，保留最新目标，收到后续期货成交回报后继续推进，不等下一个定时点。期货回报只有本月存在定时待办时才补算Greeks，不递归对冲。
+
+本次成交触发与定时对冲共用同一IV缓存、缺失处理、Delta公式、整手舍入及风险上限。缺IV时先沿用成功缓存；仍没有IV则只跳过该合约，汇总同月其他有效合约，整月无贡献时目标归零。价格时效、手数和名义金额限制保持有效。正常到期现金结算、最终清仓和停机不触发重新开对冲仓。
+
+日志`OPTION_FILL_HEDGE_CALCULATED`记录每笔期权成交后的计算目标；`OPTION_FILL_HEDGE`表示向执行端提交，`FILL_HEDGE_WAIT_WORKING`表示等待相反方向的原在途量结束。`next_market`保持原样：立即计算和提交不等于同一时间戳保证成交，仍需对应期货后续真实行情。没有新增追价、撤单重报或假定成交。
+
+### 1.7.1 旧版选约与规模对齐回放
+
+2026-11-20对齐回放显式使用`--option-slot 13:58 --entry-quote-policy latest`。
+同一份`index-blend.csv`标准数据包含原始`close`及`ma20/ma60/index_blend`；
+改用`--index-value-field close --index-signal-minutes 5`后，只在真实5分钟端点
+缓存原始指数收盘价用于选约：13:58读取13:55指数M5端点，而不是13:58的M1值。
+M1报价及决策时钟继续推进。文件、声明、可见时间及其他行情保持原样，
+不重新生成特征，也不将MA值当原始指数。
+
+`--max-option-lots 0 --max-total-option-lots 0 --max-future-lots 0`表示按旧版
+不设置这三项手数限制：配仓不再做100手截限／200手缩放，累计目标不再因这组
+阈值被整批拒绝，期货也不会被100手限制阻断。0会转换为公共风险契约的`None`，
+不是将目标手数变为0。名义金额、报价时效、保证金及拒单处理仍生效。
+默认参数和原JSON限制保持不变，只有这次显式对齐命令启用上述设置。
+
+按实际持仓计算、每笔期权成交后即时补对冲、原五个定时点、显式零目标平仓及
+公共到期结算继续保留。13:58仅使用当时已可见报价生成目标；在`next_market`
+与M5数据下，期权通常最早14:00成交，期货随后M1成交，不伪造旧回测13:59成交。
 
 ### 1.8 最终清仓、现金结算和恢复
+
+2026-11-20月份待办补丁：`hedge_sent`表示时点已登记，未完成月份另存于
+`pending_scheduled_hedges`，检查点保存并校验原时点。恢复后仍等待新鲜行情；
+被多个时点阻塞的同月任务可合并为一次当前实际持仓重算，日志保留所有原时点。
+`SCHEDULED_HEDGE_DEFERRED`记录延期月份，`SCHEDULED_HEDGE_CALCULATED`记录原时点
+及完成时的目标，`SCHEDULED_HEDGE_RETRY`记录成交后确有目标变化的提交。
+到期、最终清仓及停机不因为待办重新开仓。
+
+性能只缓存静态InstrumentId字符串、反向身份索引及已验证的交易日计数；
+不缓存实际仓位或在途数量，健康依赖查询也使用同一权威批量接口。
+`performance.json`新增`strategy_position_snapshot`耗时及
+`strategy_static_identity_builds`计数，用于核查全周期瓶颈；prepared解析、数据校验、
+行情时钟、撮合、IV/Delta公式、费率与回测周期均沿用本轮对齐基线。
 
 回测把最后一个交易日作为`final_day`；Live仅显式提供`--flatten-day YYYYMMDD`才指定主动清仓日。到当天`flatten_slot`及以后优先清仓，不再选约或对冲；有在途先等待，后续帧重新检查。`flatten_requested=true`只表示进入过清仓分支，不证明全部成交。
 
@@ -779,7 +817,9 @@ Live仍使用M1交易腿和可投影的原始指数声明；`--option-bar-minute
 | `nav` / `--nav` | 未指定时用starting_balance / 40000000 | 40000000 | 40000000 | 固定配置本金，决定每日新增Vega预算，不自动按账户净值更新 |
 | `vega_budget` / `--vega-budget` | 1.25 / 1.25 | 1.25 | 1.25 | `B=nav×vega_budget/100`，单位波动率现金敏感度尺度 |
 | `delta_targets` / `--delta-targets` | `[0.2,0.25,0.3,0.35]` | 同左 | 同左 | 各档选择最近的多头认购Delta，允许重复选中同一合约 |
-| `option_slot` / `--option-slot` | 13:58 / 13:58 | 14:00 | 14:00 | 每日选约、增仓及常规退出检查时点；M5须对齐完成时刻 |
+| `option_slot` / `--option-slot` | 13:58 / 13:58 | 14:00 | 14:00 | 每日选约、增仓及常规退出检查时点；M5非整5分钟时须配合latest |
+| `entry_quote_policy` / `--entry-quote-policy` | synchronized / synchronized | 未配置，沿用默认 | 未配置，沿用默认 | synchronized三腿同帧；latest用当时已完成且未超龄的缓存报价 |
+| `index_signal_minutes` / `--index-signal-minutes` | 1 / 1 | 未配置，沿用默认 | 未配置，沿用默认 | 选约指数close采样端点；5允许13:58使用13:55的指数值，M1时钟保留 |
 | `hedge_slots` / `--hedge-slots` | `[10:00,11:00,13:30,14:00,14:55]` | 同左 | 同左 | 已成交期权的期货Delta对冲时点 |
 | `flatten_slot` / `--flatten-slot` | 14:50 / 14:50 | 14:50 | 14:50 | 仅在final_day/flatten_day达到时生效；不是每日固定平仓 |
 | `min_remaining_days` / `--min-remaining-days` | 5 / 5 | 5 | 5 | 新选合约的最小剩余交易日阈值 |
@@ -787,10 +827,10 @@ Live仍使用M1交易腿和可投影的原始指数声明；`--option-bar-minute
 | `rate` / `--rate` | 0.02 / 0.02 | 0.02 | 0.02 | 定价年化利率，小数口径 |
 | `min_time_value` / `--min-time-value` | 5 / 5 | 5 | 5 | 新IV尝试要求`C-max(F-K,0)`不小于此值；不是退出阈值 |
 | `max_market_age_seconds` / `--max-market-age-seconds` | 300 / 300 | 300 | 300 | 策略报价缓存相对估值时点的最大年龄，另受通道健康检查约束 |
-| `max_iv_age_seconds` / `--max-iv-age-seconds` | 300 / 300 | 300 | 300 | 可回退使用的IV缓存期限，不放宽行情价格时效 |
-| `max_option_lots` / `--max-option-lots` | 100 / 1 | 100 | 1 | 单张期权空头目标绝对手数上限，也用于新增配仓截限 |
-| `max_total_option_lots` / `--max-total-option-lots` | 200 / 2 | 200 | 2 | 累计期权目标绝对手数总和上限 |
-| `max_future_lots` / `--max-future-lots` | 100 / 1 | 100 | 1 | 每张期货目标绝对手数上限；所需对冲超过时停止，不静默截限 |
+| `max_iv_age_seconds` / `--max-iv-age-seconds` | 300 / 300 | 300 | 300 | 旧配置兼容字段，已不生效；IV缓存不限制年龄，报价时效仍单独检查 |
+| `max_option_lots` / `--max-option-lots` | 100 / 1 | 100 | 1 | 单张期权空头目标绝对手数上限，也用于新增配仓截限；0不设限 |
+| `max_total_option_lots` / `--max-total-option-lots` | 200 / 2 | 200 | 2 | 累计期权目标绝对手数总和上限；0不设限 |
+| `max_future_lots` / `--max-future-lots` | 100 / 1 | 100 | 1 | 每张期货目标绝对手数上限；正数超限停止、不截限；0不设限 |
 | `max_notional` / `--max-notional` | 100000000 / 2000000 | 100000000 | 2000000 | 转成公共逐合约委托/仓位名义金额限额，不是现金Vega或保证金预算 |
 | `limit_offset_ticks` / `--limit-offset-ticks` | 回测无此CLI / 1 | 未配置 | 1 | Live CTP限价偏移跳数，非负整数；不是模拟滑点参数 |
 

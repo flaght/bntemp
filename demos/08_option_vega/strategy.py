@@ -15,8 +15,8 @@
 时钟约定：
     signal_ns/valuation_ns是本次行情估值时点；request_ns是提交/消费帧的时点。
     日内时点判断使用Asia/Shanghai的估值时间，不把接收时间当作行情时间。
-    每个封闭帧都会检查决策条件，但选约/常规退出只在option_slot，Delta对冲只在
-    hedge_slots，主动清仓只在显式final_day的flatten_slot及之后执行。
+    每个封闭帧都会检查决策条件，选约/常规退出只在option_slot；Delta对冲保留
+    hedge_slots，并在每笔普通期权成交后立即重算。主动清仓仍优先于补对冲。
 
 策略逻辑阅读顺序：
     先看类说明中的业务规则和例子，再看_frame中的执行顺序；定价和配仓公式
@@ -26,10 +26,12 @@
 from datetime import datetime
 from decimal import Decimal
 from zoneinfo import ZoneInfo
+from time import perf_counter
 
 from bomber.framework.trader.template import StrategyTemplate
 from bomber.framework.trader.execution.option_settlement import SETTLEMENT_ORIGIN, FUTURE_SETTLEMENT_ORIGIN
-from .vega_signal import remaining_trading_days, allocate_short, source_iv, source_years, source_greeks
+from .vega_signal import (remaining_trading_days, allocate_short, source_iv, source_years,
+                         source_greeks, entry_quote_times_valid, index_signal_due)
 
 
 class OptionVegaStrategy(StrategyTemplate):
@@ -54,9 +56,12 @@ class OptionVegaStrategy(StrategyTemplate):
         错过时点不会在14:01或下一根M5上补做；已有仓位继续按其他条件管理。
 
         当天options_by_day的合约依次满足：未过停止交易时点、处于上市区间、
-        K>I、剩余交易日不少于min_remaining_days、期权/同月期货/指数三个
-        缓存时间都等于signal_ns。然后在这些合约中取最近last_day的月份。
-        最近合格月可能因原月整体不满足条件而改变；这不是按main字段选主力。
+        K>I、剩余交易日不少于min_remaining_days。synchronized要求三腿缓存
+        时点都等于signal_ns；latest允许当时已完成且未超龄的缓存报价，例如
+        13:58读取13:55期权M5。然后在这些合约中取最近last_day的月份。
+        index_signal_minutes=5时，选约指数取已完成的M5端点close；M1时钟和
+        原始行情缓存不被改写。最近合格月可能因原月整体不满足条件而改变；
+        这不是按main字段选主力。
         若所选月的Greeks全不可用，不会再尝试下一个月。
 
         在该月有效Greeks候选中，每个delta_targets档选择Delta距离最小的
@@ -74,14 +79,16 @@ class OptionVegaStrategy(StrategyTemplate):
         D=sum(w_j*Vega_j*m_j)，原始新增手数a_j=B*w_j/D，m_j为期权乘数。
         理想未取整时sum(a_j*Vega_j*m_j)=B；预算由各档共享，不是每档各用B。
         相同合约的a_j先求和，再round、单合约截限；总手数超限时同比缩放并
-        向下取整数。最终返回负数增量，细节见allocate_short。
+        向下取整数；对应手数上限为0时跳过截限及缩放。最终返回负数增量，
+        细节见allocate_short。
         因为整手、手数上限和行情变化，最终实际Vega不保证恰好等于预算。
 
     四、新仓与旧仓如何共存，什么时候退出
         每日目标 = 昨日/已有目标 + 当日负增量；不是每日替换成同一固定空头仓。
         例如原目标MO-A=-1，本日新增MO-B=-1，合并后目标为A=-1、B=-1。
         若本日又选中A，原目标-1加新增-1会变成-2；若单合约上限为1，整批
-        新增被拒绝，entry=RISK_LIMIT。这里控制的是累计目标，不是累计现金Vega。
+        新增被拒绝，entry=RISK_LIMIT。上限为0时不做该项拒绝。这里控制的是
+        累计目标，不是累计现金Vega。
         每日新分配B也不是用B减去整个旧组合的Vega后再补足，旧仓可跨日叠加。
 
         当天选约处理后，在同一option_slot检查所有非零、未截止期权目标：
@@ -93,22 +100,29 @@ class OptionVegaStrategy(StrategyTemplate):
         不强制先发开仓再发平仓。没有新候选时，仍可检查旧目标是否需要退出。
 
     五、同月期货如何对冲
-        仅在hedge_slots且该日/时点尚未记入hedge_sent时评估。任何期货有在途
-        委托时本帧不重算，避免覆盖未结束委托；该条件覆盖本策略全部期货腿。
+        在hedge_slots且该日/时点尚未记入hedge_sent时登记分月份重算任务。
+        仅有在途委托的月份等待，其他月份照常计算；该月成交后补做待办。
+        每笔普通期权成交仍另行立即重算对应月份。
         对每个月份f，用已经成交的期权手数q_i汇总：
             exposure_f=sum(q_i*m_i*Delta_i)
             future_goal_f=round(-exposure_f/future_multiplier_f)
         例如空1手认购、乘数100、Delta=0.30、期货乘数200：
         exposure=-30，对冲目标round(0.15)=0，所以有期权仓而无期货仓是可能的。
         若q=-10且其他值不变，round(1.5)=2；还必须通过max_future_lots限制。
-        上限不够时直接报错，不把2截成1并继续。round沿用Python的半偶舍入。
+        正数上限不够时直接报错，不把2截成1并继续；上限0表示不设手数限制。
+        round沿用Python的半偶舍入。
 
         对冲手数是最终期货目标，不是本次买卖量；执行端处理已有期货的差额。
         同一帧新选/退出只改变目标，actual快照尚未改变；因此不提前对冲未成交
-        新仓，也不假定待平仓期权已消失。成交后通常等下一配置对冲时点重算，
-        on_fill本身不会马上触发一次Delta对冲。
-        同月任一期权拿不到IV时，保留该月原期货目标，不将未知敞口视为零；
-        该时点已标记处理，通常等下一对冲时点，不在后续任意分钟自动补对冲。
+        新仓，也不假定待平仓期权已消失。期权每笔成交（包括部分成交）入账后，
+        on_fill按实际持仓立即重算同月目标，不改变其他月份或原期权目标。
+        执行端扣除期货实际仓位和在途量，同方向缺口可立即补单；需要反向调整
+        尚未结束的在途量时先记住最新目标，原期货回报后继续补，不等定时点。
+        结算成交、最终清仓及停机不触发重新建仓；不新增追价或撤单重报。
+        当次IV不可用时沿用最近成功IV，不限制缓存年龄；仍没有IV则跳过该合约，
+        按同月其他有效合约重算。整月无有效贡献时目标归零，与旧版处理一致。
+        hedge_sent表示该时点已登记；未完成月份另存待办，不在时点过去后丢失。
+        同月多个待办可按当前实际仓位合并重算，日志保留全部原时点。
 
     六、什么时候不下单，如何核对日志
         WAIT_SLOT/ALREADY_SELECTED描述每日选约阶段，并不等于策略停止管理。
@@ -165,10 +179,20 @@ class OptionVegaStrategy(StrategyTemplate):
         self.fills_received = 0
         # 缓存值为(估值纳秒, 收盘价格)。资金/数量仍用Decimal；定价公式使用float。
         self.latest = {}
+        self.entry_index_latest = None
         # pending_ts供逐Bar入口延后封闭；resume_ns要求所有持仓依赖更新到恢复之后。
         self.pending_ts = None
         self.resume_ns = None
         self.last_event_ns = -1
+        self._last_request_ns = -1
+        self._fill_hedge_targets = {}
+        self._pending_scheduled_hedges = {}
+        # 只缓存不可变身份/条款计算；actual和working每次仍从框架权威账本读取。
+        self._identity_source = None
+        self._identity_keys = {}
+        self._identity_reverse = {}
+        self._remaining_days_cache = {}
+        self.performance = None
         self.option_goals = {key: Decimal(0) for key in self.contracts}
         self.future_goals = {key: Decimal(0) for key in self.futures}
         # IV只缓存(计算时点, 波动率)，使用时会按当前价格/期限重新计算Greeks。
@@ -209,6 +233,8 @@ class OptionVegaStrategy(StrategyTemplate):
         if data_key in self.latest and self.latest[data_key][0] == timestamp:
             raise ValueError(f"同一分钟重复行情: {data_key}")
         self.latest[data_key] = (timestamp, float(bar.close.as_decimal()))
+        if data_key == self.index_id and index_signal_due(timestamp, self.config.index_signal_minutes):
+            self.entry_index_latest = self.latest[data_key]
 
     def on_market_frame(self, frame):
         """帧入口：消费上游按接收期限封闭的观测集合，然后进行一次决策。
@@ -231,6 +257,8 @@ class OptionVegaStrategy(StrategyTemplate):
         for key, observation in frame.observations.items():
             # 只更新本帧实际包含的键；缺失键的缓存和时间不会被刷新。
             self.latest[key] = (timestamp, float(observation.price))
+            if key == self.index_id and index_signal_due(timestamp, self.config.index_signal_minutes):
+                self.entry_index_latest = self.latest[key]
         self._frame(timestamp, frame.request_ns)
 
     def required_market_keys(self):
@@ -239,24 +267,95 @@ class OptionVegaStrategy(StrategyTemplate):
         指数始终必需；相关期权的同月期货也必需。未持有、无目标的候选期权
         不必每分钟都有行情，真正选约时再要求三腿严格同一估值时点。
         """
-        required = {key for key, instrument in self.instruments.items()
-            if self.position(str(instrument)) or self.strategy_working_quantity(str(instrument))
+        actual, working = self._position_snapshot()
+        required = {key for key in self.instruments
+            if actual[key] or working[key]
             or self.option_goals.get(key) or self.future_goals.get(key)}
         held = required.intersection(self.contracts)
         required.add(self.index_id)
         required.update(self.contracts[key].future for key in held)
         return required
 
+    def _target_keys(self):
+        """Native InstrumentId字符串只在静态合约映射变化时构造，不缓存仓位。"""
+        if self._identity_source != self.instruments:
+            self._identity_keys = {key: str(value) for key, value in self.instruments.items()}
+            self._identity_reverse = {value: key for key, value in self._identity_keys.items()}
+            self._identity_source = dict(self.instruments)
+            if self.performance is not None:
+                self.performance.count("strategy_static_identity_builds")
+        return self._identity_keys
+
+    def _position_snapshot(self):
+        keys = self._target_keys()
+        start = perf_counter() if self.performance is not None else None
+        try:
+            positions, pending = self.position_quantities(keys.values())
+            return ({key: positions[target] for key, target in keys.items()},
+                    {key: pending[target] for key, target in keys.items()})
+        finally:
+            if start is not None:
+                self.performance.add("strategy_position_snapshot", perf_counter()-start)
+
+    def _retry_scheduled_hedge(self, future, stamp):
+        """该月份收到成交后补做被阻塞的定时任务；不触及其他月份的在途。"""
+        if (future not in self._pending_scheduled_hedges or self.stopping or self.flatten_requested
+                or self.restored or self.resume_ns is not None):
+            return
+        actual, working = self._position_snapshot()
+        now = datetime.fromtimestamp(stamp / 1e9, ZoneInfo("Asia/Shanghai"))
+        expired = {key for key, cutoff in self.option_last_trade_times.items() if stamp >= cutoff}
+        expired_futures = {key for key, cutoff in self.future_last_trade_times.items() if stamp >= cutoff}
+        if self._complete_scheduled_hedges(stamp, stamp, now, actual, working,
+                expired, expired_futures, futures=(future,)):
+            keys = self._target_keys()
+            self._submit({keys[key]: value for key, value in
+                {**self.option_goals, **self.future_goals}.items()}, stamp, stamp, "SCHEDULED_HEDGE_RETRY")
+
+    def _complete_scheduled_hedges(self, signal_ns, request_ns, now, actual, working,
+                                   expired, expired_futures, *, futures=None):
+        """按月份完成待办；仍在途的月份保留到成交回调/后续真实行情帧。"""
+        if self.stopping or self.flatten_requested or not self._pending_scheduled_hedges:
+            return False
+        allowed = set(self.futures if futures is None else futures)
+        for key in tuple(self._pending_scheduled_hedges):
+            if key in expired_futures:
+                self._pending_scheduled_hedges.pop(key)
+                self._fill_hedge_targets.pop(key, None)
+        ready = [key for key in self.futures
+                 if key in allowed and key in self._pending_scheduled_hedges and not working[key]]
+        if not ready:
+            return False
+        goals, missing = self._future_targets(actual, signal_ns, now, expired, expired_futures, futures=ready)
+        if missing:
+            self.last_decision["hedge_missing_iv"] = missing
+        changed = any(self.future_goals[key] != value for key, value in goals.items())
+        due = {key: self._pending_scheduled_hedges.pop(key) for key in ready}
+        if self.performance is not None:
+            self.performance.count("scheduled_hedge_months_calculated", len(ready))
+        for key, value in goals.items():
+            # 定时计算只覆盖本月的过时成交驱动目标，不能清空其他月份的待补单。
+            self._fill_hedge_targets.pop(key, None)
+            self.future_goals[key] = value
+        keys = self._target_keys()
+        self.signals.append({"signal_ns": signal_ns, "request_ns": request_ns,
+            "action": "SCHEDULED_HEDGE_CALCULATED", "scheduled_slots": due,
+            "targets": {keys[key]: str(value) for key, value in goals.items()},
+            "missing": missing})
+        return changed
+
     def on_fill(self, event):
         """成交归属已由框架记账，此回调统计成交，并清理权威结算后的业务状态。
 
-        普通成交无需在这里手动修改actual，避免重复记账。期权/期货现金结算
+        普通期权每笔成交后按已入账actual重算同月对冲，不手动修改actual。
+        普通期货成交只推进尚未完成的补对冲目标，避免成交回调递归重算。
+        期权/期货现金结算
         事件须晚于其停止交易时点，且该合约的本策略净持仓已经由框架归零。
         """
         self.fills_received += 1
         if event.metadata.get("execution_origin") == SETTLEMENT_ORIGIN:
-            key = next((key for key, instrument in self.instruments.items()
-                        if str(instrument) == event.identity.instrument_id), None)
+            self._target_keys()
+            key = self._identity_reverse.get(event.identity.instrument_id)
             if key not in self.option_last_trade_times:
                 raise RuntimeError("收到未声明现金结算生命周期的成交")
             if event.ts_event < self.option_last_trade_times[key] or self.position(str(self.instruments[key])):
@@ -268,9 +367,10 @@ class OptionVegaStrategy(StrategyTemplate):
             self.signals.append({"signal_ns": event.ts_event, "request_ns": event.ts_event,
                 "action": "OPTION_CASH_SETTLEMENT", "instrument": key,
                 "quantity": str(event.quantity), "price": str(event.price)})
+            return
         elif event.metadata.get("execution_origin") == FUTURE_SETTLEMENT_ORIGIN:
-            key = next((key for key, instrument in self.instruments.items()
-                        if str(instrument) == event.identity.instrument_id), None)
+            self._target_keys()
+            key = self._identity_reverse.get(event.identity.instrument_id)
             if key not in self.future_last_trade_times:
                 raise RuntimeError("收到未声明现金结算生命周期的期货成交")
             if event.ts_event < self.future_last_trade_times[key] or self.position(str(self.instruments[key])):
@@ -280,6 +380,95 @@ class OptionVegaStrategy(StrategyTemplate):
             self.signals.append({"signal_ns": event.ts_event, "request_ns": event.ts_event,
                 "action": "FUTURE_CASH_SETTLEMENT", "instrument": key,
                 "quantity": str(event.quantity), "price": str(event.price)})
+            self._fill_hedge_targets.pop(key, None)
+            self._pending_scheduled_hedges.pop(key, None)
+            return
+
+        if self.stopping or self.flatten_requested:
+            return
+        self._target_keys()
+        key = self._identity_reverse.get(event.identity.instrument_id)
+        # 迟到成交回报可以使用当前已经可见的行情，不能把请求时钟倒退。
+        stamp = max(event.ts_event, self.last_event_ns, self._last_request_ns)
+        if key in self.contracts:
+            future = self.contracts[key].future
+            expired = {k for k, cutoff in self.option_last_trade_times.items() if stamp >= cutoff}
+            expired_futures = {k for k, cutoff in self.future_last_trade_times.items() if stamp >= cutoff}
+            if key in expired or future in expired_futures:
+                return
+            actual, _ = self._position_snapshot()
+            now = datetime.fromtimestamp(stamp / 1e9, ZoneInfo("Asia/Shanghai"))
+            goals, missing = self._future_targets(actual, stamp, now, expired, expired_futures,
+                                                   futures=(future,))
+            self._fill_hedge_targets.update(goals)
+            self.signals.append({"signal_ns": stamp, "request_ns": stamp,
+                "action": "OPTION_FILL_HEDGE_CALCULATED", "instrument": key,
+                "quantity": str(event.quantity), "price": str(event.price),
+                "targets": {str(self.instruments[k]): str(q) for k, q in goals.items()},
+                "missing": missing})
+            self._drain_fill_hedges(stamp)
+            self._retry_scheduled_hedge(future, stamp)
+        elif key in self.futures:
+            # 已成交月份的定时任务优先按新actual重新计算，再推进其他成交驱动余量。
+            self._retry_scheduled_hedge(key, stamp)
+            if self._fill_hedge_targets:
+                self._drain_fill_hedges(stamp)
+
+    def _drain_fill_hedges(self, stamp):
+        """把最新成交驱动目标落实为委托；只等待会与在途量反向冲突的调整。"""
+        if self.stopping or self.flatten_requested or not self._fill_hedge_targets:
+            return
+        keys = {key: str(self.instruments[key]) for key in self._fill_hedge_targets}
+        positions, working = self.position_quantities(keys.values())
+        changed = False
+        for key, instrument in keys.items():
+            cutoff = self.future_last_trade_times.get(key)
+            if cutoff is not None and stamp >= cutoff:
+                self._fill_hedge_targets.pop(key)
+                continue
+            goal = self._fill_hedge_targets[key]
+            delta = goal - positions[instrument] - working[instrument]
+            if working[instrument] and delta * working[instrument] < 0:
+                # 不新增相反方向的在途平仓，也不修改原撤单/拒单处理。
+                # 后续期货成交回报会再次推进，期间新期权成交可覆盖此目标。
+                self.signals.append({"signal_ns": stamp, "request_ns": stamp,
+                    "action": "FILL_HEDGE_WAIT_WORKING", "instrument": key,
+                    "targets": {instrument: str(goal)}})
+                continue
+            self.future_goals[key] = goal
+            if not delta:
+                self._fill_hedge_targets.pop(key)
+            # 有缺口时保留目标至后续回报核对。Live保护限价Planner可能在已有
+            # 在途时暂不增发；即使本次目标未生成新订单，也不会丢失待补缺口。
+            changed = changed or bool(delta)
+        if changed:
+            targets = {str(self.instruments[key]): value for key, value in
+                       {**self.option_goals, **self.future_goals}.items()}
+            self._submit(targets, stamp, stamp, "OPTION_FILL_HEDGE")
+
+    def _future_targets(self, actual, signal_ns, now, expired, expired_futures, *, futures=None):
+        """定时及成交触发共用同一IV、Delta、舍入和风险上限口径。"""
+        selected = self.futures if futures is None else futures
+        totals = {key: 0.0 for key in selected}
+        missing = []
+        for key, info in self.contracts.items():
+            if info.future not in totals or not actual[key] or key in expired:
+                continue
+            greeks = self._greeks(key, signal_ns, now, hedge=True)
+            if greeks is None:
+                missing.append(key)
+                continue
+            totals[info.future] += float(actual[key]) * float(info.multiplier) * greeks.delta
+        goals = {}
+        for key, exposure in totals.items():
+            if key in expired_futures:
+                goals[key] = actual[key]
+                continue
+            lots = round(-exposure / float(self.futures[key]["contMultNum"]))
+            if self.config.max_future_lots and abs(lots) > self.config.max_future_lots:
+                raise RuntimeError(f"{key}所需对冲{lots}手超过上限，请降低Vega预算")
+            goals[key] = Decimal(lots)
+        return goals, missing
 
     def _remaining_days(self, day, last_day, threshold=None):
         """统计day之后、截至last_day的交易日数，默认核对最小开仓期限。
@@ -288,8 +477,11 @@ class OptionVegaStrategy(StrategyTemplate):
         _greeks还会单独要求日历覆盖最后交易日。close_remaining_days兼容参数
         不在当前源策略的常规退出判断中使用。
         """
-        return remaining_trading_days(self.trading_days, day, last_day,
-            self.config.min_remaining_days if threshold is None else threshold)
+        threshold = self.config.min_remaining_days if threshold is None else threshold
+        key = (day, last_day, threshold)
+        if key not in self._remaining_days_cache:
+            self._remaining_days_cache[key] = remaining_trading_days(self.trading_days, day, last_day, threshold)
+        return self._remaining_days_cache[key]
 
     def _price(self, symbol, signal_ns):
         """读取最新有效收盘价：不晚于signal_ns，年龄不超过配置上限。
@@ -319,8 +511,8 @@ class OptionVegaStrategy(StrategyTemplate):
 
         source_years保留原公式：开仓使用剩余交易日/252，对冲另加当日剩余
         交易分钟。Vega的折现期限另用自然日差/365，不能与IV期限混为一项。
-        若当次时间价值不足或反解不可用，只能使用max_iv_age_seconds内的
-        已有IV；缺行情仍由_price报错，不会通过缓存IV绕过价格时效检查。
+        若当次时间价值不足或反解不可用，沿用最近成功IV，不限制缓存年龄，
+        与旧版_iv_cache一致；缺行情仍由_price报错，不绕过价格时效检查。
         """
         info = self.contracts[symbol]
         forward = self._price(info.future, signal_ns)
@@ -340,11 +532,20 @@ class OptionVegaStrategy(StrategyTemplate):
             self.iv_cache[symbol] = (signal_ns, greeks.iv)
         else:
             cached = self.iv_cache.get(symbol)
-            if cached and signal_ns - cached[0] <= self.config.max_iv_age_seconds * 1_000_000_000:
+            if cached:
                 # 缓存只提供sigma，F、K、期限都用当次值；不延长缓存原始时间。
                 greeks = source_greeks(forward, info.strike, years, self.config.rate, cached[1],
                     (info.last_day-now.date()).days/365)
         return greeks
+
+    def _entry_index(self, signal_ns):
+        """选约指数与分钟时钟分开；M5模式13:58读取已完成的13:55原始close。"""
+        if self.config.index_signal_minutes == 1:
+            return self._price(self.index_id, signal_ns), self.latest[self.index_id][0]
+        value = self.entry_index_latest
+        if value is None or not 0 <= signal_ns-value[0] <= self.config.max_market_age_seconds*1_000_000_000:
+            raise RuntimeError("选约缺少已完成且未超龄的指数M5收盘报价，不能改用未来或M1价格")
+        return value[1], value[0]
 
     def _frame(self, signal_ns, request_ns):
         """每个封闭时点的主决策，顺序保持源策略及执行约束。
@@ -357,14 +558,11 @@ class OptionVegaStrategy(StrategyTemplate):
         6. 目标有变化才整体提交一次；执行端根据持仓/在途计算实际委托差额。
         """
         self.frames += 1
+        self._last_request_ns = max(self._last_request_ns, request_ns)
         now = datetime.fromtimestamp(signal_ns / 1e9, ZoneInfo("Asia/Shanghai"))
         day, slot = now.date(), now.strftime("%H:%M")
-        # Read the same full contract universe once. No cross-frame state cache:
-        # fills, in-flight shares and settlement changes are visible every frame.
-        target_keys = {key: str(instrument) for key, instrument in self.instruments.items()}
-        positions, pending = self.position_quantities(target_keys.values())
-        actual = {key: positions[target] for key, target in target_keys.items()}
-        working = {key: pending[target] for key, target in target_keys.items()}
+        # 每帧读取同一完整合约集合的当前actual/working；只复用静态身份字符串。
+        actual, working = self._position_snapshot()
         expired = {key for key, stamp in self.option_last_trade_times.items() if request_ns >= stamp}
         expired_futures = {key for key, stamp in self.future_last_trade_times.items() if request_ns >= stamp}
         expired_all = expired | expired_futures
@@ -410,6 +608,8 @@ class OptionVegaStrategy(StrategyTemplate):
         if day == self.final_day and slot >= self.config.flatten_slot:
             # 这是显式final_day的策略清仓，不是日历午休/收盘时保存持仓的停机操作。
             self.flatten_requested = True
+            self._fill_hedge_targets.clear()
+            self._pending_scheduled_hedges.clear()
             if not any(working.values()):
                 # 有在途先等待回报，避免重复发平仓；后续帧会重新检查。
                 if (any(q for key, q in actual.items() if key not in expired_all)
@@ -442,17 +642,18 @@ class OptionVegaStrategy(StrategyTemplate):
             if not any(working[key] for key in self.contracts):
                 # 只在精确配置时点选约，不在时点之后自动补开；有期权在途则等待，
                 # 不把未完成的上一批委托与本次增仓叠加。
-                index = self._price(self.index_id, signal_ns)
+                index, index_ns = self._entry_index(signal_ns)
                 candidates = []
-                # 执行价大于所加载的指数特征值，且剩余交易日达标；期权、同月
-                # 期货和指数必须是当前估值时点。自定义指数值在这里影响执行价筛选。
+                # synchronized要求三腿同帧；latest沿用当时已可见且未超龄的报价，
+                # 允许旧版13:58时点读取13:55期权M5，不能提前读取14:00价格。
                 eligible = [key for key in self.options_by_day.get(day, ())
                     if key not in expired and self.contracts[key].future not in expired_futures
                     and self.contracts[key].list_day <= day <= self.contracts[key].last_day
                     and self.contracts[key].strike > index
                     and self._remaining_days(day, self.contracts[key].last_day) >= self.config.min_remaining_days
-                    and all(self.latest.get(name, (None,))[0] == signal_ns
-                        for name in (key, self.contracts[key].future, self.index_id))]
+                    and entry_quote_times_valid((self.latest.get(key, (None,))[0],
+                        self.latest.get(self.contracts[key].future, (None,))[0], index_ns), signal_ns,
+                        self.config.entry_quote_policy, self.config.max_market_age_seconds)]
                 nearest = min((self.contracts[key].last_day for key in eligible), default=None)
                 # 先确定合格链中最近到期月，再计算该月Greeks；不因该月IV全失败
                 # 而自动改选远月。Greeks/配仓无结果均会记录为本日已检查。
@@ -482,8 +683,10 @@ class OptionVegaStrategy(StrategyTemplate):
                         proposed = {key: self.option_goals[key] + Decimal(goals.get(key, 0)) for key in self.contracts}
                         # 配仓函数限制本次增量，这里再限制叠加旧目标后的单合约/总手数。
                         # 超限拒绝整批增量，保留原目标，不静默截断旧仓。
-                        if (any(abs(q) > self.config.max_option_lots for q in proposed.values())
-                                or sum(abs(q) for q in proposed.values()) > self.config.max_total_option_lots):
+                        if ((self.config.max_option_lots and
+                                any(abs(q) > self.config.max_option_lots for q in proposed.values()))
+                                or (self.config.max_total_option_lots and
+                                    sum(abs(q) for q in proposed.values()) > self.config.max_total_option_lots)):
                             audit["outcome"] = "RISK_LIMIT"
                             audit["rejected_increments"] = audit["targets"]
                             audit["targets"] = {}
@@ -525,46 +728,27 @@ class OptionVegaStrategy(StrategyTemplate):
         hedge_token = f"{day}_{slot}"
         hedge_due = slot in self.config.hedge_slots and hedge_token not in self.hedge_sent
         decision["hedge_reasons"] = ["CONFIGURED_SLOT"] if hedge_due else []
-        decision["hedge"] = ("WAIT_WORKING_ORDERS" if hedge_due and any(working[key] for key in self.futures)
-                             else "EVALUATED" if hedge_due else "NOT_DUE")
-        if hedge_due and not any(working[key] for key in self.futures):
-            # 有期货在途时本次不标记已处理；无在途才执行同一日/时点一次对冲。
+        if hedge_due:
+            # 登记整个时点，待办以月份分别保存。一个月在途不能阻塞其他月。
             self.hedge_sent.add(hedge_token)
-            # 标记先于IV计算：缺IV的月份会保留旧目标，本时点仍视为已评估。
-            # 上游若发现真实故障则直接报错，不通过在下一分钟重放本时点来掩盖。
-            totals = {key: 0.0 for key in self.futures}
-            closing_without_iv = set()
-            for key in self.contracts:
-                # 只对冲actual期权仓位，不按尚未成交的新option_goals提前对冲。
-                # 因此同一帧刚选出的期权目标，不会被当作已经成交加入本次敞口。
-                if not actual[key] or key in expired:
-                    continue
-                greeks = self._greeks(key, signal_ns, now, hedge=True)
-                info = self.contracts[key]
-                if greeks is None:
-                    # 源代码跳过无IV合约；实盘保留该月份既有对冲，不因缺值清零。
-                    closing_without_iv.add(info.future)
-                    decision.setdefault("hedge_missing_iv", []).append(key)
-                    continue
-                totals[info.future] += float(actual[key]) * float(info.multiplier) * greeks.delta
-            goals = {}
-            for key, exposure in totals.items():
-                if key in expired_futures:
-                    goals[key] = actual[key]  # 待公共结算回报了结，不能发送普通平仓或重开单。
-                    continue
-                if key in closing_without_iv:
-                    # 该月份任一期权缺IV，整月保留原期货目标，避免将未知敞口当零。
-                    # 这里不会额外触发期权平仓；后续由正常退出和对冲时点继续处理。
-                    goals[key] = self.future_goals[key]
-                    continue
-                # 期权净手数×期权乘数×Delta，除以期货乘数并取反，得到整数期货手数。
-                # round沿用Python舍入行为；空头认购通常对应正的期货对冲目标。
-                lots = round(-exposure / float(self.futures[key]["contMultNum"]))
-                if abs(lots) > self.config.max_future_lots:
-                    raise RuntimeError(f"{key}所需对冲{lots}手超过上限，请降低Vega预算")
-                goals[key] = Decimal(lots)
-            changed = changed or goals != self.future_goals
-            self.future_goals = goals
+            if self.performance is not None:
+                self.performance.count("scheduled_hedge_slots_enqueued")
+            for key in self.futures:
+                if key not in expired_futures:
+                    self._pending_scheduled_hedges.setdefault(key, []).append((hedge_token, signal_ns))
+            blocked = [key for key in self._pending_scheduled_hedges if working[key]]
+            if blocked:
+                if self.performance is not None:
+                    self.performance.count("scheduled_hedge_month_deferrals", len(blocked))
+                self.signals.append({"signal_ns": signal_ns, "request_ns": request_ns,
+                    "action": "SCHEDULED_HEDGE_DEFERRED", "scheduled_slot": hedge_token,
+                    "missing": blocked})
+        scheduled_changed = self._complete_scheduled_hedges(signal_ns, request_ns, now,
+            actual, working, expired, expired_futures)
+        changed = changed or scheduled_changed
+        decision["hedge"] = ("WAIT_WORKING_ORDERS" if self._pending_scheduled_hedges else
+                             "EVALUATED" if hedge_due else "NOT_DUE")
+        decision["pending_scheduled_months"] = sorted(self._pending_scheduled_hedges)
 
         # changed表示本帧业务曾改变目标，不是“目标已成交”的标记。
         # 某张新选期权随后退出时，changed仍为True，可能提交净值不变的完整目标；
@@ -584,6 +768,7 @@ class OptionVegaStrategy(StrategyTemplate):
         诊断中的TARGET_SUBMITTED只表示目标提交，submissions也不是订单/成交数。
         signals仅展示非零目标；真正传入set_targets的完整组合仍包含零目标。
         """
+        self._last_request_ns = max(self._last_request_ns, request_ns)
         self.set_targets(targets, request_ns, metadata={"signal_ts": signal_ns, "action": action})
         self.last_decision.update(status="TARGET_SUBMITTED", action=action,
             targets={key: str(value) for key, value in targets.items() if value

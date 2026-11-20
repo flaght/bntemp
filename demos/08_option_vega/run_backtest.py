@@ -89,8 +89,9 @@ def backtest_bar_specs(args):
     if type(minutes) is not int or minutes not in (1, 5):
         raise ValueError("option-bar-minutes须为1或5")
     slot = time.fromisoformat(args.option_slot)
-    if slot.strftime("%H:%M") != args.option_slot or slot.minute % minutes:
-        raise ValueError(f"--option-slot须对齐期权M{minutes}完成时刻；M5可显式选择--option-slot 14:00")
+    if (slot.strftime("%H:%M") != args.option_slot or
+            (slot.minute % minutes and getattr(args, "entry_quote_policy", "synchronized") != "latest")):
+        raise ValueError(f"--option-slot须对齐期权M{minutes}完成时刻；13:58配合M5须显式使用--entry-quote-policy latest")
     return {
         "option": BarReadSpec(interval_seconds=minutes * 60,
             timestamp_label=getattr(args, "options_bar_timestamp", None) or args.bar_timestamp,
@@ -114,6 +115,24 @@ def resolve_backtest_paths(args):
     else:
         raise ValueError("option-bar-minutes须为1或5")
     return resolve_option_args(args, require_futures=True, require_index=False, use_environment=False)
+
+
+def entry_quotes_available(config, day, index_minutes, option_times, future_times):
+    """与策略共用选约报价规则；仅验证真实已完成Bar，不合成13:58期权行情。"""
+    import pandas as pd
+    signal = pd.Timestamp(f"{day} {config.option_slot}", tz="Asia/Shanghai")
+    if signal not in index_minutes:
+        return False
+    def previous(values):
+        times = pd.DatetimeIndex(values)
+        if times.empty:
+            return None
+        index = times.searchsorted(signal, side="right") - 1
+        return int(times[index].value) if index >= 0 else None
+    sampled_index = [t for t in sorted(index_minutes) if
+        _signal.index_signal_due(t.value, config.index_signal_minutes)]
+    return _signal.entry_quote_times_valid((previous(option_times), previous(future_times), previous(sampled_index)),
+        signal.value, config.entry_quote_policy, config.max_market_age_seconds)
 
 
 def check_day_coverage(args, days, opt_paths, contracts, index_minutes):
@@ -181,7 +200,9 @@ def run_case(args):
     config = OptionVegaConfig(
         nav=args.nav if args.nav is not None else args.starting_balance, vega_budget=args.vega_budget,
         delta_targets=tuple(float(item.strip()) for item in args.delta_targets.split(",")),
-        option_slot=args.option_slot, hedge_slots=tuple(args.hedge_slots.split(",")),
+        option_slot=args.option_slot, entry_quote_policy=getattr(args, "entry_quote_policy", "synchronized"),
+        index_signal_minutes=getattr(args, "index_signal_minutes", 1),
+        hedge_slots=tuple(args.hedge_slots.split(",")),
         flatten_slot=args.flatten_slot, min_remaining_days=args.min_remaining_days,
         close_remaining_days=args.close_remaining_days, rate=args.rate,
         min_time_value=args.min_time_value, max_market_age_seconds=args.max_market_age_seconds,
@@ -280,11 +301,12 @@ def run_case(args):
         raise ValueError(f"{days[-1]}/{args.index_code}: 指数在最终清仓时点后不足两分钟行情，调早--flatten-slot")
     for day in days:
         minutes = index_minutes[day]
-        synchronized = any(pd.Timestamp(f"{day} {config.option_slot}", tz="Asia/Shanghai") in
-            minutes & set(frames[(day, key)].datetime) & set(frames[(day, contracts[key].future)].datetime)
+        available = any(entry_quotes_available(config, day, minutes,
+            frames[(day, key)].datetime, frames[(day, contracts[key].future)].datetime)
             for key in options_by_day[day])
-        if not synchronized:
-            raise ValueError(f"{day}: --option-slot={config.option_slot}时点没有三腿同步行情"
+        if not available:
+            raise ValueError(f"{day}: --option-slot={config.option_slot}没有满足"
+                f"entry_quote_policy={config.entry_quote_policy}的已完成三腿行情"
                 f"（期权{bar_specs['option'].bar_spec}、期货1-MINUTE、指数1-MINUTE）")
 
     if skipped_hedges:
@@ -385,6 +407,7 @@ def run_case(args):
         strategy = OptionVegaStrategy("option-vega", config, contracts, future_rows, instruments,
             args.index_code, calendar, days[-1], options_by_day, option_last_trade_times=last_trade_times,
             future_last_trade_times=future_last_trade_times)
+        strategy.performance = performance
         assemble_strategy(runner, strategy, feeds={"option-bars": feed}, execution=execution,
             bindings=StrategyBindings(
                 data=tuple(DataBinding(key, "option-bars", item, DataType.BAR, bar_specs_by_key[key])
@@ -447,6 +470,7 @@ def run_case(args):
                 "bar_parser": getattr(args, "bar_parser", "prepared"),
                 "index_feature": index_identity, "frame_wait_seconds": args.frame_wait_seconds,
                 "skipped_index_frames": sum(row["status"] == "SKIPPED" for row in runner.frame_audit),
+                "pending_scheduled_hedges": strategy._pending_scheduled_hedges,
                 "bars": result.replay_summary.bars, "frames": strategy.frames,
                 "entry_decisions": strategy.entry_decisions, "submissions": strategy.submissions,
                 "option_settlements": str(settlement_path) if settlement_path else None,
@@ -559,6 +583,10 @@ def main():
     parser.add_argument("--vega-budget", type=float, default=1.25)
     parser.add_argument("--delta-targets", default="0.2,0.25,0.3,0.35")
     parser.add_argument("--option-slot", default="13:58")
+    parser.add_argument("--entry-quote-policy", choices=("synchronized", "latest"), default="synchronized",
+        help="synchronized要求三腿同帧；latest允许13:58使用当时已完成的13:55期权M5，保留报价时效检查")
+    parser.add_argument("--index-signal-minutes", type=int, choices=(1, 5), default=1,
+        help="选约指数close采样周期；5表示13:58使用13:55已完成收盘，分钟决策时钟不变")
     parser.add_argument("--hedge-slots", default="10:00,11:00,13:30,14:00,14:55")
     parser.add_argument("--flatten-slot", default="14:50")
     parser.add_argument("--min-remaining-days", type=int, default=5)
@@ -567,10 +595,11 @@ def main():
     parser.add_argument("--rate", type=float, default=0.02)
     parser.add_argument("--min-time-value", type=float, default=5)
     parser.add_argument("--max-market-age-seconds", type=int, default=300)
-    parser.add_argument("--max-iv-age-seconds", type=int, default=300)
-    parser.add_argument("--max-option-lots", type=int, default=100)
-    parser.add_argument("--max-total-option-lots", type=int, default=200)
-    parser.add_argument("--max-future-lots", type=int, default=100)
+    parser.add_argument("--max-iv-age-seconds", type=int, default=300,
+        help="旧配置兼容参数，不再限制IV缓存年龄；报价时效仍由max-market-age-seconds控制")
+    parser.add_argument("--max-option-lots", type=int, default=100, help="单期权手数上限；0不设限")
+    parser.add_argument("--max-total-option-lots", type=int, default=200, help="期权累计总手数上限；0不设限")
+    parser.add_argument("--max-future-lots", type=int, default=100, help="单期货手数上限；0不设限，不截断必要对冲")
     parser.add_argument("--max-notional", type=Decimal, default=Decimal("100000000"))
     parser.add_argument("--commission", type=Decimal, default=Decimal(1))
     parser.add_argument("--margin-init", type=Decimal, default=Decimal("0.15"))

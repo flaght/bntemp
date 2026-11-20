@@ -102,6 +102,9 @@ def parse_args(argv=None):
     p.add_argument("--vega-budget", type=float, default=1.25)
     p.add_argument("--delta-targets", default="0.2,0.25,0.3,0.35")
     p.add_argument("--option-slot", default="13:58")
+    p.add_argument("--entry-quote-policy", choices=("synchronized", "latest"), default="synchronized",
+        help="选约报价同帧或读取当时已完成的最新报价；仍执行行情时效检查")
+    p.add_argument("--index-signal-minutes", type=int, choices=(1, 5), default=1)
     p.add_argument("--hedge-slots", default="10:00,11:00,13:30,14:00,14:55")
     p.add_argument("--flatten-slot", default="14:50")
     p.add_argument("--flatten-day", type=lambda value: datetime.strptime(value, "%Y%m%d").date(),
@@ -112,7 +115,8 @@ def parse_args(argv=None):
     p.add_argument("--rate", type=float, default=.02)
     p.add_argument("--min-time-value", type=float, default=5)
     p.add_argument("--max-market-age-seconds", type=int, default=300)
-    p.add_argument("--max-iv-age-seconds", type=int, default=300)
+    p.add_argument("--max-iv-age-seconds", type=int, default=300,
+        help="旧配置兼容参数，不再限制IV缓存年龄；报价时效仍由max-market-age-seconds控制")
     p.add_argument("--max-option-lots", type=int, default=1)
     p.add_argument("--max-total-option-lots", type=int, default=2)
     p.add_argument("--max-future-lots", type=int, default=1)
@@ -182,7 +186,9 @@ def parse_args(argv=None):
             raise ValueError("指数查询超时须在[1,30]秒，精度须在[0,9]")
         args.config = OptionVegaConfig(nav=args.nav, vega_budget=args.vega_budget,
             delta_targets=tuple(float(value) for value in args.delta_targets.split(",")),
-            option_slot=args.option_slot, hedge_slots=tuple(args.hedge_slots.split(",")),
+            option_slot=args.option_slot, entry_quote_policy=args.entry_quote_policy,
+            index_signal_minutes=args.index_signal_minutes,
+            hedge_slots=tuple(args.hedge_slots.split(",")),
             flatten_slot=args.flatten_slot, min_remaining_days=args.min_remaining_days,
             close_remaining_days=args.close_remaining_days, rate=args.rate, min_time_value=args.min_time_value,
             max_market_age_seconds=args.max_market_age_seconds, max_iv_age_seconds=args.max_iv_age_seconds,
