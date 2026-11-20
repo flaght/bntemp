@@ -98,5 +98,40 @@
     "native_acceptance": "2de7869a2dd7334cfb13f161a213c1b66e583a9560929653696f94c47f0fcab6",
     "existing_regression": "7ffdb22ab2d24c5ed501da295da9c5eb9d164a65d027ef537e2b6c40416f5297",
     "baseline_regression": "a1e91e50ceab9effdf006e2ca057e6563e6e08d3f9d34ea7b56f6615f49b291a"
-  }
+  },
+  "server_native_attempts": [
+    {
+      "recorded_date": "2026-11-20",
+      "environment": "XY Python 3.12.14, l1-indexed-validation-v1",
+      "status": "failed_report_comparison_pending_rerun",
+      "suite_tests_run": 21,
+      "failures": 1,
+      "raw": {
+        "events": 65,
+        "frames": 23,
+        "orders": 8,
+        "fills": 8,
+        "directory_scans": 2
+      },
+      "prepared": {
+        "events": 65,
+        "frames": 23,
+        "orders": 8,
+        "fills": 8,
+        "directory_scans": 0,
+        "partition_files_read": 6
+      },
+      "failure": "orders.csv.last_trade_id compares generated FS/OS settlement UUIDs literally",
+      "cause": "Original native acceptance comparator omitted normalization of settlement UUIDs in last_trade_id",
+      "fix": "Normalize only exact OS/FS + 32 lowercase hex UUID suffixes; preserve settlement kind, ordinary native trade IDs, row order and all financial/time/status fields",
+      "changed_runtime": false,
+      "full_report_equivalence_passed": false,
+      "local_fix_checks": {
+        "passed": 2,
+        "native_test_skipped": 1,
+        "reason": "No module named 'bomber.backtest'"
+      },
+      "source_log_sha256": "a5561e5c069789010fbb4020cff52e02ef22f41ebd97590473a85923d347b4e2"
+    }
+  ]
 }
