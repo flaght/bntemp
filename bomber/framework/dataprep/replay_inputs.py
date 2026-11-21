@@ -32,7 +32,7 @@ def source_key(key, spec):
 def implementation_identity():
     base = Path(__file__).resolve().parents[1]
     names = ("dataprep/replay_inputs.py", "dataprep/columnar.py", "datahub/features/prepared_frames.py",
-             "datahub/features/restoration.py",
+             "datahub/features/restoration.py", "datahub/features/_restoration_native.pyx",
              "market/replay/native_batch.py", "market/basic/base.py", "datahub/features/frames.py",
              "market/replay/parsers/bar/fixed.py", "market/replay/parsers/base.py", "datahub/temporal.py",
              "market/frames.py", "market/replay/base.py",
@@ -43,6 +43,11 @@ def implementation_identity():
     for name in names:
         digest.update(name.encode())
         digest.update((base/name).read_bytes())
+    from bomber.framework.datahub.features.restoration import native_restoration_module
+    native = native_restoration_module()
+    if native is not None:
+        digest.update(b"compiled-observation-restoration")
+        digest.update(_sha(Path(native.__file__)).encode())
     return digest.hexdigest()
 
 
@@ -295,7 +300,7 @@ class ReplayInputs:
         return HistoricalInputBundle(context or InputContext(), tuple(results[key] for key in sorted(results)),
                                      plan.bindings, coverage)
 
-    def load_frames(self, records, binding):
+    def load_frames(self, records, binding, *, backend="auto"):
         from bomber.framework.datahub.features.prepared_frames import decode_frames
         with _measure("prepared_frames_load"):
             with _measure("prepared_frames_table_read"):
@@ -305,4 +310,4 @@ class ReplayInputs:
             session = current_session()
             with _measure("prepared_frames_decode"):
                 return decode_frames(frames, observations, records, binding,
-                                     performance=None if session is None else session.performance)
+                                     performance=None if session is None else session.performance, backend=backend)

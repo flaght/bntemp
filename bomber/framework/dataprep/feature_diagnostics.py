@@ -15,7 +15,7 @@ from .replay_inputs import ReplayInputs, implementation_identity
 from .session import InputSession
 
 
-def profile_prepared_frames(root, feature_config, *, verify="metadata", repeat=1):
+def profile_prepared_frames(root, feature_config, *, verify="metadata", repeat=1, backend="auto"):
     if type(repeat) is not int or not 1 <= repeat <= 10:
         raise ValueError("repeat须为1～10的整数")
     root, feature_config = Path(root).resolve(), Path(feature_config).resolve()
@@ -55,13 +55,15 @@ def profile_prepared_frames(root, feature_config, *, verify="metadata", repeat=1
     runs = []
     for _ in range(repeat):
         with InputSession() as session:
-            outcomes, deadlines = reader.load_frames(batch.records, binding)
+            outcomes, deadlines = reader.load_frames(batch.records, binding, backend=backend)
             stats = session.performance.snapshot()
             if len(outcomes) != len(deadlines):
                 raise ValueError("恢复后的帧数与期限数不一致")
             stats["frames"] = len(outcomes)
+            stats["restore_backend"] = "cython" if stats["counters"].get("prepared_restore_cython_runs") else "python"
             phases = ("prepared_frames_table_read", "prepared_observations_table_read",
-                "prepared_frames_to_python", "prepared_observations_to_python", "prepared_frame_reference_checks",
+                "prepared_frames_to_python", "prepared_observations_to_python", "prepared_observations_columnar_prepare",
+                "prepared_frame_reference_checks",
                 "prepared_observation_decimal", "prepared_observation_objects", "prepared_frame_objects")
             measured = sum(stats["timings"][name]["seconds"] for name in phases)
             stats["restore_other_seconds"] = round(max(0., stats["timings"]["prepared_frames_load"]["seconds"]-measured), 6)
@@ -70,6 +72,7 @@ def profile_prepared_frames(root, feature_config, *, verify="metadata", repeat=1
         del outcomes, deadlines
         gc.collect()
     return {"status": "passed", "diagnostic_only": True, "artifact": reader.identity,
+        "requested_restore_backend": backend,
         "feature_file": feature["path"], "feature_config": str(feature_config),
         "feature_dataset": feature["dataset_id"], "feature_records": len(batch.records),
         "current_implementation_matches_artifact": implementation_identity() == context["implementation"],

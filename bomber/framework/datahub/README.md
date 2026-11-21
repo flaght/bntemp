@@ -15,7 +15,7 @@ DataHub定义不可变参考资料与特征记录，按业务时间、可见时�
 已准备特征帧的读取和恢复在公共组件中测量：`dataprep/replay_inputs.py`负责文件读取，
 `features/prepared_frames.py`负责帧及引用，`features/restoration.py`负责与数据集无关的价格和
 市场观察值批量恢复。没有把策略选约或信号逻辑移入公共组件；自定义标量特征也走同一恢复入口。
-本轮增加计时和独立诊断，尚未实现新的Cython后端。
+首轮增加计时和独立诊断，随后增加了下述可选Cython后端；策略与特征字段声明保持原样。
 
 | 统计项 | 测量范围 |
 | --- | --- |
@@ -23,12 +23,13 @@ DataHub定义不可变参考资料与特征记录，按业务时间、可见时�
 | `prepared_observations_table_read` | 合约观察值Feather读取及对应检查 |
 | `prepared_frames_to_python` | 帧Arrow Table转Python字典列表 |
 | `prepared_observations_to_python` | 观察值Arrow Table转Python列列表 |
+| `prepared_observations_columnar_prepare` | Cython路径的字符串字典编码、共享值和整数列数组准备；不包含Decimal时间 |
 | `prepared_frame_reference_checks` | 帧顺序、范围、期限和特征记录可见性检查，建立期限映射 |
-| `prepared_observation_decimal` | 每帧批量价格字符串转Decimal，保留原精度表示 |
+| `prepared_observation_decimal` | Python每帧转换价格；Cython按唯一价格字符串转换一次，均保留原精度表示 |
 | `prepared_observation_objects` | FrameObservation构造、合约字典组装及重复键检查 |
 | `prepared_frame_objects` | FeatureQuery/Snapshot、StrategyFrame和FrameOutcome装配，包括不可变市场字典副本 |
 
-`prepared_frames_load`是父级总耗时；`prepared_frames_decode`包含后六项。两层计时不能与
+`prepared_frames_load`是父级总耗时；`prepared_frames_decode`包含列转换/准备及之后各项。两层计时不能与
 子项相加。每帧作为一个计时批次，不为每个价格采样时钟，细项先在本地累加再一次写入统计。
 `prepared_frame_rows`、`prepared_observation_rows`、`prepared_observations_restored`及READY/SKIPPED
 计数区分“分钟数”和“实际恢复对象数”。独立报告的`restore_other_seconds`包含循环和计时等剩余成本。
@@ -47,6 +48,41 @@ DataHub定义不可变参考资料与特征记录，按业务时间、可见时�
 READY/SKIPPED结果。先根据实测决定：磁盘读取本身不能靠编译Python循环解决；Arrow已在原生库中
 执行的部分要区分解码和Python对象物化；若瓶颈是数值/时钟批量处理或观察值装配，再评估Cython。
 不能仅将策略代码编译或只对一个数据集做特殊分支就登记公共服务加速。
+
+XY随后提供同量单次诊断：45839帧、1488374个观察值（平均32.47个/帧），恢复总耗时9.885198s。
+观察值Arrow转Python为4.540992s（45.94%），观察值对象/字典装配3.315605s（33.54%），
+帧对象装配1.205315s（12.19%），Decimal转换0.369760s（3.74%），两份文件读取合计0.027955s。
+特征文件准备3.269699s单独统计，不包含在上述恢复时间内。这是诊断结果，不登记正式回测提速。
+
+据此公共加速边界优先研究：直接使用Arrow/NumPy列缓冲区，减少整表`to_pydict()`物化；
+合约和来源字符串采用共享字典/编码，减少重复转换；由Cython批量循环融合读取与观察值装配，
+先保持公开对象/映射契约及Python实现。若Cython仍调用原`to_pydict()`，4.54s这部分不会因
+调用方被编译而消失。后端实现与验证范围如下。
+
+### 可选Cython批量恢复
+
+仅新增`features/_restoration_native.pyx`一个扩展和独立`features/setup.py`构建入口。
+公共`restoration.py`在运行时对合约、来源和原始价格字符串做Arrow字典编码，只解码唯一字符串，
+时间列保留为只读int64数组；Cython直接读取字典代码及整数数组，逐帧批量构造原有
+`FrameObservation`和有序合约字典。没有更换公开对象类型、改写持久文件或新增策略分支。
+价格字典按原字符串区分，因此`1.0`和`1.00`、正负零的Decimal表示保持原样。
+
+`decode_frames(..., backend="auto")`默认有扩展时使用Cython，未安装扩展时使用原Python路径；
+显式`python`用于对照，显式`cython`在扩展缺失时明确报错。独立诊断的对应选项为
+`--restore-backend auto/python/cython`，每次结果的`restore_backend`记录实际后端。
+没有新增后端注册层。Cython路径的`prepared_observations_to_python`为0；关注新增列准备计时及
+`prepared_unique_market_keys/sources/prices`计数，含义是原始字符串唯一值数量。
+
+在项目根目录用目标Python执行`python bomber/framework/datahub/features/setup.py build_ext --inplace`，
+只需Cython、setuptools和C编译器，不依赖NT头文件或重新编译交易引擎。每次更新pyx后重新构建。
+源码与实际扩展二进制摘要均进入回放输入的实现指纹；正式回测仍需按新指纹生成回放输入版本，
+父prepared数据不重做，已有v1可直接用于两种后端的只读诊断。
+
+本机扩展已实际编译，6项后端测试、5项独立诊断及144项关联回归共155项通过。测试覆盖共享字符串、
+Decimal表示、Unicode/空值来源、只读/分片列、超过2**53的整数时间、重复键/范围/字典代码拒绝、
+可选扩展缺失及自定义特征READY/SKIPPED结果。真实NT撮合/金融报表验收本机缺SDK跳过，待XY重跑。
+同机单轮合成样本（45839帧/1488374条观察值、33合约/1来源/5000种价格字符串）逐项摘要相同，
+Python解码2.951348s、Cython2.228823s，下降约24.5%；不能据此推算XY真实数据或完整回测收益。
 
 ## 基础条款
 

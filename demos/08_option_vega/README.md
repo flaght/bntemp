@@ -1313,7 +1313,7 @@ FrameObservation/FeatureSnapshot/StrategyFrame对象恢复；当前计时不能�
 ### 公共帧恢复分项诊断
 
 分项计时位于公共DataHub/dataprep模块，08策略和信号源码未改；详细字段及后续Cython边界见
-[公共服务说明](../../bomber/framework/datahub/README.md#公共帧恢复分项计时)。本轮先计时，尚未新增Cython实现。
+[公共服务说明](../../bomber/framework/datahub/README.md#公共帧恢复分项计时)。首轮先计时；后续可选Cython见下一节。
 以下命令只恢复现有v1帧，不运行策略/撮合，不用重新导出数据，使用该产物对应的自定义特征声明：
 
 ```bash
@@ -1339,6 +1339,49 @@ PYTHONPATH=. /workspace/worker/env/uv-nautilus/bin/python -u \
 本地新增独立诊断测试5项通过，验证自定义标量特征、精确Decimal表示、修订选择、SKIPPED帧、
 旧版本只读诊断、来源/Schema变化拒绝、损坏文件拒绝和产物写入保护；相关回归104项及公共特征回归40项通过。
 真实SDK验收新增分项统计断言，本机缺少原生扩展跳过，须在XY独立进程重跑。
+
+XY分项诊断随后通过：恢复45839帧、1488374个观察值，`prepared_frames_load=9.885198s`。
+其中观察值Arrow转Python4.540992s、观察值对象装配3.315605s，两项合计7.856597s（79.48%）；
+帧对象装配1.205315s、Decimal转换0.369760s、引用检查0.080643s、两份文件读取0.027955s。
+下一步公共Cython方案优先消除观察值整表Python物化，再融合批量对象装配。此诊断没有跑策略和
+撮合，不替代正式回测性能或财务验收，该次诊断尚未实施Cython后端。
+
+### 公共Cython恢复后端验证
+
+只加一个公共扩展；08策略、信号和撮合入口不改，旧Feather格式保持原样。默认有扩展则自动使用，
+没有扩展则回退原Python路径；显式Cython诊断缺少扩展会失败，不会静默计为加速结果。
+GitHub同步后在XY原pro目录执行，扩展需在目标机器本地编译，无需打包或重编译NT内核：
+
+```bash
+cd /workspace/worker/pj/Chrono/nautilus_trader_demo/pro || exit 1
+export VEGA_PYTHON=/workspace/worker/env/uv-nautilus/bin/python
+export VEGA_REPLAY_ROOT=/workspace/data/temp_bomber1/dx1/data/prepared/mo-im-2026-replay-v1
+export VEGA_FEATURE_SCHEMA=/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/demos/feature/index-research-20260101-20261021-1794209274/index-blend.csv.dataset.json
+
+PYTHONPATH=. "$VEGA_PYTHON" bomber/framework/datahub/features/setup.py build_ext --inplace
+PYTHONPATH=. "$VEGA_PYTHON" -m unittest tests.test_feature_frame_cython -v
+PYTHONPATH=. "$VEGA_PYTHON" -m unittest tests.test_replay_inputs_native -v
+
+PYTHONPATH=. "$VEGA_PYTHON" -u scripts/profile_prepared_frames.py \
+  --replay-inputs "$VEGA_REPLAY_ROOT" --feature-config "$VEGA_FEATURE_SCHEMA" \
+  --restore-backend python --verify metadata --repeat 1 \
+  --output demos/08_option_vega/results/frame-restore-python.json
+
+PYTHONPATH=. "$VEGA_PYTHON" -u scripts/profile_prepared_frames.py \
+  --replay-inputs "$VEGA_REPLAY_ROOT" --feature-config "$VEGA_FEATURE_SCHEMA" \
+  --restore-backend cython --verify metadata --repeat 1 \
+  --output demos/08_option_vega/results/frame-restore-cython.json
+```
+
+构建依赖Cython、setuptools和C编译器；后端组6项需实际执行，原生SDK组1项也需通过，skipped不算验收。
+比较两个报告的`runs[0].restore_backend`、`prepared_frames_load`、`prepared_observation_objects`及
+`prepared_observations_columnar_prepare`，Cython的整表`prepared_observations_to_python`应为0。
+两者的帧数/观察值数/READY/SKIPPED应相同；新计数给出真实合约、来源及原始价格字符串的唯一值数。
+有波动可各改`--repeat 3`，重复会复用操作系统缓存。
+
+本机155项相关测试通过，合成同规模样本的完整值摘要相同，解码2.95s→2.23s；这不是XY真实行情
+或完整回测速度。现有v1可直接做以上诊断，正式回测需要重新准备新回放输入版本（如replay-v2），
+保留父prepared不变，并在编译扩展后生成，以绑定实际源码与二进制指纹。
 
 ### 长区间回测进度与特征缓存
 

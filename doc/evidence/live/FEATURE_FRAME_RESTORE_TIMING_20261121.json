@@ -1,6 +1,6 @@
 {
   "recorded_date": "2026-11-21",
-  "status": "local_regressions_passed_xy_stage_measurements_pending",
+  "status": "xy_stage_measurements_completed_public_cython_backend_not_yet_implemented",
   "baseline_commit": "5fd9cdd8fbb73125c1a280d10616780639203f38",
   "files": [
     "bomber/framework/datahub/features/restoration.py",
@@ -102,12 +102,107 @@
   "server_reference": {
     "previous_prepared_frames_load_seconds": 10.203871,
     "frame_rows": 45839,
-    "observation_rows": "Not yet measured; new counter will report exact count"
+    "observation_rows": 1488374
   },
   "limits": [
     "No native or full-interval performance claim for these changes",
     "Diagnostic still uses existing v1 single-EXACT-feature frame format",
     "Repeated runs reuse OS caches; feature-source setup measured separately from frame restoration",
     "Timing overhead and separated batches can slightly change wall time relative to original combined loop"
-  ]
+  ],
+  "server_profile_result": {
+    "recorded_date": "2026-11-21",
+    "source": "user supplied standalone diagnostic output",
+    "status": "passed",
+    "diagnostic_only": true,
+    "artifact": {
+      "root": "/workspace/data/temp_bomber1/dx1/data/prepared/mo-im-2026-replay-v1",
+      "package_id": "80a27ecec8144fd8976d92c557ea3a4f",
+      "manifest_sha256": "5bb3991807eb1c97b0ea58beb4c13d5d2907b9de1c595475346063aa32b7ce6b",
+      "verification": "metadata"
+    },
+    "feature_dataset": "research.index.ma20_ma60.minute",
+    "feature_records": 45840,
+    "current_implementation_matches_artifact": false,
+    "setup_seconds": {
+      "profile_feature_input_read": 3.269699,
+      "replay_inputs_open": 0.287027
+    },
+    "runs": [
+      {
+        "seconds": {
+          "prepared_frame_objects": 1.205315,
+          "prepared_frame_reference_checks": 0.080643,
+          "prepared_frames_decode": 9.857202,
+          "prepared_frames_load": 9.885198,
+          "prepared_frames_table_read": 0.002513,
+          "prepared_frames_to_python": 0.242116,
+          "prepared_observation_decimal": 0.36976,
+          "prepared_observation_objects": 3.315605,
+          "prepared_observations_table_read": 0.025442,
+          "prepared_observations_to_python": 4.540992
+        },
+        "counters": {
+          "prepared_frame_rows": 45839,
+          "prepared_frames_ready": 45839,
+          "prepared_frames_skipped": 0,
+          "prepared_observation_rows": 1488374,
+          "prepared_observations_restored": 1488374
+        },
+        "frames": 45839,
+        "restore_other_seconds": 0.102812
+      }
+    ],
+    "exclusive_phase_shares": {
+      "observation_arrow_to_python": {
+        "seconds": 4.540992,
+        "percent": 45.937
+      },
+      "observation_objects_and_dictionary": {
+        "seconds": 3.315605,
+        "percent": 33.541
+      },
+      "frame_objects": {
+        "seconds": 1.205315,
+        "percent": 12.193
+      },
+      "decimal_conversion": {
+        "seconds": 0.36976,
+        "percent": 3.741
+      },
+      "frame_arrow_to_python": {
+        "seconds": 0.242116,
+        "percent": 2.449
+      },
+      "reference_checks": {
+        "seconds": 0.080643,
+        "percent": 0.816
+      },
+      "frame_and_observation_file_read": {
+        "seconds": 0.027955,
+        "percent": 0.283
+      },
+      "other": {
+        "seconds": 0.102812,
+        "percent": 1.04
+      }
+    },
+    "top_two_seconds": 7.856597,
+    "top_two_percent": 79.478,
+    "mean_observations_per_frame": 32.4696,
+    "interpretation": [
+      "I/O is about 0.028 seconds; field materialization and observation-object construction dominate",
+      "Five columns per observation imply 7441870 field values materialized by the observation to_pydict step",
+      "Decimal conversion is only 0.37 seconds, not the primary bottleneck; reference checks about 0.08 seconds",
+      "Feature source setup is outside the measured frame-restore interval",
+      "Single diagnostic run, no strategy or matching engine; not a new full-backtest speed or financial-equivalence claim"
+    ],
+    "proposed_shared_cython_design": [
+      "Consume Arrow/NumPy column buffers and compact metadata/dictionary codes instead of materializing every observation into Python column lists first",
+      "Reuse dictionary-decoded contract/source strings while preserving exact values and mappings",
+      "Fuse column access and batch market-observation assembly in a shared Cython boundary; retain the Python path and public object/clock/Decimal contracts",
+      "Keep dataset/strategy signal logic out of the accelerator; compiling a caller that still invokes the original to_pydict would retain its cost",
+      "Prototype and measure before claiming speedup; Python object allocation remains a cost even with Cython"
+    ]
+  }
 }

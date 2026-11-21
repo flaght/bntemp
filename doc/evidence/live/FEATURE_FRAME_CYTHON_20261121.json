@@ -1,0 +1,204 @@
+{
+  "recorded_date": "2026-11-21",
+  "status": "local_cython_built_and_regressions_passed_xy_real_data_pending",
+  "baseline_commit": "b262561d047fd8db7d0255db69e2873fd4d713f6",
+  "files": [
+    "bomber/framework/datahub/features/restoration.py",
+    "bomber/framework/datahub/features/_restoration_native.pyx",
+    "bomber/framework/datahub/features/setup.py",
+    "bomber/framework/datahub/features/prepared_frames.py",
+    "bomber/framework/dataprep/replay_inputs.py",
+    "bomber/framework/dataprep/feature_diagnostics.py",
+    "scripts/profile_prepared_frames.py",
+    "tests/test_feature_frame_cython.py",
+    "tests/test_feature_frame_diagnostics.py",
+    "tests/test_replay_inputs_native.py",
+    "bomber/framework/datahub/README.md",
+    "demos/08_option_vega/README.md",
+    "doc/evidence/README.md"
+  ],
+  "scope": {
+    "shared_python": "bomber.framework.datahub.features.restoration",
+    "shared_extension": "bomber.framework.datahub.features._restoration_native",
+    "build_entry": "python bomber/framework/datahub/features/setup.py build_ext --inplace",
+    "selection": "auto uses installed Cython else original Python; explicit python reference or cython required",
+    "diagnostic_flag": "--restore-backend auto/python/cython",
+    "implementation": [
+      "Arrow dictionary encoding for key/source_id/raw price strings; only unique strings become Python values",
+      "Integer clocks and dictionary indices remain read-only numeric arrays",
+      "Cython loop fuses column access and construction of the existing FrameObservation and insertion-ordered dictionary",
+      "Price strings are converted once per unique raw representation; Decimal exponent and signed zero retained"
+    ],
+    "not_changed": [
+      "demos/08_option_vega/strategy.py",
+      "demos/08_option_vega/vega_signal.py",
+      "demos/08_option_vega/run_backtest.py",
+      "demos/08_option_vega/feature/backtest.py",
+      "bomber/framework/market/frames.py",
+      "bomber/framework/dataprep/bars.py",
+      "bomber/framework/dataprep/contracts.py"
+    ],
+    "encode_frames_ast_unchanged": true,
+    "new_registries_or_persistent_formats": false,
+    "native_engine_rebuild_required": false
+  },
+  "cache_compatibility": {
+    "existing_v1_diagnostics": "Supported without rewriting files; source/feature compatibility scopes unchanged",
+    "formal_replay": "Source and installed restoration binary hashes included in implementation identity; compile before publishing a new replay-input version",
+    "parent_prepared": "Unchanged; bars.py/contracts.py normalization hashes preserved"
+  },
+  "local_build": {
+    "python": "3.12.14 macOS arm64",
+    "Cython": "3.3.0",
+    "numpy": "2.5.3",
+    "pyarrow": "25.0.1",
+    "extension_filename": "_restoration_native.cpython-312-darwin.so",
+    "extension_sha256": "152c67415f4c3cf62d213775fd15622cba803ce5b17a035fd774517b20f58bb1",
+    "implementation_sha256": "9815ff23c4812138d923a99d036280d0e879738c6ddea58f8e58510ef181cfa2",
+    "status": "built with local C compiler; no engine SDK needed"
+  },
+  "validation": {
+    "tests_passed": 155,
+    "seconds": 7.341,
+    "groups": {
+      "cython_and_fallback": 6,
+      "diagnostic": 5,
+      "related_regression": 144
+    },
+    "native_sdk_backtest": {
+      "tests": 1,
+      "skipped": 1,
+      "reason": "No module named 'bomber.backtest'"
+    },
+    "checks": [
+      "Custom scalar-feature complete frame restore equals original Python path, including revision and READY/SKIPPED outcomes",
+      "Guarded Arrow table proves compiled path does not call observation_table.to_pydict",
+      "Unicode, None metadata, chunked/sliced/read-only arrays and pre-encoded dictionaries",
+      "Decimal exponent, signed zero, large exact decimal strings and integer clocks above 2**53",
+      "Duplicate keys, invalid ranges including Py_ssize_t overflow, dictionary codes and non-integer clocks rejected",
+      "Optional extension absence falls back in auto and fails clearly when cython explicitly required",
+      "Both backends read existing v1 with source/Schema checks; CLI reports actual backend"
+    ],
+    "compileall": "passed",
+    "git_diff_check": "passed"
+  },
+  "local_synthetic_benchmark": {
+    "frames": 45839,
+    "observations": 1488374,
+    "distinct_contracts": 33,
+    "distinct_sources": 1,
+    "distinct_price_strings": 5000,
+    "method": "Single sequential developer sample over the same in-memory real Arrow tables and typed custom feature records; GC before each backend; digest calculation outside timed decode",
+    "runs": [
+      {
+        "backend": "python",
+        "decode_seconds": 2.951347582999915,
+        "frames": 45839,
+        "observations": 1488374,
+        "digest": "212e88451fca1225bab63a162dfd450821ad5087feb5449f7a3e4d6747191bae",
+        "performance": {
+          "timing_semantics": "wall_seconds_inclusive_nested_do_not_sum",
+          "timings": {
+            "prepared_frame_objects": {
+              "seconds": 0.276429,
+              "calls": 1
+            },
+            "prepared_frame_reference_checks": {
+              "seconds": 0.035202,
+              "calls": 1
+            },
+            "prepared_frames_to_python": {
+              "seconds": 0.030261,
+              "calls": 1
+            },
+            "prepared_observation_decimal": {
+              "seconds": 0.1658,
+              "calls": 1
+            },
+            "prepared_observation_objects": {
+              "seconds": 2.132333,
+              "calls": 1
+            },
+            "prepared_observations_columnar_prepare": {
+              "seconds": 0.0,
+              "calls": 1
+            },
+            "prepared_observations_to_python": {
+              "seconds": 0.254968,
+              "calls": 1
+            }
+          },
+          "counters": {
+            "prepared_frame_rows": 45839,
+            "prepared_frames_ready": 45839,
+            "prepared_frames_skipped": 0,
+            "prepared_observation_rows": 1488374,
+            "prepared_observations_restored": 1488374,
+            "prepared_restore_python_runs": 1
+          }
+        }
+      },
+      {
+        "backend": "cython",
+        "decode_seconds": 2.228822874999878,
+        "frames": 45839,
+        "observations": 1488374,
+        "digest": "212e88451fca1225bab63a162dfd450821ad5087feb5449f7a3e4d6747191bae",
+        "performance": {
+          "timing_semantics": "wall_seconds_inclusive_nested_do_not_sum",
+          "timings": {
+            "prepared_frame_objects": {
+              "seconds": 0.112088,
+              "calls": 1
+            },
+            "prepared_frame_reference_checks": {
+              "seconds": 0.032317,
+              "calls": 1
+            },
+            "prepared_frames_to_python": {
+              "seconds": 0.022781,
+              "calls": 1
+            },
+            "prepared_observation_decimal": {
+              "seconds": 0.000439,
+              "calls": 1
+            },
+            "prepared_observation_objects": {
+              "seconds": 1.994306,
+              "calls": 1
+            },
+            "prepared_observations_columnar_prepare": {
+              "seconds": 0.045843,
+              "calls": 1
+            },
+            "prepared_observations_to_python": {
+              "seconds": 0.0,
+              "calls": 1
+            }
+          },
+          "counters": {
+            "prepared_frame_rows": 45839,
+            "prepared_frames_ready": 45839,
+            "prepared_frames_skipped": 0,
+            "prepared_observation_rows": 1488374,
+            "prepared_observations_restored": 1488374,
+            "prepared_restore_cython_runs": 1,
+            "prepared_unique_market_keys": 33,
+            "prepared_unique_market_prices": 5000,
+            "prepared_unique_market_sources": 1
+          }
+        }
+      }
+    ],
+    "sequence_digest_equal": true,
+    "reduction_percent": 24.481,
+    "digest_scope": "All frame event/decision/deadline clocks and ordered market key/price-representation/source/source-clock/receipt-clock sequence",
+    "limit": "Not XY real market data or a full strategy/financial backtest; no peak-RSS claim. Benchmark is a developer sample, not a performance acceptance gate."
+  },
+  "xy_next": [
+    "Build only this extension under /workspace/worker/env/uv-nautilus/bin/python",
+    "Run tests.test_feature_frame_cython with no skips, then tests.test_replay_inputs_native under real engine SDK",
+    "Run the existing diagnostic against the same v1 with --restore-backend python and cython; compare complete times and counters",
+    "After validating actual benefit, publish a new replay-input version and compare complete financial reports and wall time"
+  ]
+}

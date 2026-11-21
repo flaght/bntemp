@@ -7,7 +7,7 @@ representations, not only an event-time join of numeric feature values.
 from .alignment import FeatureSnapshot
 from .contracts import FeatureQuery
 from .frames import FrameOutcome, StrategyFrame
-from .restoration import restore_market_observations
+from .restoration import ColumnarObservations, prepare_observation_columns, restore_market_observations
 
 
 def encode_frames(outcomes, deadlines, records, binding):
@@ -54,18 +54,16 @@ def encode_frames(outcomes, deadlines, records, binding):
     return frame_table, market_table
 
 
-def decode_frames(frame_table, observation_table, records, binding, *, performance=None):
+def decode_frames(frame_table, observation_table, records, binding, *, performance=None, backend="auto"):
     clock = performance.clock if performance is not None else None
     started = clock() if clock else None
     rows = frame_table.to_pylist()
     if clock:
         performance.add("prepared_frames_to_python", clock() - started)
-        started = clock()
-    observations = observation_table.to_pydict()
-    if clock:
-        performance.add("prepared_observations_to_python", clock() - started)
     seconds = dict.fromkeys(("prepared_frame_reference_checks", "prepared_observation_decimal",
-        "prepared_observation_objects", "prepared_frame_objects"), 0.0)
+        "prepared_observation_objects", "prepared_frame_objects", "prepared_observations_to_python",
+        "prepared_observations_columnar_prepare"), 0.0)
+    observations = prepare_observation_columns(observation_table, backend=backend, clock=clock, seconds=seconds)
     outcomes, deadlines = [], {}
     fingerprint = binding.spec.fingerprint
     consumed = 0
@@ -114,4 +112,11 @@ def decode_frames(frame_table, observation_table, records, binding, *, performan
                             ("prepared_observations_restored", restored_observations),
                             ("prepared_frames_ready", ready), ("prepared_frames_skipped", len(rows)-ready)):
             performance.count(name, value)
+        if isinstance(observations, ColumnarObservations):
+            performance.count("prepared_restore_cython_runs")
+            performance.count("prepared_unique_market_keys", len(observations.keys))
+            performance.count("prepared_unique_market_sources", len(observations.sources))
+            performance.count("prepared_unique_market_prices", len(observations.prices))
+        else:
+            performance.count("prepared_restore_python_runs")
     return tuple(outcomes), deadlines

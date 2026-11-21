@@ -60,6 +60,9 @@ class ReplayInputNativeTests(unittest.TestCase):
                 self.assertEqual(summary["report_errors"], [])
             stats = json.loads((hot/"performance.json").read_text())
             summary = json.loads((hot/"summary.json").read_text())
+            from bomber.framework.datahub.features.restoration import native_restoration_module
+            if native_restoration_module() is not None:
+                self.assertEqual(stats["counters"]["prepared_restore_cython_runs"], 1)
             self.assertEqual(stats["counters"]["native_ready_rows"], summary["bars"])
             self.assertEqual(stats["counters"]["prepared_decision_frames"], summary["frames"])
             self.assertEqual(stats["counters"]["prepared_frame_rows"], stats["counters"]["prepared_decision_frames"])

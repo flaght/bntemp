@@ -80,13 +80,14 @@ class FrameDiagnosticTests(unittest.TestCase):
         frames, observations = encode_frames(self.outcomes, self.deadlines, self.records, self.binding)
         clock = iter(index/1000 for index in range(1000)).__next__
         stats = PerformanceStats(clock=clock)
-        measured = decode_frames(frames, observations, self.records, self.binding, performance=stats)
+        measured = decode_frames(frames, observations, self.records, self.binding, performance=stats, backend="python")
         self.assertEqual(measured, (self.outcomes, self.deadlines))
         self.assertEqual(measured, decode_frames(frames, observations, self.records, self.binding))
         self.assertEqual(measured[0][0].frame.features.latest("index").revision, 0)
         self.assertEqual(measured[0][0].frame.market["CONTRACT-A"].price.as_tuple(), Decimal("12.3400").as_tuple())
         self.assertEqual(stats.counters, {"prepared_frame_rows": 3, "prepared_observation_rows": 4,
-            "prepared_observations_restored": 4, "prepared_frames_ready": 2, "prepared_frames_skipped": 1})
+            "prepared_observations_restored": 4, "prepared_frames_ready": 2, "prepared_frames_skipped": 1,
+            "prepared_restore_python_runs": 1})
         for name in ("prepared_frames_to_python", "prepared_observations_to_python", "prepared_frame_reference_checks",
                      "prepared_observation_decimal", "prepared_observation_objects", "prepared_frame_objects"):
             self.assertEqual(stats.timings[name]["calls"], 1)
