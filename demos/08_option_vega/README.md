@@ -1383,6 +1383,11 @@ PYTHONPATH=. "$VEGA_PYTHON" -u scripts/profile_prepared_frames.py \
 或完整回测速度。现有v1可直接做以上诊断，正式回测需要重新准备新回放输入版本（如replay-v2），
 保留父prepared不变，并在编译扩展后生成，以绑定实际源码与二进制指纹。
 
+XY随后提供更新的原生SDK验收：1项通过（0.817s），65条行情、23帧、63个观察值、8订单/8成交。
+`prepared_restore_cython_runs=1`、`prepared_observations_to_python=0`，确认真实回测使用Cython，
+临时样本的特征帧及七类财务报告对照通过。该样本恢复仅0.002215s，不能外推为全量提速。
+下一步直接对已有v1运行上面的Python/Cython诊断，比较真实1488374条观察值的恢复耗时。
+
 ### 长区间回测进度与特征缓存
 
 `Registered Strategy`后会先转换、排序全部文件Bar，再预处理特征帧，之后才推进模拟撮合。

@@ -1,6 +1,6 @@
 {
   "recorded_date": "2026-11-21",
-  "status": "local_cython_built_and_regressions_passed_xy_real_data_pending",
+  "status": "xy_cython_native_fixture_passed_full_size_performance_pending",
   "baseline_commit": "b262561d047fd8db7d0255db69e2873fd4d713f6",
   "files": [
     "bomber/framework/datahub/features/restoration.py",
@@ -196,9 +196,204 @@
     "limit": "Not XY real market data or a full strategy/financial backtest; no peak-RSS claim. Benchmark is a developer sample, not a performance acceptance gate."
   },
   "xy_next": [
-    "Build only this extension under /workspace/worker/env/uv-nautilus/bin/python",
-    "Run tests.test_feature_frame_cython with no skips, then tests.test_replay_inputs_native under real engine SDK",
-    "Run the existing diagnostic against the same v1 with --restore-backend python and cython; compare complete times and counters",
-    "After validating actual benefit, publish a new replay-input version and compare complete financial reports and wall time"
-  ]
+    "Run the existing diagnostic against the same v1 and same 1488374 observations with --restore-backend python and cython; compare complete times and counters",
+    "After validating actual benefit, publish a new replay-input version and compare complete full-interval financial reports and wall time"
+  ],
+  "server_native_acceptance": {
+    "recorded_date": "2026-11-21",
+    "source": "user supplied attached terminal output",
+    "source_sha256": "3f0f64f4f6715f730a5566fac75be6de349d56a74c70e8d8ac876ee2661bb67e",
+    "status": "passed",
+    "tests": 1,
+    "skipped": 0,
+    "failures": 0,
+    "errors": 0,
+    "seconds": 0.817,
+    "engine": {
+      "module_file": "/workspace/worker/env/uv-nautilus/lib/python3.12/site-packages/bomber/backtest/engine.cpython-312-x86_64-linux-gnu.so",
+      "streaming_validation_revision": "l1-indexed-validation-v1",
+      "python_version": "3.12.14"
+    },
+    "counts": {
+      "decision_frames": 23,
+      "directory_scans": 0,
+      "feather_files_read": 2,
+      "feather_rows_read": 4,
+      "fills": 8,
+      "future_bar_files": 5,
+      "future_contracts": 2,
+      "index_feature_records": 24,
+      "native_batch_rows": 65,
+      "native_batch_sources": 10,
+      "native_ready_files_read": 6,
+      "native_ready_rows": 65,
+      "native_ready_sources": 10,
+      "option_bar_files": 5,
+      "option_contracts": 2,
+      "orders": 8,
+      "prepared_decision_frames": 23,
+      "prepared_frame_rows": 23,
+      "prepared_frames_ready": 23,
+      "prepared_frames_skipped": 0,
+      "prepared_observation_rows": 63,
+      "prepared_observations_restored": 63,
+      "prepared_restore_cython_runs": 1,
+      "prepared_rows_loaded": 65,
+      "prepared_sources_loaded": 10,
+      "prepared_unique_market_keys": 4,
+      "prepared_unique_market_prices": 2,
+      "prepared_unique_market_sources": 1,
+      "ready_frames": 23,
+      "replay_events": 65,
+      "replay_source_files": 10,
+      "replay_source_rows": 65,
+      "scheduled_hedge_months_calculated": 4,
+      "scheduled_hedge_slots_enqueued": 2,
+      "skipped_frames": 0,
+      "strategy_static_identity_builds": 1,
+      "trading_days": 3
+    },
+    "timings": {
+      "feather_disk_read": {
+        "seconds": 0.004118,
+        "calls": 2
+      },
+      "feature_alignment": {
+        "seconds": 0.002242,
+        "calls": 1
+      },
+      "index_feature_file_read": {
+        "seconds": 0.002548,
+        "calls": 1
+      },
+      "market_binding_lookup": {
+        "seconds": 0.000386,
+        "calls": 65
+      },
+      "native_batch_construct": {
+        "seconds": 0.000114,
+        "calls": 10
+      },
+      "native_ready_array_read": {
+        "seconds": 0.000616,
+        "calls": 10
+      },
+      "native_ready_load": {
+        "seconds": 0.005722,
+        "calls": 1
+      },
+      "prepared_frame_objects": {
+        "seconds": 0.00013,
+        "calls": 1
+      },
+      "prepared_frame_reference_checks": {
+        "seconds": 4.3e-05,
+        "calls": 1
+      },
+      "prepared_frames_decode": {
+        "seconds": 0.000865,
+        "calls": 1
+      },
+      "prepared_frames_load": {
+        "seconds": 0.002215,
+        "calls": 1
+      },
+      "prepared_frames_table_read": {
+        "seconds": 0.000881,
+        "calls": 1
+      },
+      "prepared_frames_to_python": {
+        "seconds": 0.000187,
+        "calls": 1
+      },
+      "prepared_index_read": {
+        "seconds": 0.00115,
+        "calls": 1
+      },
+      "prepared_observation_decimal": {
+        "seconds": 2e-06,
+        "calls": 1
+      },
+      "prepared_observation_objects": {
+        "seconds": 0.000206,
+        "calls": 1
+      },
+      "prepared_observations_columnar_prepare": {
+        "seconds": 0.000228,
+        "calls": 1
+      },
+      "prepared_observations_table_read": {
+        "seconds": 0.000455,
+        "calls": 1
+      },
+      "prepared_observations_to_python": {
+        "seconds": 0.0,
+        "calls": 1
+      },
+      "prepared_snapshot_open": {
+        "seconds": 0.002574,
+        "calls": 1
+      },
+      "replay_dispatch_including_engine": {
+        "seconds": 0.021085,
+        "calls": 1
+      },
+      "replay_event_conversion": {
+        "seconds": 0.001491,
+        "calls": 1
+      },
+      "replay_event_sort": {
+        "seconds": 2.7e-05,
+        "calls": 1
+      },
+      "replay_input_identity": {
+        "seconds": 6.9e-05,
+        "calls": 1
+      },
+      "replay_inputs_open": {
+        "seconds": 0.000823,
+        "calls": 1
+      },
+      "run_case": {
+        "seconds": 0.09234,
+        "calls": 1
+      },
+      "simulation_add_data": {
+        "seconds": 0.000801,
+        "calls": 65
+      },
+      "simulation_backend_prepare": {
+        "seconds": 0.000625,
+        "calls": 65
+      },
+      "simulation_clear_data": {
+        "seconds": 0.000157,
+        "calls": 65
+      },
+      "simulation_engine_including_decisions": {
+        "seconds": 0.019728,
+        "calls": 65
+      },
+      "simulation_run_including_decisions": {
+        "seconds": 0.017912,
+        "calls": 65
+      },
+      "strategy_decision": {
+        "seconds": 0.003006,
+        "calls": 23
+      },
+      "strategy_position_snapshot": {
+        "seconds": 0.00029,
+        "calls": 25
+      }
+    },
+    "checks": [
+      "Cython actually used: prepared_restore_cython_runs=1",
+      "No observation whole-table Python materialization: prepared_observations_to_python=0",
+      "Temporary 3-trading-day native replay, preparation-only behavior and warm/cold frame and financial-report equivalence test passed"
+    ],
+    "warnings": "Two Pandas4Warning deprecation messages for Timestamp.utcnow during engine.run/end; no test failure",
+    "scope": "Small fixture only: 65 market events, 23 frames, 63 observations; no full-size speed or financial claim",
+    "separate_six_backend_unit_test_output_provided": false
+  }
 }

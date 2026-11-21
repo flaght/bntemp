@@ -3,7 +3,8 @@
 2026-11-21新增可选公共Cython帧恢复：一个扩展、一个构建入口，运行时字符串字典编码及int64列数组，
 保留原观察值/帧对象和Python路径，无新持久格式、注册机制或08策略分支。
 本机实际编译后155项相关测试通过；同规模合成样本的观察值/帧时钟摘要一致，解码2.95s→2.23s。
-XY真实数据及NT完整财务验收待执行，见[构建与对照](../../demos/08_option_vega/README.md#公共cython恢复后端验证)、
+XY随后提供1项真实NT临时回测验收通过（0.817s），确认Cython启用且小样本财务对照相同；
+全量帧性能与完整区间逐笔财务仍待验证。见[构建与对照](../../demos/08_option_vega/README.md#公共cython恢复后端验证)、
 [验证范围](live/FEATURE_FRAME_CYTHON_20261121.json)、
 [源码摘要](checksums/FEATURE_FRAME_CYTHON_20261121_SHA256.txt)。代码由用户通过GitHub同步，无同步包。
 
