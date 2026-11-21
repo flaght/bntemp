@@ -102,6 +102,10 @@ class CashSettlementModule(SimulationModule):
     def process(self, ts_now):
         now = int(ts_now)
         self._expire(now)
+        # settled is a subset of expired. Check after _expire so a new cutoff
+        # still wakes settlement processing, even when earlier work was idle.
+        if len(self.expired) == len(self.settled):
+            return
         for code in sorted(self.expired - self.settled):
             instrument_id = InstrumentId.from_str(code)
             positions = tuple(self.exchange.cache.positions_open(venue=None, instrument_id=instrument_id))

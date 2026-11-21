@@ -147,6 +147,63 @@ class ExpiryModuleTests(unittest.TestCase):
         self.assertIn(self.code, obj.settled)
         self.assertEqual(self.reports, [])
 
+    def test_idle_after_prior_settlement_still_expires_and_waits_for_next_contract(self):
+        later = "MO2607-C-7000.CFFEX"
+        items = {
+            self.code: self.env.calculation.OptionSettlement(self.code, 150, 160, 0),
+            later: self.env.calculation.OptionSettlement(later, 200, 210, "120.13"),
+        }
+        obj = self.module.OptionCashSettlementModule("sim", {self.code: 150, later: 200},
+            items, self.reports.append, self.cancelled.append)
+        obj.register_venue(self.exchange)
+        self.position.is_closed = True
+        obj.process(160)
+        obj.process(200)  # 下一合约的最后一根 Bar 仍处于交易区间。
+        self.assertEqual(obj.expired, {self.code})
+        self.assertEqual(obj.settled, {self.code})
+        obj.process(201)
+        obj.process(209)
+        self.assertEqual(self.cancelled, [self.code, later])
+        self.assertEqual(obj.expired, {self.code, later})
+        self.assertEqual(obj.settled, {self.code})
+        obj._on_clock(NS(ts_event=210))
+        self.assertEqual(obj.settled, {self.code, later})
+        self.assertEqual(self.reports, [])
+
+    def test_reset_after_idle_replays_expiration_and_cash_settlement(self):
+        obj = self.create("120.13")
+        obj.process(160)
+        obj.process(170)
+        obj.reset()
+        self.assertEqual((obj.expired, obj.settled, obj.records), (set(), set(), []))
+        self.position.is_closed = False
+        self.position.quantity = Decimal(2)
+        obj.process(150)
+        self.assertFalse(self.position.is_closed)
+        obj.process(160)
+        self.assertEqual(self.cancelled, [self.code, self.code])
+        self.assertEqual(len(self.reports), 2)
+        self.assertEqual(len(obj.records), 1)
+        self.assertTrue(self.position.is_closed)
+        for report in self.reports:
+            self.assertEqual((report.ts_event, report.fill_price, report.filled_quantity),
+                (160, Decimal("120.13"), 2))
+            self.assertEqual(Decimal(report.metadata["commission"]), Decimal("2.4"))
+
+    def test_synchronous_settlement_callback_cannot_settle_position_twice(self):
+        obj = self.create("120.13")
+        send = self.exchange.msgbus.send
+        def reenter(endpoint, msg):
+            send(endpoint, msg)
+            obj.process(160)
+        self.exchange.msgbus.send = reenter
+        obj.process(160)
+        self.assertEqual(len(self.orders), 1)
+        self.assertEqual(len(self.native_events), 2)  # Accepted, Filled.
+        self.assertEqual(len(self.reports), 1)
+        self.assertEqual(len(obj.records), 1)
+        self.assertTrue(self.position.is_closed)
+
     def create_future(self, *, missing=False):
         self.code = "IM2605.CFFEX"
         self.position.instrument_id = Identity(self.code)

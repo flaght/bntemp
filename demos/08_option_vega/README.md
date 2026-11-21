@@ -1683,6 +1683,70 @@ print('通过：全部金融报表及分钟帧时钟/特征修订一致')
 PY
 ```
 
+### 现金结算模块空闲检查
+
+公共`CashSettlementModule.process`仍先执行到期撤单检查，再利用`settled`是`expired`
+子集的约束：两者数量相同时直接返回，省去空的集合差集和排序。后续月份到期、结算价
+延迟发布、缺结算价但仍有仓位的报错、同步回报重入及reset均保留原有处理。
+本轮只改这项公共Python逻辑，无需重新编译SDK或重新准备行情；其他内核优化留待DX
+2022～2026完整回测后评估。
+
+同步后先在服务器执行模块边界及原生验收，再用与之前相同的参数回测2026区间。
+以下基线是本轮优化前已保存的`same_init`结果；保留它，不能只比较订单/成交数量。
+
+```bash
+export VEGA_PYTHON=/workspace/worker/env/uv-nautilus/bin/python
+export VEGA_PRO=/workspace/worker/pj/Chrono/nautilus_trader_demo/pro
+cd "$VEGA_PRO" || exit 1
+PYTHONPATH=. "$VEGA_PYTHON" -m unittest tests.test_option_expiry_module -v
+PYTHONPATH=. "$VEGA_PYTHON" -m unittest tests.test_engine_run_profile_native -v
+```
+
+两组实际通过后，在同一终端执行：
+
+```bash
+export VEGA_BASELINE="$VEGA_PRO/demos/08_option_vega/results/streaming-optimized-20261121-063835/same_init/MO/20260101-20261021/3a690d84-5350-4787-8369-d42ae97ff040"
+export VEGA_IDLE_ROOT="$VEGA_PRO/demos/08_option_vega/results/settlement-idle-check-$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$VEGA_IDLE_ROOT"
+set -o pipefail
+TIMEFORMAT='回测进程总耗时：%3R 秒'
+{
+  time env PYTHONPATH=. "$VEGA_PYTHON" -u demos/08_option_vega/run_backtest.py \
+    --config-file demos/08_option_vega/config/strategy.yaml --config-id m5_index_blend \
+    --start-day 2026-01-01 --end-day 2026-10-21 --data-mode prepared \
+    --prepared-root /workspace/data/temp_bomber1/dx1/data/prepared/mo-im-2024-2026-v1 \
+    --prepared-verify metadata --bar-parser native_batch --max-notional 1000000000 \
+    --option-ohlc-policy expand_range --log-level WARNING --profile-engine-run \
+    --replay-batch-mode same_init --report-dir "$VEGA_IDLE_ROOT"
+} 2>&1 | tee "$VEGA_IDLE_ROOT/run.log"
+```
+
+回测成功后比较全部金融报表、时钟及特征修订（沿用已有的随机标识归一化规则）：
+
+```bash
+PYTHONPATH=. "$VEGA_PYTHON" - <<'PY'
+import json, os
+from pathlib import Path
+import pandas as pd
+from tests.test_prepared_dataset_native import comparable_report
+before = Path(os.environ['VEGA_BASELINE'])
+assert (before/'summary.json').is_file(), f'缺少优化前基线: {before}'
+paths = list((Path(os.environ['VEGA_IDLE_ROOT'])/'MO'/'20260101-20261021').glob('*/summary.json'))
+assert len(paths) == 1, paths
+after = paths[0].parent
+for name in ('orders.csv', 'fills.csv', 'positions.csv', 'account.csv', 'signals.csv',
+             'settlements.csv', 'future_settlements.csv'):
+    frames = [comparable_report(pd.read_csv(path/name, dtype=str, keep_default_na=False))
+              for path in (before, after)]
+    pd.testing.assert_frame_equal(*frames, obj=name)
+audits = [json.loads((path/'feature_frames.json').read_text()) for path in (before, after)]
+assert audits[0] == audits[1], 'feature frame clocks/revisions differ'
+print('通过：现金结算空闲优化前后全部金融报表、时钟及特征修订一致')
+PY
+```
+
+本地模块事件对照不能替代上述服务器完整区间验收；性能收益以本轮新日志为准。
+
 ### 长区间回测进度与特征缓存
 
 `Registered Strategy`后会先转换、排序全部文件Bar，再预处理特征帧，之后才推进模拟撮合。
