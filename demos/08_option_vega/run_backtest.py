@@ -413,6 +413,7 @@ def run_case(args):
     engine_identity = {"module_file": getattr(engine_module, "__file__", None),
         "streaming_validation_revision": getattr(engine_module, "STREAMING_VALIDATION_REVISION", None),
         "run_profiling_revision": getattr(engine_module, "RUN_PROFILING_REVISION", None),
+        "streaming_execution_revision": getattr(engine_module, "STREAMING_EXECUTION_REVISION", None),
         "python_version": sys.version.split()[0]}
     print("回测内核: " + json.dumps(engine_identity, ensure_ascii=False), flush=True)
     instruments = {}
@@ -516,7 +517,8 @@ def run_case(args):
         adapter = NautilusMarketFeedAdapter("option-vega-clock", feed, backend,
             tuple(MarketStreamBinding(item, DataType.BAR, bar_specs_by_key[key])
                 for key, item in instruments.items()), manage_lifecycle=False, performance=performance)
-        runtime = UnifiedHistoricalRuntime("option-vega-runtime", runner, adapter)
+        runtime = UnifiedHistoricalRuntime("option-vega-runtime", runner, adapter,
+            batch_same_timestamp=getattr(args, "replay_batch_mode", "event") == "same_init")
         _finish_phase("策略、执行路由与风控装配", phase)
         try:
             phase = _start_phase("运行回测")
@@ -566,6 +568,7 @@ def run_case(args):
                     for kind, spec in bar_specs.items()},
                 "option_ohlc_policy": bar_specs["option"].ohlc_policy,
                 "execution_timing": getattr(args, "execution_timing", "native"),
+                "replay_batch_mode": getattr(args, "replay_batch_mode", "event"),
                 "bar_parser": getattr(args, "bar_parser", "prepared"),
                 "data_mode": getattr(args, "data_mode", "raw"),
                 "prepared_dataset": None if prepared_dataset is None else prepared_dataset.identity,
@@ -622,6 +625,7 @@ def run_case(args):
         performance.count("directory_scans", current_session().counters["directory_scans"])
         report = performance.snapshot()
         report["engine_identity"] = engine_identity
+        report["replay_batch_mode"] = getattr(args, "replay_batch_mode", "event")
         if engine_run_profiling:
             try:
                 native_profile = backend.engine.get_run_profile()
@@ -734,6 +738,8 @@ def main():
     parser.add_argument("--log-level", choices=("ERROR", "WARNING", "INFO", "DEBUG"), default="WARNING")
     parser.add_argument("--profile-engine-run", action="store_true",
         help="开启原生run内部累计计时；需要支持run-phase-timing-v1的已编译Bomber内核")
+    parser.add_argument("--replay-batch-mode", choices=("event", "same_init"), default="event",
+        help="event保留逐条对照；same_init为L1行情按相同接收时间合批，仍逐条完成撮合/回报/策略发布")
     parser.add_argument("--report-dir", type=Path, default=DEFAULT_REPORT_DIR)
     parser.add_argument("--no-tearsheet", action="store_true")
     parser.add_argument("--require-fills", action="store_true")

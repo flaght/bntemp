@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
+from itertools import groupby
 from typing import Iterable, Literal
 from time import perf_counter
 
@@ -51,6 +52,15 @@ class FileReplayFeed(MarketDataFeed):
         self._events: tuple[MarketEvent, ...] = ()
         # Optional run-local diagnostics, set by the composition layer.
         self.performance = None
+        self._replay_batch_handler = None
+
+    def set_replay_batch_handler(self, handler) -> None:
+        """Optionally process equal-ts_init groups, publishing each event in order."""
+        if handler is not None and not callable(handler):
+            raise TypeError("replay batch handler must be callable or None")
+        if self._replay_batch_handler is not None and handler != self._replay_batch_handler:
+            raise RuntimeError("replay batch handler already configured")
+        self._replay_batch_handler = handler
 
     def add_tick_csv(self, path: str | Path, parser: RowParser) -> None:
         self._add_source(path, CsvReader(), parser, "tick")
@@ -174,32 +184,54 @@ class FileReplayFeed(MarketDataFeed):
 
     def replay(self) -> ReplaySummary:
         trade_count = quote_count = bar_count = custom_bar_count = 0
-        for event in self.load_events():
-            if isinstance(event, TradeTick):
-                self._emit_trade_tick(event)
-                trade_count += 1
-            elif isinstance(event, QuoteTick):
-                self._emit_quote_tick(event)
-                quote_count += 1
-            elif isinstance(event, Bar):
-                self._emit_bar(event)
-                bar_count += 1
-            elif isinstance(event, CustomBar):
-                self._emit_custom_bar(event)
-                custom_bar_count += 1
+        events = self.load_events()
+        if self._replay_batch_handler is None:
+            for event in events:
+                if isinstance(event, TradeTick):
+                    self._emit_trade_tick(event)
+                    trade_count += 1
+                elif isinstance(event, QuoteTick):
+                    self._emit_quote_tick(event)
+                    quote_count += 1
+                elif isinstance(event, Bar):
+                    self._emit_bar(event)
+                    bar_count += 1
+                elif isinstance(event, CustomBar):
+                    self._emit_custom_bar(event)
+                    custom_bar_count += 1
+            return ReplaySummary(trade_count, quote_count, bar_count, custom_bar_count)
+        for _, group in groupby(events, key=lambda event: event.ts_init):
+            group = tuple(group)
+            self._replay_batch_handler(group, self._emit_event)
+            if self.performance is not None:
+                self.performance.count("replay_batches")
+                self.performance.count("replay_batch_events", len(group))
+            for event in group:
+                if isinstance(event, TradeTick):
+                    trade_count += 1
+                elif isinstance(event, QuoteTick):
+                    quote_count += 1
+                elif isinstance(event, Bar):
+                    bar_count += 1
+                elif isinstance(event, CustomBar):
+                    custom_bar_count += 1
         return ReplaySummary(trade_count, quote_count, bar_count, custom_bar_count)
 
+    def _emit_event(self, event) -> None:
+        """Publish one completed event through the existing handler chain."""
+        if isinstance(event, TradeTick):
+            self._emit_trade_tick(event)
+        elif isinstance(event, QuoteTick):
+            self._emit_quote_tick(event)
+        elif isinstance(event, Bar):
+            self._emit_bar(event)
+        elif isinstance(event, CustomBar):
+            self._emit_custom_bar(event)
+
     def replay_step(self) -> Iterable[MarketEvent]:
-        """逐个分发并返回事件。"""
+        """逐个分发并返回事件；保留逐事件推进，不使用可选合批入口。"""
         for event in self.load_events():
-            if isinstance(event, TradeTick):
-                self._emit_trade_tick(event)
-            elif isinstance(event, QuoteTick):
-                self._emit_quote_tick(event)
-            elif isinstance(event, Bar):
-                self._emit_bar(event)
-            elif isinstance(event, CustomBar):
-                self._emit_custom_bar(event)
+            self._emit_event(event)
             yield event
 
     def _subscribed(self, event: ParsedEvent) -> bool:

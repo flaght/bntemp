@@ -38,6 +38,8 @@ class UnifiedHistoricalRuntime:
         runtime_id: str,
         runner: UnifiedStrategyRunner,
         market_adapter: NautilusMarketFeedAdapter,
+        *,
+        batch_same_timestamp: bool = False,
     ) -> None:
         if not runtime_id.strip():
             raise ValueError("runtime_id不能为空")
@@ -46,6 +48,7 @@ class UnifiedHistoricalRuntime:
         self.runtime_id = runtime_id
         self.runner = runner
         self.market_adapter = market_adapter
+        self.batch_same_timestamp = batch_same_timestamp
         if market_adapter.manage_lifecycle:
             raise ValueError(
                 "统一Historical Runtime要求Market adapter使用manage_lifecycle=False",
@@ -72,6 +75,8 @@ class UnifiedHistoricalRuntime:
         if self._stopped:
             raise RuntimeError("已结束的历史Runtime不能重新启动")
         # 注册顺序属于正确性约束：Backend回调必须排在策略回调之前。
+        if self.batch_same_timestamp:
+            self.market_adapter.enable_same_timestamp_batches()
         self.market_adapter.start()
         try:
             self.runner.start()

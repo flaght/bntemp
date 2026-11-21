@@ -1473,27 +1473,36 @@ strategy_position_snapshot=15.676806s跨多个回调，与这些父项重叠，�
 输出`[内核计时]`，并写入本次`performance.json`的`engine_run_profile`。
 旧编译内核缺少API时明确拒绝，不把已有的外层计时冒充内部统计。
 
-先同步本仓库改动，在XY应用源码补丁。工具默认只读，`--apply`先备份两个文件后修改，
-任一文件不匹配则停止；重复应用不重复修改。无需同步包或归档：
+维护的底层源码仓库为`/Users/kerry/work/bomber1/code/nt-bomber`，计时实现直接位于该仓库的
+`bomber/backtest/engine.pyx`与`engine.pxd`，回归测试位于该仓库的
+`tests/unit_tests/backtest/test_engine_run_profile_source.py`。此前误写到
+`/Users/kerry/work/code1/nautilus_trader`的本轮计时代码已撤回，保留该目录原有修改。
+
+同步本仓库与`nt-bomber`仓库后，在XY重建该Bomber源码。以下使用已确认的XY源码目录
+`/workspace/worker/pj/Chrono/nautilus_trader_demo/code/bomber`；本机维护仓库叫`nt-bomber`，
+与远程目录名不同。
+当前版本按下节同步`nt-bomber`的完整改动后构建，无需再次应用最初的v1计时补丁。
+`patch_engine_run_profile.py`仅保留给尚未升级的v1源码；它会拒绝新版不匹配的源码。
+无需同步包或归档。部署变量：
 
 ```bash
 cd /workspace/worker/pj/Chrono/nautilus_trader_demo/pro || exit 1
 export VEGA_PYTHON=/workspace/worker/env/uv-nautilus/bin/python
 export VEGA_CORE=/workspace/worker/pj/Chrono/nautilus_trader_demo/code/bomber
-
-PYTHONPATH=. "$VEGA_PYTHON" scripts/integration/options/patch_engine_run_profile.py \
-  --source-root "$VEGA_CORE"
-PYTHONPATH=. "$VEGA_PYTHON" scripts/integration/options/patch_engine_run_profile.py \
-  --source-root "$VEGA_CORE" --apply
 ```
 
 本次同时修改`engine.pyx`与`engine.pxd`中的类布局，必须完整重建Bomber wheel并安装到回测
-Python环境，不能只替换单个`.so`。沿用该源码项目原有构建环境和精度设置；标准wheel命令：
+Python环境，不能只替换单个`.so`。沿用该源码项目原有构建环境和精度设置。
+XY使用uv管理的Python环境，无需安装pip；构建用`uv build`，安装用`uv pip install`：
 
 ```bash
 VEGA_WHEELS=$(mktemp -d /tmp/vega-run-profile-wheel.XXXXXX)
-"$VEGA_PYTHON" -m pip wheel "$VEGA_CORE" --no-deps --wheel-dir "$VEGA_WHEELS"
-"$VEGA_PYTHON" -m pip install --no-deps --force-reinstall "$VEGA_WHEELS"/*.whl
+env -u PYO3_ONLY -u PROFILE_MODE -u ANNOTATION_MODE BUILD_MODE=release \
+  uv build "$VEGA_CORE" --wheel --python "$VEGA_PYTHON" --no-cache \
+  --out-dir "$VEGA_WHEELS"
+
+# 构建成功后再安装。
+uv pip install --python "$VEGA_PYTHON" --no-deps --reinstall "$VEGA_WHEELS"/*.whl
 
 PYTHONPATH=. "$VEGA_PYTHON" - <<'PY'
 import sys
@@ -1559,6 +1568,120 @@ time env PYTHONPATH=. /workspace/worker/env/uv-nautilus/bin/python -u \
 不能视为精确的计时成本并据此校正。启用计时的总耗时只用于定位，不代表优化收益。
 同时对照`run_calls/data_events/data_timestamp_groups/clock_advances`，识别同刻行情重复推进。
 `data_events`包括结束阶段注入的结算时钟，次数可能略多于`replay_events`。
+
+### 同刻合批与时间、日志优化
+
+XY优化前诊断：1488481次run、45841组接收时间；时间范围处理13.909585s、运行日志7.276173s。
+以下实现尚待XY重新构建后的收益测量，不把调用次数减少比例当作整体加速比例。
+
+默认`--replay-batch-mode event`保留逐条对照路径；`same_init`按相同`ts_init`（接收时钟）
+合并原生行情，只执行一次`add_data/run/clear_data`，原有事件顺序不变。
+首版明确限定L1交易场所，L2/L3继续使用`event`路径，保留逐流深度校验。
+每条行情仍完成撮合、回报和同刻定时器收尾后，才通过原有Feed回调链发布；不预先填充整组
+价格，不延迟成交回报到整组结束。未绑定/自定义数据所在的组回退到原逐条路径。
+批次中途失败不再推进后续数据或在清理时补跑未消费数据。
+
+第一版特意保留每条事件的订单消息/定时器收尾，先压缩进入内核、添加/清理和重复时钟推进。
+因此`engine_run_batch_tail`仍可能调用约149万次，不表示合批失效。
+`engine_run_publish`新增为逐事件Feed发布耗时；它在合批模式移入了原生run内部，
+比较两条路径时以`replay_dispatch_including_engine`及整体耗时为主，不能只看run父项。
+
+内核同时延迟创建非必要的Timestamp，并通过公共`is_logging_enabled`查询实际日志sink后
+才格式化INFO/DEBUG消息。WARNING控制台配DEBUG文件日志仍保留文件输出；组件过滤继续
+交由原Logger处理，PyO3路径保守保留原行为。纳秒边界校验、OHLC撮合、延迟根数、策略公式
+和现金结算规则保持原有契约。
+
+本次`nt-bomber`需要同步以下**全部七个生产文件**，不只两个engine文件：
+
+```text
+bomber/backtest/engine.pyx
+bomber/backtest/engine.pxd
+bomber/common/component.pyx
+bomber/common/component.pxd
+bomber/core/includes/common.h
+bomber/core/rust/common.pxd
+crates/common/src/ffi/logging.rs
+```
+
+还需同步`pro`本轮公共回放/Backend/Runtime及08入口、测试文件。prepared行情快照无需重导；
+旧replay产物的实现指纹已变化，需要另建版本，下面先不使用`--replay-inputs`。
+
+按已确认的XY路径重新完整构建并安装（沿用原精度设置；取消本次命令的不可用代理）：
+
+```bash
+export VEGA_PYTHON=/workspace/worker/env/uv-nautilus/bin/python
+export VEGA_PRO=/workspace/worker/pj/Chrono/nautilus_trader_demo/pro
+export VEGA_CORE=/workspace/worker/pj/Chrono/nautilus_trader_demo/code/bomber
+cd "$VEGA_CORE" || exit 1
+VEGA_WHEELS=$(mktemp -d /tmp/vega-same-init-wheel.XXXXXX)
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY \
+  -u http_proxy -u https_proxy -u all_proxy \
+  -u PYO3_ONLY -u PROFILE_MODE -u ANNOTATION_MODE BUILD_MODE=release \
+  uv build . --wheel --python "$VEGA_PYTHON" --out-dir "$VEGA_WHEELS"
+# 构建成功后执行。
+uv pip install --python "$VEGA_PYTHON" --no-deps --reinstall "$VEGA_WHEELS"/*.whl
+cd "$VEGA_PRO" || exit 1
+PYTHONPATH=. "$VEGA_PYTHON" - <<'PY'
+import bomber.backtest.engine as core
+from bomber.common.component import is_logging_enabled
+print(core.__file__)
+print(core.STREAMING_EXECUTION_REVISION)
+assert core.STREAMING_EXECUTION_REVISION == 'lazy-logging-same-init-v1'
+assert hasattr(core.BacktestEngine, 'set_data_callback')
+PY
+PYTHONPATH=. "$VEGA_PYTHON" -m unittest tests.test_engine_run_profile_native -v
+```
+
+原生验收现在是两项：四种路径（event/same_init × 计时开/关）的全部帧时钟、特征修订、
+交易、费用及结算报表对照；以及独立进程中的控制台/文件日志过滤检查。两项都须实际通过，
+skipped不算验收。本机完成公共模块及内核源码执行对照、两个Cython模块翻译，
+本机未安装Rust编译器或可运行的Bomber SDK，Rust构建与原生验收仍需在XY执行。
+
+小样本通过后，同一终端对照完整区间，输出目录按本次运行单独创建：
+
+```bash
+cd "$VEGA_PRO" || exit 1
+mkdir -p demos/08_option_vega/results/timing-logs
+set -o pipefail
+TIMEFORMAT='回测进程总耗时：%3R 秒'
+export VEGA_AB_ROOT="demos/08_option_vega/results/streaming-optimized-$(date +%Y%m%d-%H%M%S)"
+for VEGA_MODE in event same_init; do
+  VEGA_LOG="demos/08_option_vega/results/timing-logs/$(basename "$VEGA_AB_ROOT")-$VEGA_MODE.log"
+  {
+    time env PYTHONPATH=. "$VEGA_PYTHON" -u demos/08_option_vega/run_backtest.py \
+      --config-file demos/08_option_vega/config/strategy.yaml --config-id m5_index_blend \
+      --start-day 2026-01-01 --end-day 2026-10-21 --data-mode prepared \
+      --prepared-root /workspace/data/temp_bomber1/dx1/data/prepared/mo-im-2024-2026-v1 \
+      --prepared-verify metadata --bar-parser native_batch --max-notional 1000000000 \
+      --option-ohlc-policy expand_range --log-level WARNING --profile-engine-run \
+      --replay-batch-mode "$VEGA_MODE" --report-dir "$VEGA_AB_ROOT/$VEGA_MODE"
+  } 2>&1 | tee "$VEGA_LOG" || break
+done
+```
+
+正式区间报表对照（仍在同一终端执行）：
+
+```bash
+PYTHONPATH=. "$VEGA_PYTHON" - <<'PY'
+import json, os
+from pathlib import Path
+import pandas as pd
+from tests.test_prepared_dataset_native import comparable_report
+base = Path(os.environ['VEGA_AB_ROOT'])
+outputs = []
+for mode in ('event', 'same_init'):
+    paths = list((base/mode/'MO'/'20260101-20261021').glob('*/summary.json'))
+    assert len(paths) == 1, (mode, paths)
+    outputs.append(paths[0].parent)
+for name in ('orders.csv', 'fills.csv', 'positions.csv', 'account.csv', 'signals.csv',
+             'settlements.csv', 'future_settlements.csv'):
+    frames = [comparable_report(pd.read_csv(path/name, dtype=str, keep_default_na=False)) for path in outputs]
+    pd.testing.assert_frame_equal(*frames, obj=name)
+audits = [json.loads((path/'feature_frames.json').read_text()) for path in outputs]
+assert audits[0] == audits[1], 'feature frame clocks/revisions differ'
+print('通过：全部金融报表及分钟帧时钟/特征修订一致')
+PY
+```
 
 ### 长区间回测进度与特征缓存
 

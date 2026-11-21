@@ -68,6 +68,8 @@ class NautilusSimExecutionBackend:
                 _PROCESS_LOG_GUARD = get_log_guard()
         self._profiles: dict[str, VenueSimulationProfilePort] = {}
         self._report_handlers: list[Callable[[ExecutionReport], None]] = []
+        self._batch_active = False
+        self._failed = False
         self._reports: list[ExecutionReport] = []
         self._gateway: NautilusOrderGateway | None = None
         self._started = False
@@ -216,6 +218,8 @@ class NautilusSimExecutionBackend:
         BacktestEngine掌握。返回值只包含本次事件推进新产生的执行回报。
         """
 
+        if self._batch_active:
+            raise RuntimeError("Cannot recursively advance a backend during batch publication")
         performance = self.performance
         started = perf_counter() if performance is not None else None
         try:
@@ -258,6 +262,72 @@ class NautilusSimExecutionBackend:
         self._last_market_ns = event_ns
         return tuple(self._reports[report_offset:])
 
+    def require_batch_support(self) -> None:
+        if not callable(getattr(self.engine, "set_data_callback", None)):
+            raise RuntimeError("same_init需要重新编译支持lazy-logging-same-init-v1的Bomber内核")
+
+    def process_market_batch(self, events, publish) -> Sequence[ExecutionReport]:
+        """Advance one equal-ts_init batch; publish after each native event boundary."""
+        self.require_batch_support()
+        self._ensure_runnable()
+        if self._batch_active:
+            raise RuntimeError("Cannot recursively advance a simulation batch")
+        batch = tuple(events)
+        if not batch:
+            return ()
+        stamp = int(batch[0].ts_init)
+        if stamp < self._last_market_ns or any(int(event.ts_init) != stamp for event in batch):
+            raise ValueError("Market batch must have one nondecreasing ts_init")
+        performance = self.performance
+        started = perf_counter() if performance is not None else None
+        if not self._started:
+            self.start()
+        if self.execution_timing == "next_market":
+            for event in batch:
+                self._gateway.watch_market_event(event)
+        if performance is not None:
+            performance.add("simulation_backend_prepare", perf_counter() - started)
+        report_offset = len(self._reports)
+        offset, completed = report_offset, 0
+        def complete(event):
+            nonlocal offset, completed
+            if completed >= len(batch) or event is not batch[completed]:
+                raise RuntimeError("Native replay batch event order differs")
+            self._last_market_ns = int(event.ts_init)
+            reports = tuple(self._reports[offset:])
+            completed += 1
+            publish(event, reports)
+            # Reports generated synchronously by publication have already been
+            # delivered. The next event starts after them, as in the old path.
+            offset = len(self._reports)
+        self._batch_active = True
+        try:
+            self.engine.set_data_callback(complete)
+            for name, operation in (
+                ("simulation_add_data", lambda: self.engine.add_data(list(batch))),
+                ("simulation_run_including_decisions", lambda: self.engine.run(streaming=True)),
+                ("simulation_clear_data", self.engine.clear_data),
+            ):
+                started = perf_counter() if performance is not None else None
+                try:
+                    operation()
+                    if name == "simulation_run_including_decisions" and completed != len(batch):
+                        raise RuntimeError("Engine stopped before consuming the complete market batch")
+                finally:
+                    if performance is not None:
+                        performance.add(name, perf_counter() - started)
+        except BaseException:
+            self._failed = True  # Never replay an unfinished batch during stop/finish.
+            raise
+        finally:
+            self.engine.set_data_callback(None)
+            self._batch_active = False
+        self._streaming = True
+        if performance is not None:
+            performance.count("simulation_market_batches")
+            performance.count("simulation_batch_events", completed)
+        return tuple(self._reports[report_offset:])
+
     def submit_order(self, order: OrderIntent) -> None:
         self._ensure_runnable()
         if order.backend_id != self.backend_id:
@@ -297,6 +367,10 @@ class NautilusSimExecutionBackend:
         Engine。一次性``run()``已经自行结束，不会重复调用``engine.end()``。
         """
 
+        if self._batch_active:
+            raise RuntimeError("Cannot finish a backend from an active batch callback")
+        if self._failed:
+            return self._result
         if self._disposed:
             raise RuntimeError("已释放的Backend不能结束运行")
         if self._streaming and not self._finalized:
@@ -339,6 +413,8 @@ class NautilusSimExecutionBackend:
             raise RuntimeError("Backend启动、结束或释放后不能修改静态回测配置")
 
     def _ensure_runnable(self) -> None:
+        if self._failed:
+            raise RuntimeError("Backend has an unfinished failed batch and cannot continue")
         if self._disposed:
             raise RuntimeError("已释放的Backend不能运行")
         if self._finalized:

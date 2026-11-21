@@ -20,6 +20,7 @@ class Bar:
         # BarType在真实SDK中可哈希。
         self.bar_type = _BarType(instrument_id)
         self.ts_event = ts_event
+        self.ts_init = ts_event
         self.price = price
 
 
@@ -39,6 +40,7 @@ class _BarType:
 class QuoteTick:
     def __init__(self, instrument_id, ts_event, price=100):
         self.instrument_id, self.ts_event, self.price = instrument_id, ts_event, price
+        self.ts_init = ts_event
 
 
 class TradeTick(QuoteTick):

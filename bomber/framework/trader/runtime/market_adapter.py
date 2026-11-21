@@ -114,6 +114,62 @@ class NautilusMarketFeedAdapter:
         self._events_processed = 0
         self._reports_received = 0
         self._last_error: Exception | None = None
+        self._batch_event = None
+
+    def enable_same_timestamp_batches(self) -> None:
+        if self._started:
+            raise RuntimeError("Configure batch replay before starting")
+        configure = getattr(self.feed, "set_replay_batch_handler", None)
+        require_support = getattr(self.backend, "require_batch_support", None)
+        if (not callable(configure) or not callable(require_support)
+                or not callable(getattr(self.backend, "process_market_batch", None))):
+            raise RuntimeError("same_init requires a file replay feed and a batch-capable simulation backend")
+        require_support()
+        configure(self._on_market_batch)
+
+    def _on_market_batch(self, events, emit) -> None:
+        started = perf_counter() if self.performance is not None else None
+        matches = all(self._matches_binding(event) for event in events)
+        if self.performance is not None:
+            self.performance.add("market_binding_lookup", perf_counter() - started)
+        if not matches:
+            # Custom/unbound data retains the original callback ordering.
+            for event in events:
+                emit(event)
+            return
+        with self._process_lock:
+            if not self._started:
+                return
+            completed = 0
+            publication_error = None
+            def publish(event, reports):
+                nonlocal completed, publication_error
+                self._events_processed += 1
+                self._reports_received += len(reports)
+                self._batch_event = event
+                try:
+                    emit(event)
+                except Exception as exc:
+                    publication_error = exc
+                    raise
+                finally:
+                    self._batch_event = None
+                completed += 1
+            started = perf_counter() if self.performance is not None else None
+            try:
+                getattr(self.backend, "process_market_batch")(events, publish)
+            except Exception as exc:
+                # A strategy/observer exception originally arose after this
+                # adapter's callback, so do not relabel it as a matching error.
+                if exc is not publication_error:
+                    self._last_error = exc
+                    failed_event = events[min(completed, len(events) - 1)]
+                    for handler in tuple(self._error_handlers):
+                        handler(exc, failed_event)
+                raise
+            finally:
+                if self.performance is not None:
+                    self.performance.add("simulation_engine_including_decisions", perf_counter() - started)
 
     @property
     def is_started(self) -> bool:
@@ -210,6 +266,8 @@ class NautilusMarketFeedAdapter:
         self._handlers_attached = True
 
     def _on_market_event(self, event: QuoteTick | TradeTick | Bar) -> None:
+        if event is self._batch_event:
+            return  # Already processed; continue the existing Feed handler chain.
         started = perf_counter() if self.performance is not None else None
         matches = self._matches_binding(event)
         if self.performance is not None:
