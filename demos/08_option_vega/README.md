@@ -1388,6 +1388,178 @@ XY随后提供更新的原生SDK验收：1项通过（0.817s），65条行情、
 临时样本的特征帧及七类财务报告对照通过。该样本恢复仅0.002215s，不能外推为全量提速。
 下一步直接对已有v1运行上面的Python/Cython诊断，比较真实1488374条观察值的恢复耗时。
 
+XY随后提供同一v1真实数据两份诊断，均为45839帧、1488374个观察值、READY=45839、SKIPPED=0：
+
+| 公共恢复阶段 | Python | Cython |
+| --- | --- | --- |
+| 观察值列转换/准备 | 4.497792s | 0.466093s |
+| Decimal转换 | 0.374115s | 0.006099s |
+| 观察值装配 | 3.199569s | 3.295052s |
+| 帧对象装配 | 1.202106s | 0.737515s |
+| 总恢复 | 9.723625s | 4.916075s |
+
+单轮节省4.807550s（49.44%）。Cython计数为1，整表Python物化为0；459个合约、1个来源及
+26942种原始价格字符串被共享。Cython对象装配还包含从整数数组取值时的Python整数装箱，
+不能仅从3.20s→3.30s判断该循环的效率。真实数据逐值及全区间财务尚未比较，也尚无新版完整回测耗时。
+
+### 当前Cython版完整区间回测
+
+扩展已编译且小样本原生验收通过后，下面为当前源码生成新回放输入版本并运行2026完整区间。
+父prepared快照不重做；输出目录必须是新版本。不要在发布后重新编译扩展再复用原指纹。
+
+```bash
+cd /workspace/worker/pj/Chrono/nautilus_trader_demo/pro || exit 1
+export VEGA_PYTHON=/workspace/worker/env/uv-nautilus/bin/python
+export VEGA_PREPARED_ROOT=/workspace/data/temp_bomber1/dx1/data/prepared/mo-im-2024-2026-v1
+export VEGA_REPLAY_ROOT=/workspace/data/temp_bomber1/dx1/data/prepared/mo-im-2026-replay-v2
+
+PYTHONPATH=. "$VEGA_PYTHON" -u scripts/prepare_replay_inputs.py \
+  --config-file demos/08_option_vega/config/strategy.yaml --config-id m5_index_blend \
+  --start-day 2026-01-01 --end-day 2026-10-21 --prepared-root "$VEGA_PREPARED_ROOT" \
+  --max-notional 1000000000 --option-ohlc-policy expand_range --log-level WARNING \
+  --output "$VEGA_REPLAY_ROOT"
+
+PYTHONPATH=. "$VEGA_PYTHON" scripts/check_replay_inputs.py --replay-inputs "$VEGA_REPLAY_ROOT"
+
+TIMEFORMAT='回测进程总耗时：%3R 秒'
+time env PYTHONPATH=. "$VEGA_PYTHON" -u demos/08_option_vega/run_backtest.py \
+  --config-file demos/08_option_vega/config/strategy.yaml --config-id m5_index_blend \
+  --start-day 2026-01-01 --end-day 2026-10-21 \
+  --data-mode prepared --prepared-root "$VEGA_PREPARED_ROOT" --prepared-verify metadata \
+  --bar-parser native_batch --replay-inputs "$VEGA_REPLAY_ROOT" --max-notional 1000000000 \
+  --option-ohlc-policy expand_range --log-level WARNING \
+  --report-dir demos/08_option_vega/results/replay-ready-cython-check
+```
+
+对照旧完整回测run_case=239.061159s、进程243.482s。单独帧恢复省约4.8s，不等于完整回测下降49.44%；
+实际总收益、交易计数及逐笔财务以新完整报告为准。以上更新仅登记实测及命令，未再改变运行代码。
+
+XY完整回测随后完成，报表为
+`results/replay-ready-cython-check/MO/20260101-20261021/87fb9acd-e0e9-4891-9240-a509d00c664e`。
+replay-v2的package_id=`fd404cc8e6e544498e0d877504e316d8`，manifest SHA256=
+`11f3c8344e3add1a27852d963bfda5d9e02002e2edfee2107765aa16df0c1826`，独立full核验3.349s通过。
+一次性准备run_case=114.374771s，不计入正式回测。正式结果：
+
+| 阶段 | 上轮无Cython恢复 | 本轮Cython恢复 |
+| --- | --- | --- |
+| 行情加载校验阶段 | 12.081s | 12.303s |
+| 行情事件转换 | 5.774264s | 5.749031s |
+| 帧恢复 | 10.203871s | 4.889302s |
+| 回放、引擎及策略 | 192.786430s | 194.843671s |
+| run_case | 239.061159s | 235.985476s |
+| 进程 | 243.482s | 240.516s |
+
+run_case节省3.075683s（1.29%），进程节省2.966s（1.22%）。帧恢复节省5.31s，但回放段多出2.06s，
+单轮尚不能归因其波动。事件1488480、帧45839、选约179、订单1527、成交1546均与基线一致，
+`prepared_restore_cython_runs=1`、观察值1488374、整表Python物化为0；完整逐笔财务尚未对照。
+
+按阶段日志，运行回测前26.610s，事件转换排序6.872s，帧恢复4.896s，约38.378s后推进模拟时间。
+前置阶段中，输入打开9.311s包含父快照打开5.811976s与特征输入3.492817s；加载阶段12.303s包含
+native_ready_load=6.489578s，清单/同月资格阶段3.420s。加载阶段其余成本尚未细分，不能把
+已属于输入打开阶段的prepared_snapshot_open再计入其中。
+
+194.843671s回放段占run_case约82.57%，可按已有互斥计时及差额拆为：engine.run 139.497787s、
+add_data 16.220096s、clear_data 3.119689s、backend_prepare 6.006007s、绑定查找7.853638s、
+其他回调/适配/统计等差额22.146454s。engine.run包含strategy_decision=33.701189s；
+剩余105.796598s还含原生时钟/撮合/回报及其他回调，不能当作纯撮合时间。
+strategy_position_snapshot=15.676806s跨多个回调，与这些父项重叠，不能另加。
+下一轮框架研究应先拆分139.50s原生run，再评估逐事件add/run/clear及绑定分发；加载清单中
+重复解析同一分区路径也是可计时确认的小优化候选。本次未新增运行代码，现有v2继续可用。
+
+### 原生run内部计时（2026-11-21）
+
+`--profile-engine-run`只开启公共原生内核的累计诊断，默认关闭；不合并Bar、不改动回放、
+订单放行、撮合、特征帧截止或结算规则。启用后使用C数组累计墙钟时间及次数，结束时统一
+输出`[内核计时]`，并写入本次`performance.json`的`engine_run_profile`。
+旧编译内核缺少API时明确拒绝，不把已有的外层计时冒充内部统计。
+
+先同步本仓库改动，在XY应用源码补丁。工具默认只读，`--apply`先备份两个文件后修改，
+任一文件不匹配则停止；重复应用不重复修改。无需同步包或归档：
+
+```bash
+cd /workspace/worker/pj/Chrono/nautilus_trader_demo/pro || exit 1
+export VEGA_PYTHON=/workspace/worker/env/uv-nautilus/bin/python
+export VEGA_CORE=/workspace/worker/pj/Chrono/nautilus_trader_demo/code/bomber
+
+PYTHONPATH=. "$VEGA_PYTHON" scripts/integration/options/patch_engine_run_profile.py \
+  --source-root "$VEGA_CORE"
+PYTHONPATH=. "$VEGA_PYTHON" scripts/integration/options/patch_engine_run_profile.py \
+  --source-root "$VEGA_CORE" --apply
+```
+
+本次同时修改`engine.pyx`与`engine.pxd`中的类布局，必须完整重建Bomber wheel并安装到回测
+Python环境，不能只替换单个`.so`。沿用该源码项目原有构建环境和精度设置；标准wheel命令：
+
+```bash
+VEGA_WHEELS=$(mktemp -d /tmp/vega-run-profile-wheel.XXXXXX)
+"$VEGA_PYTHON" -m pip wheel "$VEGA_CORE" --no-deps --wheel-dir "$VEGA_WHEELS"
+"$VEGA_PYTHON" -m pip install --no-deps --force-reinstall "$VEGA_WHEELS"/*.whl
+
+PYTHONPATH=. "$VEGA_PYTHON" - <<'PY'
+import sys
+import bomber.backtest.engine as core
+print('Python:', sys.executable)
+print('Core:', core.__file__)
+print('Run profile:', getattr(core, 'RUN_PROFILING_REVISION', None))
+assert core.RUN_PROFILING_REVISION == 'run-phase-timing-v1'
+assert hasattr(core.BacktestEngine, 'set_run_profiling')
+assert hasattr(core.BacktestEngine, 'get_run_profile')
+PY
+
+PYTHONPATH=. "$VEGA_PYTHON" -m unittest tests.test_engine_run_profile_native -v
+```
+
+原生验收比较开关前后的信号、订单、成交、持仓、账户、手续费和两类到期结算；
+必须实际通过，skipped不算原生验收。本机另执行实际`_run`控制流的开关对照与异常测试，
+并用Cython 3.2.8完成整个`engine.pyx`到C++翻译；本机没有运行Linux原生撮合。
+
+先使用现有prepared数据取得内部耗时，不需要重新导出行情：
+
+```bash
+cd /workspace/worker/pj/Chrono/nautilus_trader_demo/pro || exit 1
+mkdir -p demos/08_option_vega/results/timing-logs
+set -o pipefail
+TIMEFORMAT='回测进程总耗时：%3R 秒'
+time env PYTHONPATH=. /workspace/worker/env/uv-nautilus/bin/python -u \
+  demos/08_option_vega/run_backtest.py \
+  --config-file demos/08_option_vega/config/strategy.yaml \
+  --config-id m5_index_blend \
+  --start-day 2026-01-01 --end-day 2026-10-21 \
+  --data-mode prepared \
+  --prepared-root /workspace/data/temp_bomber1/dx1/data/prepared/mo-im-2024-2026-v1 \
+  --prepared-verify metadata --bar-parser native_batch \
+  --max-notional 1000000000 --option-ohlc-policy expand_range \
+  --log-level WARNING --profile-engine-run \
+  --report-dir demos/08_option_vega/results/engine-run-profile \
+  2>&1 | tee demos/08_option_vega/results/timing-logs/engine-run-profile.log
+```
+
+这条命令省略`--replay-inputs`，准备阶段不与上一轮直接比较；内部`run`仍处理相同日期、
+行情与参数。重建SDK后，原replay-v2可能因Bar/Price/Quantity二进制指纹变化而不能复用。
+如需同时对照完整准备阶段，按原`prepare_replay_inputs.py`命令发布新版本，再带新的
+`--replay-inputs`运行；不修改旧产物或绕过SDK指纹校验。
+
+| 统计项 | 范围 |
+| --- | --- |
+| `engine_run_total` | `_run`累计总计，含下面子项；不含`add_data/clear_data/end` |
+| `engine_run_validate/time_range/clock_setup` | 输入校验、时间范围转换、组件时钟设置 |
+| `engine_run_bootstrap` | 首次启动账户与内核 |
+| `engine_run_logging/iterator_setup` | 批次日志格式化、迭代器准备 |
+| `engine_run_advance_time` | 推进时钟及期间触发的定时器/策略回调 |
+| `engine_run_exchange` | 原生交易所行情处理，包含模块前置检查与撮合 |
+| `engine_run_data_engine` | 数据引擎分发，包含网关行情回调 |
+| `engine_run_settle` | 主循环中的订单消息、结算模块与到期处理 |
+| `engine_run_event_tail` | 取下一条数据、同刻定时器回调及单事件收尾 |
+| `engine_run_batch_tail` | 批次结束后的消息处理及定时器刷新 |
+| `engine_run_idle_timers/loop_control` | 无数据定时器路径及循环检查 |
+
+子项按调用位置互斥，但各自包含其触发的策略/成交回调。因此不能再加`strategy_decision`。
+时钟推进内部触发的订单结算属于`advance_time`，不会重复计入主循环的`settle`。
+`unattributed_seconds`是总计减去已完成子项，包含未覆盖控制路径、失败阶段及部分统计开销，
+不能视为精确的计时成本并据此校正。启用计时的总耗时只用于定位，不代表优化收益。
+同时对照`run_calls/data_events/data_timestamp_groups/clock_advances`，识别同刻行情重复推进。
+`data_events`包括结束阶段注入的结算时钟，次数可能略多于`replay_events`。
+
 ### 长区间回测进度与特征缓存
 
 `Registered Strategy`后会先转换、排序全部文件Bar，再预处理特征帧，之后才推进模拟撮合。

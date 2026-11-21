@@ -1,0 +1,293 @@
+--- a/backtest/engine.pyx
++++ b/backtest/engine.pyx
+@@ -19,6 +19,7 @@
+ from collections import deque
+ from decimal import Decimal
+ from heapq import heappush
++from time import perf_counter
+ from typing import Generator
+ 
+ import cython
+@@ -259,6 +260,7 @@
+         self._last_ns : uint64_t = 0
+         self._end_ns : uint64_t = 0
+         self._sorted: bint = True
++        self._run_profile_enabled = False
+ 
+         # Timing
+         self._run_started: pd.Timestamp | None = None
+@@ -1314,6 +1316,58 @@
+ 
+         self._kernel.dispose()
+ 
++    def set_run_profiling(self, enabled=True):
++        """Enable/reset optional diagnostics before processing the first event.
++
++        Disabling profiling performs no per-stage wall-clock reads. Enabling it
++        adds measurement overhead and never changes simulated market time.
++        """
++        if self._iteration != 0:
++            raise RuntimeError("Configure run profiling before the first run")
++        self._run_profile_enabled = bool(enabled)
++        cdef int i
++        for i in range(15):
++            self._run_profile_seconds[i] = 0.0
++            self._run_profile_calls[i] = 0
++        self._run_profile_timestamp_groups = 0
++        self._run_profile_last_ns = 0
++
++    def get_run_profile(self):
++        """Return detached cumulative diagnostics, including failed run totals.
++
++        Child stages are disjoint caller scopes, inclusive of callbacks they
++        invoke. Stage counters count completed scopes. The total also includes
++        exceptions and measurement/control overhead. add_data/clear_data/end
++        are outside this profile. Reading does not reset counters.
++        """
++        cdef int i
++        timings = {
++            name: {"seconds": self._run_profile_seconds[i],
++                   "calls": self._run_profile_calls[i]}
++            for i, name in enumerate(_RUN_PROFILE_NAMES)
++        }
++        accounted = sum(self._run_profile_seconds[i] for i in range(1, 15))
++        return {
++            "revision": RUN_PROFILING_REVISION,
++            "enabled": bool(self._run_profile_enabled),
++            "timing_semantics": "wall_seconds; children_disjoint_inclusive_of_callbacks; do_not_add_total",
++            "scope": "_run only; excludes add_data, clear_data and end; diagnostic overhead included",
++            "timings": timings,
++            "counters": {
++                "run_calls": self._run_profile_calls[RP_TOTAL],
++                "data_events": self._run_profile_calls[RP_EXCHANGE],
++                "data_timestamp_groups": self._run_profile_timestamp_groups,
++                "clock_advances": self._run_profile_calls[RP_ADVANCE_TIME],
++            },
++            "unattributed_seconds": max(0.0, self._run_profile_seconds[RP_TOTAL] - accounted),
++        }
++
++    cdef double _record_run_profile(self, int stage, double started):
++        cdef double now = perf_counter()
++        self._run_profile_seconds[stage] += now - started
++        self._run_profile_calls[stage] += 1
++        return now
++
+     def run(
+         self,
+         start: datetime | str | int | None = None,
+@@ -1375,7 +1429,15 @@
+         - The engine validates this requirement and will raise `RuntimeError` if unsorted data is detected.
+ 
+         """
+-        self._run(start, end, run_config_id, streaming)
++        cdef double profile_started
++        if self._run_profile_enabled:
++            profile_started = perf_counter()
++            try:
++                self._run(start, end, run_config_id, streaming)
++            finally:
++                self._record_run_profile(RP_TOTAL, profile_started)
++        else:
++            self._run(start, end, run_config_id, streaming)
+ 
+         # Finalize on non-streaming runs, or when a shutdown was triggered at
+         # any point during the run so the trader and engines actually stop
+@@ -1540,6 +1602,9 @@
+         run_config_id: str | None = None,
+         bint streaming = False,
+     ):
++        cdef bint profiling = self._run_profile_enabled
++        cdef double profile_mark = perf_counter() if profiling else 0.0
++
+         # Validate data has been sorted and synced to iterator
+         if self._data and not self._sorted:
+             raise RuntimeError(
+@@ -1568,6 +1633,10 @@
+                         "Set the venue `book_type` to 'L1_MBP' (for top-of-book data like quotes, trades, and bars) or provide order book data for this instrument."
+                     )
+ 
++        # Run profile: validation complete.
++        if profiling:
++            profile_mark = self._record_run_profile(RP_VALIDATE, profile_mark)
++
+         cdef uint64_t start_ns
+         cdef uint64_t end_ns
+ 
+@@ -1591,12 +1660,18 @@
+         Condition.is_true(start_ns <= end_ns, "start was > end")
+         self._end_ns = end_ns
+ 
++        if profiling:
++            profile_mark = self._record_run_profile(RP_TIME_RANGE, profile_mark)
++
+         # Set clocks
+         self._last_ns = start_ns
+ 
+         cdef TestClock clock
+         for clock in get_component_clocks(self._instance_id):
+             clock.set_time(start_ns)
++
++        if profiling:
++            profile_mark = self._record_run_profile(RP_CLOCK_SETUP, profile_mark)
+ 
+         if self._iteration == 0:
+             for exchange in self._venues.values():
+@@ -1643,8 +1718,12 @@
+             self._kernel.start()
+ 
+             self._log_pre_run()
++            if profiling:
++                profile_mark = self._record_run_profile(RP_BOOTSTRAP, profile_mark)
+ 
+         self._log_run(start, end)
++        if profiling:
++            profile_mark = self._record_run_profile(RP_LOGGING, profile_mark)
+ 
+         # Set starting index
+         cdef uint64_t i
+@@ -1671,8 +1750,13 @@
+         else:
+             self._last_ns = start_ns
+ 
++        if profiling:
++            profile_mark = self._record_run_profile(RP_ITERATOR_SETUP, profile_mark)
++
+         try:
+             while True:
++                if profiling:
++                    profile_mark = perf_counter()
+                 if FORCE_STOP:
+                     break
+ 
+@@ -1682,8 +1766,12 @@
+                         # current batch. The next batch will provide more data
+                         # and timers will fire naturally as time advances.
+                         break
++                    if profiling:
++                        profile_mark = self._record_run_profile(RP_LOOP_CONTROL, profile_mark)
+                     done = self._process_next_timer()
+                     data = self._data_iterator.next()
++                    if profiling:
++                        profile_mark = self._record_run_profile(RP_IDLE_TIMERS, profile_mark)
+                     if data is None and done:
+                         break
+ 
+@@ -1692,12 +1780,23 @@
+                 if data.ts_init > end_ns:
+                     # End of backtest
+                     break
++
++                if profiling:
++                    profile_mark = self._record_run_profile(RP_LOOP_CONTROL, profile_mark)
+ 
+                 if data.ts_init > self._last_ns:
+                     # Advance clocks to the next data timestamp
+                     self._last_ns = data.ts_init
+                     raw_handlers = self._advance_time(data.ts_init)
+                     raw_handlers_count = raw_handlers.len
++                    if profiling:
++                        profile_mark = self._record_run_profile(RP_ADVANCE_TIME, profile_mark)
++
++                if profiling:
++                    if (self._run_profile_calls[RP_EXCHANGE] == 0
++                            or data.ts_init != self._run_profile_last_ns):
++                        self._run_profile_timestamp_groups += 1
++                    self._run_profile_last_ns = data.ts_init
+ 
+                 # Process data through exchange
+                 if isinstance(data, Instrument):
+@@ -1728,10 +1827,17 @@
+                     exchange = self._venues[data.instrument_id.venue]
+                     exchange.process_instrument_status(data)
+ 
++                if profiling:
++                    profile_mark = self._record_run_profile(RP_EXCHANGE, profile_mark)
++
+                 self._data_engine.process(data)
++                if profiling:
++                    profile_mark = self._record_run_profile(RP_DATA_ENGINE, profile_mark)
+ 
+                 # Process all exchange messages
+                 self._process_and_settle_venues(data.ts_init)
++                if profiling:
++                    profile_mark = self._record_run_profile(RP_SETTLE, profile_mark)
+ 
+                 data = self._data_iterator.next()
+                 if data is None or data.ts_init > self._last_ns:
+@@ -1746,6 +1852,8 @@
+                     raw_handlers_count = 0
+ 
+                 self._iteration += 1
++                if profiling:
++                    profile_mark = self._record_run_profile(RP_EVENT_TAIL, profile_mark)
+         except AccountError as e:
+             set_backtest_force_stop(True)
+             self._log.error(f"Stopping backtest from {e}")
+@@ -1757,6 +1865,9 @@
+ 
+         if FORCE_STOP:
+             return
++
++        if profiling:
++            profile_mark = perf_counter()
+ 
+         # Process remaining messages
+         self._process_and_settle_venues(self._kernel.clock.timestamp_ns())
+@@ -1768,6 +1879,8 @@
+             self._flush_accumulator_events(self._last_ns)
+         else:
+             self._flush_accumulator_events(end_ns)
++        if profiling:
++            self._record_run_profile(RP_BATCH_TAIL, profile_mark)
+ 
+     cdef CVec _advance_time(self, uint64_t ts_now):
+         # Advance clocks and process all events before ts_now in timestamp order.
+@@ -8569,3 +8682,31 @@
+             h ^= b[i]
+             h = (h * _FNV_PRIME) & 0xFFFFFFFFFFFFFFFF
+     return h
++
++
++RUN_PROFILING_REVISION = "run-phase-timing-v1"
++
++cdef enum:
++    RP_TOTAL = 0
++    RP_VALIDATE = 1
++    RP_TIME_RANGE = 2
++    RP_CLOCK_SETUP = 3
++    RP_BOOTSTRAP = 4
++    RP_LOGGING = 5
++    RP_ITERATOR_SETUP = 6
++    RP_ADVANCE_TIME = 7
++    RP_EXCHANGE = 8
++    RP_DATA_ENGINE = 9
++    RP_SETTLE = 10
++    RP_EVENT_TAIL = 11
++    RP_BATCH_TAIL = 12
++    RP_IDLE_TIMERS = 13
++    RP_LOOP_CONTROL = 14
++
++_RUN_PROFILE_NAMES = (
++    "engine_run_total", "engine_run_validate", "engine_run_time_range",
++    "engine_run_clock_setup", "engine_run_bootstrap", "engine_run_logging",
++    "engine_run_iterator_setup", "engine_run_advance_time", "engine_run_exchange",
++    "engine_run_data_engine", "engine_run_settle", "engine_run_event_tail",
++    "engine_run_batch_tail", "engine_run_idle_timers", "engine_run_loop_control",
++)
+--- a/backtest/engine.pxd
++++ b/backtest/engine.pxd
+@@ -128,6 +128,14 @@
+     cdef dict[str, uint64_t] _last_subscription_ts
+     cdef list[Data] _response_data
+ 
++    # Optional wall-time diagnostics. Counters stay in C until explicitly read.
++    cdef bint _run_profile_enabled
++    cdef double _run_profile_seconds[15]
++    cdef uint64_t _run_profile_calls[15]
++    cdef uint64_t _run_profile_timestamp_groups
++    cdef uint64_t _run_profile_last_ns
++    cdef double _record_run_profile(self, int stage, double started)
++
+     cdef CVec _advance_time(self, uint64_t ts_now)
+     cdef bint _process_next_timer(self)
+     cdef void _process_and_settle_venues(self, uint64_t ts_now)

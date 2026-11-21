@@ -1,6 +1,6 @@
 {
   "recorded_date": "2026-11-21",
-  "status": "xy_cython_native_fixture_passed_full_size_performance_pending",
+  "status": "xy_full_cython_run_completed_counts_equal_financial_equivalence_pending",
   "baseline_commit": "b262561d047fd8db7d0255db69e2873fd4d713f6",
   "files": [
     "bomber/framework/datahub/features/restoration.py",
@@ -196,8 +196,9 @@
     "limit": "Not XY real market data or a full strategy/financial backtest; no peak-RSS claim. Benchmark is a developer sample, not a performance acceptance gate."
   },
   "xy_next": [
-    "Run the existing diagnostic against the same v1 and same 1488374 observations with --restore-backend python and cython; compare complete times and counters",
-    "After validating actual benefit, publish a new replay-input version and compare complete full-interval financial reports and wall time"
+    "Compare complete full-interval orders/fills/positions/account/signals/option/future-settlement reports against the same-config pre-Cython baseline",
+    "For further framework profiling, split engine.run initialization/iteration/clock/matching/callback work while preserving per-event next_market ordering",
+    "Measure source-list/path-resolution overhead and outer dispatch before choosing small shared-layer changes; no runtime-code change in this result-recording step"
   ],
   "server_native_acceptance": {
     "recorded_date": "2026-11-21",
@@ -395,5 +396,590 @@
     "warnings": "Two Pandas4Warning deprecation messages for Timestamp.utcnow during engine.run/end; no test failure",
     "scope": "Small fixture only: 65 market events, 23 frames, 63 observations; no full-size speed or financial claim",
     "separate_six_backend_unit_test_output_provided": false
+  },
+  "server_paired_profile": {
+    "recorded_date": "2026-11-21",
+    "source": "user supplied paired diagnostic output",
+    "source_sha256": "ea5945f5b92d2ab7fb2341976a0723f565db44431fceb4080e6fde021a131ee9",
+    "python": {
+      "status": "passed",
+      "diagnostic_only": true,
+      "artifact": {
+        "root": "/workspace/data/temp_bomber1/dx1/data/prepared/mo-im-2026-replay-v1",
+        "package_id": "80a27ecec8144fd8976d92c557ea3a4f",
+        "manifest_sha256": "5bb3991807eb1c97b0ea58beb4c13d5d2907b9de1c595475346063aa32b7ce6b",
+        "verification": "metadata"
+      },
+      "requested_restore_backend": "python",
+      "feature_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/demos/feature/index-research-20260101-20261021-1794209274/index-blend.csv",
+      "feature_config": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/demos/feature/index-research-20260101-20261021-1794209274/index-blend.csv.dataset.json",
+      "feature_dataset": "research.index.ma20_ma60.minute",
+      "feature_records": 45840,
+      "current_implementation_matches_artifact": false,
+      "setup_performance": {
+        "timing_semantics": "wall_seconds_inclusive_nested_do_not_sum",
+        "timings": {
+          "profile_feature_input_read": {
+            "seconds": 3.273345,
+            "calls": 1
+          },
+          "replay_inputs_open": {
+            "seconds": 0.294767,
+            "calls": 1
+          }
+        },
+        "counters": {}
+      },
+      "runs": [
+        {
+          "timing_semantics": "wall_seconds_inclusive_nested_do_not_sum",
+          "timings": {
+            "prepared_frame_objects": {
+              "seconds": 1.202106,
+              "calls": 1
+            },
+            "prepared_frame_reference_checks": {
+              "seconds": 0.081278,
+              "calls": 1
+            },
+            "prepared_frames_decode": {
+              "seconds": 9.696652,
+              "calls": 1
+            },
+            "prepared_frames_load": {
+              "seconds": 9.723625,
+              "calls": 1
+            },
+            "prepared_frames_table_read": {
+              "seconds": 0.003143,
+              "calls": 1
+            },
+            "prepared_frames_to_python": {
+              "seconds": 0.234322,
+              "calls": 1
+            },
+            "prepared_observation_decimal": {
+              "seconds": 0.374115,
+              "calls": 1
+            },
+            "prepared_observation_objects": {
+              "seconds": 3.199569,
+              "calls": 1
+            },
+            "prepared_observations_columnar_prepare": {
+              "seconds": 0.0,
+              "calls": 1
+            },
+            "prepared_observations_table_read": {
+              "seconds": 0.023805,
+              "calls": 1
+            },
+            "prepared_observations_to_python": {
+              "seconds": 4.497792,
+              "calls": 1
+            }
+          },
+          "counters": {
+            "prepared_frame_rows": 45839,
+            "prepared_frames_ready": 45839,
+            "prepared_frames_skipped": 0,
+            "prepared_observation_rows": 1488374,
+            "prepared_observations_restored": 1488374,
+            "prepared_restore_python_runs": 1
+          },
+          "frames": 45839,
+          "restore_backend": "python",
+          "restore_other_seconds": 0.107495
+        }
+      ],
+      "measurement": "wall seconds; batch clocks, no per-observation clocks; repeated runs reuse OS caches",
+      "scope": "公共帧文件读取/转换/装配诊断；不运行策略/撮合，不证明正式回测源码或SDK兼容；父级计时不要叠加"
+    },
+    "cython": {
+      "status": "passed",
+      "diagnostic_only": true,
+      "artifact": {
+        "root": "/workspace/data/temp_bomber1/dx1/data/prepared/mo-im-2026-replay-v1",
+        "package_id": "80a27ecec8144fd8976d92c557ea3a4f",
+        "manifest_sha256": "5bb3991807eb1c97b0ea58beb4c13d5d2907b9de1c595475346063aa32b7ce6b",
+        "verification": "metadata"
+      },
+      "requested_restore_backend": "cython",
+      "feature_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/demos/feature/index-research-20260101-20261021-1794209274/index-blend.csv",
+      "feature_config": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/demos/feature/index-research-20260101-20261021-1794209274/index-blend.csv.dataset.json",
+      "feature_dataset": "research.index.ma20_ma60.minute",
+      "feature_records": 45840,
+      "current_implementation_matches_artifact": false,
+      "setup_performance": {
+        "timing_semantics": "wall_seconds_inclusive_nested_do_not_sum",
+        "timings": {
+          "profile_feature_input_read": {
+            "seconds": 3.283089,
+            "calls": 1
+          },
+          "replay_inputs_open": {
+            "seconds": 0.285332,
+            "calls": 1
+          }
+        },
+        "counters": {}
+      },
+      "runs": [
+        {
+          "timing_semantics": "wall_seconds_inclusive_nested_do_not_sum",
+          "timings": {
+            "prepared_frame_objects": {
+              "seconds": 0.737515,
+              "calls": 1
+            },
+            "prepared_frame_reference_checks": {
+              "seconds": 0.093967,
+              "calls": 1
+            },
+            "prepared_frames_decode": {
+              "seconds": 4.88708,
+              "calls": 1
+            },
+            "prepared_frames_load": {
+              "seconds": 4.916075,
+              "calls": 1
+            },
+            "prepared_frames_table_read": {
+              "seconds": 0.003023,
+              "calls": 1
+            },
+            "prepared_frames_to_python": {
+              "seconds": 0.240511,
+              "calls": 1
+            },
+            "prepared_observation_decimal": {
+              "seconds": 0.006099,
+              "calls": 1
+            },
+            "prepared_observation_objects": {
+              "seconds": 3.295052,
+              "calls": 1
+            },
+            "prepared_observations_columnar_prepare": {
+              "seconds": 0.466093,
+              "calls": 1
+            },
+            "prepared_observations_table_read": {
+              "seconds": 0.025933,
+              "calls": 1
+            },
+            "prepared_observations_to_python": {
+              "seconds": 0.0,
+              "calls": 1
+            }
+          },
+          "counters": {
+            "prepared_frame_rows": 45839,
+            "prepared_frames_ready": 45839,
+            "prepared_frames_skipped": 0,
+            "prepared_observation_rows": 1488374,
+            "prepared_observations_restored": 1488374,
+            "prepared_restore_cython_runs": 1,
+            "prepared_unique_market_keys": 459,
+            "prepared_unique_market_prices": 26942,
+            "prepared_unique_market_sources": 1
+          },
+          "frames": 45839,
+          "restore_backend": "cython",
+          "restore_other_seconds": 0.047882
+        }
+      ],
+      "measurement": "wall seconds; batch clocks, no per-observation clocks; repeated runs reuse OS caches",
+      "scope": "公共帧文件读取/转换/装配诊断；不运行策略/撮合，不证明正式回测源码或SDK兼容；父级计时不要叠加"
+    },
+    "same_artifact_and_feature_input": true,
+    "frame_and_observation_counters_equal": true,
+    "comparison": {
+      "python_seconds": 9.723625,
+      "cython_seconds": 4.916075,
+      "saved_seconds": 4.80755,
+      "reduction_percent": 49.441952,
+      "speed_ratio": 1.977924
+    },
+    "interpretation": [
+      "Single sequential same-artifact diagnostic: public frame restoration improves by 4.807550 seconds (49.44 percent)",
+      "Observation column preparation drops from 4.497792 to 0.466093 seconds; Decimal conversion drops from 0.374115 to 0.006099 seconds",
+      "Cython shares 459 contract strings, 1 source string and 26942 raw price-string representations",
+      "Observation object stage is 3.199569 vs 3.295052 seconds, but integer boxing moves from to_pydict into Cython assembly; inner stages are not fully identical workloads",
+      "Frame-object code was unchanged; its measured drop may reflect allocation/GC pressure or run-to-run variation and is not separately attributed",
+      "Feature input setup remains separately measured at about 3.28 seconds; do not add nested parent and child timings"
+    ],
+    "limits": [
+      "One run per backend, OS caches warm; no repeated controlled benchmark",
+      "Same frame/observation counts are not a full-value or full-financial equivalence comparison",
+      "No new full-backtest wall-time measurement yet; 49.44 percent applies only to frame restoration"
+    ]
+  },
+  "server_full_interval_result": {
+    "recorded_date": "2026-11-21",
+    "source": "user supplied preparation/audit/full-backtest log",
+    "source_sha256": "498db08bce7accac7ee9694115913e9fd81ad9de4bc35dd066ebb8a2585f6d22",
+    "log_file": "/workspace/worker/pj/Chrono/nautilus_trader_demo/pro/demos/08_option_vega/results/timing-logs/cython-20261121-012415.log",
+    "report": "demos/08_option_vega/results/replay-ready-cython-check/MO/20260101-20261021/87fb9acd-e0e9-4891-9240-a509d00c664e",
+    "requested": [
+      "2026-01-01",
+      "2026-10-21"
+    ],
+    "max_notional": "1000000000",
+    "engine": {
+      "module_file": "/workspace/worker/env/uv-nautilus/lib/python3.12/site-packages/bomber/backtest/engine.cpython-312-x86_64-linux-gnu.so",
+      "streaming_validation_revision": "l1-indexed-validation-v1",
+      "python_version": "3.12.14"
+    },
+    "replay_v2_publication": {
+      "status": "passed",
+      "output": "/workspace/data/temp_bomber1/dx1/data/prepared/mo-im-2026-replay-v2",
+      "requested": [
+        "2026-01-01",
+        "2026-10-21"
+      ],
+      "sources": 27954,
+      "native_rows_certified": 1488480,
+      "decision_frames_prepared": 45839
+    },
+    "replay_v2_full_audit": {
+      "status": "passed",
+      "seconds": 3.349,
+      "artifact": {
+        "root": "/workspace/data/temp_bomber1/dx1/data/prepared/mo-im-2026-replay-v2",
+        "package_id": "fd404cc8e6e544498e0d877504e316d8",
+        "manifest_sha256": "11f3c8344e3add1a27852d963bfda5d9e02002e2edfee2107765aa16df0c1826",
+        "verification": "full"
+      },
+      "sources": 27954,
+      "rows": 1488480,
+      "scope": "完整文件SHA256、Schema、行数；实际行情/特征/参数/SDK匹配在回测入口核对"
+    },
+    "one_time_preparation_timings": {
+      "decision_frames_preparation": {
+        "seconds": 9.896859,
+        "calls": 1
+      },
+      "feather_disk_read": {
+        "seconds": 0.052014,
+        "calls": 22
+      },
+      "index_feature_file_read": {
+        "seconds": 3.475238,
+        "calls": 1
+      },
+      "native_inputs_certification": {
+        "seconds": 65.470877,
+        "calls": 1
+      },
+      "prepared_arrow_restore": {
+        "seconds": 1.184654,
+        "calls": 27954
+      },
+      "prepared_index_read": {
+        "seconds": 0.812666,
+        "calls": 1
+      },
+      "prepared_load": {
+        "seconds": 16.980065,
+        "calls": 1
+      },
+      "prepared_partition_read": {
+        "seconds": 14.519176,
+        "calls": 390
+      },
+      "prepared_snapshot_open": {
+        "seconds": 5.866145,
+        "calls": 1
+      },
+      "replay_input_identity": {
+        "seconds": 0.089182,
+        "calls": 1
+      },
+      "run_case": {
+        "seconds": 114.374771,
+        "calls": 1
+      }
+    },
+    "formal_counts": {
+      "decision_frames": 45839,
+      "directory_scans": 0,
+      "feather_files_read": 22,
+      "feather_rows_read": 49216,
+      "fills": 1546,
+      "future_bar_files": 764,
+      "future_contracts": 14,
+      "index_feature_records": 45840,
+      "native_batch_rows": 1488480,
+      "native_batch_sources": 27954,
+      "native_ready_files_read": 382,
+      "native_ready_rows": 1488480,
+      "native_ready_sources": 27954,
+      "option_bar_files": 27190,
+      "option_contracts": 445,
+      "orders": 1527,
+      "prepared_decision_frames": 45839,
+      "prepared_frame_rows": 45839,
+      "prepared_frames_ready": 45839,
+      "prepared_frames_skipped": 0,
+      "prepared_observation_rows": 1488374,
+      "prepared_observations_restored": 1488374,
+      "prepared_restore_cython_runs": 1,
+      "prepared_rows_loaded": 1488480,
+      "prepared_sources_loaded": 27954,
+      "prepared_unique_market_keys": 459,
+      "prepared_unique_market_prices": 26942,
+      "prepared_unique_market_sources": 1,
+      "ready_frames": 45839,
+      "replay_events": 1488480,
+      "replay_source_files": 27954,
+      "replay_source_rows": 1488480,
+      "scheduled_hedge_months_calculated": 8806,
+      "scheduled_hedge_slots_enqueued": 954,
+      "skipped_frames": 0,
+      "strategy_static_identity_builds": 1,
+      "trading_days": 191,
+      "entries": 179
+    },
+    "formal_timings": {
+      "feather_disk_read": {
+        "seconds": 0.05427,
+        "calls": 22
+      },
+      "feature_alignment": {
+        "seconds": 4.896388,
+        "calls": 1
+      },
+      "index_feature_file_read": {
+        "seconds": 3.492817,
+        "calls": 1
+      },
+      "market_binding_lookup": {
+        "seconds": 7.853638,
+        "calls": 1488480
+      },
+      "native_batch_construct": {
+        "seconds": 1.432372,
+        "calls": 27954
+      },
+      "native_ready_array_read": {
+        "seconds": 1.773588,
+        "calls": 27954
+      },
+      "native_ready_load": {
+        "seconds": 6.489578,
+        "calls": 1
+      },
+      "prepared_frame_objects": {
+        "seconds": 0.606682,
+        "calls": 1
+      },
+      "prepared_frame_reference_checks": {
+        "seconds": 0.081793,
+        "calls": 1
+      },
+      "prepared_frames_decode": {
+        "seconds": 4.856031,
+        "calls": 1
+      },
+      "prepared_frames_load": {
+        "seconds": 4.889302,
+        "calls": 1
+      },
+      "prepared_frames_table_read": {
+        "seconds": 0.003971,
+        "calls": 1
+      },
+      "prepared_frames_to_python": {
+        "seconds": 0.297035,
+        "calls": 1
+      },
+      "prepared_index_read": {
+        "seconds": 0.794405,
+        "calls": 1
+      },
+      "prepared_observation_decimal": {
+        "seconds": 0.005229,
+        "calls": 1
+      },
+      "prepared_observation_objects": {
+        "seconds": 3.667655,
+        "calls": 1
+      },
+      "prepared_observations_columnar_prepare": {
+        "seconds": 0.149938,
+        "calls": 1
+      },
+      "prepared_observations_table_read": {
+        "seconds": 0.02926,
+        "calls": 1
+      },
+      "prepared_observations_to_python": {
+        "seconds": 0.0,
+        "calls": 1
+      },
+      "prepared_snapshot_open": {
+        "seconds": 5.811976,
+        "calls": 1
+      },
+      "replay_dispatch_including_engine": {
+        "seconds": 194.843671,
+        "calls": 1
+      },
+      "replay_event_conversion": {
+        "seconds": 5.749031,
+        "calls": 1
+      },
+      "replay_event_sort": {
+        "seconds": 0.933615,
+        "calls": 1
+      },
+      "replay_input_identity": {
+        "seconds": 0.088688,
+        "calls": 1
+      },
+      "replay_inputs_open": {
+        "seconds": 0.166692,
+        "calls": 1
+      },
+      "run_case": {
+        "seconds": 235.985476,
+        "calls": 1
+      },
+      "simulation_add_data": {
+        "seconds": 16.220096,
+        "calls": 1488480
+      },
+      "simulation_backend_prepare": {
+        "seconds": 6.006007,
+        "calls": 1488480
+      },
+      "simulation_clear_data": {
+        "seconds": 3.119689,
+        "calls": 1488480
+      },
+      "simulation_engine_including_decisions": {
+        "seconds": 169.945565,
+        "calls": 1488480
+      },
+      "simulation_run_including_decisions": {
+        "seconds": 139.497787,
+        "calls": 1488480
+      },
+      "strategy_decision": {
+        "seconds": 33.701189,
+        "calls": 45839
+      },
+      "strategy_position_snapshot": {
+        "seconds": 15.676806,
+        "calls": 46457
+      }
+    },
+    "formal_phases_seconds": {
+      "输入路径解析与配置校验": 9.311,
+      "交易日历加载或推导": 0.006,
+      "期权与期货基础条款加载": 0.434,
+      "行情目录扫描与同月对冲资格组装": 3.42,
+      "期权与期货行情加载校验": 12.303,
+      "开仓同步与末日清仓时钟检查": 0.38,
+      "期权到期与最终结算资料准备": 0.176,
+      "模拟账户与真实合约注册": 0.1,
+      "已准备行情注册到回放源": 0.473,
+      "策略、执行路由与风控装配": 0.007,
+      "运行回测": 206.77,
+      "交易报表与残留持仓检查资料生成": 0.191,
+      "报表写出与最终结果校验": 2.287,
+      "可选绩效图生成": 0.0,
+      "运行器清理": 0.126
+    },
+    "main_seconds": 236.965,
+    "process_seconds": 240.516,
+    "comparisons": {
+      "run_case": {
+        "before_seconds": 239.061159,
+        "after_seconds": 235.985476,
+        "saved_seconds": 3.075683,
+        "reduction_percent": 1.286567
+      },
+      "process": {
+        "before_seconds": 243.482,
+        "after_seconds": 240.516,
+        "saved_seconds": 2.966,
+        "reduction_percent": 1.21816
+      },
+      "prepared_frames_load": {
+        "before_seconds": 10.203871,
+        "after_seconds": 4.889302,
+        "saved_seconds": 5.314569,
+        "reduction_percent": 52.083851
+      },
+      "replay_event_conversion": {
+        "before_seconds": 5.774264,
+        "after_seconds": 5.749031,
+        "saved_seconds": 0.025233,
+        "reduction_percent": 0.436991
+      },
+      "native_ready_load": {
+        "before_seconds": 6.298608,
+        "after_seconds": 6.489578,
+        "saved_seconds": -0.19097,
+        "reduction_percent": -3.03194
+      },
+      "replay_dispatch_including_engine": {
+        "before_seconds": 192.78643,
+        "after_seconds": 194.843671,
+        "saved_seconds": -2.057241,
+        "reduction_percent": -1.067109
+      },
+      "simulation_run_including_decisions": {
+        "before_seconds": 138.521725,
+        "after_seconds": 139.497787,
+        "saved_seconds": -0.976062,
+        "reduction_percent": -0.704627
+      },
+      "strategy_decision": {
+        "before_seconds": 33.315276,
+        "after_seconds": 33.701189,
+        "saved_seconds": -0.385913,
+        "reduction_percent": -1.158367
+      },
+      "strategy_position_snapshot": {
+        "before_seconds": 15.456036,
+        "after_seconds": 15.676806,
+        "saved_seconds": -0.22077,
+        "reduction_percent": -1.428374
+      }
+    },
+    "derived": {
+      "replay_share_of_run_case_percent": 82.565959,
+      "before_run_phase_seconds": 26.61,
+      "before_simulation_clock_seconds": 38.378,
+      "pre_simulation_method": "Sum printed rounded phases plus event preparation and feature restoration; excludes interpreter/CLI overhead",
+      "nonoverlap_replay_breakdown_seconds": {
+        "engine_run_including_strategy": 139.497787,
+        "engine_add_data": 16.220096,
+        "engine_clear_data": 3.119689,
+        "backend_prepare": 6.006007,
+        "binding_lookup": 7.853638,
+        "other_replay_residual": 22.146454
+      },
+      "inside_backend_unattributed_seconds": 5.101986,
+      "outside_backend_unattributed_seconds": 17.044468,
+      "engine_run_minus_measured_frame_strategy_seconds": 105.796598,
+      "process_outside_run_case_seconds": 4.530524
+    },
+    "interpretation": [
+      "Formal full run succeeded and actual Cython decoder was used; all event/frame/entry/order/fill counts match the same-config baseline",
+      "Frame restoration saves 5.314569 seconds, but this single run spends 2.057241 seconds more in replay/engine/strategy, offsetting part of the gain; cause not isolated",
+      "About 82.57 percent of run_case is replay/engine/strategy; native engine.run includes the measured strategy timer callbacks",
+      "Strategy position snapshot timings overlap frame/fill callback parent timings and must not be added",
+      "Input loading phase 12.303 seconds includes native_ready_load 6.489578 seconds; its remainder is not separately measured. prepared_snapshot_open 5.811976 seconds belongs to earlier input-open phase.",
+      "Preparation run_case 114.374771 seconds and full audit 3.349 seconds are one-time work outside the timed formal process"
+    ],
+    "limits": [
+      "Single sequential runs, not repeated controlled benchmarks; no attribution for the replay-time increase",
+      "Other replay costs are residual differences, not independently profiled or necessarily removable",
+      "Matching aggregate counts does not establish full-interval row-by-row financial equivalence"
+    ]
   }
 }

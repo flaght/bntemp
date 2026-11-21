@@ -412,12 +412,19 @@ def run_case(args):
     engine_module = import_module("bomber.backtest.engine")
     engine_identity = {"module_file": getattr(engine_module, "__file__", None),
         "streaming_validation_revision": getattr(engine_module, "STREAMING_VALIDATION_REVISION", None),
+        "run_profiling_revision": getattr(engine_module, "RUN_PROFILING_REVISION", None),
         "python_version": sys.version.split()[0]}
     print("回测内核: " + json.dumps(engine_identity, ensure_ascii=False), flush=True)
     instruments = {}
     multipliers = {}
     output = None
+    engine_run_profiling = False
     try:
+        if getattr(args, "profile_engine_run", False):
+            from bomber.framework.performance import enable_engine_run_profiling
+            enable_engine_run_profiling(backend.engine)
+            engine_run_profiling = True
+            print("[内核计时] 已开启：子项互斥且包含回调；总计包含子项；计时自身有额外开销", flush=True)
         profile = CtpFuturesBasicProfile(profile_id="option-vega-basic", venue=Venue("CFFEX"),
             starting_balance=args.starting_balance, commission_per_contract=args.commission,
             **commission_config_from_args(args).profile_kwargs())
@@ -615,6 +622,19 @@ def run_case(args):
         performance.count("directory_scans", current_session().counters["directory_scans"])
         report = performance.snapshot()
         report["engine_identity"] = engine_identity
+        if engine_run_profiling:
+            try:
+                native_profile = backend.engine.get_run_profile()
+            except Exception as exc:
+                # Preserve any original strategy/matching failure during cleanup.
+                report["engine_run_profile_error"] = str(exc)
+                print(f"[内核计时] 汇总读取失败: {exc}", flush=True)
+            else:
+                report["engine_run_profile"] = native_profile
+                print("[内核计时] 数量=" + json.dumps(native_profile["counters"], ensure_ascii=False), flush=True)
+                for name, row in native_profile["timings"].items():
+                    print(f"[内核计时] {name}: seconds={row['seconds']:.6f} calls={row['calls']}", flush=True)
+                print(f"[内核计时] 未分配及统计开销: seconds={native_profile['unattributed_seconds']:.6f}", flush=True)
         if output is not None:
             try:
                 (output / "performance.json").write_text(
@@ -712,6 +732,8 @@ def main():
     parser.add_argument("--option-margin-init", type=Decimal, default=Decimal(1))
     parser.add_argument("--option-margin-maint", type=Decimal, default=Decimal(1))
     parser.add_argument("--log-level", choices=("ERROR", "WARNING", "INFO", "DEBUG"), default="WARNING")
+    parser.add_argument("--profile-engine-run", action="store_true",
+        help="开启原生run内部累计计时；需要支持run-phase-timing-v1的已编译Bomber内核")
     parser.add_argument("--report-dir", type=Path, default=DEFAULT_REPORT_DIR)
     parser.add_argument("--no-tearsheet", action="store_true")
     parser.add_argument("--require-fills", action="store_true")

@@ -3,6 +3,15 @@ from contextlib import contextmanager
 from time import perf_counter
 
 
+def enable_engine_run_profiling(engine):
+    """Explicitly require a compiled kernel supporting internal run timings."""
+    if not all(callable(getattr(engine, name, None)) for name in
+               ("set_run_profiling", "get_run_profile")):
+        raise RuntimeError("--profile-engine-run需要重新编译并安装支持run-phase-timing-v1的Bomber内核；"
+                           "当前扩展只有外层计时，不能输出run内部耗时")
+    engine.set_run_profiling(True)
+
+
 class PerformanceStats:
     """Aggregate wall durations and counts. Nested timings are inclusive, not additive.
 
