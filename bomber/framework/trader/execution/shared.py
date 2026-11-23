@@ -15,16 +15,21 @@ from .events import FillEvent
 
 @dataclass(frozen=True)
 class SharedRiskBudget:
-    """按归属绝对量计预算；账户独立执行可用双None关闭聚合预算，策略须有限。"""
+    """按归属绝对量计预算；数量可不设限，策略仍须有限金额预算。
+
+    账户独立执行另可用双None关闭聚合预算；策略端口禁止双None。
+    """
     max_gross_quantity: Decimal | None
     max_gross_notional: Decimal | None
 
     def __post_init__(self):
         if self.max_gross_quantity is None and self.max_gross_notional is None:
             return  # 仅账户级独立执行可显式关闭聚合预算；策略预算仍须声明。
-        if self.max_gross_quantity is None or self.max_gross_notional is None:
-            raise ValueError("联合总量与名义预算须同时为null或有限正数")
+        if self.max_gross_notional is None:
+            raise ValueError("有限数量预算须同时配置有限正数名义预算")
         for name in ("max_gross_quantity", "max_gross_notional"):
+            if getattr(self, name) is None:
+                continue
             value = Decimal(str(getattr(self, name)))
             if not value.is_finite() or value <= 0:
                 raise ValueError("共享账户预算须为有限正数")
@@ -122,7 +127,7 @@ class SharedAccountExecutionService(AccountExecutionService):
         if not strategy_id.strip():
             raise ValueError("策略身份不能为空")
         if budget.is_unlimited:
-            raise ValueError("策略自身总量与名义预算必须为有限正数")
+            raise ValueError("策略自身必须配置有限正数名义预算")
         routes = dict(routes)
         if not routes or any(not key.strip() or instrument not in self.instrument_limits
                              for key, instrument in routes.items()):
@@ -208,7 +213,8 @@ class SharedAccountExecutionService(AccountExecutionService):
                     f"reference_ns={None if reference is None else reference.ts_event} "
                     f"age_seconds={None if age is None else age / 1e9} max_age_seconds={max_age / 1e9}")
             notional += amount * reference.price * limits.contract_multiplier
-        if quantity > budget.max_gross_quantity or notional > budget.max_gross_notional:
+        if ((budget.max_gross_quantity is not None and quantity > budget.max_gross_quantity)
+                or notional > budget.max_gross_notional):
             raise ValueError(f"策略或账户归属总量／名义金额超过预算: gross_quantity={quantity} "
                 f"max_gross_quantity={budget.max_gross_quantity} gross_notional={notional} "
                 f"max_gross_notional={budget.max_gross_notional}")
