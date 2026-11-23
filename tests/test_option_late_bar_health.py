@@ -122,6 +122,34 @@ class LateBarHealthTests(unittest.TestCase):
         self.assertIsNone(s.runner.failure)
         self.assertEqual(self.path.read_bytes(),before)
 
+    def test_restored_fill_callback_waits_until_authorized_fresh_frame_without_changing_owned_position(self):
+        from unittest.mock import Mock
+        host = import_module("bomber.framework.trader.runtime.live.shared")
+        s = self.preparing_with_restored_position()
+        before = self.path.read_bytes()
+        owned = deepcopy(s.runner.position_manager.attribution.state())
+        event = NS(metadata={}, identity=NS(instrument_id=str(s.references.instrument_ids[OPTION])),
+            ts_event=ns("2026-08-13 10:30"), quantity=Decimal(1), price=Decimal(40))
+        callback = Mock(side_effect=lambda: s.strategy.on_fill(event))
+        with patch.object(s.client, "drain_events", callback, create=True):
+            self.assertFalse(s.runner.execution_events_ready())
+            host.drain_strategy_events(s)
+            callback.assert_not_called()
+            self.assertEqual(self.path.read_bytes(), before)
+            s.runner.begin_bars()
+            host.drain_strategy_events(s)
+            callback.assert_not_called()  # 开闸仍须等待策略缓存完成首帧预热。
+            self.now = ns("2026-08-13 13:01") + 5_000_000_000
+            self.bars(s, "2026-08-13 13:01", flush=False)
+            self.now += 20_000_000_001
+            s.runner.flush_frames()
+            self.assertTrue(s.runner.execution_events_ready())
+            fills = s.strategy.fills_received
+            host.drain_strategy_events(s)
+            callback.assert_called_once_with()
+            self.assertEqual(s.strategy.fills_received, fills + 1)
+            self.assertEqual(s.runner.position_manager.attribution.state(), owned)
+
     def test_dfs_preparation_reads_real_index_without_consuming_first_running_projection(self):
         old = self.setup_session(held=True)
         old.runner.stop()

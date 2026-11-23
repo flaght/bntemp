@@ -215,6 +215,37 @@ class SharedAccountTests(unittest.TestCase):
                           client.position_manager.position("two", "main")), (2, -1))
         self.assertEqual(client.position_manager.account_position("account", self.instrument), 1)
 
+    def test_callback_error_is_not_masked_by_disarm_or_checkpoint_failure_and_cursor_is_not_acked(self):
+        from unittest.mock import Mock
+        shared = import_module("bomber.framework.trader.execution.shared")
+        for journal_mode in (False, True):
+            with self.subTest(journal_mode=journal_mode):
+                service, client, (one, _) = self.service()
+                if journal_mode:
+                    journal = import_module("bomber.framework.trader.execution.ipc").ExecutionEventJournal(["one", "two"])
+                    service.event_journal = journal
+                    one._consume_journal = True
+                one.register_execution_event_handler(lambda event: None)
+                self.submit(one)
+                one.drain_events()  # 排空受理事件，再模拟真实成交入账。
+                client.backend.fill()
+                before = one.event_diagnostics()
+                cursor = getattr(one, "_journal_cursor", None)
+                error = RuntimeError("original hedge callback failure")
+                one._handlers[:] = [Mock(side_effect=error)]
+                service._checkpoint = Mock(side_effect=RuntimeError("restore is not committed"))
+                with patch.object(client, "disarm", side_effect=RuntimeError("secondary disarm failure")), \
+                        self.assertLogs("SharedExecutionEvents", level="ERROR"), \
+                        self.assertRaisesRegex(RuntimeError, "original hedge callback failure") as caught:
+                    one.drain_events()
+                self.assertIs(caught.exception, error)
+                self.assertEqual(len(error.__notes__), 2)
+                self.assertTrue(service._failed)
+                self.assertEqual(one.event_diagnostics()["fills_delivered"], before["fills_delivered"])
+                self.assertEqual(getattr(one, "_journal_cursor", None), cursor)
+                self.assertEqual(client.position_manager.position("one", "main"), 1)
+                service._checkpoint = None
+
     def test_merged_partial_fills_split_quantity_fee_and_keep_frozen_owners(self):
         service, client, (one, two) = self.service()
         original = client.planner

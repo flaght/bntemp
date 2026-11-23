@@ -142,6 +142,7 @@ class CtpTdApiTransport:
 
             def onRspError(self, error, reqid, last):
                 # 柜台也可能只返回通用错误，不能让请求一直等待超时。
+                owner._audit_ctp_error("onRspError", error, reqid)
                 owner._front_down(-int((error or {}).get("ErrorID", 1) or 1))
 
             def onRspAuthenticate(self, data, error, reqid, last):
@@ -358,6 +359,17 @@ class CtpTdApiTransport:
                       or event == "interrupted" or pending.kind in {"auth", "login", "settlement"} else logging.DEBUG)
         logging.getLogger("CtpQuery").log(level, "CTP查询: %s", row)
 
+    def _audit_ctp_error(self, callback, error, reqid, data=None):
+        """保留错误回调来源及柜台原始错误文本，避免负数被误读为网络断线码。"""
+        data, error = data or {}, error or {}
+        row = {"event": "ctp_error", "callback": callback, "request_id": reqid,
+            "error_id": int(error.get("ErrorID", 0)), "error_message": str(error.get("ErrorMsg", "")),
+            "order_ref": str(data.get("OrderRef", "")),
+            "instrument": str(data.get("InstrumentID", "")), "ts_ns": time.time_ns()}
+        with self._cv:
+            self._query_audit.append(row)
+        logging.getLogger("CtpQuery").error("CTP错误回报（按现有规则闭闸）: %s", row)
+
     def query_diagnostics(self):
         with self._cv:
             pending = self._pending
@@ -431,6 +443,7 @@ class CtpTdApiTransport:
         error_id = int((error or {}).get("ErrorID", 0))
         if not error_id:
             return
+        self._audit_ctp_error("order_insert_error", error, reqid, data)
         row = dict(data or {})
         with self._cv:
             if str(row.get("OrderRef", "")) in self._rejected_refs:
@@ -467,6 +480,7 @@ class CtpTdApiTransport:
         error_id = int((error or {}).get("ErrorID", 0))
         if not error_id:
             return
+        self._audit_ctp_error("order_action_error", error, reqid, data)
         row = dict(data or {})
         with self._cv:
             ref = self._action_requests.get(reqid) if reqid is not None else None

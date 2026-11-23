@@ -49,6 +49,26 @@ class CtpQueryLifecycleTests(unittest.TestCase):
         self.assertEqual(observations,[('ctp_front_disconnected:8193',False,{'reason':8193,'ts_ns':12345})])
         self.assertEqual(driver.last_disconnect,{'reason':8193,'ts_ns':12345})
 
+    def test_error_26_keeps_callback_origin_message_and_closed_gate(self):
+        for callback in ("onRspError", "order_insert_error", "order_action_error"):
+            with self.subTest(callback=callback):
+                transport = self.transport()
+                error = {"ErrorID": 26, "ErrorMsg": "fixture original counter error"}
+                row = {"OrderRef": "18", "InstrumentID": "IM2612", "Password": "not-in-audit"}
+                transport._last_orders["18"] = row
+                with self.assertLogs("CtpQuery", level="ERROR"):
+                    if callback == "onRspError":
+                        transport._api.onRspError(error, 99, True)
+                    elif callback == "order_insert_error":
+                        transport._insert_error(row, error, 99)
+                    else:
+                        transport._action_error(row, error, 99)
+                audit = transport.query_diagnostics()["recent"][-1]
+                self.assertEqual((audit["callback"], audit["error_id"], audit["request_id"]), (callback, 26, 99))
+                self.assertEqual(audit["error_message"], error["ErrorMsg"])
+                self.assertNotIn("not-in-audit", repr(audit))
+                self.assertFalse(transport._ready)
+
     def test_timeout_audit_counts_partial_and_late_responses_without_using_incomplete_rows(self):
         def partial(api, reqid):
             api.onRspQryTradingAccount({'Balance':123}, {}, reqid, False)

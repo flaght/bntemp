@@ -22,6 +22,14 @@ def history_snapshot(session):
             "bars_used": getattr(session.strategy, "bars_used", None)}
 
 
+def drain_strategy_events(session):
+    """应用可延后业务回调至授权和行情预热完成；成交账本仍即时入账。"""
+    ready = getattr(session.runner, "execution_events_ready", None)
+    if callable(ready) and not ready():
+        return 0
+    return session.client.drain_events()
+
+
 @dataclass
 class SharedStrategySession:
     session: object
@@ -160,7 +168,7 @@ class SharedAccountLiveHost:
             if item.session.runner.failure:
                 raise RuntimeError(item.session.runner.failure)
             item.session.references.refresh()
-            item.session.client.drain_events()
+            drain_strategy_events(item.session)
             poll = getattr(item.session.runner, "poll_live_inputs", None)
             if callable(poll):
                 poll()
@@ -292,7 +300,7 @@ class SharedAccountLiveHost:
                 continue
             session = item.session
             try:
-                session.client.drain_events()
+                drain_strategy_events(session)
                 if session.runner.failure:
                     raise RuntimeError(session.runner.failure)
                 session.references.refresh()

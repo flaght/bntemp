@@ -152,6 +152,14 @@ class OptionSessionRunner(UnifiedStrategyRunner):
     def reference_is_current(self):
         return self.references.snapshot().fingerprint == self.references.fingerprint
 
+    def execution_events_ready(self):
+        # 账户journal可能保留上一会话尚未消费的真实成交。准备期尚未授权、
+        # 策略行情缓存也为空，不能让成交驱动对冲提前提交目标或写恢复检查点。
+        # 等首批新鲜帧完成恢复预热后再消费；不改成交归属，也不提前确认游标。
+        with self._frame_lock:
+            return (self.accept_bars and not self.strategy.restored
+                    and self.strategy.resume_ns is None)
+
     def session_ready(self):
         ready = not self.failure and self.reference_is_current() and bool(self.readiness())
         if ready and not self.replay and self.source_age_ns and self.warm_started_ns is None:

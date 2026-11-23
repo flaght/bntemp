@@ -6,6 +6,7 @@ from dataclasses import dataclass, replace
 from decimal import Decimal
 import threading
 import time
+import logging
 
 from bomber.framework.trader.contracts import ExecutionRequest
 from bomber.framework.trader.portfolio import AccountTargetKey
@@ -805,6 +806,19 @@ class SharedStrategyExecutionClient:
                 self._fills_enqueued += 1
                 self._last_fill_enqueued = event.event_id
 
+    def _callback_failed(self, error):
+        """保持闭闸及未确认游标；清理/保存失败不能掩盖最初的回调异常。"""
+        self.service._failed = True
+        logging.getLogger("SharedExecutionEvents").error(
+            "策略执行回调失败: strategy_id=%s error=%s", self.strategy_id, error,
+            exc_info=(type(error), error, error.__traceback__))
+        for name, operation in (("disarm", lambda: self.service.client.disarm("strategy_callback_failed")),
+                                ("checkpoint", self.service._save)):
+            try:
+                operation()
+            except Exception as secondary:
+                error.add_note(f"回调失败后{name}亦失败: {type(secondary).__name__}: {secondary}")
+
     def drain_events(self):
         if not self._started:
             return 0
@@ -826,10 +840,8 @@ class SharedStrategyExecutionClient:
                     try:
                         for handler in tuple(self._handlers):
                             handler(event)
-                    except Exception:
-                        self.service._failed = True
-                        self.service.client.disarm("strategy_callback_failed")
-                        self.service._save()
+                    except Exception as error:
+                        self._callback_failed(error)
                         raise
                     cursor = row["sequence"]
                     self._journal_cursor = cursor
@@ -848,10 +860,8 @@ class SharedStrategyExecutionClient:
                     raise RuntimeError("策略回报没有处理器，不能静默消费")
                 for handler in tuple(self._handlers):
                     handler(event)
-            except Exception:
-                self.service._failed = True
-                self.service.client.disarm("strategy_callback_failed")
-                self.service._save()
+            except Exception as error:
+                self._callback_failed(error)
                 raise
             with self._lock:
                 self._events.popleft()
