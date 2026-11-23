@@ -22,6 +22,7 @@ class NTAlgoCtpDriver(IndependentCtpDriver):
 
     def start(self, sink):
         def receive(report):
+            report = self.algo_runtime.annotate_report(report)
             sink(report)  # 先由原订单机/归属/会计入账，再推进算法任务。
             self.algo_runtime.on_report(report)
         super().start(receive)
@@ -72,7 +73,9 @@ class NTAlgoCtpDriver(IndependentCtpDriver):
             return False
         source = service._sources.get(order.strategy_id)
         port = service._ports.get(order.strategy_id)
-        rows = order.metadata.get("position_attribution", ())
+        # 一个订单的任务只依赖本合约目标；同组合其他腿变动不撤销/阻塞它。
+        rows = tuple(row for row in order.metadata.get("position_attribution", ())
+                     if row["instrument_id"] == str(order.instrument_id))
         original = {(r["target_key"], r["instrument_id"]): r["quantity"] for r in rows}
         current = {(r["target_key"], r["instrument_id"]): r["quantity"] for r in source["rows"]
                    if (r["target_key"], r["instrument_id"]) in original} if source else {}
@@ -141,8 +144,8 @@ class NTAlgoCtpDriver(IndependentCtpDriver):
                 raise RuntimeError("真实委托缺少对应的NT算法任务进度")
 
     @_serialized_transition
-    def cancel_algorithm_tasks(self, strategy_id):
-        self.algo_runtime.cancel_strategy(strategy_id)
+    def cancel_algorithm_tasks(self, strategy_id, *, instruments=None, reason="strategy_cancel"):
+        self.algo_runtime.cancel_strategy(strategy_id, instruments=instruments, reason=reason)
         self.save()
 
     def cancel_strategy(self, strategy_id, *, opening_only=False, client_order_ids=None):

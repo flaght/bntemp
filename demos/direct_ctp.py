@@ -494,6 +494,8 @@ def main(kind, argv=None):
     parser.add_argument('--run-forever',action='store_true')
     parser.add_argument('--execution-driver', choices=('ctp', 'nt_algo_ctp'), default='ctp',
         help='ctp沿用原独立归属Driver；nt_algo_ctp启用公共NT算法积木')
+    parser.add_argument('--execution-algorithm', choices=('limit_reprice',),
+        help='执行算法；nt_algo_ctp未指定时默认limit_reprice（限价超时撤单重报）')
     parser.add_argument('--algo-wait-seconds', type=float, default=10,
         help='NT限价委托等待秒数，撤单确认后才按有效报价重报')
     parser.add_argument('--algo-max-attempts', type=int, default=3,
@@ -528,9 +530,11 @@ def main(kind, argv=None):
             parser.error('algo-wait-seconds须为有限正数')
         if not 1 <= options.algo_max_attempts <= 1000:
             parser.error('algo-max-attempts须为1至1000整数')
-        account.update(execution_driver='nt_algo_ctp', nt_algo=dict(
+        account.update(execution_driver='nt_algo_ctp',
+            execution_algorithm=options.execution_algorithm or 'limit_reprice', nt_algo=dict(
             wait_seconds=options.algo_wait_seconds, max_attempts=options.algo_max_attempts))
-    elif options.algo_wait_seconds != 10 or options.algo_max_attempts != 3:
+    elif (options.execution_algorithm is not None
+            or options.algo_wait_seconds != 10 or options.algo_max_attempts != 3):
         parser.error('算法参数须配合execution-driver=nt_algo_ctp')
     if account['environment'] != 'realtime' or account['execution_mode'] != 'independent':
         parser.error('直连入口要求realtime和independent')
@@ -566,6 +570,7 @@ def main(kind, argv=None):
             parser.error('离线校验不接受报单授权')
         print(json.dumps(dict(status='config_checked',mode='direct_ctp', strategies=[r['strategy_id'] for r in rows],
             state_file=config['account_state_file'], import_state=str(source) if source else None,
+            execution_driver=options.execution_driver, execution_algorithm=config.get('execution_algorithm'),
             orders_enabled=False),ensure_ascii=False))
         return
     if not (options.enable_orders and options.confirm_simnow):

@@ -30,6 +30,7 @@ from time import perf_counter
 
 from bomber.framework.trader.template import StrategyTemplate
 from bomber.framework.trader.execution.option_settlement import SETTLEMENT_ORIGIN, FUTURE_SETTLEMENT_ORIGIN
+from bomber.framework.trader.execution.nt_algo import TASK_KEY, CANCEL_REASON_KEY
 from .vega_signal import (remaining_trading_days, allocate_short, source_iv, source_years,
                          source_greeks, entry_quote_times_valid, index_signal_due)
 
@@ -780,12 +781,17 @@ class OptionVegaStrategy(StrategyTemplate):
     def on_order_update(self, event):
         """根据归属订单回报决定是否报错，由外部生命周期执行停机处理。
 
-        REJECTED始终报错；正常运行中CANCELED/EXPIRED也报错，避免组合只成交
-        一部分而继续运行。外部已设置stopping时允许停机撤单；声明到期截止之后
+        REJECTED始终报错；仅放行算法已核验的追价/目标更新撤单，其余正常运行中
+        CANCELED/EXPIRED仍报错，避免组合只成交一部分而继续运行。
+        外部已设置stopping时允许停机撤单；声明到期截止之后
         的期权/期货取消或过期同样允许，因为由公共结算生命周期接管。其余状态只计数。
         """
         self.order_updates_received += 1
         status = getattr(event.status, "value", str(event.status))
+        metadata = getattr(event, "metadata", {})
+        if (status == "CANCELED" and metadata.get(TASK_KEY)
+                and metadata.get(CANCEL_REASON_KEY) in ("retry", "target_update")):
+            return
         cutoff = next((stamp for key, stamp in {**self.option_last_trade_times, **self.future_last_trade_times}.items()
                        if str(self.instruments[key]) == event.identity.instrument_id), None)
         if status in ("CANCELED", "EXPIRED") and cutoff is not None and event.ts_event >= cutoff:

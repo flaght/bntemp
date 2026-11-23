@@ -273,11 +273,17 @@ class SharedAccountExecutionService(AccountExecutionService):
                     if sid != request.strategy_id for row in source["rows"])
             self._check_budget(all_rows, self.budget, now)
             # 旧挂单仍按旧冻结计划入账。取消确认后才规划新目标。
-            changed = previous is not None and {
-                (row["target_key"], row["instrument_id"]): row["quantity"] for row in previous["rows"]} != {
-                (row["target_key"], row["instrument_id"]): row["quantity"] for row in rows}
-            if changed and request.revision > previous["revision"]:
-                self._cancel_owner(request.strategy_id)
+            if previous is not None and request.revision > previous["revision"]:
+                before = {(row["target_key"], row["instrument_id"]): row["quantity"]
+                          for row in previous["rows"]}
+                after = {(row["target_key"], row["instrument_id"]): row["quantity"] for row in rows}
+                changed = frozenset(key[1] for key in before.keys() | after.keys()
+                                    if before.get(key) != after.get(key))
+                if changed:
+                    driver = getattr(self.client.backend, "driver", None)
+                    # 算法任务可独立推进各腿；普通CTP保留既有整策略撤单行为。
+                    scoped = callable(getattr(driver, "cancel_algorithm_tasks", None))
+                    self._cancel_owner(request.strategy_id, instruments=changed if scoped else None)
             super().submit_targets(request)
 
     def _active_instruments(self):
@@ -292,19 +298,23 @@ class SharedAccountExecutionService(AccountExecutionService):
             if not order["released"] and any(Decimal(leg["filled"]) < Decimal(leg["quantity"])
                                              for leg in order["legs"])}
 
-    def _working_order_ids(self, strategy_id=None):
+    def _working_order_ids(self, strategy_id=None, *, instruments=None):
         return frozenset(order["client_order_id"] for order in
             self.position_manager.attribution.state()["orders"].values()
             if order["client_order_id"] is not None and not order["released"]
+            and (instruments is None or order["instrument_id"] in instruments)
             and (strategy_id is None or any(leg["strategy_id"] == strategy_id for leg in order["legs"]))
             and any(Decimal(leg["filled"]) < Decimal(leg["quantity"]) for leg in order["legs"]))
 
-    def _cancel_owner(self, strategy_id):
+    def _cancel_owner(self, strategy_id, *, instruments=None):
         driver = getattr(self.client.backend, "driver", None)
         cancel_tasks = getattr(driver, "cancel_algorithm_tasks", None)
         if callable(cancel_tasks):
-            cancel_tasks(strategy_id)
-        active = self._working_order_ids(strategy_id)
+            if instruments is None:
+                cancel_tasks(strategy_id)
+            else:
+                cancel_tasks(strategy_id, instruments=instruments, reason="target_update")
+        active = self._working_order_ids(strategy_id, instruments=instruments)
         pending = active - self._cancelled
         driver = getattr(self.client.backend, "driver", None)
         cancel = getattr(driver, "cancel_strategy_orders", None)

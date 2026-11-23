@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """只读核验08直连部署；不加载env、不创建会话、不连接DDB/CTP或改写状态。
 
-代码摘要对应2026-11-23的M1 Live、无限手数预算及成交回调恢复修复。不同摘要只表示与
+代码摘要对应2026-11-24的M1 Live、无限手数预算、成交回调恢复及算法撤单接入。不同摘要只表示与
 该参考不一致，不能单凭摘要认定代码较旧。磁盘/检查点均不证明进程内存已更新。
 """
 from __future__ import annotations
@@ -21,16 +21,18 @@ sys.dont_write_bytecode = True
 
 SOURCE_HASHES = {
     "demos.08_option_vega.run_direct": "00e3af069de4f55036058898861223d8101722f8ea1c2f4c8c945e4057468a54",
-    "demos.direct_ctp": "beb8c660a7e53707433c7b317cc082ad001d35e0684a9aed558966f4541b7260",
+    "demos.direct_ctp": "31481f9360975385976ddf504544234aa1e33a727fe9807fdf264911e4cece83",
     "demos.08_option_vega.run_live": "fe186695519e79a1c96eb52a01b2788ffee0d0abf1e0f93d6986786fd6c04bc1",
     "demos.08_option_vega.live": "1513f81c3a964d935832fdd4534b846af40bd31b16c3c16ec71b1a793069bf65",
-    "demos.08_option_vega.strategy": "0e82a3c6040df42ee788e5cd328d37b5cde227303cbfdc6fc8aa771f3d3aef88",
+    "demos.08_option_vega.strategy": "08b6aa721688fd3015e0dfbd8331011a667d0bc4abce3b9ef18e88426768524e",
     "demos.08_option_vega.vega_signal": "08201b405e2081a7e76885989fcdb1d7ea15125764fe6e177203c8a9250f10db",
     "demos.08_option_vega.recovery": "bd4ab7b1447a8d416471c95389273a1b7a179abe948b75088f45defb6453a00a",
-    "bomber.framework.trader.execution.shared": "bf181219c889e0cc37cd3448739a4ac135feb05265b673b3282f342bc84842ab",
+    "bomber.framework.trader.execution.shared": "b70d13faf439627644c28c0bef6a1921ca26f14636ccb60e510f49e030673219",
     "bomber.framework.trader.runtime.live.shared": "9c2269873e05e5d27ffd585813002a909d7ede4ac60a0790b407e6156c26ed94",
     "bomber.framework.trader.execution.ctp.td_transport": "33ab58252a7d0a37d08a5277fb502668fc4af8b46ed0567a6f6cf5de24d39da6",
     "bomber.framework.market.sources": "13ac277c068d22a0793c18dd7ecf5fcede471a774b76abef990ac6ff7efebecd",
+    "bomber.framework.trader.execution.nt_algo": "814b38c9ba9f79b90943bdff6a87be4a64805cf1aca7b9e0ab75d566d6f658a0",
+    "bomber.framework.trader.execution.ctp.nt_algo": "9851e981b4815775a9bdd3d1dee1fc2cc009427db29d16e26d72a14a46fcb8e1",
 }
 EXPECTED = {
     "nav": "40000000", "vega_budget": 1.25,

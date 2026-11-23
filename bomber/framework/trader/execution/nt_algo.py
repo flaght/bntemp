@@ -13,6 +13,7 @@ from bomber.framework.market.basic.base import InstrumentId
 from .contracts import OrderIntent, OrderType, ExecutionReportType
 
 TASK_KEY = "nt_algo_task_id"
+CANCEL_REASON_KEY = "nt_algo_cancel_reason"
 log = logging.getLogger("NTAlgoExecution")
 
 
@@ -124,6 +125,8 @@ class NTAlgoRuntime:
     NT时钟只产生待执行命令。adapter在原控制线程排空命令，以保留宿主线程
     约束及原提交锁顺序；回报回调中不直接补单。
     """
+    algorithm_name = "limit_reprice"
+
     def __init__(self, config=None, *, host_factory=NativeNTHost, clock_ns=time.time_ns):
         self.config = config or NTAlgoConfig()
         self._host_factory, self.clock_ns = host_factory, clock_ns
@@ -183,6 +186,7 @@ class NTAlgoRuntime:
             child_id = self._host.child(task_id, order)
             task["attempts"] += 1
             task["cancel_requested"] = False
+            task["cancel_sent"] = False
             metadata = {**order.metadata, TASK_KEY: task_id, "nt_algo_child_id": child_id,
                         "nt_algo_attempt": task["attempts"]}
             if not initial:
@@ -229,6 +233,27 @@ class NTAlgoRuntime:
                 task["cancel_requested"] = True
                 self._commands.append(("cancel", key, task["active"]))
 
+    def annotate_report(self, report):
+        """在原账本入账前标注已核验的内部撤单；不提前推进任务或伪造回报。"""
+        metadata = {key: value for key, value in report.metadata.items() if key != CANCEL_REASON_KEY}
+        with self._lock:
+            task = self._tasks.get(metadata.get(TASK_KEY))
+            if (report.report_type is ExecutionReportType.CANCELED and task is not None
+                    and task['active'] == report.client_order_id):
+                if task['stopped']:
+                    reason = task.get('stop_reason', 'strategy_cancel')
+                elif not task.get('cancel_sent', False):
+                    reason = 'external_cancel'
+                elif task['attempts'] >= self.config.max_attempts:
+                    reason = 'attempt_limit'
+                elif (task['order']['metadata'].get('actual_send_deadline_ns') is not None
+                        and self.clock_ns() > task['order']['metadata']['actual_send_deadline_ns']):
+                    reason = 'deadline'
+                else:
+                    reason = 'retry'
+                metadata[CANCEL_REASON_KEY] = reason
+        return replace(report, metadata=metadata)
+
     def on_report(self, report):
         with self._lock:
             key = report.metadata.get(TASK_KEY)
@@ -255,26 +280,30 @@ class NTAlgoRuntime:
                 if (task["stopped"] or report.report_type is not ExecutionReportType.CANCELED
                         or task["attempts"] >= self.config.max_attempts
                         or Decimal(task["filled"]) == Decimal(task["order"]["quantity"])):
-                    reason = ("strategy_cancel" if task["stopped"] else
+                    reason = (task.get("stop_reason", "strategy_cancel") if task["stopped"] else
                               "attempt_limit" if report.report_type is ExecutionReportType.CANCELED
                               and task["attempts"] >= self.config.max_attempts else report.report_type.value)
                     self._finish(key, reason)
-                elif task["cancel_requested"]:
+                elif task.get("cancel_sent", False):
                     self._commands.append(("submit", key, None))
                 else:
                     self._finish(key, "external_cancel")
 
-    def cancel_strategy(self, strategy_id, *, opening_only=False, identities=None):
+    def cancel_strategy(self, strategy_id, *, opening_only=False, identities=None,
+                        instruments=None, reason="strategy_cancel"):
         with self._lock:
             for key, task in tuple(self._tasks.items()):
                 order = task["order"]
                 if (order["strategy_id"] != strategy_id or
                         opening_only and order["position_effect"] != "OPEN" or
-                        identities is not None and task["active"] not in identities):
+                        identities is not None and task["active"] not in identities or
+                        instruments is not None and order["instrument_id"] not in instruments):
                     continue
+                if not task["stopped"]:
+                    task["stop_reason"] = reason
                 task["stopped"] = True
                 if task["active"] is None:
-                    self._finish(key, "strategy_cancel")
+                    self._finish(key, task.get("stop_reason", "strategy_cancel"))
 
     def drain(self):
         self._drain_stops()
@@ -296,6 +325,8 @@ class NTAlgoRuntime:
                 if not valid:
                     continue
                 remaining = order.quantity - Decimal(task["filled"])
+                if action == "cancel":
+                    task["cancel_sent"] = True  # 写前保存并实际发撤单，才属于内部追价。
             if action == "cancel":
                 self.adapter.save()
                 self.adapter.cancel_order(identity, order)
@@ -330,8 +361,8 @@ class NTAlgoRuntime:
             self._stops.append(dict(order=task["order"], reason=reason))
         if self._host is not None:
             self._host.cancel_alarm(key)
-        log.info("NT算法执行结束: task=%s reason=%s filled=%s quantity=%s attempts=%s",
-                 key, reason, task["filled"], task["order"]["quantity"], task["attempts"])
+        log.info("NT算法执行结束: algorithm=%s task=%s reason=%s filled=%s quantity=%s attempts=%s",
+                 self.algorithm_name, key, reason, task["filled"], task["order"]["quantity"], task["attempts"])
 
     def snapshot_state(self):
         with self._lock:
@@ -365,3 +396,10 @@ class NTAlgoRuntime:
             self._schedule(key, task)
         elif not task["stopped"]:
             self._commands.append(("submit", key, None))
+
+
+def build_nt_algo_runtime(algorithm="limit_reprice", config=None, **kwargs):
+    """按算法名装配运行时；旧调用默认沿用限价追单，未实现的算法明确拒绝。"""
+    if algorithm != NTAlgoRuntime.algorithm_name:
+        raise ValueError("execution_algorithm当前仅支持limit_reprice（限价超时撤单重报）")
+    return NTAlgoRuntime(config, **kwargs)

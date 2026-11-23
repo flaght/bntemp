@@ -47,11 +47,11 @@ class NTAlgoCtpTests(unittest.TestCase):
     def make_account(self, path=None, *, max_attempts=3, start=True,
                      host_factory=ManualNTHost, wait_seconds=10):
         modules = self.native_modules()
-        from bomber.framework.trader.execution.nt_algo import NTAlgoRuntime, NTAlgoConfig
+        from bomber.framework.trader.execution.nt_algo import build_nt_algo_runtime, NTAlgoConfig
         from bomber.framework.trader.execution.ctp.nt_algo import NTAlgoCtpDriver
         from bomber.framework.trader.runtime.live.channels.ctp_independent import IndependentCtpLifecycle
-        runtime = NTAlgoRuntime(NTAlgoConfig(wait_seconds, max_attempts), host_factory=host_factory,
-                                clock_ns=lambda: self.now)
+        runtime = build_nt_algo_runtime('limit_reprice', NTAlgoConfig(wait_seconds, max_attempts),
+                                       host_factory=host_factory, clock_ns=lambda: self.now)
         factory = lambda *args, **kwargs: NTAlgoCtpDriver(*args, algo_runtime=runtime, **kwargs)
         self.enterContext(patch.object(modules.driver, 'CtpNativeTraderDriver', factory))
         self.enterContext(patch.object(modules.lifecycle, 'CtpSharedAccountLifecycle', IndependentCtpLifecycle))
@@ -79,6 +79,18 @@ class NTAlgoCtpTests(unittest.TestCase):
         service.prices.update(self.instrument, price, self.now)
         runtime._host.advance(self.now)
         service.poll()
+
+    def test_algorithm_factory_selects_runtime_and_rejects_unimplemented_algorithms(self):
+        from bomber.framework.trader.execution.nt_algo import build_nt_algo_runtime, NTAlgoConfig
+        config = NTAlgoConfig(wait_seconds=5, max_attempts=2)
+        runtime = build_nt_algo_runtime('limit_reprice', config, host_factory=ManualNTHost)
+        self.assertEqual(runtime.algorithm_name, 'limit_reprice')
+        self.assertIs(runtime.config, config)
+        self.assertIsNone(runtime._host)  # 装配不提前加载原生SDK或连接柜台。
+        self.assertEqual(build_nt_algo_runtime().algorithm_name, 'limit_reprice')
+        for name in ('twap', 'combined', '', None):
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, '仅支持limit_reprice'):
+                build_nt_algo_runtime(name)
 
     def test_native_strategy_ids_are_valid_distinct_and_keep_original_ownership(self):
         import sys
@@ -386,6 +398,79 @@ class NTAlgoConfigurationTests(unittest.TestCase):
                 resolve_config({**config, 'nt_algo': policy}, path)
         with self.assertRaisesRegex(ValueError, 'independent'):
             resolve_config({**config, 'execution_mode': 'netted'}, path)
+
+    def test_algorithm_selection_is_independent_of_driver_and_defaults_for_legacy_config(self):
+        import json
+        from scripts.integration.shared_account.config import resolve_config
+        path = Path(__file__).resolve().parents[1] / 'demos/10_hybrid_transformer/config/shared_rb_p.json'
+        original = json.loads(path.read_text())
+        legacy = {**original, 'execution_driver': 'nt_algo_ctp'}
+        self.assertEqual(resolve_config(legacy, path)['execution_algorithm'], 'limit_reprice')
+        self.assertNotIn('execution_algorithm', legacy)
+        self.assertEqual(resolve_config({**legacy, 'execution_algorithm': 'limit_reprice'}, path)
+                         ['execution_algorithm'], 'limit_reprice')
+        for name in ('twap', 'combined', '', None):
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, 'execution_algorithm'):
+                resolve_config({**legacy, 'execution_algorithm': name}, path)
+        with self.assertRaisesRegex(ValueError, 'nt_algo_ctp'):
+            resolve_config({**original, 'execution_driver': 'ctp',
+                            'execution_algorithm': 'limit_reprice'}, path)
+        self.assertNotIn('execution_algorithm', resolve_config(original, path))
+
+    def check_direct(self, args):
+        import json
+        from contextlib import redirect_stdout
+        from io import StringIO
+        from types import SimpleNamespace
+        from demos import direct_ctp
+        original_import = direct_ctp.import_module
+        def entry(name):
+            if name == 'demos.10_hybrid_transformer.reconcile_direct_positions':
+                return SimpleNamespace(parse_position=lambda value: value)
+            return original_import(name)
+        output = StringIO()
+        with patch.object(direct_ctp, 'import_module', side_effect=entry), redirect_stdout(output):
+            direct_ctp.main('hybrid_transformer', args)
+        return json.loads(output.getvalue())
+
+    def test_direct_cli_reports_selected_algorithm_and_rejects_driver_mismatch(self):
+        from contextlib import redirect_stderr
+        from io import StringIO
+        for args in (['--execution-driver', 'nt_algo_ctp'],
+                ['--execution-driver', 'nt_algo_ctp', '--execution-algorithm', 'limit_reprice']):
+            with self.subTest(args=args):
+                result = self.check_direct(args)
+                self.assertEqual(result['execution_driver'], 'nt_algo_ctp')
+                self.assertEqual(result['execution_algorithm'], 'limit_reprice')
+                self.assertFalse(result['orders_enabled'])
+        self.assertIsNone(self.check_direct([])['execution_algorithm'])
+        for args in (['--execution-algorithm', 'limit_reprice'],
+                ['--execution-driver', 'nt_algo_ctp', '--execution-algorithm', 'twap']):
+            with self.subTest(args=args), redirect_stderr(StringIO()), self.assertRaises(SystemExit) as raised:
+                self.check_direct(args)
+            self.assertEqual(raised.exception.code, 2)
+
+    def test_launch_yaml_applies_algorithm_and_cli_can_override_its_value(self):
+        from contextlib import redirect_stderr
+        from io import StringIO
+        import yaml
+        from bomber.framework.cli import load_config
+        root = Path(__file__).resolve().parents[1]
+        profile = load_config(root / 'demos/10_hybrid_transformer/config/strategy.yaml', 'direct_nt_algo')
+        self.assertEqual(profile['execution_algorithm'], 'limit_reprice')
+        # 使用真实启动配置，但校验期间显式关闭连接/报单，入口会在建连前返回。
+        profile.update(connect=False, enable_orders=False, confirm_simnow=False)
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / 'launch.yaml'
+            args = ['--config-file', str(path), '--config-id', 'check']
+            path.write_text(yaml.safe_dump({'experiment_setups': {'check': profile}}))
+            self.assertEqual(self.check_direct(args)['execution_algorithm'], 'limit_reprice')
+            profile['execution_algorithm'] = 'twap'
+            path.write_text(yaml.safe_dump({'experiment_setups': {'check': profile}}))
+            with redirect_stderr(StringIO()), self.assertRaises(SystemExit):
+                self.check_direct(args)
+            result = self.check_direct(args + ['--execution-algorithm', 'limit_reprice'])
+            self.assertEqual(result['execution_algorithm'], 'limit_reprice')
 
 
 if __name__ == '__main__':

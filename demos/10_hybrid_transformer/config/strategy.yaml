@@ -18,6 +18,7 @@ experiment_setups:
     env_file: demos/10_hybrid_transformer/config/.env
     account_state_file: demos/10_hybrid_transformer/results/direct/state.json
     execution_driver: nt_algo_ctp
+    execution_algorithm: limit_reprice
     algo_wait_seconds: 10
     algo_max_attempts: 3
     prepare_seconds: 600

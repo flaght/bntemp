@@ -74,9 +74,10 @@ def build_host(config, *, resume, diagnostics=None, read_only=False, strategy_pr
         if not direct:
             raise ValueError('NT算法CTP首期仅接入run_direct直连入口')
         from bomber.framework.trader.execution.ctp.nt_algo import NTAlgoCtpDriver
-        from bomber.framework.trader.execution.nt_algo import NTAlgoRuntime, NTAlgoConfig
+        from bomber.framework.trader.execution.nt_algo import build_nt_algo_runtime, NTAlgoConfig
         CtpNativeTraderDriver = NTAlgoCtpDriver
-        driver_kwargs['algo_runtime'] = NTAlgoRuntime(NTAlgoConfig(**config.get('nt_algo', {})))
+        driver_kwargs['algo_runtime'] = build_nt_algo_runtime(
+            config.get('execution_algorithm', 'limit_reprice'), NTAlgoConfig(**config.get('nt_algo', {})))
     from bomber.framework.trader.runtime.live.shared import SharedAccountLiveHost, SharedStrategySession
     from bomber.framework.trader.runtime.live.contracts import LiveRunContext
     from bomber.framework.trader.runtime.live.recovery import InstrumentPositionScope

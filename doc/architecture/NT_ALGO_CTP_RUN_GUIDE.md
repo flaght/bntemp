@@ -31,13 +31,18 @@ NT 定时器只产生命令；实际柜台调用由账户控制线程执行。�
 
 ## 选择积木
 
-直连入口增加三个可由命令行或原启动 YAML 配置的参数：
+Driver选择执行积木，算法名称选择具体执行规则。直连入口可由命令行或启动 YAML 配置：
 
 ```yaml
 execution_driver: nt_algo_ctp
+execution_algorithm: limit_reprice
 algo_wait_seconds: 10
 algo_max_attempts: 3
 ```
+
+`execution_driver: nt_algo_ctp` 表示选择NT算法CTP执行积木，`execution_algorithm: limit_reprice` 才表示采用项目自定义的限价超时撤单重报规则。对应命令行参数为 `--execution-algorithm limit_reprice`。
+
+当前只实现 `limit_reprice`；TWAP及组合算法尚未接入，填写其他算法名会在启动前明确报错。旧NT配置省略算法名时，仍默认 `limit_reprice`；普通 `ctp` Driver不接受算法名称。此改动保持原检查点格式，已有任务和持仓沿用原恢复流程。
 
 `demos/10_hybrid_transformer/config/strategy.yaml` 已提供 `direct_nt_algo` 启动配置，沿用原直连账本和策略文件，包含常驻、连接及 SimNow 报单授权开关。在远程项目根目录执行：
 
@@ -54,9 +59,29 @@ PYTHONPATH=.:/workspace/worker/pj/KiChaos IMPLUSE_VERSION=all \
 
 达到次数上限、执行到期或收到拒单后，未完成任务结束，原策略贡献冻结在已成交归属，等待新的策略目标版本。避免 Runner 为相同旧目标立即重建任务，绕过次数上限。策略主动取消或目标变化会停止原任务；持仓周期仍由策略控制。
 
-同账户共享配置在装配内部使用 `execution_driver` 和 `nt_algo: {wait_seconds: 10, max_attempts: 3}`。本期仅在 `run_direct` 的独立归属路径装配，不支持旧独立账户服务入口或净额共享模式。
+同账户共享配置在装配内部使用 `execution_driver`、`execution_algorithm` 和 `nt_algo: {wait_seconds: 10, max_attempts: 3}`。本期仅在 `run_direct` 的独立归属路径装配，不支持旧独立账户服务入口或净额共享模式。
 
 代码装配直接选择 `IndependentCtpDriver(...)` 或 `NTAlgoCtpDriver(..., algo_runtime=NTAlgoRuntime(...))`。随后沿用 `build_ctp_portfolio_execution`、`SharedAccountExecutionService` 和 `IndependentCtpLifecycle`；算法 Driver 不能省略原服务和持久化绑定。
+
+## 08期权与期货组合
+
+08继续提交完整目标组合。选用算法Driver时，只停止目标发生变化的合约任务；期权部分成交触发期货对冲，不会撤掉数量未变的期权任务，也不会重置其累计成交和尝试次数。重报前同样只核对该任务合约的目标，其他交易腿的更新不阻塞它。普通CTP路径保持原行为。
+
+真实撤单回报仍先经过原订单状态机、冻结释放、归属账本和事件日志。算法额外写入`nt_algo_cancel_reason`：`retry`表示算法已实际发出追价撤单，`target_update`表示策略已更新该合约目标。08仅放行这两种有算法任务关联的取消；外部撤单、拒单、过期以及次数耗尽仍保留原报错处理。定时器仅排队、尚未发撤单时收到的外部取消，不标为内部追价。
+
+无需修改08策略JSON、交易参数或10配置。正常停止08并满足下文的切换条件后，沿用原v4账户和信号检查点，在远程项目根目录启动：
+
+```bash
+PYTHONPATH=.:/workspace/worker/pj/KiChaos IMPLUSE_VERSION=all \
+/workspace/worker/env/chs-live/bin/python -u demos/08_option_vega/run_direct.py \
+  --account-state-file demos/08_option_vega/results/direct/v4/state.json \
+  --state-file demos/08_option_vega/results/direct/v4/signal.json \
+  --execution-driver nt_algo_ctp --execution-algorithm limit_reprice \
+  --algo-wait-seconds 10 --algo-max-attempts 3 \
+  --connect --enable-orders --confirm-simnow --run-forever
+```
+
+保留已有持仓、成交归属、信号进度和每日报单计数；每次真实重报照常消耗原每日额度。没有删除或重建原检查点。任务状态版本仍为1，新增撤单状态字段可选，旧任务格式继续可读。完整SDK验证通过后再启用，10原启动方式不需要改变。
 
 ## 远程服务器验证
 
@@ -70,7 +95,8 @@ PYTHONPATH=. /workspace/worker/env/chs-live/bin/python -B -m tests.run_nt_algo_n
 
 # 第二项：任务状态、撤单、成交归属、恢复和普通执行回归，不连接柜台。
 PYTHONPATH=. /workspace/worker/env/chs-live/bin/python -B -m unittest \
-  tests.test_nt_algo_ctp tests.test_order_cancellation tests.test_shared_account -v
+  tests.test_option_nt_algo tests.test_nt_algo_ctp \
+  tests.test_order_cancellation tests.test_shared_account -v
 ```
 
 第一项必须成功；SDK缺失或API不兼容会明确报错，不自动替换为模拟算法。
