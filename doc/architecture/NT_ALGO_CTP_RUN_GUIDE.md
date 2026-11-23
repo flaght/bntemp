@@ -39,6 +39,17 @@ algo_wait_seconds: 10
 algo_max_attempts: 3
 ```
 
+`demos/10_hybrid_transformer/config/strategy.yaml` 已提供 `direct_nt_algo` 启动配置，沿用原直连账本和策略文件，包含常驻、连接及 SimNow 报单授权开关。在远程项目根目录执行：
+
+```bash
+PYTHONPATH=.:/workspace/worker/pj/KiChaos IMPLUSE_VERSION=all \
+/workspace/worker/env/chs-live/bin/python -u demos/10_hybrid_transformer/run_direct.py \
+  --config-file demos/10_hybrid_transformer/config/strategy.yaml \
+  --config-id direct_nt_algo
+```
+
+此配置用于 `run_direct.py`；原 `workers_hybrid` 配置仍对应 `run_shared.py`。显式命令行参数优先于 YAML，可临时覆盖等待时间或尝试次数。
+
 `execution_driver` 默认为 `ctp`；`max_attempts` 包含首次报单，默认每个任务最多3次实际报单。重报价格继续使用原 `limit_offset_ticks` 保护限价，不是市价单，也不保证成交。
 
 达到次数上限、执行到期或收到拒单后，未完成任务结束，原策略贡献冻结在已成交归属，等待新的策略目标版本。避免 Runner 为相同旧目标立即重建任务，绕过次数上限。策略主动取消或目标变化会停止原任务；持仓周期仍由策略控制。

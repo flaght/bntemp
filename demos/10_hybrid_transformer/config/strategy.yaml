@@ -10,3 +10,18 @@ experiment_setups:
     connect: true
     enable_orders: true
     confirm_simnow: true
+
+  direct_nt_algo:
+    description: "run_direct入口；本进程运行RB/P，直连CTP并启用NT算法交易"
+    config: demos/10_hybrid_transformer/config/instances_rb_p.json
+    account_config: demos/shared_account/account.json
+    env_file: demos/10_hybrid_transformer/config/.env
+    account_state_file: demos/10_hybrid_transformer/results/direct/state.json
+    execution_driver: nt_algo_ctp
+    algo_wait_seconds: 10
+    algo_max_attempts: 3
+    prepare_seconds: 600
+    run_forever: true
+    connect: true
+    enable_orders: true
+    confirm_simnow: true
