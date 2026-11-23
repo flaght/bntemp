@@ -558,13 +558,20 @@ class CtpNativeTraderDriver:
                 self.on_disconnect(-1)
             raise
 
-    def cancel_strategy(self, strategy_id: str, *, opening_only: bool = False) -> None:
+    def cancel_strategy_orders(self, strategy_id: str, client_order_ids) -> None:
+        """只撤销本策略指定的活动订单，避免重复撤销其他待确认订单。"""
+        self.cancel_strategy(strategy_id, client_order_ids=frozenset(client_order_ids))
+
+    def cancel_strategy(self, strategy_id: str, *, opening_only: bool = False,
+                        client_order_ids=None) -> None:
         self._require_connected()
         if self._recovery_checkpoint is not None or self._replaying_recovery:
             raise RuntimeError("CTP活动订单关联尚未经过柜台权威快照恢复")
         if not self._enable_test_orders:
             raise RuntimeError("原生CTP Driver默认禁单；本阶段只读")
-        for order_ref, (_, order) in tuple(self._orders.items()):
+        for order_ref, (identity, order) in tuple(self._orders.items()):
+            if client_order_ids is not None and identity not in client_order_ids:
+                continue
             if opening_only and order.position_effect is not PositionEffect.OPEN:
                 continue
             if order.strategy_id == strategy_id or any(

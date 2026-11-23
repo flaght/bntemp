@@ -69,6 +69,14 @@ def build_host(config, *, resume, diagnostics=None, read_only=False, strategy_pr
             IndependentCtpDriver as CtpNativeTraderDriver, IndependentTdTransport as CtpTdApiTransport)
         from bomber.framework.trader.runtime.live.channels.ctp_independent import (
             IndependentCtpLifecycle as CtpSharedAccountLifecycle)
+    driver_kwargs = {}
+    if config.get('execution_driver', 'ctp') == 'nt_algo_ctp':
+        if not direct:
+            raise ValueError('NT算法CTP首期仅接入run_direct直连入口')
+        from bomber.framework.trader.execution.ctp.nt_algo import NTAlgoCtpDriver
+        from bomber.framework.trader.execution.nt_algo import NTAlgoRuntime, NTAlgoConfig
+        CtpNativeTraderDriver = NTAlgoCtpDriver
+        driver_kwargs['algo_runtime'] = NTAlgoRuntime(NTAlgoConfig(**config.get('nt_algo', {})))
     from bomber.framework.trader.runtime.live.shared import SharedAccountLiveHost, SharedStrategySession
     from bomber.framework.trader.runtime.live.contracts import LiveRunContext
     from bomber.framework.trader.runtime.live.recovery import InstrumentPositionScope
@@ -111,7 +119,7 @@ def build_host(config, *, resume, diagnostics=None, read_only=False, strategy_pr
                 client.mark_disconnected(reason)
         driver = CtpNativeTraderDriver(transport.client_id, transport.account_id, transport,
             enable_simnow_orders=not read_only, max_session_orders=order_budget,
-            disconnect_handler=disconnected)
+            disconnect_handler=disconnected, **driver_kwargs)
         driver.new_order_budget_window = direct or session_order_budget is not None
         driver.start(lambda report: None)
         validate_td_preflight(config, driver, md_front=md_front, td_front=transport.front,

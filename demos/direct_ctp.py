@@ -492,6 +492,12 @@ def main(kind, argv=None):
     parser.add_argument('--stop-before-close-seconds', type=int, default=180,
         help='每个交易时段结束前提前多少秒停止策略报单并撤单对账（默认180，0表示到时段结束才停机）')
     parser.add_argument('--run-forever',action='store_true')
+    parser.add_argument('--execution-driver', choices=('ctp', 'nt_algo_ctp'), default='ctp',
+        help='ctp沿用原独立归属Driver；nt_algo_ctp启用公共NT算法积木')
+    parser.add_argument('--algo-wait-seconds', type=float, default=10,
+        help='NT限价委托等待秒数，撤单确认后才按有效报价重报')
+    parser.add_argument('--algo-max-attempts', type=int, default=3,
+        help='每个NT任务的最大实际报单次数，包含首次')
     if kind == 'hybrid_transformer':
         alignment_entry = import_module('demos.10_hybrid_transformer.reconcile_direct_positions')
         parser.add_argument('--config',type=Path,default=demo/'config/instances_rb_p.json')
@@ -516,6 +522,16 @@ def main(kind, argv=None):
     if options.stop_before_close_seconds < 0:
         parser.error('stop-before-close-seconds须为非负整数')
     account = read_account_config(options.account_config)
+    if options.execution_driver == 'nt_algo_ctp':
+        from math import isfinite
+        if not isfinite(options.algo_wait_seconds) or options.algo_wait_seconds <= 0:
+            parser.error('algo-wait-seconds须为有限正数')
+        if not 1 <= options.algo_max_attempts <= 1000:
+            parser.error('algo-max-attempts须为1至1000整数')
+        account.update(execution_driver='nt_algo_ctp', nt_algo=dict(
+            wait_seconds=options.algo_wait_seconds, max_attempts=options.algo_max_attempts))
+    elif options.algo_wait_seconds != 10 or options.algo_max_attempts != 3:
+        parser.error('算法参数须配合execution-driver=nt_algo_ctp')
     if account['environment'] != 'realtime' or account['execution_mode'] != 'independent':
         parser.error('直连入口要求realtime和independent')
     if any(account['account'][key] is not None for key in ('max_gross_quantity','max_gross_notional')):

@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+from decimal import Decimal
+from bomber.framework.market.basic.base import InstrumentId
+
 import threading
 import time
 from typing import Callable
@@ -186,61 +190,86 @@ class BackendExecutionClient:
             if deadline is not None and time.time_ns() > deadline:
                 raise RuntimeError("共享账户贡献已到期，拒绝规划")
             orders = tuple(self.planner.plan(request))
-            health_reduce_only = (
-                request.metadata.get("market_health_mode")
-                == KillSwitchMode.REDUCE_ONLY.value
+            self._submit_planned_orders(request, orders)
+
+    def submit_algorithm_order(self, order):
+        """算法仅重报明确的剩余订单；继续复用原风控、归属冻结及写前保存。"""
+        with self._submit_lock:
+            if (not self._started or not self._reconciled or not getattr(self, 'is_armed', False)
+                    or order.backend_id != self.client_id):
+                raise RuntimeError("算法补单时原执行客户端尚未授权或未完成对账")
+            now = time.time_ns()
+            metadata = {**order.metadata, "actual_send_ts_ns": now}
+            deadline = metadata.get('actual_send_deadline_ns')
+            if deadline is not None and now > deadline:
+                raise RuntimeError("算法执行期限已过，拒绝补单")
+            targets = {}
+            for row in metadata.get('position_attribution', ()):
+                instrument = InstrumentId.from_str(row['instrument_id'])
+                targets[instrument] = targets.get(instrument, Decimal(0)) + Decimal(row['quantity'])
+            if not targets:
+                raise ValueError("算法订单缺少原策略目标归属")
+            request = ExecutionRequest(order.strategy_id, metadata['request_revision'], self.client_id,
+                now, targets, 'DIRECT', metadata=metadata)
+            self._submit_planned_orders(request, (replace(order, metadata=metadata),))
+
+    def _submit_planned_orders(self, request, orders):
+        deadline = request.metadata.get("actual_send_deadline_ns")
+        health_reduce_only = (
+            request.metadata.get("market_health_mode")
+            == KillSwitchMode.REDUCE_ONLY.value
+        )
+        if self.risk_manager is not None:
+            self.risk_manager.check(
+                orders,
+                now_ns=request.ts_event,
+                mode_override=(
+                    KillSwitchMode.REDUCE_ONLY
+                    if health_reduce_only
+                    else None
+                ),
             )
-            if self.risk_manager is not None:
-                self.risk_manager.check(
-                    orders,
-                    now_ns=request.ts_event,
-                    mode_override=(
-                        KillSwitchMode.REDUCE_ONLY
-                        if health_reduce_only
-                        else None
-                    ),
-                )
-            elif health_reduce_only and orders:
-                raise RuntimeError(
-                    "行情降级期间Live执行必须配置PreTradeRiskManager以校验真实仓位",
-                )
-            # 先检查整个实际批次，再冻结归属/增加在途；避免双腿只剩一笔时先发一腿。
-            capacity = getattr(self.backend, "check_order_capacity", None)
-            if callable(capacity):
-                capacity(len(orders))
-            self._strategy_ids.add(request.strategy_id)
-            orders = self.position_manager.attribution.prepare(request, orders)
-            for order in orders:
-                if deadline is not None and time.time_ns() > deadline:
-                    raise RuntimeError("共享账户贡献在发送前到期")
-                self.position_manager.attribution.reserve(order)
-                signed = order.quantity if order.side is OrderSide.BUY else -order.quantity
+        elif health_reduce_only and orders:
+            raise RuntimeError(
+                "行情降级期间Live执行必须配置PreTradeRiskManager以校验真实仓位",
+            )
+        # 先检查整个实际批次，再冻结归属/增加在途；避免双腿只剩一笔时先发一腿。
+        capacity = getattr(self.backend, "check_order_capacity", None)
+        if callable(capacity):
+            capacity(len(orders))
+        self._strategy_ids.add(request.strategy_id)
+        orders = self.position_manager.attribution.prepare(request, orders)
+        for order in orders:
+            if deadline is not None and time.time_ns() > deadline:
+                raise RuntimeError("共享账户贡献在发送前到期")
+            self.position_manager.attribution.reserve(order)
+            signed = order.quantity if order.side is OrderSide.BUY else -order.quantity
+            self.position_manager.adjust_working_quantity(
+                self.client_id,
+                order.instrument_id,
+                signed,
+            )
+            try:
+                self.backend.submit_order(order)
+            except Exception as error:
+                if getattr(error, "order_may_be_live", False):
+                    self._reconciled = False
+                    self.position_manager.mark_recovery_required(self.client_id)
+                    raise
                 self.position_manager.adjust_working_quantity(
                     self.client_id,
                     order.instrument_id,
-                    signed,
+                    -signed,
                 )
-                try:
-                    self.backend.submit_order(order)
-                except Exception as error:
-                    if getattr(error, "order_may_be_live", False):
+                self.position_manager.attribution.release_unsent(order)
+                if self._submit_failure_handler is not None:
+                    try:
+                        self._submit_failure_handler()
+                    except Exception:
                         self._reconciled = False
-                        self.position_manager.mark_recovery_required(self.client_id)
+                        self.position_manager.clear_account_reconciliation(self.client_id)
                         raise
-                    self.position_manager.adjust_working_quantity(
-                        self.client_id,
-                        order.instrument_id,
-                        -signed,
-                    )
-                    self.position_manager.attribution.release_unsent(order)
-                    if self._submit_failure_handler is not None:
-                        try:
-                            self._submit_failure_handler()
-                        except Exception:
-                            self._reconciled = False
-                            self.position_manager.clear_account_reconciliation(self.client_id)
-                            raise
-                    raise
+                raise
 
     def set_risk_mode(
         self,

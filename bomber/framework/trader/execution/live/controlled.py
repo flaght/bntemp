@@ -260,54 +260,70 @@ class ControlledLiveExecutionClient(BackendExecutionClient):
             self._record("DISARMED", reason)
             self._account_query_condition.notify_all()
 
+    def _check_submission(self, request):
+        epoch = self._connection_epoch
+        generation = self._authorization_generation
+        if self._armed and self.is_reconciled and self._heartbeat_in_flight:
+            self._record("ORDER_WAITING_FOR_ACCOUNT", request.strategy_id)
+            # 等待时释放提交/回报锁，让柜台查询及回报线程可以完成；
+            # 成功后重新核验授权、会话与请求时效，不自动开闸或重试报单。
+            completed = self._account_query_condition.wait_for(
+                lambda: (not self._heartbeat_in_flight or not self._armed
+                         or epoch != self._connection_epoch
+                         or generation != self._authorization_generation),
+                timeout=self._account_query_wait_seconds,
+            )
+            if not completed:
+                self.disarm("account_query_wait_timeout")
+                self._record("ORDER_BLOCKED", "account_query_wait_timeout account_query_in_flight=True")
+                raise RuntimeError("资金查询等待超时；已关闭DEMO下单授权")
+        demo_check_error = None
+        try:
+            demo_verified = self._demo_environment_check()
+        except Exception as error:
+            demo_verified = False
+            demo_check_error = type(error).__name__
+        if (not self._armed or not demo_verified or self._heartbeat_in_flight
+                or epoch != self._connection_epoch
+                or generation != self._authorization_generation):
+            detail = (f"armed={self._armed} demo_verified={demo_verified} "
+                f"account_query_in_flight={self._heartbeat_in_flight} "
+                f"reconciled={self.is_reconciled} demo_check_error={demo_check_error}")
+            self._armed = False
+            self._record("ORDER_BLOCKED", detail)
+            raise PermissionError(f"P3客户端处于只读模式或DEMO环境未核实：{detail}")
+        if self._max_request_wall_age_ns is not None:
+            age_ns = self._wall_clock_ns() - request.ts_event
+            if abs(age_ns) > self._max_request_wall_age_ns:
+                self._armed = False
+                self._record("ORDER_BLOCKED", f"request_wall_age_ns={age_ns}")
+                raise RuntimeError(
+                    f"执行请求事件时间与当前时间相差{age_ns}ns，超过"
+                    f"{self._max_request_wall_age_ns}ns；已关闭DEMO下单授权"
+                )
+
     def submit_targets(self, request: ExecutionRequest) -> None:
         with self._submit_lock:
-            epoch = self._connection_epoch
-            generation = self._authorization_generation
-            if self._armed and self.is_reconciled and self._heartbeat_in_flight:
-                self._record("ORDER_WAITING_FOR_ACCOUNT", request.strategy_id)
-                # 等待时释放提交/回报锁，让柜台查询及回报线程可以完成；
-                # 成功后重新核验授权、会话与请求时效，不自动开闸或重试报单。
-                completed = self._account_query_condition.wait_for(
-                    lambda: (not self._heartbeat_in_flight or not self._armed
-                             or epoch != self._connection_epoch
-                             or generation != self._authorization_generation),
-                    timeout=self._account_query_wait_seconds,
-                )
-                if not completed:
-                    self.disarm("account_query_wait_timeout")
-                    self._record("ORDER_BLOCKED", "account_query_wait_timeout account_query_in_flight=True")
-                    raise RuntimeError("资金查询等待超时；已关闭DEMO下单授权")
-            demo_check_error = None
-            try:
-                demo_verified = self._demo_environment_check()
-            except Exception as error:
-                demo_verified = False
-                demo_check_error = type(error).__name__
-            if (not self._armed or not demo_verified or self._heartbeat_in_flight
-                    or epoch != self._connection_epoch
-                    or generation != self._authorization_generation):
-                detail = (f"armed={self._armed} demo_verified={demo_verified} "
-                    f"account_query_in_flight={self._heartbeat_in_flight} "
-                    f"reconciled={self.is_reconciled} demo_check_error={demo_check_error}")
-                self._armed = False
-                self._record("ORDER_BLOCKED", detail)
-                raise PermissionError(f"P3客户端处于只读模式或DEMO环境未核实：{detail}")
-            if self._max_request_wall_age_ns is not None:
-                age_ns = self._wall_clock_ns() - request.ts_event
-                if abs(age_ns) > self._max_request_wall_age_ns:
-                    self._armed = False
-                    self._record("ORDER_BLOCKED", f"request_wall_age_ns={age_ns}")
-                    raise RuntimeError(
-                        f"执行请求事件时间与当前时间相差{age_ns}ns，超过"
-                        f"{self._max_request_wall_age_ns}ns；已关闭DEMO下单授权"
-                    )
+            self._check_submission(request)
             try:
                 super().submit_targets(request)
             except Exception as error:
                 self._record("ORDER_REJECTED", type(error).__name__)
                 raise
             self._record("TARGET_SUBMITTED", request.strategy_id)
+
+    def submit_algorithm_order(self, order):
+        with self._submit_lock:
+            request = ExecutionRequest(order.strategy_id, order.metadata['request_revision'],
+                self.client_id, self._wall_clock_ns(), {order.instrument_id: order.quantity},
+                'DIRECT', metadata=order.metadata)
+            self._check_submission(request)
+            try:
+                super().submit_algorithm_order(order)
+            except Exception as error:
+                self._record("ALGORITHM_ORDER_REJECTED", type(error).__name__)
+                raise
+            self._record("ALGORITHM_ORDER_SUBMITTED", order.strategy_id)
 
     def _apply_report(self, report: ExecutionReport) -> None:
         before = len(self.report_errors)

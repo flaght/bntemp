@@ -111,12 +111,16 @@ class SharedAccountExecutionService(AccountExecutionService):
         self._ports = {}
         self._suspended = set()
         self._draining = set()
-        self._cancelled = set()
+        self._cancelled = set()  # 已请求撤单的具体订单ID；空挂单不留下策略级标记。
         self.bootstrap_signals = {}
         self.event_journal = None
         self.execution_stop = None
         self.client.backend = _SharedAccountBackend(self, client.backend)
         self.client.register_execution_event_handler(self._route_event)
+        bind_algorithm = getattr(self.client.backend, "driver", None)
+        bind_algorithm = getattr(bind_algorithm, "bind_algorithm_service", None)
+        if callable(bind_algorithm):
+            bind_algorithm(self)
 
     def set_checkpoint(self, checkpoint):
         if self._leases or self._checkpoint is not None:
@@ -279,20 +283,44 @@ class SharedAccountExecutionService(AccountExecutionService):
     def _active_instruments(self):
         states = {str(state.instrument_id) for state in self.client.order_state_machine.states()
                   if not state.status.is_terminal}
+        driver = getattr(self.client.backend, "driver", None)
+        active_algorithms = getattr(driver, "algorithm_active_instruments", None)
+        if callable(active_algorithms):
+            states.update(active_algorithms())
         return states | {order["instrument_id"] for order in
             self.position_manager.attribution.state()["orders"].values()
             if not order["released"] and any(Decimal(leg["filled"]) < Decimal(leg["quantity"])
                                              for leg in order["legs"])}
 
+    def _working_order_ids(self, strategy_id=None):
+        return frozenset(order["client_order_id"] for order in
+            self.position_manager.attribution.state()["orders"].values()
+            if order["client_order_id"] is not None and not order["released"]
+            and (strategy_id is None or any(leg["strategy_id"] == strategy_id for leg in order["legs"]))
+            and any(Decimal(leg["filled"]) < Decimal(leg["quantity"]) for leg in order["legs"]))
+
     def _cancel_owner(self, strategy_id):
-        if strategy_id not in self._cancelled:
-            try:
+        driver = getattr(self.client.backend, "driver", None)
+        cancel_tasks = getattr(driver, "cancel_algorithm_tasks", None)
+        if callable(cancel_tasks):
+            cancel_tasks(strategy_id)
+        active = self._working_order_ids(strategy_id)
+        pending = active - self._cancelled
+        driver = getattr(self.client.backend, "driver", None)
+        cancel = getattr(driver, "cancel_strategy_orders", None)
+        if not pending and (active or callable(cancel)):
+            return
+        try:
+            if callable(cancel):
+                cancel(strategy_id, pending)
+            else:
+                # 兼容尚无逐单撤单能力的后端；没有真实订单ID时不保留去重标记。
                 self.client.cancel_strategy(strategy_id)
-            except Exception:
-                self._failed = True
-                self.client.disarm("shared_cancel_failed")
-                raise
-            self._cancelled.add(strategy_id)
+        except Exception:
+            self._failed = True
+            self.client.disarm("shared_cancel_failed")
+            raise
+        self._cancelled.update(pending)
 
     def _owner_working(self, strategy_id):
         return any(not order["released"] and any(leg["strategy_id"] == strategy_id
@@ -448,13 +476,18 @@ class SharedAccountExecutionService(AccountExecutionService):
                 self.suspend_strategy(sid)
             self.poll_stopping()
 
+            # 仅排空NT时钟/回报已产生的命令；此处不扫描订单时长、不实现追单规则。
+            dispatch = getattr(driver, "process_algorithm_commands", None)
+            if self.execution_stop is None and callable(dispatch):
+                dispatch()
+
     def poll_stopping(self):
         """只排空停止贡献，不检查交易健康、不续单；账本/回报错误仍拒绝。"""
         with self._dispatch_lock:
             if self._failed or self._pending or self.client.report_errors or getattr(self.client, "portfolio_failure", None):
                 raise RuntimeError("停止期间执行账本或回报冲突，保持闭闸")
             now = self.clock_ns()
-            self._cancelled = {sid for sid in self._cancelled if self._owner_working(sid)}
+            self._cancelled.intersection_update(self._working_order_ids())
             for sid in tuple(self._draining):
                 port = self._ports[sid]
                 if self._owner_working(sid):
@@ -479,7 +512,6 @@ class SharedAccountExecutionService(AccountExecutionService):
                                                 targets=source["targets"])
                 with self._lock:
                     self._draining.discard(sid)
-                    self._cancelled.discard(sid)
                 self._save()
 
     def continue_targets(self, strategy_id, instrument_id, now_ns):

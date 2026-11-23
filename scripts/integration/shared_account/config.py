@@ -74,9 +74,26 @@ def resolve_config(config, path):
     allowed = {"version", "trading_day", "environment", "replay_md_trading_day", "seconds",
         "account_state_file", "report_dir", "account", "strategies", "position_scope", "execution_mode",
         "existing_position_policy", "ctp_instrument_max_age_seconds", "history_missing_policy",
-        "strategy_history_minutes", "env_file", "account_env_file", "strategy_env_files"}
+        "strategy_history_minutes", "env_file", "account_env_file", "strategy_env_files",
+        "execution_driver", "nt_algo"}
     if set(config) - allowed or config.get("version") != 1:
         raise ValueError("共享配置版本无效或存在未知字段")
+    driver_kind = config.get('execution_driver', 'ctp')
+    if driver_kind not in {'ctp', 'nt_algo_ctp'}:
+        raise ValueError('execution_driver须为ctp或nt_algo_ctp')
+    if driver_kind == 'nt_algo_ctp':
+        if config.get('execution_mode') != 'independent':
+            raise ValueError('NT算法CTP首期仅支持independent模式')
+        policy = config.get('nt_algo', {})
+        if not isinstance(policy, dict) or set(policy) - {'wait_seconds', 'max_attempts'}:
+            raise ValueError('nt_algo只接受wait_seconds和max_attempts')
+        wait, attempts = policy.get('wait_seconds', 10), policy.get('max_attempts', 3)
+        if isinstance(wait, bool) or not isinstance(wait, (int, float)) or not math.isfinite(wait) or wait <= 0:
+            raise ValueError('nt_algo.wait_seconds须为有限正数')
+        if type(attempts) is not int or not 1 <= attempts <= 1000:
+            raise ValueError('nt_algo.max_attempts须为1至1000整数')
+    elif 'nt_algo' in config:
+        raise ValueError('nt_algo参数仅用于nt_algo_ctp执行积木')
     paths_by_id = config.get('strategy_env_files', {})
     if not isinstance(paths_by_id, dict) or set(paths_by_id)-{r['strategy_id'] for r in config['strategies']}:
         raise ValueError('strategy_env_files须为已声明策略ID到env路径的映射')

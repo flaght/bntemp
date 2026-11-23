@@ -31,6 +31,9 @@ class IndependentCtpLifecycle(CtpSharedAccountLifecycle):
         self.client.planner = YesterdayFirstPlanner(self.client.planner.planner,
             self.execution.positions, self.driver.buckets)
         self.manager.state_components.update(ctp_order_owners=self.driver.book, strategy_buckets=self.driver.buckets)
+        runtime = getattr(self.driver, "algo_runtime", None)
+        if runtime is not None:
+            self.manager.state_components["nt_algo"] = runtime
         self.import_transform = None
         self.initial_payload = None
         self._importing = False
@@ -75,12 +78,23 @@ class IndependentCtpLifecycle(CtpSharedAccountLifecycle):
                     or frozen['strategy_id'] != intent.strategy_id or frozen['instrument_id'] != str(intent.instrument_id)
                     or sum(map(Decimal,frozen['buckets'])) != (Decimal(0) if intent.position_effect.value == 'OPEN' else local.remaining_quantity)):
                 raise RuntimeError('委托、策略归属和今昨冻结不一致')
+        validate = getattr(self.driver, "validate_algorithm_state", None)
+        if callable(validate):
+            validate()
 
     def start(self, *, resume, payload_transform=None, commit_restored=True):
         if self._started:
             return
         if resume:
-            transform = payload_transform or self.import_transform or (lambda payload: payload)
+            original_transform = payload_transform or self.import_transform or (lambda payload: payload)
+            def transform(payload):
+                components = payload['component_states']
+                day = components.get('session_identity', {}).get('identity', {}).get('trading_day',
+                    payload['ctp_ledgers'][self.service.client_id]['trading_day'])
+                pending = components.get('nt_algo') or {}
+                if day != self.expected_day and (pending.get('tasks') or pending.get('stops')):
+                    raise ValueError('跨交易日存在未决NT算法任务，禁止自动恢复或迁移')
+                return self._adapt_algorithm_checkpoint(original_transform(payload))
             repository = self.manager.repository
             if self.initial_payload is not None and repository.load() is None:
                 from types import SimpleNamespace
@@ -110,6 +124,26 @@ class IndependentCtpLifecycle(CtpSharedAccountLifecycle):
         self._next_check = time.monotonic()+self.reconcile_seconds
         if resume and commit_restored:
             self._commit()
+
+    def _adapt_algorithm_checkpoint(self, payload):
+        """无活动委托/任务时允许切换积木；保留策略持仓和所有其他检查点。"""
+        components = payload['component_states']
+        previous = components.get('nt_algo')
+        runtime = getattr(self.driver, 'algo_runtime', None)
+        expected = runtime.snapshot_state() if runtime is not None else None
+        if previous == expected or (previous is not None and expected is not None
+                                    and previous.get('config') == expected['config']):
+            return payload
+        if (previous and (previous.get('tasks') or previous.get('stops'))
+                or any(row['orders'] for row in payload['ctp_drivers'].values())
+                or any(row['status'] not in {'FILLED', 'CANCELED', 'REJECTED', 'EXPIRED'}
+                       for rows in payload['orders'].values() for row in rows)):
+            raise ValueError('仍有活动委托或NT算法任务，禁止切换Driver或算法参数')
+        if expected is None:
+            components.pop('nt_algo', None)
+        else:
+            components['nt_algo'] = expected
+        return payload
 
     def _commit(self):
         if self._importing:
