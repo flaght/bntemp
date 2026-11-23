@@ -1,0 +1,1008 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>MO认购策略流程学习手册</title>
+<style>
+:root{color-scheme:light dark;--bg:#f7f8fa;--paper:#fff;--ink:#202831;--muted:#54616e;--line:#d8dfe7;--accent:#175fa0;--soft:#edf4fa;--code:#f0f2f5}
+@media(prefers-color-scheme:dark){:root{--bg:#171b20;--paper:#20262d;--ink:#e6ebf0;--muted:#b2bfcc;--line:#46525e;--accent:#99caff;--soft:#263748;--code:#181e25}}
+*{box-sizing:border-box}html{scroll-padding-top:calc(var(--toolbar-height,5rem) + 1rem)}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.8 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}
+a{color:var(--accent);text-underline-offset:.2em}button,input,select,textarea{font:inherit}button,select{padding:.38rem .65rem;background:var(--paper);color:var(--ink);border:1px solid var(--line);border-radius:6px;max-width:100%}button{cursor:pointer}button:focus-visible,a:focus-visible,textarea:focus-visible,select:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
+.toolbar{position:sticky;top:0;z-index:2;background:var(--paper);border-bottom:1px solid var(--line);padding:.65rem 1.25rem;display:flex;gap:.65rem;align-items:center;flex-wrap:wrap}.toolbar strong{margin-right:auto}.toolbar a{white-space:nowrap}.layout{max-width:1360px;margin:auto;display:grid;grid-template-columns:265px minmax(0,1fr);gap:1.6rem;padding:1.5rem}
+aside{position:sticky;top:6rem;align-self:start;max-height:80vh;overflow:auto;font-size:.86rem;padding-right:.7rem}aside a{display:block;padding:.22rem 0;text-decoration:none}aside h2{font-size:1rem}main{min-width:0;background:var(--paper);padding:2rem 2.6rem;box-shadow:0 1px 8px #0000000b;border-radius:10px}h1{font-size:1.9rem;line-height:1.4;margin:0 0 .7rem}h2{font-size:1.35rem;line-height:1.5;margin-top:2.5rem;padding-top:1.25rem;border-top:1px solid var(--line)}h3{font-size:1.08rem;line-height:1.5;margin-top:1.8rem}p{margin:.7rem 0}ul,ol{padding-left:1.5rem}li{margin:.35rem 0}pre{background:var(--code);padding:1rem;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.65;font-size:.87rem;border-radius:6px}code{font-family:ui-monospace,SFMono-Regular,Consolas,"PingFang SC",monospace;overflow-wrap:anywhere}p code,li code{background:var(--code);padding:.08rem .25rem;border-radius:3px}table{border-collapse:collapse;width:100%;margin:1rem 0;font-size:.93rem;table-layout:auto}th,td{padding:.6rem .7rem;border:1px solid var(--line);vertical-align:top;overflow-wrap:anywhere}th{background:var(--soft);text-align:left}blockquote{border-left:3px solid var(--accent);margin:1rem 0;padding:.1rem 1rem;color:var(--muted)}.intro{color:var(--muted)}
+.exercise{margin:1.8rem 0;padding:1.1rem 1.2rem;background:var(--soft);border-left:4px solid var(--accent);border-radius:4px}.exercise h3{margin-top:0}.draft-label{display:block;font-weight:500;margin-top:1rem}textarea{display:block;width:100%;resize:vertical;border:1px solid var(--line);border-radius:6px;padding:.7rem;background:var(--paper);color:var(--ink);margin:.4rem 0;line-height:1.65}.done-label{display:flex;align-items:flex-start;gap:.45rem;font-size:.88rem;color:var(--muted)}input[type=checkbox]{margin-top:.45rem;accent-color:var(--accent)}details.answer{background:var(--paper);margin-top:1rem;padding:.65rem .85rem;border-radius:6px}summary{cursor:pointer;color:var(--accent);font-weight:500}.answer-content{padding-top:.65rem}#save-status,#practice-count{font-size:.85rem;color:var(--muted)}.small{font-size:.86rem;color:var(--muted)}.jump{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin:.8rem 0}select{min-width:0}.record{margin-top:3rem}.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+@media(max-width:900px){.layout{display:block;padding:.8rem}aside{position:static;max-height:none;overflow:visible;margin-bottom:1rem}aside details nav{columns:2;column-gap:1rem}main{padding:1.4rem}h1{font-size:1.55rem}.toolbar{padding:.5rem .8rem}.toolbar strong{width:100%}table{font-size:.85rem}th,td{padding:.4rem}}
+@media(max-width:460px){body{font-size:15px}.layout{padding:.4rem}main{padding:1rem .7rem}.exercise{padding:.85rem .65rem}aside details nav{columns:1}table{font-size:.78rem}th,td{padding:.3rem}.toolbar select{width:100%}h1{font-size:1.4rem}.jump>*{max-width:100%}}
+@media print{body{background:#fff;color:#000;font-size:11pt}.toolbar,aside,.jump,textarea,.draft-label,.done-label,details.answer,.small.local-note{display:none!important}.layout{display:block;padding:0;max-width:none}main{padding:0;box-shadow:none}.exercise{background:transparent;border:1px solid #bbb;break-inside:avoid}h2,h3{break-after:avoid}table,pre{break-inside:avoid}a{color:inherit}th{background:#eee}pre{background:#f7f7f7}h1{font-size:20pt}}
+</style>
+</head>
+<body id="top">
+<header class="toolbar"><strong>MO策略学习手册</strong><a id="resume" href="#q04">继续 Q04</a><span id="practice-count" aria-live="polite"></span><button type="button" id="export">导出我的作答</button><button type="button" id="print">打印讲义</button></header>
+<div class="layout"><aside><details id="outline" open><summary>流程目录</summary><nav aria-label="流程目录"><a href="#main-1">01 怎样沿流程学习</a><a href="#main-2">02 基础知识和单位</a><a href="#main-6">03 时间安排和本手册的实现边界</a><a href="#main-7">04 固定综合案例</a><a href="#main-8">05 第一步 筛选资格和月份</a><a href="#main-9">06 第二步 检查IV门槛并反解IV</a><a href="#main-10">07 第三步 用Delta匹配目标档</a><a href="#main-11">08 第四步 Gamma决定档间相对手数</a><a href="#main-12">09 第五步 Vega决定整体新增规模</a><a href="#main-13">10 第六步 合并取整和增量限额</a><a href="#main-14">11 第七步 累加旧目标并检查累计限额</a><a href="#main-15">12 第八步 检查常规退出</a><a href="#main-16">13 第九步 用实际期权计算同月期货目标</a><a href="#main-17">14 第十步 提交目标并处理订单成交</a><a href="#main-18">15 第十一步 读取部分成交形成S2</a><a href="#main-19">16 第十二步 Gamma更新Delta并重新对冲</a><a href="#main-20">17 第十三步 区分情景风险和真实盈亏</a><a href="#main-21">18 第十四步 月份切换与旧仓管理</a><a href="#main-22">19 第十五步 退出信号和缺IV分支</a><a href="#main-24">20 第十六步 退出成交后再调整对冲</a><a href="#main-25">21 第十七步 最终清仓和到期结算</a><a href="#main-26">22 扩展场景 跨月份分别对冲</a><a href="#main-27">23 综合复核</a><a href="#main-28">附录A 程序中的定价与期限公式</a><a href="#main-29">附录B 公式速查和易错点</a><a href="#main-30">附录C 本地来源与继续学习</a><a href="#learning-record">学习记录快照</a></nav></details></aside>
+<main><h1>MO认购策略流程学习手册</h1><p class="intro">按流程查概念、做计算、核对推导。全部正文与答案可离线阅读。</p>
+<p class="small local-note">草稿和练习标记保存在此浏览器，不自动修改学习等级或Markdown原稿。请用“导出我的作答”备份；若浏览器限制本地存储，可复制到同目录学习记录。</p>
+<div class="jump"><label for="question-select">直接到题目</label><select id="question-select"><option value="b01">B01 权利与最终盈亏</option><option value="b02">B02 报价变化换成现金</option><option value="b03">B03 波动幅度和涨跌方向</option><option value="q01">Q01 候选池</option><option value="q02">Q02 IV筛选值</option><option value="q03">Q03 IV代表什么</option><option value="q04">Q04 两个Delta档</option><option value="q05">Q05 Gamma配方</option><option value="q06">Q06 每手Vega风险</option><option value="q07">Q07 从配方到新增手数</option><option value="q08">Q08 取整和限额</option><option value="q09">Q09 S1期权目标</option><option value="q10">Q10 累计限额的独立情景</option><option value="q11">Q11 S1是否因E退出</option><option value="q12">Q12 14点的IM目标</option><option value="q13">Q13 订单与在途</option><option value="q14">Q14 S2实际期权账本</option><option value="q15">Q15 S2的IM调仓</option><option value="q16">Q16 S2情景分析</option><option value="q17">Q17 S2当前浮动盈亏</option><option value="q18">Q18 独立换月情景</option><option value="q19">Q19 常规退出管理情景</option><option value="q20">Q20 IV与行情异常分支</option><option value="q21">Q21 部分平仓执行练习</option><option value="q22">Q22 全部期权已平</option><option value="q23">Q23 最终清仓日和普通收盘</option><option value="q24">Q24 静态持有到期结局</option><option value="q25">Q25 全部主动清仓结局</option><option value="q26">Q26 同账户的跨月扩展情景</option><option value="r01">R01 指标和数据分工</option><option value="r02">R02 预算不是最大损失</option><option value="r03">R03 同一合约命中多个档</option><option value="r04">R04 先看实际还是先看目标</option><option value="b04">B04 期限和小数复核</option></select><button type="button" id="jump">定位</button><span id="save-status" aria-live="polite"></span></div>
+<article><p>更新日期：2026年11月19日。适合期权入门者，按当前仓库实现理解策略，不展开新旧版本绩效比较。日内时点均为上海时间。</p>
+<p>这套策略在指定时点卖出认购，用Gamma决定各Delta档的相对手数，用共享Vega预算决定新增规模，再以同月IM期货管理实际期权持仓的Delta敞口。旧仓逐日保留，直到满足退出、主动清仓或到期结算条件。最终盈亏要合并期权和期货两条腿。</p>
+<p>本手册配套<a href="#answer-guide">习题答案与推导</a>及<a href="#learning-record">学习记录</a>。浏览器可直接打开同目录的HTML阅读版，逐题记录草稿、折叠查看答案。阅读标记不等于掌握等级。</p>
+<h2 id="main-1">01 怎样沿流程学习</h2>
+<p>一次只完成一道题。先写结论、计算过程和理由；卡住时先找本步输入与输出，再查看公式。两三次仍不理解时，阅读该题推导，然后隔几题重新验证。可以查题干中的数字，重点是知道每一步在解决什么问题。</p>
+<pre><code class="language-text">行情和条款
+  → 执行价与期限资格筛选
+  → 最近合格到期月
+  → IV筛选与反解
+  → Greeks与Delta分档
+  → Gamma定相对手数
+  → Vega预算缩放总规模
+  → 合并取整与增量限额
+  → 累加旧目标与累计限额
+  → 常规退出检查
+  → 用帧开始时的实际期权仓位计算期货目标
+  → 统一提交目标
+  → 异步成交更新实际仓位
+  → 后续对冲与退出
+  → 主动清仓或到期结算
+  → 汇总两条腿的盈亏
+</code></pre>
+<p>同一帧可以同时到期权决策和期货对冲时点。代码先计算这两类目标，最后统一提交；新期权目标不会在同一帧被当成已经成交。普通成交回报不立即触发新的Delta对冲。</p>
+<p>章节按理解和做题的顺序安排。换月、缺值、清仓和结算属于条件分支，并不是每个交易日必须逐项走完。真实单帧顺序为：</p>
+<pre><code class="language-text">先读取实际与在途，处理停止交易生命周期及恢复所需行情
+若达到显式最终清仓日时点：优先尝试清仓，结束本帧业务分支
+否则：
+  若到期权时点且允许处理：选约、配仓、累计风控，再检查常规退出
+  若到期货对冲时点且允许处理：按本帧实际期权计算期货目标
+  业务目标有变化时：统一提交完整目标
+成交回报在之后更新实际持仓，后续帧重新读取事实
+</code></pre>
+<h2 id="main-2">02 基础知识和单位</h2>
+<h3 id="main-3">认购权利与买卖方向</h3>
+<p>认购买方购买一份选择权：按合同约定的执行价取得相应经济利益。买方可以放弃行权；卖方收取权利金并承担履约义务。卖出开仓建立空头，买入平仓关闭空头，并不需要把它理解成先借一份期权再归还。</p>
+<p>“买方希望上涨”在这里指认购买方。认沽买方购买的则是按约定价卖出的权利，不能把所有期权买方都当成看涨；本策略只使用认购。</p>
+<p>面粉采购权可以帮助理解选择权；真实MO属于欧式股指期权，行权通过现金交割完成，不是交付一篮子股票。欧式的行权时点限于到期日，不妨碍到期前在市场买卖或平仓。买方损失可以限于已付权利金；卖出认购的损失不能用已收权利金作为上限。期货对冲只针对特定敞口，不保证组合盈利。</p>
+
+<section class="exercise" data-qid="B01" aria-labelledby="b01"><h3 id="b01">B01 权利与最终盈亏</h3><p>一个简化采购权允许按100元购买商品，买方支付3元购买权利。到期商品分别值95元、102元、120元时，买方的行权价值与净盈亏各是多少？对应卖方的净盈亏是什么？忽略费用。这是基础概念练习，不计入后面的MO主账。</p>
+<label class="draft-label" for="draft-b01">我的结论、计算过程和理由</label><textarea id="draft-b01" data-draft="B01" rows="4" placeholder="先写自己的答案；若用过提示，也在这里注明。"></textarea><label class="done-label"><input type="checkbox" data-done="B01"> 记录为已练习（不自动评定掌握等级）</label><details class="answer" id="answer-b01"><summary>核对 B01 的推导与易错点</summary><div class="answer-content"><p>行权价值为<code>max(到期商品价−100,0)</code>。</p>
+<table>
+<thead>
+<tr>
+<th>到期商品价</th>
+<th style="text-align:right">行权价值</th>
+<th style="text-align:right">买方净盈亏</th>
+<th style="text-align:right">卖方净盈亏</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>95元</td>
+<td style="text-align:right">0元</td>
+<td style="text-align:right">−3元</td>
+<td style="text-align:right">＋3元</td>
+</tr>
+<tr>
+<td>102元</td>
+<td style="text-align:right">2元</td>
+<td style="text-align:right">−1元</td>
+<td style="text-align:right">＋1元</td>
+</tr>
+<tr>
+<td>120元</td>
+<td style="text-align:right">20元</td>
+<td style="text-align:right">＋17元</td>
+<td style="text-align:right">−17元</td>
+</tr>
+</tbody>
+</table>
+<p>买方可以放弃不利行权，不必强行按100元买价值95元的商品。“权利有价值”与“扣除权利金后净赚钱”不同。本例到期买方盈亏平衡点是103元；行权价仍是100元。</p>
+</div></details></section>
+<h3 id="main-4">两种报价和一种换算</h3>
+<table>
+<thead>
+<tr>
+<th>名称</th>
+<th>含义</th>
+<th>常见混淆</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>指数值I</td>
+<td>筛选执行价的基准，可由指数特征输入</td>
+<td>不直接替代同月期货价计算IV</td>
+</tr>
+<tr>
+<td>期货报价F</td>
+<td>对应月份IM的报价，单位为指数点</td>
+<td>不是期权报价</td>
+</tr>
+<tr>
+<td>期权报价C</td>
+<td>购买或转让该期权的市场价格，单位为报价点</td>
+<td>报价点数还要乘乘数和手数才能得到金额</td>
+</tr>
+<tr>
+<td>执行价K</td>
+<td>合约条款中的固定价格</td>
+<td>不随市场报价一起改变</td>
+</tr>
+<tr>
+<td>MO乘数m</td>
+<td>每手每报价点100元</td>
+<td>不是最小下单数量</td>
+</tr>
+<tr>
+<td>IM乘数M</td>
+<td>每手每报价点200元</td>
+<td>不是最小下单数量</td>
+</tr>
+<tr>
+<td>净手数n</td>
+<td>本策略实际或目标持仓，正数多头、负数空头</td>
+<td>目标、实际、在途必须分开</td>
+</tr>
+</tbody>
+</table>
+<p>MO、IM的交易单位都是手；合约乘数用于把报价变化换成钱。例：1手MO报价上升1点，多头价值增加100元；1手IM上涨1点，多头价值增加200元。</p>
+
+<section class="exercise" data-qid="B02" aria-labelledby="b02"><h3 id="b02">B02 报价变化换成现金</h3><p>卖出2手MO后，报价上涨6点；同时持有1手IM多头，IM上涨3点。分别计算两条腿的盈亏，再合并。不要把MO的报价点与IM的报价点直接相减。</p>
+<label class="draft-label" for="draft-b02">我的结论、计算过程和理由</label><textarea id="draft-b02" data-draft="B02" rows="4" placeholder="先写自己的答案；若用过提示，也在这里注明。"></textarea><label class="done-label"><input type="checkbox" data-done="B02"> 记录为已练习（不自动评定掌握等级）</label><details class="answer" id="answer-b02"><summary>核对 B02 的推导与易错点</summary><div class="answer-content"><p>期权空头：<code>−2×6×100＝−1200元</code>。期货多头：<code>1×3×200＝＋600元</code>。合计<code>−600元</code>。</p>
+<p>每种报价的点先乘各自乘数和手数，再合并人民币金额。200元是每手IM每变1点的盈亏，不是2手、3手合计，也不是最小合约数量。</p>
+</div></details></section>
+<h3 id="main-5">四个指标各连接什么</h3>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th>含义</th>
+<th>局部近似或用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>IV或sigma</td>
+<td>从当前期权报价反推出的波动率参数</td>
+<td>模型为解释该报价所需的波动率，不保证未来实际波动与之相同</td>
+</tr>
+<tr>
+<td>Delta</td>
+<td>期权报价对同月期货价格变化的敏感度</td>
+<td>期权报价变化约为Delta乘期货价格变化</td>
+</tr>
+<tr>
+<td>Gamma</td>
+<td>Delta对同月期货价格变化的敏感度</td>
+<td>Delta变化约为Gamma乘期货价格变化</td>
+</tr>
+<tr>
+<td>Vega</td>
+<td>期权报价对IV变化的敏感度</td>
+<td>期权报价变化约为Vega乘IV小数变化量</td>
+</tr>
+</tbody>
+</table>
+<p>这里的Greeks是单份多头认购的指标。空头风险方向由负手数体现。近似用于小幅变化，其他条件按题设固定；Delta变化时，不能把期末Delta当作整段行情中始终不变。</p>
+<p>多头认购的Gamma、Vega通常为正，卖出后相应组合贡献为负。配仓时比较Gamma贡献的大小，不表示组合Gamma被抵消为零。IM主要提供一阶方向对冲，不能直接消除期权的Gamma和Vega敞口。正文敏感度计算采用源码保留口径；与严格定价导数的折现细节区别列在附录A。</p>
+<p>IV从20%升到22%，小数变化量是0.02。代码的Vega按sigma变化1.0计量，不是直接按1个百分点计量。</p>
+
+<section class="exercise" data-qid="B03" aria-labelledby="b03"><h3 id="b03">B03 波动幅度和涨跌方向</h3><p>同一认购，当前商品价90元、执行价100元。到期一种情景是89或91元各一半概率，另一种情景是60或120元各一半概率。仅比较行权价值，哪种情景使权利更有价值？为什么这不等于预测商品一定上涨，也不保证买方净赚钱？</p>
+<label class="draft-label" for="draft-b03">我的结论、计算过程和理由</label><textarea id="draft-b03" data-draft="B03" rows="4" placeholder="先写自己的答案；若用过提示，也在这里注明。"></textarea><label class="done-label"><input type="checkbox" data-done="B03"> 记录为已练习（不自动评定掌握等级）</label><details class="answer" id="answer-b03"><summary>核对 B03 的推导与易错点</summary><div class="answer-content"><p>小波动情景的两个行权价值都为0。大波动情景的行权价值为0或20元，各半，未折现的平均行权价值为10元。两组平均商品价格都是90元。</p>
+<p>大跌时买方可以放弃，行权价值不会变负；大涨时保留正收益的机会。因此其他条件相同，认购权利通常更有价值。这是波动幅度的作用，不是确定上涨的预测。市场购买价越高，净赚钱门槛也越高，不能把50%的正行权价值概率直接说成50%的净盈利概率。</p>
+</div></details></section>
+<h2 id="main-6">03 时间安排和本手册的实现边界</h2>
+<p>本手册采用当前随附<code>vega_backtest.json</code>：</p>
+<table>
+<thead>
+<tr>
+<th>参数</th>
+<th>当前值</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>nav</td>
+<td>40000000元</td>
+<td>配置本金，不自动跟随账户净值复利调整</td>
+</tr>
+<tr>
+<td>vega_budget</td>
+<td>1.25</td>
+<td>用于新增现金Vega尺度的预算参数</td>
+</tr>
+<tr>
+<td>Delta目标</td>
+<td>0.20、0.25、0.30、0.35</td>
+<td>真实配置有四档，综合案例简化为两档</td>
+</tr>
+<tr>
+<td>option_slot</td>
+<td>14:00</td>
+<td>每日期权选约增仓和常规退出检查</td>
+</tr>
+<tr>
+<td>hedge_slots</td>
+<td>10:00、11:00、13:30、14:00、14:55</td>
+<td>期货对冲检查时点</td>
+</tr>
+<tr>
+<td>min_remaining_days</td>
+<td>5个交易日</td>
+<td>新增选约的最短剩余期限</td>
+</tr>
+<tr>
+<td>min_time_value</td>
+<td>5点</td>
+<td>尝试新IV前的筛选门槛</td>
+</tr>
+<tr>
+<td>max_market_age_seconds</td>
+<td>300秒</td>
+<td>持仓计算读取行情的年龄限制</td>
+</tr>
+<tr>
+<td>max_iv_age_seconds</td>
+<td>300秒</td>
+<td>IV缓存年龄限制，是另一种独立时效</td>
+</tr>
+<tr>
+<td>max_option_lots</td>
+<td>100手</td>
+<td>单一期权合约手数限额</td>
+</tr>
+<tr>
+<td>max_total_option_lots</td>
+<td>200手</td>
+<td>全部期权累计绝对手数限额</td>
+</tr>
+<tr>
+<td>max_future_lots</td>
+<td>100手</td>
+<td>单一期货目标手数上限</td>
+</tr>
+<tr>
+<td>max_notional</td>
+<td>100000000元</td>
+<td>映射到执行端逐腿订单和持仓名义额限制，不能解释为组合最大损失</td>
+</tr>
+<tr>
+<td>flatten_slot</td>
+<td>14:50</td>
+<td>仅在显式最终清仓日生效</td>
+</tr>
+<tr>
+<td>close_remaining_days</td>
+<td>2</td>
+<td>当前作为兼容参数保留，不是剩2天强制平仓规则</td>
+</tr>
+</tbody>
+</table>
+<p>不加载这份JSON时，配置类中的<code>option_slot</code>默认是13:58；显式启动参数还可能覆盖配置。学习时先确认实际运行参数。这里固定使用上表，不比较版本。</p>
+<p>普通收盘、保存状态与主动清仓是不同动作。最终清仓日也不等于每个合约自己的到期日。回测入口将回测最后交易日传作<code>final_day</code>；Live在显式指定<code>flatten_day</code>时才有这一主动清仓日。</p>
+<h2 id="main-7">04 固定综合案例</h2>
+<p>这是同一个教学账户。后续步骤始终使用这些合约；风险指标为便于手算的独立教学给定值，未按这张报价表进行真实定价校准。它们用来练习算法流程，不能冒充实盘或原生回测输出。</p>
+<p>某普通交易日14:00，所有合约仍可交易，行情齐全同步，资金充足，没有在途订单。本题将Delta档简化为0.20、0.35，其余流程沿上述实现。</p>
+<table>
+<thead>
+<tr>
+<th>基础数据</th>
+<th style="text-align:right">数值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>指数I</td>
+<td style="text-align:right">5900点</td>
+</tr>
+<tr>
+<td>近月IM</td>
+<td style="text-align:right">6000点</td>
+</tr>
+<tr>
+<td>次月IM</td>
+<td style="text-align:right">6020点</td>
+</tr>
+<tr>
+<td>MO乘数</td>
+<td style="text-align:right">100</td>
+</tr>
+<tr>
+<td>IM乘数</td>
+<td style="text-align:right">200</td>
+</tr>
+<tr>
+<td>每日理想新增现金Vega</td>
+<td style="text-align:right">500000元每单位sigma</td>
+</tr>
+<tr>
+<td>对应IV上升1个百分点的理想新增不利变化</td>
+<td style="text-align:right">5000元</td>
+</tr>
+</tbody>
+</table>
+<p><strong>S0是题初真实持仓，题初目标与实际相同：</strong></p>
+<table>
+<thead>
+<tr>
+<th>合约</th>
+<th style="text-align:right">实际净仓位</th>
+<th style="text-align:right">开仓均价</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A认购</td>
+<td style="text-align:right">−4手</td>
+<td style="text-align:right">40点</td>
+</tr>
+<tr>
+<td>B认购</td>
+<td style="text-align:right">−8手</td>
+<td style="text-align:right">8点</td>
+</tr>
+<tr>
+<td>近月IM</td>
+<td style="text-align:right">＋1手</td>
+<td style="text-align:right">5980点</td>
+</tr>
+</tbody>
+</table>
+<p><strong>候选行情：</strong></p>
+<table>
+<thead>
+<tr>
+<th>合约</th>
+<th>月份</th>
+<th style="text-align:right">剩余交易日</th>
+<th style="text-align:right">执行价</th>
+<th style="text-align:right">当前报价</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A</td>
+<td>近月</td>
+<td style="text-align:right">5天</td>
+<td style="text-align:right">6100</td>
+<td style="text-align:right">50点</td>
+</tr>
+<tr>
+<td>B</td>
+<td>近月</td>
+<td style="text-align:right">5天</td>
+<td style="text-align:right">6300</td>
+<td style="text-align:right">10点</td>
+</tr>
+<tr>
+<td>C</td>
+<td>近月</td>
+<td style="text-align:right">5天</td>
+<td style="text-align:right">5800</td>
+<td style="text-align:right">240点</td>
+</tr>
+<tr>
+<td>D</td>
+<td>次月</td>
+<td style="text-align:right">20天</td>
+<td style="text-align:right">6100</td>
+<td style="text-align:right">120点</td>
+</tr>
+<tr>
+<td>E</td>
+<td>次月</td>
+<td style="text-align:right">20天</td>
+<td style="text-align:right">6300</td>
+<td style="text-align:right">60点</td>
+</tr>
+</tbody>
+</table>
+<p><strong>后续采用的近月教学风险指标：</strong></p>
+<table>
+<thead>
+<tr>
+<th>合约</th>
+<th style="text-align:right">Delta</th>
+<th style="text-align:right">Gamma</th>
+<th style="text-align:right">Vega每单位sigma</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A</td>
+<td style="text-align:right">0.35</td>
+<td style="text-align:right">0.002</td>
+<td style="text-align:right">300</td>
+</tr>
+<tr>
+<td>B</td>
+<td style="text-align:right">0.10</td>
+<td style="text-align:right">0.001</td>
+<td style="text-align:right">100</td>
+</tr>
+</tbody>
+</table>
+<p>主线从S0走到下文S2成交快照。之后的“独立管理情景”只继承指定快照的实际持仓和成本，默认以实际仓位重建各情景的初始目标；不继承S1中尚未完成的新增计划，目标、在途状态等以各卡题设为准。不同情景的交易与损益不能相加。这种情景初始化用于隔离练习，不是说正常运行会随意删除在途订单。</p>
+<h2 id="main-8">05 第一步 筛选资格和月份</h2>
+<p>这一阶段决定哪些合约进入后续指标计算。读取执行价和指数，统计剩余交易日，再按日期选最近的合格月。这里不使用主力、次主力的活跃度排名，也没有把跨月价格或IV期限结构作为独立选月信号。</p>
+<pre><code class="language-text">认购且处于可交易生命周期
+→ K&gt;I
+→ 剩余交易日N≥5
+→ 期权、同月期货、指数是本估值时点的行情
+→ 在上述合格合约中取最近最后交易日
+</code></pre>
+<p>N不含今天、包含最后交易日，使用交易日历，不是把自然日直接相减。合约必须具备可用的同月期货条款与路由。近月、次月按到期时间区分；主力、次主力按行情系统的活跃度口径区分。</p>
+<p>开仓要求三类行情处于同一估值时点，不能仅因它们都没超过300秒就认定同步。恢复或跨场次时，已有持仓依赖还要等待新场次行情齐备，不能用前一场次缓存冒充更新；必要行情仍缺失时会报错。</p>
+
+<section class="exercise" data-qid="Q01" aria-labelledby="q01"><h3 id="q01">Q01 候选池</h3><p>在S0行情中，哪些合约进入最近合格月份的后续IV与Greeks计算？分别说明执行价门槛、5天门槛和最近月份筛选的作用。此步尚不决定新增手数。</p>
+<label class="draft-label" for="draft-q01">我的结论、计算过程和理由</label><textarea id="draft-q01" data-draft="Q01" rows="4" placeholder="先写自己的答案；若用过提示，也在这里注明。"></textarea><label class="done-label"><input type="checkbox" data-done="Q01"> 记录为已练习（不自动评定掌握等级）</label><details class="answer" id="answer-q01"><summary>核对 Q01 的推导与易错点</summary><div class="answer-content"><p>保留A、B。</p>
+<ol>
+<li>比较执行价与指数5900：A、B、D、E符合，C的5800不符合严格大于条件。</li>
+<li>A、B的5天与D、E的20天都满足至少5个交易日。</li>
+<li>合格月份中近月最近，只留下A、B进入后续IV与Greeks计算。</li>
+</ol>
+<p>此时没有要求在A、B中二选一，也没有新增成交。主力、次主力活跃度排名不参与本规则。</p>
+</div></details></section>
+<h2 id="main-9">06 第二步 检查IV门槛并反解IV</h2>
+<p>IV是定价模型的未知波动率参数。已知当前同月期货价F、期权市场报价C、执行价K、年化期限T和利率r，寻找让模型价格与C相符的sigma。</p>
+<pre><code class="language-text">IV筛选值TV＝C−max(F−K,0)
+TV≥5点：才调用当次IV反解
+未得到新IV：尝试使用有效IV缓存
+</code></pre>
+<p>这个筛选值以同月期货为参考，不是后文的退出指标。低于5点是程序没有尝试反解，不是已证明数学上无解。满足5点也不保证反解一定可用。</p>
+<p>当前实现优先新IV；缓存保留成功计算时点和sigma，当前配置最多使用300秒。使用缓存时，仍用当前F和当前期限重算Greeks；读取缓存不会延长原缓存时间。缺少新鲜行情会报错，不能用IV缓存绕过行情检查。详细反解和期限公式见附录。</p>
+
+<section class="exercise" data-qid="Q02" aria-labelledby="q02"><h3 id="q02">Q02 IV筛选值</h3><p>用A、B各自的K和C以及近月F＝6000，计算TV，判断是否会尝试反解当次IV。</p>
+<label class="draft-label" for="draft-q02">我的结论、计算过程和理由</label><textarea id="draft-q02" data-draft="Q02" rows="4" placeholder="先写自己的答案；若用过提示，也在这里注明。"></textarea><label class="done-label"><input type="checkbox" data-done="Q02"> 记录为已练习（不自动评定掌握等级）</label><details class="answer" id="answer-q02"><summary>核对 Q02 的推导与易错点</summary><div class="answer-content"><pre><code class="language-text">A：50−max(6000−6100,0)＝50点
+B：10−max(6000−6300,0)＝10点
+</code></pre>
+<p>两只都达到5点，可以尝试反解当次IV。这里不是退出指标E；也不能由“达到门槛”直接推出反解必然成功。</p>
+</div></details></section>
+
+<section class="exercise" data-qid="Q03" aria-labelledby="q03"><h3 id="q03">Q03 IV代表什么</h3><p>本题假设A、B当次IV都反解成功。请说出计算IV需要哪些输入，IV如何得到，以及为什么它不等于已经知道未来实际波动。此题不要求手工求解Black76。</p>
+<label class="draft-label" for="draft-q03">我的结论、计算过程和理由</label><textarea id="draft-q03" data-draft="Q03" rows="4" placeholder="先写自己的答案；若用过提示，也在这里注明。"></textarea><label class="done-label"><input type="checkbox" data-done="Q03"> 记录为已练习（不自动评定掌握等级）</label><details class="answer" id="answer-q03"><summary>核对 Q03 的推导与易错点</summary><div class="answer-content"><p>输入包括当前同月期货价F、期权市场报价C、执行价K、剩余期限T和利率r。程序搜索sigma，使理论认购价与市场报价相符。</p>
+<p>IV来自当前报价及模型假设，不需要等未来行情发生才能计算；未来实际波动没有被保证。它描述波动率参数，不是“未来必涨25%”之类的方向结论。代码使用的期限和Greeks口径见手册附录。</p>
+</div></details></section>
+<h2 id="main-10">07 第三步 用Delta匹配目标档</h2>
+<p>这一阶段才决定每个档位选谁。对每个目标Delta，分别寻找最近合格月份中、Greeks可用且Delta距离最小的候选。</p>
+<pre><code class="language-text">Delta距离＝abs(候选Delta−目标Delta)
+</code></pre>
+<p>IV是计算Greeks的输入；本步骤直接用于排序的是Delta。Gamma、Vega用于后面的数量分配。各档分别选约，同一合约可能被多个档命中，不能强制理解成四档一定选四只不同合约。距离相同时，当前实现沿用候选输入中先出现者。</p>
+
+<section class="exercise" data-qid="Q04" aria-labelledby="q04"><h3 id="q04">Q04 两个Delta档</h3><p>根据教学风险表，0.20档、0.35档分别选哪只？写出A、B到每个目标的距离。</p>
+<label class="draft-label" for="draft-q04">我的结论、计算过程和理由</label><textarea id="draft-q04" data-draft="Q04" rows="4" placeholder="先写自己的答案；若用过提示，也在这里注明。"></textarea><label class="done-label"><input type="checkbox" data-done="Q04"> 记录为已练习（不自动评定掌握等级）</label><details class="answer" id="answer-q04"><summary>核对 Q04 的推导与易错点</summary><div class="answer-content"><table>
+<thead>
+<tr>
+<th>目标档</th>
+<th style="text-align:right">A的距离</th>
+<th style="text-align:right">B的距离</th>
+<th>选择</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0.20</td>
+<td style="text-align:right">abs(0.35−0.20)＝0.15</td>
+<td style="text-align:right">abs(0.10−0.20)＝0.10</td>
+<td>B</td>
+</tr>
+<tr>
+<td>0.35</td>
+<td style="text-align:right">0</td>
+<td style="text-align:right">0.25</td>
+<td>A</td>
+</tr>
+</tbody>
+</table>
+<p>目标不要求精确命中。先限定最近合格月，再在该月比较Delta，不能为了远月的Delta更贴近目标而跳过这个顺序。</p>
+</div></details></section>
+<h2 id="main-11">08 第四步 Gamma决定档间相对手数</h2>
+<p>代码在理想未取整、未截限时，让各Delta档按乘数换算的Gamma贡献大小相等。这是本策略选定的分配规则。</p>
+<pre><code class="language-text">每档Gamma贡献大小＝卖出手数q × 期权乘数m × Gamma
+相对手数权重w＝1/(Gamma×m)
+</code></pre>
+<p>同乘数下，每手Gamma贡献较大的档位，所需手数较少。这里比较贡献大小，q用卖出数量的正数；最终卖出增量再记成负数。这里的“Gamma贡献”按上式定义，不另混入其他文献中带标的价格平方的现金Gamma口径。</p>
+<p>可以把比例看成一份计算用的配方：先确定各合约如何搭配，再由总预算决定配方复制多大。配方不是交易所的组合单位，也不保证多腿同时成交。</p>
+
+<section class="exercise" data-qid="Q05" aria-labelledby="q05"><h3 id="q05">Q05 Gamma配方</h3><p>根据A、B的Gamma和相同的乘数100，要让两档Gamma贡献相同，A与B的新增手数比例应是多少？用一组最简整数表示，并解释原因。</p>
+<label class="draft-label" for="draft-q05">我的结论、计算过程和理由</label><textarea id="draft-q05" data-draft="Q05" rows="4" placeholder="先写自己的答案；若用过提示，也在这里注明。"></textarea><label class="done-label"><input type="checkbox" data-done="Q05"> 记录为已练习（不自动评定掌握等级）</label><details class="answer" id="answer-q05"><summary>核对 Q05 的推导与易错点</summary><div class="answer-content"><p>设卖出数量为正数q，贡献相等要求：</p>
+<pre><code class="language-text">qA×100×0.002＝qB×100×0.001
+qB＝2×qA
+</code></pre>
+<p>最简配方是1手A、2手B。A每手Gamma贡献为0.2，B每手为0.1，所以B需要两手才能匹配一手A。这里是Gamma定相对比例，还没有决定今天总共卖几组。</p>
+</div></details></section>
+<h2 id="main-12">09 第五步 Vega决定整体新增规模</h2>
+<p>Vega描述IV变动对期权报价的局部影响。IV提高1个百分点意味着sigma增加0.01。</p>
+<pre><code class="language-text">每手现金Vega每单位sigma＝Vega × m
+IV增加0.01时，每手空头的不利变化≈Vega × 0.01 × m
+
+配置现金Vega预算B＝nav × vega_budget / 100
+本配置B＝40000000 × 1.25 / 100＝500000
+对应IV增加0.01时的理想新增不利变化＝B × 0.01
+</code></pre>
+<p>这个预算是当天新增组合的敏感度规模，不是保证金、支付价款或最大亏损承诺。旧仓Vega不先从当天预算中扣除；固定nav也不自动跟随盈亏复利。</p>
+<p>先用Gamma确定一组的比例，再计算这组的Vega金额，最后用总预算缩放组数。四个真实档位共用一份预算。理想缩放关系为：</p>
+<pre><code class="language-text">已选档j的权重w_j＝1/(Gamma_j × m_j)
+归一化分母D＝sum(w_j × Vega_j × m_j)
+理想新增手数a_j＝B × w_j / D
+</code></pre>
+
+<section class="exercise" data-qid="Q06" aria-labelledby="q06"><h3 id="q06">Q06 每手Vega风险</h3><p>IV上升1个百分点、其他条件不变时，A、B每手空头分别约亏多少元？请先算报价变化点数，再换算现金。</p>
+<label class="draft-label" for="draft-q06">我的结论、计算过程和理由</label><textarea id="draft-q06" data-draft="Q06" rows="4" placeholder="先写自己的答案；若用过提示，也在这里注明。"></textarea><label class="done-label"><input type="checkbox" data-done="Q06"> 记录为已练习（不自动评定掌握等级）</label><details class="answer" id="answer-q06"><summary>核对 Q06 的推导与易错点</summary><div class="answer-content"><pre><code class="language-text">A报价变化≈300×0.01＝3点
+A每手空头不利变化≈3×100＝300元
+
+B报价变化≈100×0.01＝1点
+B每手空头不利变化≈1×100＝100元
+</code></pre>
+<p>每单位sigma的每手现金Vega分别为30000元、10000元。它们并不是IV上升1个百分点时直接亏30000、10000元，后者还要乘0.01。</p>
+</div></details></section>
+
+<section class="exercise" data-qid="Q07" aria-labelledby="q07"><h3 id="q07">Q07 从配方到新增手数</h3><p>沿用Q05的配方，每组对应多少Vega情景风险？5000元的理想新增额度可容纳多少组，最终A、B各新增卖出多少手？再用归一化公式核对。这里不先扣S0旧仓。</p>
+<label class="draft-label" for="draft-q07">我的结论、计算过程和理由</label><textarea id="draft-q07" data-draft="Q07" rows="4" placeholder="先写自己的答案；若用过提示，也在这里注明。"></textarea><label class="done-label"><input type="checkbox" data-done="Q07"> 记录为已练习（不自动评定掌握等级）</label><details class="answer" id="answer-q07"><summary>核对 Q07 的推导与易错点</summary><div class="answer-content"><pre><code class="language-text">每组＝1手A＋2手B
+每组1个百分点情景风险＝1×300＋2×100＝500元
+组数＝5000/500＝10
+新增卖出A＝10手，B＝20手
+</code></pre>
+<p>归一化核对：wA＝5，wB＝10，分母D＝<code>5×300×100＋10×100×100＝250000</code>。B预算＝500000，理想aA＝10、aB＝20。</p>
+<p>两档Gamma贡献大小均为2；两档1个百分点Vega风险分别为3000、2000元，合计5000。Gamma贡献相等不要求Vega贡献也相等，预算也不是每档各5000元。</p>
+</div></details></section>
+<h2 id="main-13">10 第六步 合并取整和增量限额</h2>
+<p>理想手数不是最终可提交的手数。当前顺序是：</p>
+<pre><code class="language-text">同一合约命中多个档时先合并
+→ Python round取整到手
+→ 本次单合约增量截限
+→ 本次总手数超限时同比缩放并int向下取整
+→ 去掉零手
+→ 转成负的卖出增量
+</code></pre>
+<p>Python的round不是所有“.5”都向上：round(2.5)＝2，round(3.5)＝4。取整和限额可能使实际Vega高于或低于理想预算；不能把原始预算当成取整后严格满足的现金上限。同比缩放后的零碎余量不会再自动补齐。</p>
+
+<section class="exercise" data-qid="Q08" aria-labelledby="q08"><h3 id="q08">Q08 取整和限额</h3><p>先确认Q07的手数在本例是否需要改变。再做同一算法的取整校验：两个合约的原始手数为2.4、1.6，单合约上限足够，总增量上限为3手。按代码顺序，最终各卖多少手，为什么总数可能没有用满3手？</p>
+<label class="draft-label" for="draft-q08">我的结论、计算过程和理由</label><textarea id="draft-q08" data-draft="Q08" rows="4" placeholder="先写自己的答案；若用过提示，也在这里注明。"></textarea><label class="done-label"><input type="checkbox" data-done="Q08"> 记录为已练习（不自动评定掌握等级）</label><details class="answer" id="answer-q08"><summary>核对 Q08 的推导与易错点</summary><div class="answer-content"><p>主案例新增A10、B20都是整数，各低于单合约100手，合计30手低于增量总限额200手，保持不变。</p>
+<p>独立取整校验：原始2.4、1.6先round成2、2；合计4超过3，同比乘3/4，分别得到1.5、1.5；代码用int向下取整，各为1手，合计2手。不自动补分剩余1手。</p>
+<p>取整顺序不能改成“先分配全部余额后再分别round”，也不能假定实际Vega永远精确等于理想预算。</p>
+</div></details></section>
+<h2 id="main-14">11 第七步 累加旧目标并检查累计限额</h2>
+<pre><code class="language-text">候选新目标＝已有目标＋当日新增增量
+单合约累计绝对手数≤100
+全部期权累计绝对手数之和≤200
+</code></pre>
+<p>未选中的旧合约保留。若叠加后任一累计限额超出，当前实现拒绝整批当日新增，保留原有期权目标；这道检查不重新分配剩余容量。它与前一步对增量截限、缩放是两种处理。</p>
+<p>这个检查发生在常规退出检查之前。不能先假设某份旧仓随后会退出，提前把容量让给新增方案。新增拒绝后，正常的旧仓退出和配置时点期货对冲仍可能继续。</p>
+<p>工程上，这道检查只接受或退回整份拟目标，不在这里重新分配。其代价是一个合约超限时，其他仍有容量的合约也可能失去新增机会；不能仅凭这条规则断言它优于逐项接受或按剩余额度重配。</p>
+
+<section class="exercise" data-qid="Q09" aria-labelledby="q09"><h3 id="q09">Q09 S1期权目标</h3><p>将Q07最终新增手数加到S0的旧目标，得到S1中A、B的期权目标。检查单合约、全部期权限额，是否接受这批新增？此时实际仓位是否已经自动变成S1？</p>
+<label class="draft-label" for="draft-q09">我的结论、计算过程和理由</label><textarea id="draft-q09" data-draft="Q09" rows="4" placeholder="先写自己的答案；若用过提示，也在这里注明。"></textarea><label class="done-label"><input type="checkbox" data-done="Q09"> 记录为已练习（不自动评定掌握等级）</label><details class="answer" id="answer-q09"><summary>核对 Q09 的推导与易错点</summary><div class="answer-content"><pre><code class="language-text">A目标＝−4−10＝−14手
+B目标＝−8−20＝−28手
+累计绝对手数＝14＋28＝42手
+</code></pre>
+<p>单合约均不超100、总量不超200，接受本批新增。S1是目标快照；未成交前，实际仍是S0的A−4、B−8，不会因为目标更新就成为−14、−28。</p>
+</div></details></section>
+
+<section class="exercise" data-qid="Q10" aria-labelledby="q10"><h3 id="q10">Q10 累计限额的独立情景</h3><p>本题只检查审批规则，不改变主账。假设在S0状态下把单合约限额改成12手，仍尝试Q07那份新增方案，总手数限额足够。整批如何处理，A、B目标最终保留多少？不要把超限合约简单截到12再默许其他合约。</p>
+<label class="draft-label" for="draft-q10">我的结论、计算过程和理由</label><textarea id="draft-q10" data-draft="Q10" rows="4" placeholder="先写自己的答案；若用过提示，也在这里注明。"></textarea><label class="done-label"><input type="checkbox" data-done="Q10"> 记录为已练习（不自动评定掌握等级）</label><details class="answer" id="answer-q10"><summary>核对 Q10 的推导与易错点</summary><div class="answer-content"><p>累计审批会拒绝整批，保留A−4、B−8的原目标。</p>
+<p>如果将Q07增量直接作为待审批方案，候选A为−14、B为−28，均超过12手。若从第一层配仓就按新上限12完整重跑，B本次增量会先从20截到12，但候选累计A仍为−14、B为−20，仍超12，最终整批拒绝的结论相同。</p>
+<p>当前累计审批不等于把A、B分别裁成−12；新增没有通过，不会先平掉旧仓腾额度。此情景不修改主线S1。</p>
+</div></details></section>
+<h2 id="main-15">12 第八步 检查常规退出</h2>
+<p>代码只在期权交易时点执行本条检查，先处理新增方案，再检查非零且尚可交易的期权目标。</p>
+<pre><code class="language-text">退出指标E＝C−(F−K)
+E≤0：该合约期权目标设为0
+E&gt;0：本条退出规则不触发
+</code></pre>
+<p>等于零和小于零都触发。这个公式没有max，与IV门槛公式不同。F&gt;K时，它表示报价扣除以同月期货为参考的未折现实值部分后的差额；F&lt;K时，E并不是标准时间价值。它是源码采用的退出指标，不是交易盈亏，也不是已证明最优的止盈止损规则。</p>
+<p>持仓盈亏需要开仓成本，E没有使用开仓价格，因此同样E＝0的两笔持仓，可能一笔赚、一笔亏。剩余不足5天也不自动退出旧仓；5天是新开仓门槛。</p>
+<p>有期权在途委托时，本实现跳过该帧的期权选约及常规退出。选约只在精确配置时点触发，不在之后任意分钟补开。无新候选时仍可检查已有目标退出；两项不是同一个成功标志。</p>
+
+<section class="exercise" data-qid="Q11" aria-labelledby="q11"><h3 id="q11">Q11 S1是否因E退出</h3><p>仍用14:00的F＝6000、A报价50和B报价10，分别计算E。S1目标是否需要因本条规则修改？</p>
+<label class="draft-label" for="draft-q11">我的结论、计算过程和理由</label><textarea id="draft-q11" data-draft="Q11" rows="4" placeholder="先写自己的答案；若用过提示，也在这里注明。"></textarea><label class="done-label"><input type="checkbox" data-done="Q11"> 记录为已练习（不自动评定掌握等级）</label><details class="answer" id="answer-q11"><summary>核对 Q11 的推导与易错点</summary><div class="answer-content"><pre><code class="language-text">EA＝50−(6000−6100)＝150
+EB＝10−(6000−6300)＝310
+</code></pre>
+<p>均大于0，当前常规退出不触发，S1目标不因本条退出修改。虽然IV筛选值分别为50、10，E却分别为150、310，说明两个公式不能混用。</p>
+</div></details></section>
+<h2 id="main-16">13 第九步 用实际期权计算同月期货目标</h2>
+<pre><code class="language-text">某月实际Delta敞口X＝sum(带正负号的实际期权手数n × m × Delta)
+该月IM目标H＝round(−X / M)
+</code></pre>
+<p>每个月份分别匹配对应的IM。表中的Delta是多头认购指标，卖出期权的n为负数，因此通常需要正的IM多头。理想手数不足半手时可能取整为零，持有期权而IM为零不一定是故障。</p>
+<p>这里读取帧开始时的实际期权仓位。新增目标未成交的部分不提前算入；待平但尚未买回的空头仍是实际敞口。所需期货手数超过100手时，当前代码报错，不把目标静默裁到100手。</p>
+<p>任一期货腿有在途委托时，会跳过该帧对冲，防止叠加未完成的期货调整。每个配置对冲时点正常只处理一次。缺IV导致保留旧目标时，这一次仍记为已处理。</p>
+
+<section class="exercise" data-qid="Q12" aria-labelledby="q12"><h3 id="q12">Q12 14点的IM目标</h3><p>14:00刚算完S1，但新增订单尚未成交。用S0的实际A、B手数和当前Delta计算IM目标，与已有1手IM比较，需要怎样调整？为什么不能直接用S1的期权目标算这一次对冲？</p>
+<label class="draft-label" for="draft-q12">我的结论、计算过程和理由</label><textarea id="draft-q12" data-draft="Q12" rows="4" placeholder="先写自己的答案；若用过提示，也在这里注明。"></textarea><label class="done-label"><input type="checkbox" data-done="Q12"> 记录为已练习（不自动评定掌握等级）</label><details class="answer" id="answer-q12"><summary>核对 Q12 的推导与易错点</summary><div class="answer-content"><pre><code class="language-text">X＝(−4)×100×0.35＋(−8)×100×0.10
+  ＝−140−80＝−220
+H＝round(220/200)＝round(1.1)＝1手多头
+</code></pre>
+<p>已有1手IM，不新增期货。S1的新增期权还没有成交，不能提前把它当成真实风险。同一帧先算完目标再统一提交，不会先把期权目标虚构成实际成交。</p>
+</div></details></section>
+<h2 id="main-17">14 第十步 提交目标并处理订单成交</h2>
+<p>策略提交完整目标，包含应归零的合约。执行端依据本策略实际仓位、在途委托和风控计算差量。目标不是本次新增买卖量，目标提交也不是成交证明。</p>
+<p>在同向、无特殊冻结等干扰的简化情况下：</p>
+<pre><code class="language-text">还需提交的带符号数量≈目标−实际−已在途数量
+</code></pre>
+<p>反手、今昨仓、冻结、拒单等由执行端进一步处理，不能只套上式绕过执行约束。同一帧统一提交多腿，也不意味着多腿原子成交。普通on_fill回调更新事实后，不立即重算期货对冲。</p>
+
+<section class="exercise" data-qid="Q13" aria-labelledby="q13"><h3 id="q13">Q13 订单与在途</h3><p>按S0到S1，A、B分别需要提交多少手卖出增量？另做A的中途执行检查：目标−14手、实际−9手、已有−3手卖单在途时，还需补多少手卖单？如果忽略在途会重复下多少手？</p>
+<label class="draft-label" for="draft-q13">我的结论、计算过程和理由</label><textarea id="draft-q13" data-draft="Q13" rows="4" placeholder="先写自己的答案；若用过提示，也在这里注明。"></textarea><label class="done-label"><input type="checkbox" data-done="Q13"> 记录为已练习（不自动评定掌握等级）</label><details class="answer" id="answer-q13"><summary>核对 Q13 的推导与易错点</summary><div class="answer-content"><p>从S0到S1，需要A新增卖出10手、B新增卖出20手。</p>
+<p>中途A的简化差量：<code>−14−(−9)−(−3)＝−2手</code>，应再补2手卖单。若忽略在途，会误补5手，其中3手与已有在途重复。这里按题设无其他冻结和反手问题计算。</p>
+</div></details></section>
+<h2 id="main-18">15 第十一步 读取部分成交形成S2</h2>
+<p>主线的新成交回报：14:00计划新增之后，到14:55，A仅新增成交5手、成交价52点；B仅新增成交10手、成交价11点。剩余计划尚未成交。信号报价不等于实际成交价。</p>
+
+<section class="exercise" data-qid="Q14" aria-labelledby="q14"><h3 id="q14">Q14 S2实际期权账本</h3><p>把上述成交加到S0，计算A、B实际净仓位，以及各自累计开仓权利金收入与加权平均成本。先保留精确成本或逐批现金流，避免先把均价舍入再算盈亏。S2的实际手数与S1目标有什么区别？</p>
+<label class="draft-label" for="draft-q14">我的结论、计算过程和理由</label><textarea id="draft-q14" data-draft="Q14" rows="4" placeholder="先写自己的答案；若用过提示，也在这里注明。"></textarea><label class="done-label"><input type="checkbox" data-done="Q14"> 记录为已练习（不自动评定掌握等级）</label><details class="answer" id="answer-q14"><summary>核对 Q14 的推导与易错点</summary><div class="answer-content"><pre><code class="language-text">A实际＝−4−5＝−9手
+A权利金收入＝4×40×100＋5×52×100＝42000元
+A加权均价＝(4×40＋5×52)/9＝46.666666…点
+
+B实际＝−8−10＝−18手
+B权利金收入＝8×8×100＋10×11×100＝17400元
+B加权均价＝(8×8＋10×11)/18＝9.666666…点
+</code></pre>
+<p>S1目标仍为A−14、B−28，尚差A5手、B10手新增未成交。用于后续风险和盈亏的实际数量是9、18，而不是14、28。累计权利金收入为59400元，它还对应未结清的期权义务。</p>
+</div></details></section>
+<h2 id="main-19">16 第十二步 Gamma更新Delta并重新对冲</h2>
+<p>到14:55，近月IM从6000涨到6050点。本题近似把这段Gamma固定，只用它估计此刻Delta，不用期末Delta倒算整段已发生行情的期权涨幅。</p>
+<pre><code class="language-text">新Delta≈原Delta＋Gamma × 期货价格变化
+</code></pre>
+
+<section class="exercise" data-qid="Q15" aria-labelledby="q15"><h3 id="q15">Q15 S2的IM调仓</h3><p>先更新A、B的Delta，再用Q14得到的实际期权手数计算14:55的IM目标。此前实际持有1手IM，没有期货在途订单，应怎样调仓？本题假设需要新增的IM随后都在6050点成交，形成最终S2快照。</p>
+<label class="draft-label" for="draft-q15">我的结论、计算过程和理由</label><textarea id="draft-q15" data-draft="Q15" rows="4" placeholder="先写自己的答案；若用过提示，也在这里注明。"></textarea><label class="done-label"><input type="checkbox" data-done="Q15"> 记录为已练习（不自动评定掌握等级）</label><details class="answer" id="answer-q15"><summary>核对 Q15 的推导与易错点</summary><div class="answer-content"><pre><code class="language-text">期货变化＝6050−6000＝50点
+新DeltaA≈0.35＋0.002×50＝0.45
+新DeltaB≈0.10＋0.001×50＝0.15
+
+X＝(−9)×100×0.45＋(−18)×100×0.15
+  ＝−405−270＝−675
+H＝round(675/200)＝round(3.375)＝3手多头
+</code></pre>
+<p>已有1手，所以新增买入2手。新增2手均在6050成交后，S2期货实际为3手，买入价格乘手数的合计基准为<code>5980＋2×6050＝18080点手</code>，均价<code>18080/3＝6026.666666…点</code>。这是盈亏成本基准，不是把期货全额名义本金当成已支付现金。</p>
+<p>若错用S1目标14、28，会算出5.25手并round成5手，与真实需要的3手不同。这正是目标和实际不能混淆的原因。</p>
+</div></details></section>
+<h2 id="main-20">17 第十三步 区分情景风险和真实盈亏</h2>
+<p>Vega、Delta是局部敏感度。它们可以做情景估算；真实成交损益则依据实际成交价、手数和成本。不能把同一笔变化既按情景估算又按现金流重复计入。</p>
+<pre><code class="language-text">小幅报价变化≈Delta×期货价格变化＋Vega×IV小数变化量
+期权持仓价值变化≈带符号实际手数×m×报价变化
+期货持仓价值变化＝带符号手数×M×期货价格变化
+</code></pre>
+
+<section class="exercise" data-qid="Q16" aria-labelledby="q16"><h3 id="q16">Q16 S2情景分析</h3><p>从最终S2快照独立做情景估算，不改变主账。若IM再涨2点、IV同时提高1个百分点，暂把此刻Delta、Vega固定，忽略更高阶与时间影响，A、B报价各约变化多少点？实际期权组合和IM组合各约盈亏多少，合计多少？</p>
+<label class="draft-label" for="draft-q16">我的结论、计算过程和理由</label><textarea id="draft-q16" data-draft="Q16" rows="4" placeholder="先写自己的答案；若用过提示，也在这里注明。"></textarea><label class="done-label"><input type="checkbox" data-done="Q16"> 记录为已练习（不自动评定掌握等级）</label><details class="answer" id="answer-q16"><summary>核对 Q16 的推导与易错点</summary><div class="answer-content"><pre><code class="language-text">A报价变化≈0.45×2＋300×0.01＝3.9点
+B报价变化≈0.15×2＋100×0.01＝1.3点
+
+A空头变化≈−9×100×3.9＝−3510元
+B空头变化≈−18×100×1.3＝−2340元
+期权合计≈−5850元
+IM多头变化＝3×200×2＝＋1200元
+组合近似变化＝−4650元
+</code></pre>
+<p>Delta对冲不能自动消除IV变化带来的Vega风险。这只是小幅情景估算，不记入真实S2成交账，也不把它再叠到Q17的实际浮盈亏里。</p>
+</div></details></section>
+
+<section class="exercise" data-qid="Q17" aria-labelledby="q17"><h3 id="q17">Q17 S2当前浮动盈亏</h3><p>回到真实题设快照，不计Q16假设变化：14:55近月IM为6050点，A当前报价70点、B报价16点。用S0原始开仓和Q14、Q15实际成交，算两种期权、IM及整个子组合的累计浮动盈亏。为什么收到的权利金不等于已赚利润？</p>
+<label class="draft-label" for="draft-q17">我的结论、计算过程和理由</label><textarea id="draft-q17" data-draft="Q17" rows="4" placeholder="先写自己的答案；若用过提示，也在这里注明。"></textarea><label class="done-label"><input type="checkbox" data-done="Q17"> 记录为已练习（不自动评定掌握等级）</label><details class="answer" id="answer-q17"><summary>核对 Q17 的推导与易错点</summary><div class="answer-content"><p>用逐批现金流或精确成本基准计算：</p>
+<pre><code class="language-text">A＝42000−9×70×100＝−21000元
+B＝17400−18×16×100＝−11400元
+期权合计＝−32400元
+
+IM＝[(6050−5980)×1＋(6050−6050)×2]×200
+  ＝＋14000元
+组合累计浮动盈亏＝−18400元
+</code></pre>
+<p>权利金59400元已经收到，但买回当前实际空头需要91800元，两者差额才是期权浮动盈亏。期货还要另算。这里期货盈利并未把期权损失完全抵消。</p>
+</div></details></section>
+<h2 id="main-21">18 第十四步 月份切换与旧仓管理</h2>
+<p>近月不足5个剩余交易日后，不再满足新增选约资格；新增可以转向最近的其他合格月。原近月仓位仍按常规退出、执行与结算管理。于是账户可能同时持有不同到期月。</p>
+
+<section class="exercise" data-qid="Q18" aria-labelledby="q18"><h3 id="q18">Q18 独立换月情景</h3><p>下一交易日近月剩4天，次月仍满足新开仓条件。近月旧A、B的E都大于0，未触发其他规则。新增应考虑哪个月，旧近月目标是否因剩4天就清零？活跃度主力标记会改变这个选月规则吗？此题只判断，不把新的交易计入S2账本。</p>
+<label class="draft-label" for="draft-q18">我的结论、计算过程和理由</label><textarea id="draft-q18" data-draft="Q18" rows="4" placeholder="先写自己的答案；若用过提示，也在这里注明。"></textarea><label class="done-label"><input type="checkbox" data-done="Q18"> 记录为已练习（不自动评定掌握等级）</label><details class="answer" id="answer-q18"><summary>核对 Q18 的推导与易错点</summary><div class="answer-content"><p>新增选约考虑次月；近月剩4天，不符合至少5天的新开仓资格。旧近月E&gt;0，常规退出不触发，继续保留。</p>
+<p>5天是新增门槛，不是旧仓强制平仓门槛；主力、次主力的活跃度排名也不改变这个月份选择。现有旧仓和未来新增可能属于不同月份，随后应分别匹配各自同月IM。</p>
+</div></details></section>
+<h2 id="main-22">19 第十五步 退出信号和缺IV分支</h2>
+<p>以下管理情景只继承最终S2的实际持仓与开仓成本；每题另行规定行情和在途状态，各卡不连续累计交易。</p>
+
+<section class="exercise" data-qid="Q19" aria-labelledby="q19"><h3 id="q19">Q19 常规退出管理情景</h3><p>某普通交易日14:00，没有在途订单；当日新增方案未通过累计限额检查。近月F＝6200，A报价100、B报价4。A、B的目标分别应怎样处理？请算E。若某持仓E从正数直接变成−1，未在检查时恰好等于0，是否应触发？这与开仓以来盈亏是否是一回事？</p>
+<label class="draft-label" for="draft-q19">我的结论、计算过程和理由</label><textarea id="draft-q19" data-draft="Q19" rows="4" placeholder="先写自己的答案；若用过提示，也在这里注明。"></textarea><label class="done-label"><input type="checkbox" data-done="Q19"> 记录为已练习（不自动评定掌握等级）</label><details class="answer" id="answer-q19"><summary>核对 Q19 的推导与易错点</summary><div class="answer-content"><pre><code class="language-text">EA＝100−(6200−6100)＝0 → A目标设为0
+EB＝4−(6200−6300)＝104 → B目标保持−18手
+</code></pre>
+<p>目标设0并不证明A实际已经归零，要等买回成交。E负数同样属于E≤0，也退出，不需要等待某次观测值恰好等于0。</p>
+<p>E没有使用开仓成本，不是利润。若本情景A9手都按100点买回，期权A这笔交易仍会亏<code>42000−90000＝−48000元</code>。此卡并没有因此强制B退出，后面的全组合主动清仓情景另有条件。</p>
+</div></details></section>
+<h3 id="main-23">缺IV时保持哪个量</h3>
+<p>当前实现中，无可用Greeks的选约候选会被剔除。先确定最近合格月后，该月全部缺IV也不会自动换到远月。无有效新增候选、配仓为零或累计超限，都可能消耗当天选约机会。</p>
+<p>对冲时，某月任一实际持仓期权缺可用IV，会保留该月之前的期货目标，不把它当零敞口。它保留的是目标，不保证实际持仓正好等于该目标，也不代表敞口没有变化。该对冲时点仍标记为已处理，不在之后任意分钟补做。</p>
+
+<section class="exercise" data-qid="Q20" aria-labelledby="q20"><h3 id="q20">Q20 IV与行情异常分支</h3><p>沿Q19行情，A、B的IV筛选值各是多少？假设缓存也都过期，二者都没有可用IV，该月此前IM目标为S2的IM目标，此次会把IM目标改成0、重算新数量，还是保留旧目标？如果问题变成缺少新鲜期权报价，能否靠IV缓存继续估值？</p>
+<label class="draft-label" for="draft-q20">我的结论、计算过程和理由</label><textarea id="draft-q20" data-draft="Q20" rows="4" placeholder="先写自己的答案；若用过提示，也在这里注明。"></textarea><label class="done-label"><input type="checkbox" data-done="Q20"> 记录为已练习（不自动评定掌握等级）</label><details class="answer" id="answer-q20"><summary>核对 Q20 的推导与易错点</summary><div class="answer-content"><pre><code class="language-text">TVA＝100−max(6200−6100,0)＝0点
+TVB＝4−max(6200−6300,0)＝4点
+</code></pre>
+<p>都不到5点，不尝试新IV；题设缓存也过期，所以没有可用Greeks。当前实现保留该月先前IM目标，即3手，不把未知风险当成零，也不强行拿过期的旧Delta重算。</p>
+<p>这里冻结的是上次目标，实际持仓可能还受在途与成交影响。缺IV也不会因此自动平掉B。若缺少的是新鲜行情，<code>_price</code>会报错，不能用缓存IV绕过价格时效；行情时效与IV缓存时效是两个不同检查。</p>
+</div></details></section>
+<h2 id="main-24">20 第十六步 退出成交后再调整对冲</h2>
+<p>目标归零是意图，买回成交才减少实际空头。期权尚未平完时仍有敞口；期权都平完而继续持有IM，会留下单独的期货方向风险。</p>
+
+<section class="exercise" data-qid="Q21" aria-labelledby="q21"><h3 id="q21">Q21 部分平仓执行练习</h3><p>另一个独立执行情景：从S2实际持仓开始，A目标已设0，但只买回成交5手；B未变。到了后续配置对冲时点，当前有效Greeks给出A的Delta近似1.00、B为0.10。按实际持仓计算IM目标，与此前S2的IM持仓比较如何调整？本题只练已给有效Greeks下的数量匹配。</p>
+<label class="draft-label" for="draft-q21">我的结论、计算过程和理由</label><textarea id="draft-q21" data-draft="Q21" rows="4" placeholder="先写自己的答案；若用过提示，也在这里注明。"></textarea><label class="done-label"><input type="checkbox" data-done="Q21"> 记录为已练习（不自动评定掌握等级）</label><details class="answer" id="answer-q21"><summary>核对 Q21 的推导与易错点</summary><div class="answer-content"><pre><code class="language-text">A实际＝−9＋5＝−4手
+B实际仍为−18手
+X＝−4×100×1.00−18×100×0.10＝−580
+IM目标＝round(580/200)＝round(2.9)＝3手
+</code></pre>
+<p>已有3手IM，无需调整。A目标虽为0，尚未成交的4手仍有风险，不能把它漏掉。这里按题设已恢复的有效Greeks计算，不能回头把Q20缺值卡的状态无条件继承过来。</p>
+</div></details></section>
+
+<section class="exercise" data-qid="Q22" aria-labelledby="q22"><h3 id="q22">Q22 全部期权已平</h3><p>另设两只期权已全部买回，实际期权为0，但仍有S2数量的IM多头，也没有其他对冲需求。普通成交回报一到，是否自动立即重算对冲？到下一个配置对冲时点，IM目标与调仓动作应是什么？合约尚可交易且没有在途订单。</p>
+<label class="draft-label" for="draft-q22">我的结论、计算过程和理由</label><textarea id="draft-q22" data-draft="Q22" rows="4" placeholder="先写自己的答案；若用过提示，也在这里注明。"></textarea><label class="done-label"><input type="checkbox" data-done="Q22"> 记录为已练习（不自动评定掌握等级）</label><details class="answer" id="answer-q22"><summary>核对 Q22 的推导与易错点</summary><div class="answer-content"><p>普通on_fill不会立即自动重算Delta对冲。下一个配置对冲时点，没有其他敞口和在途时，IM目标为0，应卖出平仓3手多头。</p>
+<p>在等候对冲时点或成交的期间，保留的期货仍是方向敞口；它原来叫“对冲仓”，不意味着期权消失后仍天然无风险。</p>
+</div></details></section>
+<h2 id="main-25">21 第十七步 最终清仓和到期结算</h2>
+<p>显式最终清仓日到14:50及以后，程序优先尝试把仍可交易的期权、期货目标归零。有在途先等待，之后帧再核对。该分支优先于普通选约与对冲。普通交易日14:50不会仅因这个参数就清仓，普通收盘保存也不会自动清掉持仓。</p>
+<p>已停止交易的残仓不能再当普通可交易合约发平仓单。应等待权威现金结算及账本更新，随后清理相关目标和缓存；删除一个本地持仓字典不等于完成结算。</p>
+<p>MO认购到期的每手结算价值为<code>max(S结算−K,0)×100</code>。S结算是交易所规定的指数交割结算价，不是直接拿IM最后一笔成交价代替。交割结算价按最后交易日标的指数最后两小时的算术平均值确定。符合行权条件的买方按规则处理，并与卖方配对；本手册的实值履约题假定已被行权配对。</p>
+
+<section class="exercise" data-qid="Q23" aria-labelledby="q23"><h3 id="q23">Q23 最终清仓日和普通收盘</h3><p>比较普通交易日14:50与显式最终清仓日14:50：若某持仓E&gt;0，程序是否仍可能要求退出？若尚有在途订单，能否直接认为已经清仓完成？</p>
+<label class="draft-label" for="draft-q23">我的结论、计算过程和理由</label><textarea id="draft-q23" data-draft="Q23" rows="4" placeholder="先写自己的答案；若用过提示，也在这里注明。"></textarea><label class="done-label"><input type="checkbox" data-done="Q23"> 记录为已练习（不自动评定掌握等级）</label><details class="answer" id="answer-q23"><summary>核对 Q23 的推导与易错点</summary><div class="answer-content"><p>普通日14:50不会只因<code>flatten_slot</code>参数触发主动清仓；也不把普通收盘保存当成平仓。显式最终清仓日到14:50及以后，优先清理仍可交易的持仓，即使E&gt;0也可将目标归零。</p>
+<p>有在途先等待，之后帧继续核对。已经停止交易的合约不能按普通平仓处理，交权威结算。<code>flatten_requested</code>只是进入过清仓分支，不是所有仓位已成交归零的证明。</p>
+</div></details></section>
+
+<section class="exercise" data-qid="Q24" aria-labelledby="q24"><h3 id="q24">Q24 静态持有到期结局</h3><p>本结局仅用最终S2的实际数量及成本做静态结算分析，假设此后没有任何交易或费用，不能把它当成策略日后不再调仓的预测。近月指数交割结算价和同月IM交割结算价均为6250点。计算A、B的到期价值、卖方履约支出、期权累计净盈亏、IM累计净盈亏及组合净盈亏。假定实值部分正常行权配对。</p>
+<label class="draft-label" for="draft-q24">我的结论、计算过程和理由</label><textarea id="draft-q24" data-draft="Q24" rows="4" placeholder="先写自己的答案；若用过提示，也在这里注明。"></textarea><label class="done-label"><input type="checkbox" data-done="Q24"> 记录为已练习（不自动评定掌握等级）</label><details class="answer" id="answer-q24"><summary>核对 Q24 的推导与易错点</summary><div class="answer-content"><p>本题从S2的实际数量与成本静态持有，不是把S1尚未成交目标也带到到期。</p>
+<pre><code class="language-text">A到期每份价值＝6250−6100＝150点
+A履约支出＝9×150×100＝135000元
+A累计净盈亏＝42000−135000＝−93000元
+
+B到期价值＝max(6250−6300,0)＝0
+B履约支出＝0
+B累计净盈亏＝17400元
+期权合计＝−75600元
+
+IM累计盈亏＝(3×6250−18080)×200＝134000元
+组合累计净盈亏＝58400元
+</code></pre>
+<p>计算使用题设的指数交割结算价和IM交割结算价。不能因为IM当时最后一笔成交是某价格，就直接替换官方结算依据。本结局假定此后无任何交易，实际策略继续调仓时结果会变化。</p>
+</div></details></section>
+
+<section class="exercise" data-qid="Q25" aria-labelledby="q25"><h3 id="q25">Q25 全部主动清仓结局</h3><p>这是与Q24互斥的另一个结局，不能把两个结局的收益相加。从最终S2的实际数量与成本开始，题设此刻无在途订单，处于显式最终清仓日且合约仍可交易。所有期权与IM已按A＝100点、B＝4点、IM＝6200点完成平仓。分别计算两只期权、IM及组合的净盈亏。</p>
+<label class="draft-label" for="draft-q25">我的结论、计算过程和理由</label><textarea id="draft-q25" data-draft="Q25" rows="4" placeholder="先写自己的答案；若用过提示，也在这里注明。"></textarea><label class="done-label"><input type="checkbox" data-done="Q25"> 记录为已练习（不自动评定掌握等级）</label><details class="answer" id="answer-q25"><summary>核对 Q25 的推导与易错点</summary><div class="answer-content"><pre><code class="language-text">A买回支出＝9×100×100＝90000元
+A净盈亏＝42000−90000＝−48000元
+B买回支出＝18×4×100＝7200元
+B净盈亏＝17400−7200＝10200元
+期权合计＝−37800元
+
+IM净盈亏＝(3×6200−18080)×200＝104000元
+组合净盈亏＝66200元
+</code></pre>
+<p>Q24与Q25是同一持仓的两个互斥结局，不能相加为收益。本题明确没有在途并已实际完成平仓，才可以把相应持仓视为归零。</p>
+</div></details></section>
+<h2 id="main-26">22 扩展场景 跨月份分别对冲</h2>
+
+<section class="exercise" data-qid="Q26" aria-labelledby="q26"><h3 id="q26">Q26 同账户的跨月扩展情景</h3><p>这是一个新的已知实际快照，只保留近月A空头4手、Delta＝0.50；另有次月D空头10手、Delta＝0.40。近月IM多头1手、次月IM多头1手，乘数沿用100与200，没有在途。两个IM的目标和各自调仓动作是什么？为什么不能把全部期权敞口统一交给近月IM？</p>
+<label class="draft-label" for="draft-q26">我的结论、计算过程和理由</label><textarea id="draft-q26" data-draft="Q26" rows="4" placeholder="先写自己的答案；若用过提示，也在这里注明。"></textarea><label class="done-label"><input type="checkbox" data-done="Q26"> 记录为已练习（不自动评定掌握等级）</label><details class="answer" id="answer-q26"><summary>核对 Q26 的推导与易错点</summary><div class="answer-content"><p>近月：<code>round(4×0.50×100/200)＝1手IM多头</code>，已有1手，不动。</p>
+<p>次月：<code>round(10×0.40×100/200)＝2手IM多头</code>，已有1手，再买1手次月IM。</p>
+<p>该策略按同月合约映射分别汇总。不能把两个月份的全部敞口都交给近月IM，也不能用主力标签直接覆盖合约映射。</p>
+</div></details></section>
+<h2 id="main-27">23 综合复核</h2>
+<p>以下题目用来间隔复核，不表示课程已经结业。先独立写答案，再核对推导；同一项至少两次独立验证且含一次间隔回忆，才更新掌握等级。</p>
+
+<section class="exercise" data-qid="R01" aria-labelledby="r01"><h3 id="r01">R01 指标和数据分工</h3><p>沿本案例，请分别说明I、F、C、K、IV、Delta、Gamma、Vega、乘数、实际手数、目标手数各负责哪一件事。用一段日常语言把“行情到选约、配仓、成交、对冲、退出”连起来。</p>
+<label class="draft-label" for="draft-r01">我的结论、计算过程和理由</label><textarea id="draft-r01" data-draft="R01" rows="4" placeholder="先写自己的答案；若用过提示，也在这里注明。"></textarea><label class="done-label"><input type="checkbox" data-done="R01"> 记录为已练习（不自动评定掌握等级）</label><details class="answer" id="answer-r01"><summary>核对 R01 的推导与易错点</summary><div class="answer-content"><p>I负责执行价过滤；F是IV、Greeks和E使用的同月期货参考价；C是期权市场报价；K是固定执行价。IV由报价反解，Delta用于选档与方向敞口，Gamma决定档间理想相对手数并刻画Delta变化，Vega决定报价对IV变化的敏感度并用于总规模归一化。</p>
+<p>乘数将报价点变成每手金额；实际手数是风险事实，目标是希望达到的净仓，二者之间还隔着订单和成交。先定资格与月份、取得IV和Greeks，再挑Delta档、按Gamma和Vega定新增量，累加旧目标并检查限额与退出，计算实际持仓对冲，提交执行，最后按真实交易和结算合并两条腿盈亏。</p>
+</div></details></section>
+
+<section class="exercise" data-qid="R02" aria-labelledby="r02"><h3 id="r02">R02 预算不是最大损失</h3><p>假设S1期权目标已经全部成交，A、B的Vega仍保持教学值。IV上升2个百分点、F不变，累计期权组合近似不利变化多少元？是否只可能亏当天的5000元新增尺度？期货能否因价格没变就自动产生对应盈利？</p>
+<label class="draft-label" for="draft-r02">我的结论、计算过程和理由</label><textarea id="draft-r02" data-draft="R02" rows="4" placeholder="先写自己的答案；若用过提示，也在这里注明。"></textarea><label class="done-label"><input type="checkbox" data-done="R02"> 记录为已练习（不自动评定掌握等级）</label><details class="answer" id="answer-r02"><summary>核对 R02 的推导与易错点</summary><div class="answer-content"><pre><code class="language-text">满S1的1个百分点现金敏感度
+＝14×300＋28×100＝7000元
+IV上升2个百分点时近似不利变化＝14000元
+</code></pre>
+<p>它包括旧仓的2000元与新仓的5000元每个百分点敏感度。每日新增尺度不是整个累计组合的风险上限，也不是止损保证。F没有变化，IM不会因报价变化产生对应盈利来自动抵消这14000元。</p>
+</div></details></section>
+
+<section class="exercise" data-qid="R03" aria-labelledby="r03"><h3 id="r03">R03 同一合约命中多个档</h3><p>独立重配情景：A的Delta改为0.30，B改为0.05，其他配仓指标仍用原表，目标仍为0.20、0.35。两个档各命中谁？先按档计算再合并后，该合约理想新增手数及round后手数是多少？相应的1个百分点现金敏感度是否恰好等于5000元？</p>
+<label class="draft-label" for="draft-r03">我的结论、计算过程和理由</label><textarea id="draft-r03" data-draft="R03" rows="4" placeholder="先写自己的答案；若用过提示，也在这里注明。"></textarea><label class="done-label"><input type="checkbox" data-done="R03"> 记录为已练习（不自动评定掌握等级）</label><details class="answer" id="answer-r03"><summary>核对 R03 的推导与易错点</summary><div class="answer-content"><p>0.20档：A距离0.10、B距离0.15，选A。0.35档：A距离0.05、B距离0.30，仍选A。</p>
+<p>两档共享一份预算，先将同一合约的理想手数合并。A总理想手数：<code>500000/(300×100)＝16.666666…手</code>；合并后round为17手。</p>
+<p>1个百分点情景风险为<code>17×300＝5100元</code>，略高于理想5000元，原因是整手取整。若先把每档8.333…分别round再合并成16手，便与源码的合并顺序不同。</p>
+</div></details></section>
+
+<section class="exercise" data-qid="R04" aria-labelledby="r04"><h3 id="r04">R04 先看实际还是先看目标</h3><p>一期权目标已为0，实际仍有6手空头，且买回平仓单尚在途；当前可用Delta＝0.50，乘数沿用。只讨论无期货在途的对冲时点，期货理想手数、按Python round后的目标各是多少？若对冲多头已经实际持有2手，是否还要再买2手？</p>
+<label class="draft-label" for="draft-r04">我的结论、计算过程和理由</label><textarea id="draft-r04" data-draft="R04" rows="4" placeholder="先写自己的答案；若用过提示，也在这里注明。"></textarea><label class="done-label"><input type="checkbox" data-done="R04"> 记录为已练习（不自动评定掌握等级）</label><details class="answer" id="answer-r04"><summary>核对 R04 的推导与易错点</summary><div class="answer-content"><pre><code class="language-text">实际Delta敞口＝−6×100×0.50＝−300
+理想IM手数＝300/200＝1.5
+Python round后目标＝2手多头
+</code></pre>
+<p>已有2手，保持，不再买2手。期权目标0不抹掉仍有6手实际空头的事实；期货目标2也不是本次需要新增2手。</p>
+</div></details></section>
+<h2 id="main-28">附录A 程序中的定价与期限公式</h2>
+<p>入门先掌握输入和输出。以下保留源码数值口径，手算练习使用题设指标，不要求用它们精确还原主案例报价。</p>
+<pre><code class="language-text">N＝不含今天、包含最后交易日的剩余交易日数
+选约反解IV时：T＝N/252
+对冲反解IV时：T＝N/252＋当日剩余交易分钟/(240×252)
+Vega折现另用：Tc＝到最后交易日的自然日差/365
+
+d1＝[ln(F/K)＋sigma²×T/2]/[sigma×sqrt(T)]
+d2＝d1−sigma×sqrt(T)
+Black76认购价＝exp(−r×T)×[F×Ncdf(d1)−K×Ncdf(d2)]
+
+源码Delta＝Ncdf(d1)
+源码Gamma＝phi(d1)/[F×sigma×sqrt(T)]
+源码Vega＝phi(d1)×F×sqrt(T)×exp(−r×Tc)
+</code></pre>
+<p><code>Ncdf</code>是标准正态累计分布，<code>phi</code>是其密度。源码Delta、Gamma没有定价函数中的折现因子，Vega使用另一个期限Tc；它们是当前策略沿用的指标口径，不要与另一套折现定义混接。</p>
+<p>当前r＝0.02。IV二分搜索区间为0.0001至5.0，执行64轮。函数会检查基本数值和价格边界，但没有额外的区间可达性和最终重定价误差验收，所以“返回数值”不代表所有输入都能精确重定价。</p>
+<p>当日剩余分钟按09:30至11:30、13:00至15:00共240分钟的保留公式计算；14:00为60分钟，14:55为5分钟。这是定价期限口径，不用于决定交易所或实际合约的停止交易时点。</p>
+
+<section class="exercise" data-qid="B04" aria-labelledby="b04"><h3 id="b04">B04 期限和小数复核</h3><p>剩余5个交易日时，选约T是多少？14:00对冲T应在此基础上增加多少？若Delta＝0.30、Gamma＝0.006，期货下跌1点，新Delta是多少？这个结果是Delta还是Gamma？</p>
+<label class="draft-label" for="draft-b04">我的结论、计算过程和理由</label><textarea id="draft-b04" data-draft="B04" rows="4" placeholder="先写自己的答案；若用过提示，也在这里注明。"></textarea><label class="done-label"><input type="checkbox" data-done="B04"> 记录为已练习（不自动评定掌握等级）</label><details class="answer" id="answer-b04"><summary>核对 B04 的推导与易错点</summary><div class="answer-content"><p>选约T＝<code>5/252≈0.01984127</code>。14:00对冲加<code>60/(240×252)≈0.00099206</code>，合计<code>5.25/252≈0.02083333</code>。</p>
+<p>期货下跌1点，Delta变化约为<code>0.006×(−1)＝−0.006</code>，新Delta＝<code>0.30−0.006＝0.294</code>。0.294是新的Delta，Gamma在本题近似中仍是0.006。</p>
+</div></details></section>
+<h2 id="main-29">附录B 公式速查和易错点</h2>
+<table>
+<thead>
+<tr>
+<th>任务</th>
+<th>计算</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>认购到期价值</td>
+<td>max(S结算−K,0)</td>
+</tr>
+<tr>
+<td>买方净盈亏</td>
+<td>到期价值或卖出价减去买入价，再乘手数与乘数</td>
+</tr>
+<tr>
+<td>卖方净盈亏</td>
+<td>开仓卖价减去买回价或到期结算价值，再乘手数与乘数</td>
+</tr>
+<tr>
+<td>多头期货盈亏</td>
+<td>(卖出或估值价−买入价)×M×手数</td>
+</tr>
+<tr>
+<td>IV筛选值</td>
+<td>C−max(F−K,0)</td>
+</tr>
+<tr>
+<td>常规退出指标</td>
+<td>E＝C−(F−K)，E≤0触发</td>
+</tr>
+<tr>
+<td>期权Delta敞口</td>
+<td>sum(带符号实际手数×m×Delta)</td>
+</tr>
+<tr>
+<td>同月IM目标</td>
+<td>round(−该月Delta敞口/M)</td>
+</tr>
+<tr>
+<td>无在途时调仓量</td>
+<td>目标净仓位−实际净仓位</td>
+</tr>
+<tr>
+<td>有同向在途时简化差量</td>
+<td>目标−实际−已在途带符号数量</td>
+</tr>
+<tr>
+<td>每手IV情景风险</td>
+<td>Vega×IV小数变化量×m</td>
+</tr>
+<tr>
+<td>理想新增现金Vega</td>
+<td>nav×vega_budget/100</td>
+</tr>
+<tr>
+<td>Gamma档间贡献</td>
+<td>q×m×Gamma，相等时q成反比于m×Gamma</td>
+</tr>
+<tr>
+<td>组合盈亏</td>
+<td>期权已实现与未实现＋期货已实现与未实现−费用</td>
+</tr>
+</tbody>
+</table>
+<p>读公式时先标单位：F变化是IM报价点，Delta把它变为MO报价点；乘数再把报价点变成钱。Gamma改变的是Delta，不直接等于期权报价的变化。IV改变的是模型波动率参数，Vega才把这一步换成报价变化。</p>
+<p>五个需要反复检查的边界：剩余恰好5天可以用于新增；E恰好0也退出；负E同样退出；round的半偶规则；目标为0不代表实际已平完。</p>
+<p>“收取时间价值”是理解收益来源的方式，不是收益保证。动态对冲可能在上涨后增加多头、回落后减少多头，产生高买低卖成本。策略也没有“IV高于某个历史波动率才开仓”的明确比较条件，不能直接给它贴上已验证的波动率套利标签。</p>
+<h2 id="main-30">附录C 本地来源与继续学习</h2>
+<p>本手册的实现依据是2026年11月19日核对的当前文件：</p>
+<ul>
+<li><a href="../strategy.py">strategy.py</a>：第317行起IV与Greeks；第349行起帧执行顺序；第449行起选约；第480行起累计限额；第498行起退出；第525行起实际持仓对冲；第410行起最终清仓。</li>
+<li><a href="../vega_signal.py">vega_signal.py</a>：第63行起预算；第174行起IV反解；第200行起期限；第215行起Greeks；第237行起配仓。</li>
+<li><a href="../config/vega_backtest.json">vega_backtest.json</a>：本手册采用的参数快照。</li>
+<li><a href="../run_backtest.py">run_backtest.py</a>、<a href="../live.py">live.py</a>：最终清仓日与运行装配。</li>
+<li><a href="https://www.cffex.com.cn/u/cms/www/202207/1820311129r5.pdf">中金所股指期权合约交易细则</a>：到期结算和现金履约的官方依据。</li>
+<li><a href="https://www.cffex.com.cn/u/cms/www/202207/18190308vxpv.pdf">中金所IM合约规格</a>：IM乘数和合约规格。</li>
+<li><a href="https://edu.yhqh.com.cn/upload/cn/file/2024-07/col83/1720490055302.pdf">中金所中证1000股指期权介绍</a>：MO乘数、欧式及现金交割说明。</li>
+</ul>
+<p>代码或配置发生变化后，应重新核对本手册的参数和分支。文件指纹保存在同目录<code>来源与校验.json</code>。</p>
+<p>继续聊天时，可以说：“按本地学习手册，从Q04继续，一次问一题。”当前聊天已完成Q01、Q02；Q04的0.20档选择尚未作答，保存文档本身不增加掌握等级。</p>
+
+<section class="record"><h2 id="learning-record">学习记录快照</h2>
+<p>记录日期：2026年11月19日。依据本聊天中实际回答保留评估；生成讲义、打开答案或勾选完成，不自动提高等级。</p>
+<h3 id="record-1">当前技能地图</h3>
+<p>0至5级含义：未形成认识、听过、能跟随、能在帮助下完成、能独立完成、能解释并处理边界。当前主线目标为4级。</p>
+<pre><code class="language-text">认购权利与买卖方向  [██████░░░░] 3/5
+期权价格与盈亏      [████████░░] 4/5
+Delta与期货对冲     [██████░░░░] 3/5
+Gamma              [██████░░░░] 3/5
+IV                 [████░░░░░░] 2/5
+Vega               [██████░░░░] 3/5
+执行价、月份与选约  [██████░░░░] 3/5
+仓位预算与逐日累加  [██████░░░░] 3/5
+退出与到期处理      [████░░░░░░] 2/5
+</code></pre>
+<p>新旧版本比较按用户要求暂缓，不计入当前9项主线。</p>
+<h3 id="record-2">已观察到的能力</h3>
+<ul>
+<li>能独立计算多种期权买回、到期履约以及组合盈亏。</li>
+<li>能在综合题中由实际16手期权、Delta和乘数，算出IM目标4手，已有5手则平1手。</li>
+<li>能解释Delta对期货报价的敏感度，以及Gamma对Delta的影响；曾独立反推Gamma为0.004。</li>
+<li>能计算IV变化与Vega造成的报价变化，并换算手数和金额；知道它可能抵消或超过期货价格变化的作用。</li>
+<li>能说明新增量累加旧目标，未被选中的旧仓继续保留。</li>
+<li>当前综合案例已筛出A、B，已算出IV筛选值50点、10点并判断达标。</li>
+</ul>
+<h3 id="record-3">需要继续巩固</h3>
+<ul>
+<li>Gamma配比、Vega每组风险、总预算、最终新增手数的完整串联，曾需要逐步提示。</li>
+<li>目标总仓位与当次调仓量曾混淆；不能仅凭一次提示后答对恢复独立完成等级。</li>
+<li>退出条件曾误记为只有E＝0，已纠正为E≤0，尚需间隔独立复核。</li>
+<li>区分剩余交易日的新开门槛与已有持仓退出条件；区分次月与次主力。</li>
+<li>IV是当前报价反推的参数；IV门槛、缓存与行情时效的完整数据流程还要验证。</li>
+</ul>
+<h3 id="record-4">当前继续位置</h3>
+<p>同一个综合案例继续，不另换人物和账户。文档题号Q01、Q02对应的计算已在聊天完成；Q03可作输入输出口述复核。当前等待Q04：先处理目标Delta＝0.20这一档，A的Delta＝0.35、B＝0.10，分别比较距离，再处理0.35档。</p>
+<h3 id="record-5">自学记录模板</h3>
+<table>
+<thead>
+<tr>
+<th>日期</th>
+<th>题号</th>
+<th>首次结论及计算</th>
+<th>是否看提示或答案</th>
+<th>错误原因</th>
+<th>间隔复核结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>每项至少两次独立检查，至少一次不是刚讲完答案后的复述，才考虑提高等级。复核失败则降低并重学。所有当前主线达到目标后，再做覆盖各项的混合评估，不能以读完文档代替结业。</p>
+<h3 id="record-6">跨聊天续接文本</h3>
+<pre><code class="language-text">请继续使用socratic-tutor，按本地《策略流程学习手册》同一A/B案例，一次问一题。
+用户是期权入门者，重在把业务流程、指标作用和单位串联，暂不比较新旧版本。
+当前进度与等级见本文件；不要重新做整套诊断。
+已完成候选A/B与IV门槛50/10，下一步Q04的0.20档与0.35档Delta选择。
+若卡住先拆输入、输出与单手贡献；不要把问题变成靠二选一猜答案。
+不要仅凭公式猜中或刚看完答案就升级；注意E≤0、目标/实际/在途、点与元。
+</code></pre>
+
+</section><section><h2 id="answer-guide">怎样核对答案</h2><p>每道题后均有默认收起的推导。先写自己的答案，再展开核对。完整答案原稿与学习记录也保存在同目录，方便用本地编辑器查看。</p></section></article></main></div>
+<script>
+(()=>{
+const storageKey='mo-learning-v1-20261119';
+let state={drafts:{},done:{Q01:true,Q02:true},last:'q04'};
+try{const saved=JSON.parse(localStorage.getItem(storageKey)||'null');if(saved&&typeof saved==='object'){state={...state,...saved,drafts:saved.drafts||{},done:saved.done||{}}}}catch(e){}
+const status=document.getElementById('save-status');
+const resume=document.getElementById('resume');
+const select=document.getElementById('question-select');
+const wide=window.matchMedia('(min-width:901px)');
+const outline=document.getElementById('outline');
+outline.open=wide.matches;
+wide.addEventListener('change',event=>{outline.open=event.matches});
+new ResizeObserver(entries=>{document.documentElement.style.setProperty('--toolbar-height',entries[0].target.getBoundingClientRect().height+'px')}).observe(document.querySelector('.toolbar'));
+function update(){const count=[...document.querySelectorAll('[data-done]')].filter(x=>x.checked).length;document.getElementById('practice-count').textContent=`已标记练习 ${count} / ${document.querySelectorAll('[data-done]').length}`;const valid=document.getElementById(state.last);if(valid){resume.href='#'+state.last;resume.textContent='继续 '+state.last.toUpperCase();select.value=state.last}}
+function save(){try{localStorage.setItem(storageKey,JSON.stringify(state));status.textContent='草稿已保存到此浏览器'}catch(e){status.textContent='本地存储不可用，请导出作答备份'}update()}
+document.querySelectorAll('[data-draft]').forEach(el=>{el.value=state.drafts[el.dataset.draft]||'';el.addEventListener('input',()=>{state.drafts[el.dataset.draft]=el.value;state.last=el.dataset.draft.toLowerCase();save()});el.addEventListener('focus',()=>{state.last=el.dataset.draft.toLowerCase();save()})});
+document.querySelectorAll('[data-done]').forEach(el=>{el.checked=Boolean(state.done[el.dataset.done]);el.addEventListener('change',()=>{state.done[el.dataset.done]=el.checked;state.last=el.dataset.done.toLowerCase();save()})});
+document.getElementById('jump').addEventListener('click',()=>{const target=document.getElementById(select.value);if(target){state.last=select.value;save();target.scrollIntoView({behavior:'auto',block:'start'})}});
+document.getElementById('export').addEventListener('click',()=>{const out={...state,note:'练习记录，不是掌握等级评估',document:'MO认购策略流程学习手册'};const url=URL.createObjectURL(new Blob([JSON.stringify(out,null,2)],{type:'application/json;charset=utf-8'}));const link=document.createElement('a');link.href=url;link.download='MO策略我的作答.json';document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000)});
+document.getElementById('print').addEventListener('click',()=>window.print());
+update();
+})();
+</script>
+</body></html>

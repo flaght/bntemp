@@ -1,0 +1,40 @@
+{
+  "purpose": "教学综合案例，不是实盘或原生回测输出",
+  "date": "2026-11-19",
+  "synthetic_independent_greeks": true,
+  "index": 5900,
+  "near_future": 6000,
+  "next_future": 6020,
+  "option_multiplier": 100,
+  "future_multiplier": 200,
+  "cash_vega_budget_per_sigma": 500000,
+  "delta_targets": [0.20, 0.35],
+  "limits": {"single_option": 100, "total_options": 200, "single_future": 100},
+  "candidates": [
+    {"symbol": "A", "month": "near", "remaining_days": 5, "strike": 6100, "premium": 50},
+    {"symbol": "B", "month": "near", "remaining_days": 5, "strike": 6300, "premium": 10},
+    {"symbol": "C", "month": "near", "remaining_days": 5, "strike": 5800, "premium": 240},
+    {"symbol": "D", "month": "next", "remaining_days": 20, "strike": 6100, "premium": 120},
+    {"symbol": "E", "month": "next", "remaining_days": 20, "strike": 6300, "premium": 60}
+  ],
+  "s0": {
+    "options": {
+      "A": {"signed_quantity": -4, "entry_price": 40},
+      "B": {"signed_quantity": -8, "entry_price": 8}
+    },
+    "future": {"signed_quantity": 1, "entry_price": 5980}
+  },
+  "greeks": {
+    "A": {"delta": 0.35, "gamma": 0.002, "vega": 300},
+    "B": {"delta": 0.10, "gamma": 0.001, "vega": 100}
+  },
+  "new_option_fills": [
+    {"symbol": "A", "signed_quantity": -5, "price": 52},
+    {"symbol": "B", "signed_quantity": -10, "price": 11}
+  ],
+  "s2_market": {"future": 6050, "A": 70, "B": 16},
+  "s2_future_fill_price": 6050,
+  "hypothetical_shock": {"future_change": 2, "sigma_change": 0.01},
+  "independent_settlement_ending": {"index": 6250, "future": 6250},
+  "independent_flatten_ending": {"A": 100, "B": 4, "future": 6200}
+}

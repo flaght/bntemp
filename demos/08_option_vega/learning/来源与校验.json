@@ -1,0 +1,55 @@
+{
+  "document_date_shanghai": "2026-11-19",
+  "source_fingerprints": {
+    "demos/08_option_vega/strategy.py": {
+      "path": "/Users/kerry/work/bomber1/pro/demos/08_option_vega/strategy.py",
+      "sha256": "385bcf352a52a1431d50297d6af32295e650e3ab033d42a7fd9ed9a4a1e0f337"
+    },
+    "demos/08_option_vega/vega_signal.py": {
+      "path": "/Users/kerry/work/bomber1/pro/demos/08_option_vega/vega_signal.py",
+      "sha256": "7407614b19422773acff714e65508bf668445c1dc1d567c40c68ef775001ccfe"
+    },
+    "demos/08_option_vega/config/vega_backtest.json": {
+      "path": "/Users/kerry/work/bomber1/pro/demos/08_option_vega/config/vega_backtest.json",
+      "sha256": "643fc631d4baa6ca3a2c4fb4613c07f49d9f3069fb02ec86e123d1c76081b488"
+    }
+  },
+  "question_count": 34,
+  "answer_count": 34,
+  "local_html_links_checked": 35,
+  "numeric_validation_passed": true,
+  "source_allocate_short_checked": true,
+  "iv_price_roundtrip_checks": [
+    {
+      "symbol": "A",
+      "iv": 0.2690219856478355,
+      "price_error": -6.394884621840902e-13
+    },
+    {
+      "symbol": "B",
+      "iv": 0.26303515204185757,
+      "price_error": 8.881784197001252e-15
+    }
+  ],
+  "teaching_greeks_are_independent_synthetic_inputs": true,
+  "key_case_results": {
+    "new_signed_option_lots": {
+      "B": -20,
+      "A": -10
+    },
+    "s1_option_goals": {
+      "A": "-14",
+      "B": "-28"
+    },
+    "s2_actual_options": {
+      "A": "-9",
+      "B": "-18"
+    },
+    "s2_actual_future": 3,
+    "s2_mark_to_market_pnl": "-18400",
+    "shock_pnl": "-4650.000",
+    "static_settlement_ending_net": "58400",
+    "independent_flatten_ending_net": "66200"
+  },
+  "browser_visual_qa": "另见阅读版检查记录.json；此脚本只校验数据及HTML结构"
+}
