@@ -387,13 +387,33 @@ class SharedAccountTests(unittest.TestCase):
     def test_unlimited_budget_is_not_valid_for_strategy_or_netted_account(self):
         shared = import_module("bomber.framework.trader.execution.shared")
         with self.assertRaises(ValueError):
-            shared.SharedRiskBudget(None, 1)
+            shared.SharedRiskBudget(1, None)
         with self.assertRaisesRegex(ValueError, "independent"):
             self.service(quantity=None, notional=None)
         service, _, _ = self.service()
         with self.assertRaisesRegex(ValueError, "策略自身"):
             service.strategy_client("unbounded", routes={"main": self.instrument},
                 budget=shared.SharedRiskBudget(None, None))
+
+    def test_notional_only_strategy_budget_still_rejects_before_mutating(self):
+        shared = import_module("bomber.framework.trader.execution.shared")
+        service, client, (one, two) = self.service()
+        limits = replace(service.instrument_limits[self.instrument], max_order_quantity=10)
+        service.instrument_limits[self.instrument] = client.risk_manager.instrument_limits[self.instrument] = limits
+        one.instrument_limits[self.instrument] = limits
+        one.budget = shared.SharedRiskBudget(None, 20000)
+        self.assertEqual(one.budget.state(),
+            {"max_gross_quantity": None, "max_gross_notional": "20000"})
+        self.submit(one, 6)  # 超过原端口5手预算，仍低于20000金额预算。
+        before = service.snapshot_state()
+        with self.assertRaisesRegex(ValueError, "gross_notional=21000"):
+            self.submit(one, 7, revision=2)
+        self.assertEqual(service.snapshot_state(), before)
+        self.assertEqual(two.budget.state(),
+            {"max_gross_quantity": "5", "max_gross_notional": "50000"})
+        with self.assertRaises(ValueError):
+            self.submit(two, 6)
+        self.assertEqual(service.snapshot_state(), before)
 
     def test_strategy_only_budget_does_not_require_other_strategy_quote(self):
         modules = self.native_modules()

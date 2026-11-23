@@ -389,9 +389,16 @@ def assemble(args, inputs, driver=None, *, account_routes=(), shared_service=Non
         if args.mode != "simnow" or not strategy_id or account_routes:
             raise ValueError("08共享执行须为具有独立策略ID的SimNow会话")
         from bomber.framework.trader.execution.shared import SharedRiskBudget
+        # 策略0手数表示不设限，不能在聚合时当作零容量；任一资产无
+        # 有限数量上限时，仅保留金额预算及已有逐合约/策略层限制。
+        option_quantity = args.config.max_total_option_lots or (
+            args.config.max_option_lots * len(refs.contracts) if args.config.max_option_lots else None)
+        future_quantity = (args.config.max_future_lots * len(refs.futures)
+            if args.config.max_future_lots or not refs.futures else None)
+        quantity = (option_quantity + future_quantity
+            if option_quantity is not None and future_quantity is not None else None)
         port = shared_service.strategy_client(sid, routes={str(i): i for i in ids.values()},
-            budget=SharedRiskBudget(args.config.max_total_option_lots + args.config.max_future_lots * len(refs.futures),
-                args.max_notional), instrument_limits=limits)
+            budget=SharedRiskBudget(quantity, args.max_notional), instrument_limits=limits)
         execution = ExecutionComponents(port, positions, shared_service.prices)
     elif args.mode == "model":
         execution = build_model_execution(CLIENT_ID, instrument_limits=limits, positions=positions)

@@ -34,6 +34,26 @@ class OptionSharedRolloverTests(unittest.TestCase):
     setUp = fixture.MigrationTests.setUp
     identity = fixture.MigrationTests.identity
 
+    def test_shared_assembly_maps_unlimited_lots_without_changing_checkpoint_or_account_budget(self):
+        from dataclasses import replace
+        original = self.new_args.config
+        for option, total, future, expected in (
+                (0, 0, 0, None), (1, 0, 1, 2), (1, 2, 0, None), (1, 2, 1, 3)):
+            with self.subTest(option=option, total=total, future=future):
+                self.new_args.config = replace(original, max_option_lots=option,
+                    max_total_option_lots=total, max_future_lots=future)
+                account, service, session, _, transport = self.shared()
+                self.assertEqual(session.client.budget.max_gross_quantity, expected)
+                self.assertEqual(session.client.budget.max_gross_notional, self.new_args.max_notional)
+                self.assertEqual(service.budget.state(),
+                    {"max_gross_quantity": "10", "max_gross_notional": "10000000"})
+                for key, instrument in session.references.instrument_ids.items():
+                    limits = session.client.instrument_limits[instrument]
+                    cap = option if key in session.references.contracts else future
+                    self.assertEqual(limits.max_abs_position, cap or None)
+                self.assertFalse(transport.sent or transport.canceled)
+                self.assertEqual(self.source.read_bytes(), self.before)
+
     def test_missing_new_entry_fields_restore_only_original_defaults(self):
         module = import_module("demos.08_option_vega.recovery")
         old, new = deepcopy(self.identity), deepcopy(self.new_identity)

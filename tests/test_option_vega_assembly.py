@@ -626,7 +626,7 @@ class LiveYamlConfigTests(unittest.TestCase):
         self.assertEqual(args.market_volume_mode, "cumulative")
         self.assertEqual(args.index_dataset, "index.minute")
         self.assertEqual(args.index_code, "000852")
-        self.assertEqual(args.option_slot, "13:36")
+        self.assertEqual(args.option_slot, "13:58")
         self.assertEqual(args.config.nav, Decimal("40000000"))
         self.assertEqual(args.execution_policy.account_reconciliation.value, "off")
         self.assertFalse(hasattr(args, "option_bar_minutes"))
@@ -685,7 +685,7 @@ class LiveYamlConfigTests(unittest.TestCase):
         path = Path(self.temp.name) / "strategy.json"
         for values, message in (({"connect": True}, "未允许字段"),
                                 ({"vega_budget": 0}, "vega_budget必须"),
-                                ({"max_option_lots": 0}, "max_option_lots必须")):
+                                ({"max_option_lots": -1}, "max_option_lots须为非负整数")):
             with self.subTest(values=values):
                 path.write_text(json.dumps(values))
                 self.assert_invalid(self.argv("live_recording", "--strategy-config", str(path)), message)

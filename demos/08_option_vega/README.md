@@ -842,6 +842,30 @@ Live仍使用M1交易腿和可投影的原始指数声明；`--option-bar-minute
 
 ## 6. 验证与诊断
 
+### 部署优化版本检查
+
+新环境可先单独复制`scripts/check_optimized_environment.py`，用实际回测Python执行。
+脚本内置`e6c2ac4`参考提交的27个关键Python源文件SHA256，打印当前导入位置，
+并独立核对08入口的参数注册、编译SDK标记/接口、YAML中的启用状态及prepared目录结构。
+不会启动回测、行情或账户，不编译、不同步源码；只有显式`--output`会写入新的JSON报告。
+
+```bash
+cd /home/dev/workspace || exit 1
+PYTHONPATH=. python3 scripts/check_optimized_environment.py \
+  --project-root /home/dev/workspace \
+  --config-file demos/08_option_vega/config/strategy.yaml \
+  --config-id m5_index_blend \
+  --prepared-root /root/bbnt/data/prepared \
+  --output "/tmp/vega-optimized-environment-$(date +%Y%m%d-%H%M%S).json"
+```
+
+`FAIL`表示缺少标记/接口或模块不可导入；`REVIEW`表示标记存在但源码与参考不同，
+不能自动认定旧版或已验证版本。二者均返回非零退出码。`WARN`提示可选扩展或配置问题，
+`SKIP`表示当前未声明该项。未使用replay输入时，Cython帧恢复和认证产物复用单独展示，
+不作为普通prepared回测的必需项。配置检查仅针对YAML，不包含实际回测命令行覆盖。
+prepared仅检查manifest/index/issues结构，不代替完整SHA256与原始数据对照；
+SDK检查基于标记和接口，不证明整个二进制的源码身份，也不代替金融结果验收。
+
 ### 回测性能统计与默认日志
 
 `m5_index_blend`示例使用`log_level: WARNING`，阶段耗时、交易日进度和性能统计仍直接输出。
