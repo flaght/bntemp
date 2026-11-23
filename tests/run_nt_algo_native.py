@@ -16,6 +16,9 @@ def main():
             host_factory=lambda: host, wait_seconds=0.1)
         case.submit(one, 2)
         first = transport.sent[-1]['OrderRef']
+        task_id = next(iter(runtime.snapshot_state()['tasks']))
+        assert str(host.primaries[task_id].strategy_id) == 'NTAlgo-one'
+        assert account.driver._orders[first][1].strategy_id == 'one'
         transport.fill(first, 1)
         end = time.monotonic() + 5
         while len(transport.sent) < 2 and time.monotonic() < end:

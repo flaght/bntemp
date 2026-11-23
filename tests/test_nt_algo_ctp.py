@@ -80,6 +80,50 @@ class NTAlgoCtpTests(unittest.TestCase):
         runtime._host.advance(self.now)
         service.poll()
 
+    def test_native_strategy_ids_are_valid_distinct_and_keep_original_ownership(self):
+        import sys
+        from decimal import Decimal
+        from types import ModuleType, SimpleNamespace as NS
+        from bomber.framework.trader.execution.nt_algo import NativeNTHost, encode_order
+
+        class StrictStrategyId(str):
+            def __new__(cls, value):
+                if '-' not in value:
+                    raise ValueError("value was malformed: did not contain a hyphen '-'")
+                return super().__new__(cls, value)
+
+        def module(name, **members):
+            result = ModuleType(name)
+            result.__dict__.update(members)
+            return result
+
+        # 保留实际primary构造路径；替身复现远程SDK对StrategyId的格式约束。
+        sdk = {
+            'bomber.core.uuid': module('bomber.core.uuid', UUID4=object),
+            'bomber.execution.messages': module('bomber.execution.messages', SubmitOrder=NS),
+            'bomber.model.identifiers': module('bomber.model.identifiers',
+                ClientOrderId=str, StrategyId=StrictStrategyId, InstrumentId=type(self.instrument)),
+            'bomber.model.enums': module('bomber.model.enums', OrderSide=self.contracts.OrderSide),
+            'bomber.model.objects': module('bomber.model.objects',
+                Quantity=NS(from_str=Decimal), Price=NS(from_str=Decimal)),
+            'bomber.model.orders': module('bomber.model.orders', LimitOrder=NS),
+        }
+        primaries, commands = [], []
+        host = NativeNTHost.__new__(NativeNTHost)
+        host.trader_id, host.clock = 'ALGO-001', NS(timestamp_ns=lambda: 1)
+        host.cache = NS(add_order=primaries.append)
+        host.algorithm = NS(id='LimitRepriceAlgorithm', execute=commands.append)
+        source_ids = ('one', 'one-001', 'hybrid-RB-001', 'NTAlgo-one')
+        with patch.dict(sys.modules, sdk):
+            for index, source_id in enumerate(source_ids):
+                order = self.contracts.OrderIntent(source_id, 'account', self.instrument,
+                    'BUY', 2, order_type='LIMIT', price=3000, position_effect='OPEN')
+                host.primary(f'NTALG-{index}', order)
+                self.assertEqual(primaries[-1].strategy_id, f'NTAlgo-{source_id}')
+                self.assertEqual(commands[-1].strategy_id, primaries[-1].strategy_id)
+                self.assertEqual(encode_order(order)['strategy_id'], source_id)
+        self.assertEqual(len({order.strategy_id for order in primaries}), len(source_ids))
+
     def test_timeout_cancel_then_remaining_order_uses_original_risk_and_attribution(self):
         account, service, transport, (one, _), runtime = self.make_account()
         self.submit(one, 2)

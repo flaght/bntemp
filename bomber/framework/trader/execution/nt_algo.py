@@ -80,7 +80,8 @@ class NativeNTHost:
         from bomber.model.objects import Quantity, Price
         from bomber.model.orders import LimitOrder
 
-        primary = LimitOrder(trader_id=self.trader_id, strategy_id=StrategyId(order.strategy_id),
+        # NT要求策略ID含连字符；统一加前缀，保持一一对应，不改原策略归属ID。
+        primary = LimitOrder(trader_id=self.trader_id, strategy_id=StrategyId(f"NTAlgo-{order.strategy_id}"),
             instrument_id=NativeInstrumentId.from_str(str(order.instrument_id)),
             client_order_id=ClientOrderId(task_id), order_side=OrderSide[order.side.value],
             quantity=Quantity.from_str(format(order.quantity, "f")),
