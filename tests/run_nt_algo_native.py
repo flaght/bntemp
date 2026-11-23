@@ -18,6 +18,7 @@ def main():
         first = transport.sent[-1]['OrderRef']
         task_id = next(iter(runtime.snapshot_state()['tasks']))
         assert str(host.primaries[task_id].strategy_id) == 'NTAlgo-one'
+        assert host.primaries[task_id].exec_spawn_id == host.primaries[task_id].client_order_id
         assert account.driver._orders[first][1].strategy_id == 'one'
         transport.fill(first, 1)
         end = time.monotonic() + 5

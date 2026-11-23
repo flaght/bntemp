@@ -81,13 +81,15 @@ class NativeNTHost:
         from bomber.model.orders import LimitOrder
 
         # NT要求策略ID含连字符；统一加前缀，保持一一对应，不改原策略归属ID。
+        primary_id = ClientOrderId(task_id)
         primary = LimitOrder(trader_id=self.trader_id, strategy_id=StrategyId(f"NTAlgo-{order.strategy_id}"),
             instrument_id=NativeInstrumentId.from_str(str(order.instrument_id)),
-            client_order_id=ClientOrderId(task_id), order_side=OrderSide[order.side.value],
+            client_order_id=primary_id, order_side=OrderSide[order.side.value],
             quantity=Quantity.from_str(format(order.quantity, "f")),
             price=Price.from_str(format(order.price, "f")), init_id=UUID4(),
             ts_init=self.clock.timestamp_ns(), reduce_only=order.reduce_only,
-            exec_algorithm_id=self.algorithm.id)
+            # 与NT OrderFactory一致：算法主单的spawn关联指向自身，子单由spawn_limit关联。
+            exec_algorithm_id=self.algorithm.id, exec_spawn_id=primary_id)
         self.cache.add_order(primary)
         self.algorithm.execute(SubmitOrder(trader_id=self.trader_id, strategy_id=primary.strategy_id,
             order=primary, command_id=UUID4(), ts_init=self.clock.timestamp_ns()))

@@ -92,12 +92,17 @@ class NTAlgoCtpTests(unittest.TestCase):
                     raise ValueError("value was malformed: did not contain a hyphen '-'")
                 return super().__new__(cls, value)
 
+        def strict_limit_order(**values):
+            if values.get('exec_algorithm_id') is not None and values.get('exec_spawn_id') is None:
+                raise TypeError("'exec_spawn_id' argument was `None`")
+            return NS(**values)
+
         def module(name, **members):
             result = ModuleType(name)
             result.__dict__.update(members)
             return result
 
-        # 保留实际primary构造路径；替身复现远程SDK对StrategyId的格式约束。
+        # 保留实际primary构造路径；替身复现SDK的策略ID和算法订单关联约束。
         sdk = {
             'bomber.core.uuid': module('bomber.core.uuid', UUID4=object),
             'bomber.execution.messages': module('bomber.execution.messages', SubmitOrder=NS),
@@ -106,7 +111,7 @@ class NTAlgoCtpTests(unittest.TestCase):
             'bomber.model.enums': module('bomber.model.enums', OrderSide=self.contracts.OrderSide),
             'bomber.model.objects': module('bomber.model.objects',
                 Quantity=NS(from_str=Decimal), Price=NS(from_str=Decimal)),
-            'bomber.model.orders': module('bomber.model.orders', LimitOrder=NS),
+            'bomber.model.orders': module('bomber.model.orders', LimitOrder=strict_limit_order),
         }
         primaries, commands = [], []
         host = NativeNTHost.__new__(NativeNTHost)
@@ -120,6 +125,7 @@ class NTAlgoCtpTests(unittest.TestCase):
                     'BUY', 2, order_type='LIMIT', price=3000, position_effect='OPEN')
                 host.primary(f'NTALG-{index}', order)
                 self.assertEqual(primaries[-1].strategy_id, f'NTAlgo-{source_id}')
+                self.assertEqual(primaries[-1].exec_spawn_id, primaries[-1].client_order_id)
                 self.assertEqual(commands[-1].strategy_id, primaries[-1].strategy_id)
                 self.assertEqual(encode_order(order)['strategy_id'], source_id)
         self.assertEqual(len({order.strategy_id for order in primaries}), len(source_ids))
