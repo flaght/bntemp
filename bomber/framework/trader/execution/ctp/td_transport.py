@@ -364,7 +364,8 @@ class CtpTdApiTransport:
                       or event == "interrupted" or pending.kind in {"auth", "login", "settlement"} else logging.DEBUG)
         logging.getLogger("CtpQuery").log(level, "CTP查询: %s", row)
 
-    def _audit_ctp_error(self, callback, error, reqid, data=None, *, terminal_confirmed=False):
+    def _audit_ctp_error(self, callback, error, reqid, data=None, *, terminal_confirmed=False,
+                         external_order=False):
         """保留错误回调来源及柜台原始错误文本，避免负数被误读为网络断线码。"""
         data, error = data or {}, error or {}
         row = {"event": "ctp_error", "callback": callback, "request_id": reqid,
@@ -373,10 +374,15 @@ class CtpTdApiTransport:
             "instrument": str(data.get("InstrumentID", "")), "ts_ns": time.time_ns()}
         if terminal_confirmed:
             row["terminal_confirmed"] = True
+        if external_order:
+            row.update(external_order=True, front_id=str(data.get("FrontID", "")),
+                       session_id=str(data.get("SessionID", "")))
         with self._cv:
             self._query_audit.append(row)
         logger = logging.getLogger("CtpQuery")
-        if terminal_confirmed:
+        if external_order:
+            logger.warning("CTP外部会话撤单错误（归属已核验，保持连接）: %s", row)
+        elif terminal_confirmed:
             logger.warning("CTP迟到撤单拒绝（终态及成交已确认，保持连接）: %s", row)
         else:
             logger.error("CTP错误回报（按现有规则闭闸）: %s", row)

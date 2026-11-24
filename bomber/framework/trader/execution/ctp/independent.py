@@ -233,6 +233,13 @@ class IndependentTdTransport(CtpTdApiTransport):
         self._broadcasts = []
         return super().connect(*args)
 
+    def _action_error(self, data, error, reqid):
+        check = getattr(self, "is_external_action_error", None)
+        if int((error or {}).get("ErrorID", 0)) and callable(check) and check(dict(data or {})):
+            self._audit_ctp_error("order_action_error", error, reqid, data, external_order=True)
+            return  # 外部错误不改变本进程委托、冻结、算法任务或连接状态。
+        super()._action_error(data, error, reqid)
+
     def _order_push(self, data):
         row = dict(data)
         with self._cv:
@@ -268,6 +275,7 @@ class IndependentCtpDriver(CtpNativeTraderDriver):
         super().__init__(*args, **kwargs)
         self.book = OrderIdentityBook(self.transport.broker_id, self.transport.investor_id)
         self.transport.accept_order = self._accept_order
+        self.transport.is_external_action_error = self._is_external_action_error
         self.buckets, self.daily_counter = None, None
         self.preserve_ambiguous_sends = True
         self._unmatched_trades = []
@@ -289,6 +297,37 @@ class IndependentCtpDriver(CtpNativeTraderDriver):
             self.on_disconnect(-1)
             raise RuntimeError('当前CTP会话出现没有写前归属的委托，保持闭闸')
         return accepted
+
+    @_serialized_transition
+    def _is_external_action_error(self, raw):
+        """只读核验完整的外部会话身份；未知OrderRef或品种不同都不是外部证据。"""
+        session = self._session
+        if not self._connected or session is None:
+            return False
+        if (str(raw.get('BrokerID', '')).strip() != self.book.broker
+                or str(raw.get('InvestorID', '')).strip() != self.book.investor):
+            return False
+        ref = str(raw.get('OrderRef', '')).strip()
+        if (not ref.isdigit() or not str(raw.get('InstrumentID', '')).strip()
+                or not str(raw.get('ExchangeID', '')).strip()):
+            return False
+        front_text, sid_text = (str(raw.get(name, '')).strip() for name in ('FrontID', 'SessionID'))
+        if not front_text.isdigit() or not sid_text.isdigit():
+            return False
+        front, sid = int(front_text), int(sid_text)
+        if front <= 0 or sid <= 0:
+            return False
+        day = str(raw.get('TradingDay') or '').strip()
+        if day and day != session.trading_day:
+            return False
+        key = (str(front), str(sid))
+        owned_sessions = {tuple(row['session'][:2]) for row in self.book.records.values()}
+        if key == (str(session.front_id), str(session.session_id)) or key in owned_sessions:
+            return False  # 包括重新登录前的本进程会话，不只检查当前会话。
+        exchange = self.book.exchange_key(raw)
+        if exchange[1] and exchange in self.book.by_exchange:
+            return False  # 会话与交易所订单归属冲突，不能丢弃。
+        return True
 
     def bind_durability(self, before_send, after_transition, on_unsent=None, **kwargs):
         def reserve(identity, order):
