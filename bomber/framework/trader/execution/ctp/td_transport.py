@@ -98,6 +98,7 @@ class CtpTdApiTransport:
         self._on_order: Callable[[Mapping[str, Any]], None] | None = None
         self._on_trade: Callable[[Mapping[str, Any]], None] | None = None
         self._on_disconnect: Callable[[int], None] | None = None
+        self._terminal_order_check: Callable[[str], bool] | None = None
         self._account_revision = 0
         self._orders_revision = 0
         self._last_orders: dict[str, dict[str, Any]] = {}
@@ -106,6 +107,10 @@ class CtpTdApiTransport:
         self._insert_requests: dict[int, dict[str, Any]] = {}
         self._rejected_refs: set[str] = set()
         self._action_requests: dict[int, str] = {}
+
+    def bind_terminal_order_check(self, check: Callable[[str], bool]) -> None:
+        """由Driver确认终态及真实成交已处理；Transport不另记成交账本。"""
+        self._terminal_order_check = check
 
     def connect(self, on_order, on_trade, on_disconnect) -> CtpTraderSession:
         if self._api is not None:
@@ -359,16 +364,22 @@ class CtpTdApiTransport:
                       or event == "interrupted" or pending.kind in {"auth", "login", "settlement"} else logging.DEBUG)
         logging.getLogger("CtpQuery").log(level, "CTP查询: %s", row)
 
-    def _audit_ctp_error(self, callback, error, reqid, data=None):
+    def _audit_ctp_error(self, callback, error, reqid, data=None, *, terminal_confirmed=False):
         """保留错误回调来源及柜台原始错误文本，避免负数被误读为网络断线码。"""
         data, error = data or {}, error or {}
         row = {"event": "ctp_error", "callback": callback, "request_id": reqid,
             "error_id": int(error.get("ErrorID", 0)), "error_message": str(error.get("ErrorMsg", "")),
             "order_ref": str(data.get("OrderRef", "")),
             "instrument": str(data.get("InstrumentID", "")), "ts_ns": time.time_ns()}
+        if terminal_confirmed:
+            row["terminal_confirmed"] = True
         with self._cv:
             self._query_audit.append(row)
-        logging.getLogger("CtpQuery").error("CTP错误回报（按现有规则闭闸）: %s", row)
+        logger = logging.getLogger("CtpQuery")
+        if terminal_confirmed:
+            logger.warning("CTP迟到撤单拒绝（终态及成交已确认，保持连接）: %s", row)
+        else:
+            logger.error("CTP错误回报（按现有规则闭闸）: %s", row)
 
     def query_diagnostics(self):
         with self._cv:
@@ -480,15 +491,29 @@ class CtpTdApiTransport:
         error_id = int((error or {}).get("ErrorID", 0))
         if not error_id:
             return
-        self._audit_ctp_error("order_action_error", error, reqid, data)
         row = dict(data or {})
         with self._cv:
             ref = self._action_requests.get(reqid) if reqid is not None else None
+            requested = ref is not None
             if ref is None:
                 ref = str(row.get("OrderRef", ""))
-            known = ref in self._last_orders
+                requested = reqid is None and ref in self._action_requests.values()
+            cached = dict(self._last_orders[ref]) if ref in self._last_orders else None
+        # 订单已成交/撤销时，较早发出的撤单仍可能返回26。必须同时确认本次
+        # 撤单身份和Driver已处理的终态；只看到OrderStatus或错误文字不够。
+        matching = requested and cached is not None and all(
+            str(row[key]).strip() == str(cached.get(key, "")).strip()
+            for key in ("OrderRef", "BrokerID", "InvestorID", "InstrumentID",
+                        "ExchangeID", "FrontID", "SessionID") if key in row)
+        # 不持Transport锁调用Driver，沿用Driver原有提交/回报锁顺序。
+        terminal = bool(error_id == 26 and matching and self._terminal_order_check
+                        and self._terminal_order_check(ref))
+        self._audit_ctp_error("order_action_error", error, reqid, data,
+                              terminal_confirmed=terminal)
+        if terminal:
+            return  # 不造撤单回报、不释放冻结、不推进算法重报。
         # 撤单拒绝不等于已撤单。订单仍可能在柜台活动，必须闭闸重新查询。
-        self._front_down(-error_id if known else -1)
+        self._front_down(-error_id if cached is not None else -1)
 
     def query_positions(self) -> Mapping[InstrumentId | str, Decimal]:
         self._require_ready()

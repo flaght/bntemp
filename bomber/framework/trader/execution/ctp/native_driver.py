@@ -229,6 +229,9 @@ class CtpNativeTraderDriver:
     def start(self, report_sink: Callable[[ExecutionReport], None]) -> None:
         if self._connected:
             return
+        bind_terminal = getattr(self.transport, "bind_terminal_order_check", None)
+        if callable(bind_terminal):
+            bind_terminal(self._is_order_terminal)
         session = self.transport.connect(self.on_order, self.on_trade, self.on_disconnect)
         if not isinstance(session, CtpTraderSession):
             self.transport.close()
@@ -577,6 +580,13 @@ class CtpNativeTraderDriver:
             if order.strategy_id == strategy_id or any(
                     leg["strategy_id"] == strategy_id for leg in order.metadata.get("allocation_legs", ())):
                 self.transport.cancel_order(order_ref)
+
+    @_serialized_transition
+    def _is_order_terminal(self, order_ref: str) -> bool:
+        # 已结束集合只由真实成交/撤单/拒单处理推进；声明成交量尚未全部收到时
+        # 不在其中。取得原提交锁，确保回报入账及持久化已完成，异常闭闸不放行。
+        return bool(self._connected and self._recovery_checkpoint is None
+                    and not self._replaying_recovery and order_ref in self._completed_refs)
 
     def on_disconnect(self, reason: int) -> None:
         # 先保留真实原因，再触发闭闸回调；供停机报告诊断，不写入交易账本。

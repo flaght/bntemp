@@ -179,6 +179,27 @@ class NTAlgoCtpTests(unittest.TestCase):
         transport.fill(transport.sent[-1]['OrderRef'])
         self.assertEqual(service.position_manager.position('one', 'main'), 2)
 
+    def test_fill_after_timeout_cancel_request_finishes_task_without_reordering(self):
+        account, service, transport, (one, _), runtime = self.make_account()
+        # 撤单在柜台处理中，原订单仍可能全部成交。
+        transport.cancel_order = lambda ref: transport.canceled.append(ref)
+        self.submit(one, 2)
+        first = transport.sent[-1]['OrderRef']
+        self.tick(service, runtime)
+        self.assertEqual(transport.canceled, [first])
+        transport.fill(first)
+        service.poll()
+        self.tick(service, runtime)
+        self.assertEqual(len(transport.sent), 1)
+        self.assertEqual(transport.canceled, [first])
+        self.assertFalse(runtime.snapshot_state()['tasks'])
+        self.assertFalse(runtime.snapshot_state()['stops'])
+        self.assertEqual(service.position_manager.position('one', 'main'), 2)
+        self.assertFalse(service.position_manager.attribution.working_quantity(
+            service.client_id, self.instrument, 'one', 'main'))
+        self.assertNotIn('one', service._suspended)
+        account._validate_account()
+
     def test_changed_target_stops_old_task_even_between_actual_orders(self):
         _, service, transport, (one, _), runtime = self.make_account()
         self.submit(one, 2)
