@@ -202,7 +202,16 @@ class SharedAccountLiveHost:
                 self.activation_wait()
             # 盘前没有新行情是正常情况；开盘后才开始计算就绪超时。
             deadline = time.monotonic() + self.ready_seconds
-            while any(not item.session.runner.session_ready() for item in self.strategies.values()):
+            while True:
+                # 账户恢复、Feed连接和准备期查询可能超过参考快照有效期。
+                # 必须先成功刷新，再核验就绪；否则snapshot()会在进入准备轮询前抛错。
+                # 刷新失败/条款版本变化照常终止，不放宽时效，也不开放策略决策。
+                for item in self.strategies.values():
+                    self._check_preparation()
+                    item.session.references.refresh()
+                    self._check_preparation()
+                if all(item.session.runner.session_ready() for item in self.strategies.values()):
+                    break
                 self._check_preparation()
                 self.poll_preparation()
                 if time.monotonic() > deadline:
