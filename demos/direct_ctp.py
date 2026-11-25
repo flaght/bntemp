@@ -486,6 +486,8 @@ def main(kind, argv=None):
     parser.add_argument('--account-config',type=Path,default=PROJECT/'demos/shared_account/account.json')
     parser.add_argument('--env-file',type=Path,default=demo/'config/.env')
     parser.add_argument('--account-state-file',type=Path,default=demo/'results/direct/state.json')
+    parser.add_argument('--report-dir',type=Path,default=demo/'results/direct',
+        help='本进程独立报告目录；多账号运行时分别指定，默认沿用原目录')
     parser.add_argument('--counter-file',type=Path,default=PROJECT/'demos/shared_account/results/daily_orders.sqlite3')
     parser.add_argument('--import-state',type=Path,help='10首次接续的最新公共账户成交账本，原文件只读')
     parser.add_argument('--prepare-seconds',type=int,default=600)
@@ -563,13 +565,15 @@ def main(kind, argv=None):
         parser.error('策略ID必须唯一；信号文件与成交账本不能相同')
     config = {**account, 'strategies':rows, 'account_state_file':str(options.account_state_file.resolve()),
         'budget_source_file':account['account_state_file'],
-        'report_dir':str(demo/'results/direct'), 'seconds':86400,
+        'report_dir':str(options.report_dir.resolve()), 'seconds':86400,
         'strategy_env_files':{row['strategy_id']:str(options.env_file.resolve()) for row in rows}}
     if not options.connect:
         if options.enable_orders or options.confirm_simnow:
             parser.error('离线校验不接受报单授权')
         print(json.dumps(dict(status='config_checked',mode='direct_ctp', strategies=[r['strategy_id'] for r in rows],
             state_file=config['account_state_file'], import_state=str(source) if source else None,
+            report_dir=config['report_dir'], counter_file=str(options.counter_file.resolve()),
+            env_file=str(options.env_file.resolve()),
             execution_driver=options.execution_driver, execution_algorithm=config.get('execution_algorithm'),
             orders_enabled=False),ensure_ascii=False))
         return

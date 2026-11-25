@@ -1,0 +1,14 @@
+{
+  "static_checks_passed": true,
+  "javascript_syntax_checked": true,
+  "external_runtime_assets": false,
+  "network_calls_in_reader_script": false,
+  "browser_visual_check_performed": false,
+  "browser_functional_storage_check_performed": false,
+  "limitation": "运行环境未允许启动无头浏览器；浏览器工具的URL策略禁止打开file协议。未绕过该限制。页面渲染、移动布局和浏览器存储未实测。",
+  "delivered_fallbacks": [
+    "策略流程学习手册.md",
+    "习题答案与推导.md",
+    "学习记录.md"
+  ]
+}

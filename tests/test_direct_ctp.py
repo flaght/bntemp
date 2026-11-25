@@ -29,6 +29,56 @@ class DirectCtpTests(unittest.TestCase):
     request = fixture.SharedAccountTests.request
     client = fixture.SharedAccountTests.client
 
+    def test_second_account_uses_explicit_paths_without_connecting_or_changing_defaults(self):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        app = import_module('demos.direct_ctp')
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = json.loads((app.PROJECT/'demos/shared_account/account.json').read_text())
+            config['account']['client_id'] = 'option-vega-z01'
+            account_config = root/'account.json'
+            account_config.write_text(json.dumps(config))
+            options = ['--account-config', str(account_config), '--strategy-id', 'option-vega-z01',
+                '--env-file', str(root/'config/.env'),
+                '--account-state-file', str(root/'state.json'), '--state-file', str(root/'signal.json'),
+                '--counter-file', str(root/'counter.sqlite3'), '--report-dir', str(root/'reports')]
+            with patch.object(app, 'build_direct_host', side_effect=AssertionError('不能连接柜台')):
+                output = StringIO()
+                with redirect_stdout(output):
+                    app.main('option_vega', options)
+                checked = json.loads(output.getvalue())
+                self.assertEqual(checked['strategies'], ['option-vega-z01'])
+                for name, path in (('state_file','state.json'), ('report_dir','reports'),
+                                   ('counter_file','counter.sqlite3'), ('env_file','config/.env')):
+                    self.assertEqual(checked[name], str((root/path).resolve()))
+                self.assertFalse(checked['orders_enabled'])
+                self.assertEqual(sorted(p.name for p in root.iterdir()), ['account.json'])
+                for kind, folder in (('option_vega','08_option_vega'),
+                                     ('hybrid_transformer','10_hybrid_transformer')):
+                    output = StringIO()
+                    with redirect_stdout(output):
+                        app.main(kind, [])
+                    self.assertEqual(json.loads(output.getvalue())['report_dir'],
+                                     str(app.PROJECT/'demos'/folder/'results/direct'))
+
+    def test_z01_launch_profile_resolves_separate_paths_without_account_connections(self):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        app = import_module('demos.direct_ctp')
+        output = StringIO()
+        with patch.object(app, 'build_direct_host', side_effect=AssertionError('不能连接柜台')), \
+                redirect_stdout(output):
+            app.main('option_vega', ['--config-file',
+                str(app.PROJECT/'demos/z01_shared_account/startup.yaml'), '--config-id','option_z01'])
+        result = json.loads(output.getvalue())
+        self.assertFalse(result['orders_enabled'])
+        self.assertEqual(result['strategies'], ['option-vega-z01'])
+        self.assertEqual(result['execution_algorithm'], 'limit_reprice')
+        for name in ('state_file','report_dir','env_file'):
+            self.assertTrue(Path(result[name]).is_relative_to(app.PROJECT/'demos/z01_08_option_vega'))
+        self.assertTrue(Path(result['counter_file']).is_relative_to(app.PROJECT/'demos/z01_shared_account'))
+
     def option_report(self, account, service, directory, *, prepared=True):
         app=import_module('demos.direct_ctp')
         session=NS(strategy=NS(strategy_id='one',signals=[],option_goals={},future_goals={},last_decision={}),

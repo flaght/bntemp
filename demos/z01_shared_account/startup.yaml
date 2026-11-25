@@ -1,0 +1,21 @@
+experiment_setups:
+  option_z01:
+    description: "z01账号08直连；配置及运行状态独立，策略实现复用原08"
+    account_config: demos/z01_shared_account/account.json
+    env_file: demos/z01_08_option_vega/config/.env
+    strategy_id: option-vega-z01
+    live_config_file: demos/z01_08_option_vega/config/strategy.yaml
+    live_config_id: live_simnow
+    account_state_file: demos/z01_08_option_vega/results/direct/state.json
+    state_file: demos/z01_08_option_vega/results/direct/signal.json
+    report_dir: demos/z01_08_option_vega/results/direct
+    counter_file: demos/z01_shared_account/results/daily_orders.sqlite3
+    execution_driver: nt_algo_ctp
+    execution_algorithm: limit_reprice
+    algo_wait_seconds: 10
+    algo_max_attempts: 3
+    prepare_seconds: 600
+    run_forever: true
+    connect: false
+    enable_orders: false
+    confirm_simnow: false

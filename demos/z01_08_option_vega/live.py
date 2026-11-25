@@ -1,0 +1,567 @@
+"""Vega会话的行情帧、约束和报告；网络连接由公共渠道模块负责。"""
+from datetime import datetime
+from dataclasses import replace
+from decimal import Decimal
+import json
+import logging
+import threading
+import time
+from types import SimpleNamespace
+from zoneinfo import ZoneInfo
+
+from bomber.framework.datahub.features import FeatureQuery, FeatureUnavailable
+from bomber.framework.market.basic.base import Bar, DataType, InstrumentId
+from bomber.framework.market.frames import MinuteFrameBuffer, minute_close_ns
+from bomber.framework.trader import RuntimeMode, UnifiedStrategyRunner
+from bomber.framework.trader.assembly import StrategyBindings, assemble_strategy
+from bomber.framework.trader.contracts import DataBinding, ExecutionRoute
+from bomber.framework.trader.execution.builders import (ExecutionComponents, build_model_execution,
+    build_ctp_portfolio_execution, attach_execution_persistence, attach_ctp_persistence, build_fanout_execution)
+from bomber.framework.trader.execution.recording import RecordingExecutionClient
+from bomber.framework.trader.execution.policy import execution_policy_from_args
+from bomber.framework.trader.portfolio import PositionManager
+from bomber.framework.trader.execution.risk import MarketReferencePriceStore
+from bomber.framework.trader.runtime.live.contracts import SessionReadiness
+from bomber.framework.trader.runtime.live.recovery import (StrategyPositionBinding, InstrumentPositionScope,
+    SessionIdentityCheckpoint)
+from bomber.framework.trader.runtime.live.local import LocalExecutionChannel
+from bomber.framework.trader.runtime.live.channels.ctp import (CtpLiveProfile, CtpMarketChannel,
+    CtpExecutionChannel, InstrumentHealthGate)
+from bomber.framework.trader.runtime.live.channels.dolphin import DolphinMarketChannel
+from .strategy import OptionVegaStrategy
+from .vega_signal import Contract, OptionVegaCheckpoint, risk_limits
+
+CLIENT_ID = "option-vega-live"
+logger = logging.getLogger("OptionMarketInputs")
+
+
+class OptionReferences:
+    """公共条款快照投影成本策略关系，不将指数注册为可交易标的。"""
+    refresh_on_event = False
+
+    def __init__(self, service, trading_day, calendar, *, calendar_manifest=None):
+        self.service, self.trading_day, self.calendar = service, trading_day, calendar
+        self.calendar_manifest = dict(calendar_manifest or {})
+        snap = service.snapshot()
+        self.fingerprint = snap.fingerprint
+        self.contracts = {key: Contract(key, service.future_product + spec.month[2:], float(spec.strike),
+            spec.multiplier, spec.listed, spec.last_trade, spec.expiry, spec.tick)
+            for key, spec in snap.options.items()}
+        self.futures = {key: dict(row) for key, row in snap.futures.items()}
+        self.instrument_ids = {key: InstrumentId.from_str(key + ".CFFEX")
+            for key in (*self.contracts, *self.futures)}
+        self.options_by_day = {service.valuation_day: tuple(sorted(self.contracts))}
+
+    def refresh(self):
+        return self.service.refresh()
+
+    def snapshot(self, now_ns=None):
+        return self.service.snapshot(now_ns)
+
+    @property
+    def manifest(self):
+        return self.service.manifest()
+
+
+class OptionSessionRunner(UnifiedStrategyRunner):
+    """从独立Feed收集收盘Bar，串行发布帧；不要求所有候选期权每分钟成交。"""
+    def __init__(self, *, positions, references, sources, labels, replay, grace_seconds,
+                 market_age_seconds, instrument_age_seconds, expected_day, clock_ns=None, source_age_seconds=None):
+        super().__init__(RuntimeMode.LIVE, position_manager=positions)
+        self.references, self.sources, self.labels = references, dict(sources), dict(labels)
+        self.expected_day = expected_day
+        self.clock_ns = clock_ns or time.time_ns
+        self.replay = replay
+        self.grace_seconds, self.market_age_ns = grace_seconds, int(market_age_seconds * 1e9)
+        self.instrument_age_seconds = instrument_age_seconds
+        self.source_age_ns = {key: int(value * 1e9) for key, value in (source_age_seconds or {}).items()}
+        self.frames = MinuteFrameBuffer(sources, grace_seconds=grace_seconds)
+        self._frame_lock = threading.RLock()
+        self.accept_bars = False
+        self.warm_started_ns = None
+        self.failure = None
+        self.observations = {}
+        self.readiness = None
+        self.strategy = self.client = self.manager = self.prices = None
+        self.ctp_upstream = None
+        self.feature_query_feeds = ()
+        self.skipped_feature_frames = 0
+        self.frame_audit = []
+        self.bar_time_audit = []
+        self.ignored_stale_candidate_bars = 0
+        self.ignored_preparation_bars = 0
+        self.late_bar_health_updates = 0
+        self._heartbeat_minute = None
+        self.fixed_ids = frozenset(references.instrument_ids.values())
+
+    def poll_features(self):
+        if self.feature_query_feeds:
+            with self._frame_lock:
+                pending = tuple(self.frames.pending) if self.accept_bars else ()
+            # 数据库IO在控制线程、帧锁之外；回调沿公共分钟缓冲判断期限。
+            for feed in self.feature_query_feeds:
+                if not hasattr(self, "_feature_log_states"):
+                    self._feature_log_states = {}
+                    logger.info("指数DFS轮询已启用: 区间查询更新缓存，再查找待完成分钟；市场腿缺失Bar不在此自动补查")
+                try:
+                    feed.poll(pending)
+                except Exception:
+                    logger.exception("指数DFS查询或投影失败: key=%s pending_minutes=%s", feed.key, pending)
+                    raise
+                for event, row in feed.manifest.get("minute_lookups", {}).items():
+                    token = (feed.source_id, event)
+                    status = row["status"]
+                    previous = self._feature_log_states.get(token)
+                    if previous == status:
+                        continue
+                    self._feature_log_states[token] = status
+                    minute = datetime.fromtimestamp(int(event) / 1e9, ZoneInfo("Asia/Shanghai")).isoformat()
+                    if status == "MISSING":
+                        logger.info("指数分钟缺失，继续轮询DolphinDB: key=%s minute=%s latest_event_ns=%s wait_seconds=%s",
+                            feed.key, minute, row.get("latest_event_ns"), self.grace_seconds)
+                    elif status == "PROJECTED":
+                        logger.info("指数分钟查询投影完成%s: key=%s minute=%s received_ns=%s；帧是否接纳仍由接收期限判断",
+                            "（此前缺失）" if previous == "MISSING" else "", feed.key, minute, row.get("received_ns"))
+                    else:
+                        logger.warning("指数分钟不可用: key=%s minute=%s status=%s detail=%s",
+                            feed.key, minute, status, row.get("detail"))
+                while len(self._feature_log_states) > 64:
+                    del self._feature_log_states[next(iter(self._feature_log_states))]
+
+    def poll_live_inputs(self):
+        if self.pause_requested():
+            return
+        self.poll_features()
+        if self.accept_bars:
+            now = self.clock_ns()
+            minute = now // 60_000_000_000
+            if minute != self._heartbeat_minute:
+                self._heartbeat_minute = minute
+                with self._frame_lock:
+                    emit(logger, "分钟运行心跳", {"strategy_id": self.strategy.strategy_id,
+                        "wall_time": timestamp(now), "last_closed_minute": timestamp(
+                            self.frames.last_closed_ns) if self.frames.last_closed_ns >= 0 else None,
+                        "pending_minutes": [timestamp(n) for n in sorted(self.frames.pending)],
+                        "strategy_frames": self.strategy.frames,
+                        "last_decision_status": self.strategy.last_decision.get("status"), "failure": self.failure})
+            stale = self.stale_instruments()
+            if stale:
+                self.close_role_gate(f"必需行情失效: {stale}")
+            self.flush_frames()
+
+    def reference_is_current(self):
+        return self.references.snapshot().fingerprint == self.references.fingerprint
+
+    def execution_events_ready(self):
+        # 账户journal可能保留上一会话尚未消费的真实成交。准备期尚未授权、
+        # 策略行情缓存也为空，不能让成交驱动对冲提前提交目标或写恢复检查点。
+        # 等首批新鲜帧完成恢复预热后再消费；不改成交归属，也不提前确认游标。
+        with self._frame_lock:
+            return (self.accept_bars and not self.strategy.restored
+                    and self.strategy.resume_ns is None)
+
+    def session_ready(self):
+        ready = not self.failure and self.reference_is_current() and bool(self.readiness())
+        if ready and not self.replay and self.source_age_ns and self.warm_started_ns is None:
+            # 分钟流整体健康不代表持仓腿已有新鲜Bar；准备阶段不能借用运行期预热宽限。
+            return not self.stale_instruments()
+        return ready
+
+    def begin_bars(self):
+        with self._frame_lock:
+            if self.pause_requested():
+                return
+            self.frames = MinuteFrameBuffer(self.sources, grace_seconds=self.grace_seconds)
+            self.warm_started_ns = self.clock_ns()
+            self.accept_bars = True
+
+    def close_role_gate(self, reason):
+        self.accept_bars = False
+        self.failure = reason
+        raise RuntimeError(reason)
+
+    def pause_requested(self):
+        window = getattr(self, "window_context", None)
+        if window is not None and window.stop_requested():
+            window.pause_runner(self, self.client)
+            return True
+        return False
+
+    def publish(self, feed_id, event):
+        if not isinstance(event, Bar):
+            return
+        with self._frame_lock:
+            if self.pause_requested():
+                return
+            try:
+                key = self.key_by_instrument.get(event.bar_type.instrument_id)
+                if key is None or self.sources[key] != feed_id:
+                    raise ValueError("行情合约或来源不属于本次绑定")
+                now = self.clock_ns()
+                valuation = minute_close_ns(event.ts_event, self.labels[feed_id])
+                day = datetime.fromtimestamp(valuation / 1e9, ZoneInfo("Asia/Shanghai")).date()
+                if day != self.references.service.valuation_day:
+                    raise ValueError(f"行情估值日期不一致: {feed_id}/{key}/{day}")
+                age = now - valuation
+                max_age_ns = self.source_age_ns.get(feed_id, self.market_age_ns)
+                if not self.replay and not 0 <= age <= max_age_ns:
+                    required = self.strategy is None or key in self.strategy.required_market_keys()
+                    # 初次订阅/午休恢复可能先收到上一时段尾Bar。准备阶段只跳过
+                    # 同日过期Bar，不能刷新健康或开放决策；运行后的必需腿仍严格检查。
+                    preparing = (not self.accept_bars and self.warm_started_ns is None and self.failure is None)
+                    ignore_preparation = age > max_age_ns and preparing
+                    ignore = age > max_age_ns and (ignore_preparation or not required)
+                    audit = {"key": key, "source_id": feed_id, "source_ns": event.ts_event,
+                        "valuation_ns": valuation, "received_ns": now,
+                        "age_seconds": age / 1e9, "max_age_seconds": max_age_ns / 1e9,
+                        "required": required, "action": "IGNORED_PREPARATION" if ignore_preparation else (
+                            "IGNORED_CANDIDATE" if ignore else "REJECTED"),
+                        "reason": "STALE_BAR" if age > max_age_ns else "FUTURE_BAR"}
+                    self.bar_time_audit.append(audit)
+                    del self.bar_time_audit[:-32]
+                    if ignore_preparation:
+                        price = Decimal(str(event.close.as_decimal()))
+                        if not price.is_finite() or price <= 0:
+                            audit.update(action="REJECTED", reason="INVALID_PRICE")
+                            raise ValueError("行情价格须为有限正数")
+                        self.ignored_preparation_bars += 1
+                        logger.info("准备阶段忽略过期Bar，闭闸等待新鲜行情: %s", audit)
+                        return
+                    if ignore:
+                        self.ignored_stale_candidate_bars += 1
+                        logger.warning("候选过期Bar已忽略: %s", audit)
+                        return
+                    logger.error("必需或未来Bar时间无效: %s", audit)
+                    raise ValueError(f"实时Bar过期或尚未收盘: key={key} source={feed_id} "
+                        f"age_seconds={age / 1e9} max_age_seconds={max_age_ns / 1e9} "
+                        f"required={required} source_ns={event.ts_event} valuation_ns={valuation} received_ns={now}")
+                previous = self.observations.get(key)
+                if previous and valuation < previous[0]:
+                    raise ValueError(f"单合约行情时间倒退: {key}")
+                # MinuteFrameBuffer对迟到Bar会提前返回，健康记录须独立验证价格。
+                price = Decimal(str(event.close.as_decimal()))
+                if not price.is_finite() or price <= 0:
+                    raise ValueError("行情价格须为有限正数")
+                if self.accept_bars:
+                    late_before = self.frames.late_count
+                    if not self.frames.add(key, price, valuation, now,
+                            source_id=feed_id, source_ns=event.ts_event):
+                        if self.frames.late_count > late_before and (previous is None or valuation > previous[0]):
+                            # 错过决策期限不等于没有收到有效新行情；只更新健康，不回填帧或策略价格。
+                            self.observations[key] = (valuation, now)
+                            self.late_bar_health_updates += 1
+                            required = self.strategy is None or key in self.strategy.required_market_keys()
+                            audit = {"key": key, "source_id": feed_id, "source_ns": event.ts_event,
+                                "valuation_ns": valuation, "received_ns": now, "required": required,
+                                "action": "HEALTH_ONLY_LATE", "frame_accepted": False,
+                                "health_updated": True}
+                            self.bar_time_audit.append(audit)
+                            del self.bar_time_audit[:-32]
+                            if required:
+                                logger.info("迟到Bar仅更新行情健康: %s", audit)
+                        return
+                self.observations[key] = (valuation, now)
+            except Exception as error:
+                self.failure = str(error)
+                self.accept_bars = False
+                raise
+
+    def stale_instruments(self):
+        now = self.clock_ns()
+        required = self.strategy.required_market_keys()
+        warming = self.warm_started_ns is not None and 0 <= now - self.warm_started_ns <= self.market_age_ns
+        stale = {}
+        for key in required:
+            limit = self.source_age_ns.get(self.sources[key], self.market_age_ns)
+            observation = self.observations.get(key)
+            if not self.replay and not self.accept_bars and self.warm_started_ns is None:
+                for feed in self.feature_query_feeds:
+                    if feed.key == key:
+                        # DFS准备期只有缓存、没有待决策帧，因而尚未投影Bar。
+                        # 只读真实可见记录核验健康；不标记已投影、不写策略缓存，
+                        # 保证开闸后同一分钟仍能按原期限进入正式决策帧。
+                        observation = self._preparation_feature_observation(feed, now, limit)
+                        break
+            key_warming = self.warm_started_ns is not None and 0 <= now - self.warm_started_ns <= limit
+            if observation is None:
+                invalid = not key_warming
+            else:
+                invalid = not 0 <= now - observation[1] <= limit
+                if self.sources[key] in self.source_age_ns and not self.replay:
+                    invalid = invalid or not 0 <= now - observation[0] <= limit
+            if invalid:
+                stale[key] = {"last": observation, "max_age_seconds": limit / 1e9}
+        if self.ctp_upstream is not None:
+            ids = [self.references.instrument_ids[key] for key in required if key in self.references.instrument_ids]
+            health = InstrumentHealthGate(self.ctp_upstream, ids, self.expected_day,
+                policy=self.ctp_profile, max_age_seconds=self.instrument_age_seconds)
+            raw = health.stale_instruments()
+            stale.update({key: value for key, value in raw.items()
+                if not warming or value["trading_day"] is not None})
+        return stale
+
+    def _preparation_feature_observation(self, feed, now, limit):
+        event = feed.cache.manifest["latest_event_ns"]
+        if event is None:
+            return None
+        try:
+            record = feed.hub.feature_snapshot((feed.requirement,), FeatureQuery(event, now)).latest("value")
+        except FeatureUnavailable:
+            return None
+        valuation = minute_close_ns(record.ts_event, self.labels[self.sources[feed.key]])
+        if (datetime.fromtimestamp(valuation / 1e9, ZoneInfo("Asia/Shanghai")).date()
+                != self.references.service.valuation_day):
+            return None
+        if any(not 0 <= now - stamp <= limit
+                for stamp in (valuation, record.source_ns, record.visible_ns)):
+            return None
+        return valuation, record.visible_ns
+
+    def flush_frames(self):
+        with self._frame_lock:
+            if self.pause_requested() or not self.accept_bars:
+                return
+            try:
+                # 控制线程已刷新参考；帧锁内仅检查快照，避免数据库读取阻塞行情。
+                if not self.session_ready():
+                    raise RuntimeError("分钟决策前参考或行情通道未就绪")
+                for frame in self.frames.close_due(self.clock_ns()):
+                    required = set(self.strategy.required_market_keys())
+                    audit = {"valuation_ns": frame.valuation_ns, "request_ns": frame.request_ns,
+                        "deadline_ns": min(item.received_ns for item in frame.observations.values()) + self.frames.grace_ns,
+                        "observations": {key: {"source_id": item.source_id,
+                            "source_ns": item.source_ns, "received_ns": item.received_ns}
+                            for key, item in frame.observations.items()}, "status": "DELIVERED"}
+                    self.frame_audit.append(audit)
+                    del self.frame_audit[:-256]
+                    audit["market_summary"] = market_summary(self, frame, audit["deadline_ns"], required)
+                    emit(logger, "分钟行情汇总", audit["market_summary"])
+                    if any(feed.key not in frame.observations for feed in self.feature_query_feeds):
+                        # DFS指数通道显式要求同分钟输入；期限后缺失则跳过整次决策。
+                        self.skipped_feature_frames += 1
+                        audit["status"] = "SKIPPED_INDEX"
+                        audit["decision"] = {"strategy_id": self.strategy.strategy_id,
+                            "minute": timestamp(frame.valuation_ns), "status": "SKIPPED_INDEX",
+                            "missing": [feed.key for feed in self.feature_query_feeds if feed.key not in frame.observations]}
+                        emit(logger, "分钟决策汇总", audit["decision"])
+                        logger.warning("分钟等待超时，跳过决策: minute=%s missing_index=%s wait_seconds=%s；迟到数据不追溯决策",
+                            datetime.fromtimestamp(frame.valuation_ns / 1e9, ZoneInfo("Asia/Shanghai")).isoformat(),
+                            [feed.key for feed in self.feature_query_feeds if feed.key not in frame.observations], self.grace_seconds)
+                        continue
+                    missing = sorted(set(self.strategy.required_market_keys()) - set(frame.observations))
+                    if missing:
+                        logger.warning("分钟帧必需输入缺失: minute=%s keys=%s；市场腿缺失Bar不在此自动补查，交由策略完整性检查",
+                            datetime.fromtimestamp(frame.valuation_ns / 1e9, ZoneInfo("Asia/Shanghai")).isoformat(), missing)
+                    # 每个执行价使用实际接收时刻；策略缓存只加入当前封闭帧。
+                    for key, observation in frame.observations.items():
+                        instrument = self.references.instrument_ids.get(key)
+                        if instrument is not None:
+                            self.prices.update(instrument, observation.price, observation.received_ns)
+                    try:
+                        self.strategy.on_market_frame(frame)
+                    except Exception as error:
+                        audit["status"] = "FAILED"
+                        audit["decision"] = decision_summary(self.strategy, frame, error=error)
+                        emit(logger, "分钟决策汇总", audit["decision"], error=True)
+                        raise
+                    audit["decision"] = decision_summary(self.strategy, frame)
+                    emit(logger, "分钟决策汇总", audit["decision"])
+                    audit["status"] = "CONSUMED"
+                    if self.manager is not None:
+                        self.manager.save()
+            except Exception as error:
+                self.failure = str(error)
+                self.accept_bars = False
+                raise
+
+
+def assemble(args, inputs, driver=None, *, account_routes=(), shared_service=None, strategy_id=None):
+    refs, feeds = inputs.references, inputs.feeds
+    ids = refs.instrument_ids
+    positions = shared_service.position_manager if shared_service is not None else PositionManager()
+    sid = strategy_id or CLIENT_ID
+    runner = OptionSessionRunner(positions=positions, references=refs, sources=inputs.sources,
+        labels=inputs.labels, replay=args.simnow_environment == "replay",
+        grace_seconds=args.frame_wait_seconds, market_age_seconds=args.max_market_age_seconds,
+        instrument_age_seconds=args.instrument_max_age_seconds, expected_day=args.expected_trading_day,
+        source_age_seconds={"market-bars": args.market_bar_max_age_seconds}
+            if inputs.source_identity.get("market", {}).get("channel") == "dolphindb" else None)
+    runner.key_by_instrument = {value: key for key, value in ids.items()}
+    runner.key_by_instrument[inputs.index_id] = args.index_code
+    multipliers = {ids[key]: info.multiplier for key, info in refs.contracts.items()}
+    multipliers.update({ids[key]: row["contMultNum"] for key, row in refs.futures.items()})
+    limits = risk_limits(args.config, refs.contracts, ids, multipliers, args.max_notional)
+    scope = InstrumentPositionScope(ids.values())
+    policy = execution_policy_from_args(args)
+    if shared_service is not None:
+        if args.mode != "simnow" or not strategy_id or account_routes:
+            raise ValueError("08共享执行须为具有独立策略ID的SimNow会话")
+        from bomber.framework.trader.execution.shared import SharedRiskBudget
+        # 策略0手数表示不设限，不能在聚合时当作零容量；任一资产无
+        # 有限数量上限时，仅保留金额预算及已有逐合约/策略层限制。
+        option_quantity = args.config.max_total_option_lots or (
+            args.config.max_option_lots * len(refs.contracts) if args.config.max_option_lots else None)
+        future_quantity = (args.config.max_future_lots * len(refs.futures)
+            if args.config.max_future_lots or not refs.futures else None)
+        quantity = (option_quantity + future_quantity
+            if option_quantity is not None and future_quantity is not None else None)
+        port = shared_service.strategy_client(sid, routes={str(i): i for i in ids.values()},
+            budget=SharedRiskBudget(quantity, args.max_notional), instrument_limits=limits)
+        execution = ExecutionComponents(port, positions, shared_service.prices)
+    elif args.mode == "model":
+        execution = build_model_execution(CLIENT_ID, instrument_limits=limits, positions=positions)
+    elif args.mode == "recording":
+        execution = ExecutionComponents(RecordingExecutionClient(CLIENT_ID), positions, MarketReferencePriceStore())
+    else:
+        execution = build_ctp_portfolio_execution(driver, trading_day=args.expected_trading_day,
+            price_increments={ids[key]: info.tick for key, info in refs.contracts.items()} |
+                {ids[key]: row["minChgPriceNum"] for key, row in refs.futures.items()},
+            multipliers=multipliers, instrument_limits=limits, session_check=runner.session_ready,
+            orders=True, positions=positions, limit_offset_ticks=args.limit_offset_ticks,
+            instrument_scope=scope, account_reconciliation=policy.account_reconciliation,
+            generic_close_venues=("CFFEX",))
+        from bomber.framework.trader.execution.live.backend import AuditedExecutionBackend
+        audit = AuditedExecutionBackend(execution.backend, execution.prices,
+            max_quote_age_seconds=args.instrument_max_age_seconds)
+        execution.client.backend = audit
+        execution = replace(execution, backend=audit)
+        if inputs.ctp_upstream is not None:
+            inputs.ctp_upstream.register_quote_tick_handler(audit.observe_quote)
+            for instrument in ids.values():
+                inputs.ctp_upstream.subscribe(instrument, DataType.QUOTE_TICK)
+    if account_routes:
+        if args.mode != "model":
+            raise ValueError("跟随端须通过独立策略主账本装配")
+        execution = build_fanout_execution(execution, account_routes)
+    if args.mode == "recording":
+        from bomber.framework.trader.execution.policy import AccountReconciliationMode
+        execution.client.account_reconciliation = AccountReconciliationMode.OFF
+    runner.client, runner.prices = execution.client, execution.prices
+    channels = []
+    if inputs.ctp_upstream is not None:
+        runner.ctp_upstream = inputs.ctp_upstream
+        runner.ctp_profile = CtpLiveProfile(args.simnow_environment, args.replay_md_trading_day)
+        channels.append(CtpMarketChannel(inputs.ctp_upstream, args.expected_trading_day,
+            profile=runner.ctp_profile, max_age_seconds=args.instrument_max_age_seconds))
+    channels.extend(DolphinMarketChannel(feed, max_receive_age_seconds=(args.market_bar_max_age_seconds
+        if feed.source_id == "vega-market" else args.max_market_age_seconds),
+        allow_historical=runner.replay, event_offset_seconds=60 if any(
+            value is feed and inputs.labels[key] == "start" for key, value in feeds.items()) else 0)
+        for feed in inputs.dolphin_feeds)
+    runner.feature_query_feeds = tuple(getattr(inputs, "feature_query_feeds", ()))
+    if runner.feature_query_feeds:
+        from bomber.framework.trader.runtime.live.channels.features import FeatureQueryChannel
+        channels.extend(FeatureQueryChannel(feed.cache) for feed in runner.feature_query_feeds)
+    channels.append(CtpExecutionChannel(driver, args.expected_trading_day, require_orders=True) if driver else
+        LocalExecutionChannel(CLIENT_ID, lambda: bool(getattr(execution.client, "is_reconciled",
+            getattr(execution.client, "is_started", False))),
+            channel="recording" if args.mode == "recording" else "model"))
+    readiness = runner.readiness = SessionReadiness(*channels)
+    all_ids = {**ids, args.index_code: inputs.index_id}
+    if set(inputs.sources) != set(all_ids):
+        raise ValueError("行情绑定须覆盖期权、期货及指数")
+    strategy = OptionVegaStrategy(sid, args.config, refs.contracts, refs.futures, ids,
+        args.index_code, refs.calendar, args.flatten_day, refs.options_by_day)
+    assemble_strategy(runner, strategy, feeds=feeds, execution=execution, bindings=StrategyBindings(
+        data=tuple(DataBinding(key, inputs.sources[key], item, DataType.BAR, "1-MINUTE")
+            for key, item in all_ids.items()),
+        execution=tuple(ExecutionRoute(str(item), execution.client.client_id, item) for item in ids.values())))
+    runner.strategy = strategy
+    binding = StrategyPositionBinding(sid, execution.client.client_id, {str(i): i for i in ids.values()})
+    session = SimpleNamespace(mode=args.mode, runner=runner, strategy=strategy, client=execution.client,
+        driver=driver, ledger=execution.ledger, references=refs, readiness=readiness,
+        recovery_binding=binding, position_scope=scope, upstream=inputs.ctp_upstream,
+        bar_feed=inputs.ctp_bar_feed, manager=None, feeds=feeds, execution=execution,
+        source_identity=inputs.source_identity)
+    session.signal_checkpoint = OptionVegaCheckpoint(strategy)
+    if args.mode == "recording":
+        from .recovery import RecordingWindowState
+        session.window_components = {"recording": RecordingWindowState(session)}
+    if args.state_file is not None:
+        import json
+        identity = {"strategy_id": sid, "config": vars(args.config),
+            "valuation_day": str(refs.service.valuation_day), "td_day": args.expected_trading_day,
+            "reference_fingerprint": refs.fingerprint, "calendar": tuple(map(str, refs.calendar)),
+            "calendar_manifest": refs.calendar_manifest,
+            "contracts": {key: vars(info) for key, info in refs.contracts.items()},
+            "sources": inputs.source_identity, "labels": inputs.labels, "mode": args.mode,
+            "environment": args.simnow_environment, "md_day": args.replay_md_trading_day,
+            "flatten_day": args.flatten_day, "policy": policy.snapshot_state(),
+            "max_notional": args.max_notional, "frame_wait_seconds": args.frame_wait_seconds,
+            "limit_offset_ticks": args.limit_offset_ticks, "ctp_price_type": args.ctp_price_type}
+        session.session_identity = json.loads(json.dumps(identity, default=str))
+        if shared_service is not None:
+            # 账户账本由共享服务保存；这里只提供应用的信号/参考身份。
+            session.strategy.restored = True
+            return session
+        components = {"session_identity": SessionIdentityCheckpoint(session.session_identity),
+                      "vega_signal": OptionVegaCheckpoint(strategy)}
+        attach = attach_ctp_persistence if args.mode == "simnow" else attach_execution_persistence
+        session.manager = attach(execution, runner, state_file=args.state_file, state_components=components)
+        runner.manager = session.manager
+    return session
+
+
+ZONE = ZoneInfo("Asia/Shanghai")
+
+
+def timestamp(value):
+    return None if value is None else datetime.fromtimestamp(value / 1e9, ZONE).isoformat()
+
+
+def emit(logger, title, row, *, error=False):
+    (logger.error if error else logger.info)("%s: %s", title,
+        json.dumps(row, ensure_ascii=False, default=str, sort_keys=True))
+
+
+def market_summary(runner, frame, deadline, required):
+    rows = frame.observations
+    strategy = runner.strategy
+    details = {}
+    for key in sorted(required):
+        row = rows.get(key)
+        last = runner.observations.get(key)
+        details[key] = {"same_minute": row is not None,
+            "price": str(row.price) if row else None,
+            "source": runner.sources[key],
+            "bar_time": timestamp(row.source_ns) if row else None,
+            "received_at": timestamp(row.received_ns) if row else None,
+            "receive_delay_seconds": round((row.received_ns-frame.valuation_ns)/1e9, 3) if row else None,
+            "last_seen_minute": timestamp(last[0]) if last else None}
+    options = set(strategy.contracts)
+    synchronous = sum(key in rows and strategy.contracts[key].future in rows and strategy.index_id in rows
+                      for key in options)
+    missing = sorted(required-set(rows))
+    return {"strategy_id": strategy.strategy_id, "minute": timestamp(frame.valuation_ns),
+        "sealed_at": timestamp(frame.request_ns), "deadline": timestamp(deadline),
+        "status": "COMPLETE" if not missing else "INCOMPLETE", "missing_required": missing,
+        "required": details, "option_bars": len(options.intersection(rows)),
+        "configured_options": len(options), "synchronous_option_groups": synchronous,
+        "future_bars": len(set(strategy.futures).intersection(rows)),
+        "index_present": strategy.index_id in rows,
+        "late_bars_total": runner.frames.late_count,
+        "ignored_stale_candidates_total": runner.ignored_stale_candidate_bars}
+
+
+def decision_summary(strategy, frame, *, error=None):
+    row = dict(getattr(strategy, "last_decision", {}))
+    row.update(strategy_id=strategy.strategy_id, minute=timestamp(frame.valuation_ns),
+               request_at=timestamp(frame.request_ns))
+    if error is not None:
+        row.update(status="ERROR", failure=str(error))
+    row["option_goals"] = {key: str(value) for key, value in strategy.option_goals.items()
+                           if value or row.get("positions", {}).get(key)}
+    row["future_goals"] = {key: str(value) for key, value in strategy.future_goals.items()
+                           if value or row.get("positions", {}).get(key)}
+    keys = set(row.get("positions", {})) | set(row.get("working", {})) | set(row["option_goals"]) | set(row["future_goals"])
+    keys.add(strategy.index_id)
+    keys.update(strategy.contracts[key].future for key in tuple(keys) if key in strategy.contracts)
+    row["price_cache"] = {key: {"price": strategy.latest[key][1],
+        "minute": timestamp(strategy.latest[key][0]),
+        "age_seconds": (frame.valuation_ns-strategy.latest[key][0])/1e9}
+        for key in sorted(keys) if key in strategy.latest}
+    # 提交目标不等于订单受理或成交；只能报告已有回报计数。
+    row.update(target_submissions_total=strategy.submissions,
+               fills_received_total=strategy.fills_received,
+               order_updates_received_total=strategy.order_updates_received)
+    return row

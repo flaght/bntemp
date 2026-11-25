@@ -1,0 +1,770 @@
+"""当前统一策略框架的期权Vega卖方/期货Delta对冲离线入口。"""
+from __future__ import annotations
+
+from collections import defaultdict
+from datetime import date, time, timedelta
+from decimal import Decimal
+import json
+import math
+from pathlib import Path
+import sys
+from time import perf_counter
+from types import SimpleNamespace
+
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from bomber.framework.market.sources import (MarketSourceConfig, create_market_feed,
+    add_market_source_arguments, market_config_from_args)
+from bomber.framework.cli import ConfigArgumentParser
+from importlib import import_module
+_signal = import_module("demos.08_option_vega.vega_signal")
+Contract, OptionVegaConfig = _signal.Contract, _signal.OptionVegaConfig
+remaining_trading_days, filter_hedgeable_options = _signal.remaining_trading_days, _signal.filter_hedgeable_options
+from bomber.framework.dataprep.bars import add_prepared_bar_source
+from bomber.framework.dataprep.calendar import infer_market_calendar, load_calendar
+from bomber.framework.calendars import NativeCalendarProvider
+from bomber.framework.dataprep.catalog import inventory
+from bomber.framework.dataprep.contracts import BarFileKey, BarReadSpec, InputIssue
+from bomber.framework.dataprep.metadata import load_cffex_futures, load_options_basic, positive
+from bomber.framework.dataprep.paths import resolve_option_args
+from bomber.framework.dataprep.scenarios.option_chain import plan_option_chain, prepare_option_chain
+from bomber.framework.dataprep.session import current_session, input_session, record_issue, write_input_reports
+from bomber.framework.dataprep.commissions import add_commission_arguments, commission_config_from_args
+from bomber.framework.dataprep.option_settlements import (add_option_settlement_arguments,
+    load_option_settlements)
+from bomber.framework.dataprep.future_settlements import (add_future_settlement_arguments,
+    load_future_settlements)
+
+DEFAULT_REPORT_DIR = Path(__file__).resolve().parent / "results" / "backtest"
+
+
+def _start_phase(name):
+    """打印阶段起点，单独计量数据准备与回测。"""
+    print(f"[耗时] 开始：{name}", flush=True)
+    return perf_counter()
+
+
+def _finish_phase(name, started):
+    """打印已完成阶段的耗时。"""
+    elapsed = perf_counter() - started
+    session = current_session()
+    if session is not None:
+        session.performance.add("phase:" + name, elapsed)
+    print(f"[耗时] {name}完成，耗时={elapsed:.3f}s", flush=True)
+
+
+def load_contracts(opt_path, fut_path, option_product, future_product, index_code):
+    """使用公共条款读取器，再组装本策略需要的认购与同月期货关系。"""
+    specs = load_options_basic(opt_path, option_product, index_code,
+        kinds=("C",), require_month_dates=False, require_currency=True)
+    futures = load_cffex_futures(fut_path, future_product, require_execution=True)
+    contracts = {key: Contract(key, future_product + spec.month[2:], float(spec.strike),
+        spec.multiplier, spec.listed, spec.last_trade, spec.expiry, spec.tick)
+        for key, spec in specs.items()}
+    if not contracts or not futures:
+        raise ValueError("没有目标品种的认购期权或期货基础资料")
+    return contracts, futures
+
+
+def load_backtest_calendar(args, prepared_dataset=None):
+    """日期日历独立于行情区间；原生模式保留规则维护范围内的后续日期。"""
+    calendar_id = getattr(args, "calendar_id", None)
+    if calendar_id:
+        if args.calendar is not None:
+            raise ValueError("--calendar与--calendar-id不能同时指定")
+        # 不把日历截到回测末日，否则末日仍无法判断远月合约的剩余交易日。
+        snapshot = NativeCalendarProvider(calendar_id).snapshot(args.start_day)
+        snapshot.require_range(args.start_day, args.end_day)
+        source = f"native:{snapshot.calendar_id}:{snapshot.rules_version}:{snapshot.fingerprint}"
+        return snapshot.days, source
+    if args.calendar is not None:
+        return load_calendar(args.calendar, args.start_day, args.end_day), str(args.calendar)
+    if prepared_dataset is not None:
+        days = tuple(sorted({date.fromisoformat(row["trading_day"]) for row in prepared_dataset.rows}))
+        if not days or args.start_day < days[0] or args.end_day > days[-1]:
+            raise ValueError("请求区间超出prepared行情日期范围；请显式提供交易日历")
+        session = current_session()
+        if session is not None:
+            session.coverage.calendar_source = "INFERRED_PREPARED_MARKET_DATES"
+            session.coverage.assumptions += ("inferred_calendar_trusts_upstream_market_date_completeness",)
+        return days, "PREPARED_MARKET_DATES"
+    return infer_market_calendar((args.fut_dir, args.opt_dir), args.start_day, args.end_day), "MARKET_DATES"
+
+
+def backtest_bar_specs(args):
+    """复用公共多周期输入；只声明真实源周期，不重采样或补齐缺失Bar。"""
+    minutes = getattr(args, "option_bar_minutes", 1)
+    if type(minutes) is not int or minutes not in (1, 5):
+        raise ValueError("option-bar-minutes须为1或5")
+    slot = time.fromisoformat(args.option_slot)
+    if (slot.strftime("%H:%M") != args.option_slot or
+            (slot.minute % minutes and getattr(args, "entry_quote_policy", "synchronized") != "latest")):
+        raise ValueError(f"--option-slot须对齐期权M{minutes}完成时刻；13:58配合M5须显式使用--entry-quote-policy latest")
+    return {
+        "option": BarReadSpec(interval_seconds=minutes * 60,
+            timestamp_label=getattr(args, "options_bar_timestamp", None) or args.bar_timestamp,
+            trading_day_policy="day_session",
+            ohlc_policy=getattr(args, "option_ohlc_policy", "reject")),
+        "future": BarReadSpec(timestamp_label=args.bar_timestamp, trading_day_policy="day_session"),
+    }
+
+
+def resolve_backtest_paths(args):
+    """M1固定使用data_root默认目录；自定义opt_dir仅用于真实M5期权。"""
+    mode = getattr(args, "data_mode", "raw")
+    if mode == "prepared":
+        from bomber.framework.dataprep.paths import resolve_paths
+        if getattr(args, "prepared_root", None) is None:
+            raise ValueError("prepared模式须提供--prepared-root")
+        # Reference terms, index features and settlements keep their independent
+        # paths. Original minute-market directories need not exist on this host.
+        paths = resolve_paths(vars(args), env={}, required_files=("opt_basic", "fut_basic"))
+        args.opt_basic, args.fut_basic = paths.opt_basic, paths.fut_basic
+        args.opt_dir, args.fut_dir = paths.opt, paths.fut
+        args.calendar = paths.calendar
+        args.prepared_root = Path(args.prepared_root).expanduser().resolve()
+        return args
+    if mode != "raw":
+        raise ValueError("data-mode须为raw或prepared")
+    # Permit one YAML to retain both roots; data_mode alone chooses the input.
+    minutes = getattr(args, "option_bar_minutes", 1)
+    if minutes == 1:
+        if getattr(args, "data_root", None) is None:
+            raise ValueError("期权M1使用默认路径，须提供--data-root（读取kline/opt）")
+        # 切换周期时不能让YAML中保留的M5目录覆盖M1默认来源。
+        args.opt_dir = None
+    elif minutes == 5:
+        if getattr(args, "opt_dir", None) is None:
+            raise ValueError("期权M5须通过--opt-dir或配置opt_dir指定真实M5目录")
+    else:
+        raise ValueError("option-bar-minutes须为1或5")
+    return resolve_option_args(args, require_futures=True, require_index=False, use_environment=False)
+
+
+def entry_quotes_available(config, day, index_minutes, option_times, future_times):
+    """与策略共用选约报价规则；仅验证真实已完成Bar，不合成13:58期权行情。"""
+    import pandas as pd
+    signal = pd.Timestamp(f"{day} {config.option_slot}", tz="Asia/Shanghai")
+    if signal not in index_minutes:
+        return False
+    def previous(values):
+        times = pd.DatetimeIndex(values)
+        if times.empty:
+            return None
+        index = times.searchsorted(signal, side="right") - 1
+        return int(times[index].value) if index >= 0 else None
+    sampled_index = [t for t in sorted(index_minutes) if
+        _signal.index_signal_due(t.value, config.index_signal_minutes)]
+    return _signal.entry_quote_times_valid((previous(option_times), previous(future_times), previous(sampled_index)),
+        signal.value, config.entry_quote_policy, config.max_market_age_seconds)
+
+
+def check_day_coverage(args, days, opt_paths, contracts, index_minutes):
+    """一次核对全部请求交易日，分别记录期权链与指数特征缺失。"""
+    files_by_day = defaultdict(list)
+    for day, key in opt_paths:
+        files_by_day[day].append(key)
+    candidates_by_day, missing = {}, []
+    for day in days:
+        candidates = tuple(sorted(key for key in files_by_day[day]
+            if contracts[key].list_day <= day <= contracts[key].last_day))
+        candidates_by_day[day] = candidates
+        index_count = len(index_minutes.get(day, ()))
+        row = {"date": str(day), "matched_option_files": len(files_by_day[day]),
+            "listed_option_candidates": len(candidates), "index_minutes": index_count, "missing": []}
+        if not candidates:
+            row["missing"].append("OPTION_CHAIN")
+            record_issue(InputIssue("MISSING_OPTION_CHAIN",
+                f"与条款匹配的{args.option_product}认购文件={len(files_by_day[day])}，"
+                f"上市期内候选=0；基础资料={args.opt_basic}", source=str(args.opt_dir), trading_day=day))
+        if not index_count:
+            row["missing"].append("INDEX_FEATURE")
+            record_issue(InputIssue("MISSING_INDEX_FEATURE", f"当日指数{args.index_code}特征分钟=0",
+                source=str(args.index_feature_file), symbol=args.index_code, trading_day=day))
+        if row["missing"]:
+            missing.append(row)
+    if missing:
+        raise FileNotFoundError(
+            f"回测输入按日覆盖不足，不截断回测；缺失交易日={len(missing)}；"
+            f"前10日明细={json.dumps(missing[:10], ensure_ascii=False)}；"
+            f"实际期权目录={args.opt_dir}；期权基础资料={args.opt_basic}；"
+            f"指数特征文件={Path(args.index_feature_file).expanduser().resolve()}；"
+            f"完整明细见{args.report_dir}/input_failed_*/input_issues.json")
+    return candidates_by_day
+
+
+@input_session
+def run_case(args):
+    """准备期权链、同月期货和指数行情，运行卖方与实际持仓对冲回测。"""
+    import pandas as pd
+    from bomber.backtest.config import BacktestEngineConfig
+    from bomber.config import LoggingConfig
+    from bomber.model import Venue
+    from bomber.model.identifiers import InstrumentId, TraderId
+    from bomber.framework.market.basic.base import DataType, InstrumentMeta
+    from bomber.framework.trader import (CtpFuturesBasicProfile, MarketStreamBinding,
+        NautilusMarketFeedAdapter, NautilusSimExecutionBackend,
+        UnifiedHistoricalRuntime)
+    from bomber.framework.trader.instrument_factory import day_ns, instrument_meta, make_future, make_option
+    from bomber.framework.trader.assembly import StrategyBindings, assemble_strategy
+    from bomber.framework.trader.contracts import DataBinding, ExecutionRoute
+    OptionVegaStrategy = import_module("demos.08_option_vega.strategy").OptionVegaStrategy
+
+    started = perf_counter()
+    performance = current_session().performance
+    phase = _start_phase("输入路径解析与配置校验")
+    args = resolve_backtest_paths(args)
+    bar_specs = backtest_bar_specs(args)
+    native_batch = getattr(args, "bar_parser", "prepared") == "native_batch"
+    replay_root = getattr(args, "replay_inputs", None)
+    preparation_output = getattr(args, "prepare_replay_inputs", None)
+    if (replay_root is not None or preparation_output is not None) and not native_batch:
+        raise ValueError("回放输入准备/复用须使用--bar-parser native_batch")
+    if preparation_output is not None:
+        if Path(preparation_output).expanduser().exists():
+            raise ValueError("回放输入输出目录已存在，请选择新版本目录")
+        # Certification must read and hash the actual parent partitions once.
+        args.prepared_verify = "full"
+    if native_batch:
+        if getattr(args, "data_mode", "raw") != "prepared":
+            raise ValueError("--bar-parser native_batch须同时使用--data-mode prepared")
+        from bomber.framework.market.replay.native_batch import require_native_batch
+        require_native_batch()
+    prepared_dataset = None
+    if getattr(args, "data_mode", "raw") == "prepared":
+        from bomber.framework.dataprep.prepared import PreparedDataset
+        prepared_dataset = PreparedDataset(args.prepared_root,
+            verify=getattr(args, "prepared_verify", "metadata"))
+        for kind, product in (("option", args.option_product), ("future", args.future_product)):
+            prepared_dataset.validate_spec(kind, product, bar_specs[kind])
+    print(f"期权行情周期={bar_specs['option'].bar_spec} "
+          f"数据模式={getattr(args, 'data_mode', 'raw')} "
+          f"实际目录={args.opt_dir if prepared_dataset is None else args.prepared_root}", flush=True)
+    features = import_module("demos.08_option_vega.feature")
+    with performance.measure("index_feature_file_read"):
+        index_bundle, index_binding, index_records, index_identity = features.read_index_features(args,
+            int(pd.Timestamp(args.start_day, tz="Asia/Shanghai").value),
+            int((pd.Timestamp(args.end_day, tz="Asia/Shanghai") + pd.Timedelta(days=1)).value)-1)
+    config = OptionVegaConfig(
+        nav=args.nav if args.nav is not None else args.starting_balance, vega_budget=args.vega_budget,
+        delta_targets=tuple(float(item.strip()) for item in args.delta_targets.split(",")),
+        option_slot=args.option_slot, entry_quote_policy=getattr(args, "entry_quote_policy", "synchronized"),
+        index_signal_minutes=getattr(args, "index_signal_minutes", 1),
+        hedge_slots=tuple(args.hedge_slots.split(",")),
+        flatten_slot=args.flatten_slot, min_remaining_days=args.min_remaining_days,
+        close_remaining_days=args.close_remaining_days, rate=args.rate,
+        min_time_value=args.min_time_value, max_market_age_seconds=args.max_market_age_seconds,
+        max_iv_age_seconds=args.max_iv_age_seconds, max_option_lots=args.max_option_lots,
+        max_future_lots=args.max_future_lots, max_total_option_lots=args.max_total_option_lots,
+    )
+    for name in ("starting_balance", "max_notional", "margin_init", "margin_maint",
+                 "option_margin_init", "option_margin_maint"):
+        positive(getattr(args, name), name)
+    if args.margin_init > 1 or args.margin_maint > args.margin_init or args.option_margin_maint > args.option_margin_init:
+        raise ValueError("保证金比例无效")
+    if not args.commission.is_finite() or args.commission < 0:
+        raise ValueError("手续费须为有限非负数")
+    _finish_phase("输入路径解析与配置校验", phase)
+    phase = _start_phase("交易日历加载或推导")
+    calendar, calendar_source = load_backtest_calendar(args, prepared_dataset)
+    print(f"交易日来源={calendar_source} 日期范围={calendar[0]}..{calendar[-1]}")
+    days = tuple(day for day in calendar if args.start_day <= day <= args.end_day)
+    if not days:
+        raise ValueError("请求区间没有交易日")
+    _finish_phase("交易日历加载或推导", phase)
+    phase = _start_phase("期权与期货基础条款加载")
+    contracts, future_rows = load_contracts(args.opt_basic, args.fut_basic,
+        args.option_product, args.future_product, args.index_code)
+    _finish_phase("期权与期货基础条款加载", phase)
+    phase = _start_phase("行情目录扫描与同月对冲资格组装")
+    if prepared_dataset is None:
+        opt_paths = inventory(args.opt_dir, args.start_day, args.end_day, lambda key: key in contracts)
+        fut_paths = inventory(args.fut_dir, args.start_day, args.end_day, lambda key: key in future_rows)
+    else:
+        opt_paths = prepared_dataset.inventory("option", args.option_product, bar_specs["option"],
+            args.start_day, args.end_day, lambda key: key in contracts)
+        fut_paths = prepared_dataset.inventory("future", args.future_product, bar_specs["future"],
+            args.start_day, args.end_day, lambda key: key in future_rows)
+    index_minutes = defaultdict(set)
+    for record in index_records:
+        minute = pd.Timestamp(record.ts_event, tz="UTC").tz_convert("Asia/Shanghai")
+        index_minutes[minute.date()].add(minute)
+    candidates_by_day = check_day_coverage(args, days, opt_paths, contracts, index_minutes)
+    needed = {}
+    options_by_day = {}
+    skipped_hedges = []
+    for day in days:
+        candidates = candidates_by_day[day]
+        candidates, skipped = filter_hedgeable_options(candidates, contracts, future_rows, day)
+        for key in skipped:
+            row = future_rows.get(key)
+            reason = ("MISSING_BASIC" if row is None else
+                      "NOT_LISTED" if day < row["listDate"] else "EXPIRED")
+            skipped_hedges.append({"date": str(day), "future": key, "reason": reason})
+        if not candidates:
+            raise ValueError(f"{day}: 无可用已上市同月期货对冲的期权候选，跳过的期货={skipped}")
+        for key in candidates:
+            info = contracts[key]
+            if info.future not in future_rows:
+                raise ValueError(
+                    f"{day}/{key}: 同月期货{info.future}基本资料未匹配；"
+                    f"实际读取资料={args.fut_basic}，品种={args.future_product}"
+                )
+            if (day, info.future) not in fut_paths:
+                expected = Path(args.fut_dir) / f"{day:%Y%m%d}" / f"{info.future}_{day:%Y%m%d}.feather"
+                raise FileNotFoundError(
+                    f"{day}/{key}: 同月期货{info.future}基本资料已找到，但未匹配当天行情；"
+                    f"实际行情目录={args.fut_dir}，预期文件={expected}；"
+                    "文件名合约代码允许大小写差异"
+                )
+            future = future_rows[info.future]
+            # 远期到期在已知日期之后时，只需足够日期判断开仓/清仓阈值。
+            remaining_trading_days(calendar, day, info.last_day, config.min_remaining_days)
+            needed[(day, key)] = opt_paths[(day, key)]
+            needed[(day, info.future)] = fut_paths[(day, info.future)]
+        options_by_day[day] = candidates
+    contracts = {key: value for key, value in contracts.items() if any(key in items for items in options_by_day.values())}
+    future_rows = {key: value for key, value in future_rows.items() if any(info.future == key for info in contracts.values())}
+    # 对持有过的月份，后续存在的旧合约行情也加载，保证退出后仍能估值/清仓。
+    for (day, key), path in {**fut_paths, **opt_paths}.items():
+        if day in days and key in contracts:
+            needed[(day, key)] = path
+        elif day in days and key in future_rows:
+            row = future_rows[key]
+            if row["listDate"] <= day <= row["lastTradeDate"]:
+                needed[(day, key)] = path
+
+    _finish_phase("行情目录扫描与同月对冲资格组装", phase)
+    phase = _start_phase("期权与期货行情加载校验")
+    # 交易腿使用行情文件；指数单独经标准特征文件及可见时钟消费。
+    plan = plan_option_chain((BarFileKey(
+        "option" if key in contracts else "future", key, day,
+    ) for day, key in needed), requested=(args.start_day, args.end_day))
+    replay_inputs, replay_context = None, None
+    if replay_root is not None or preparation_output is not None:
+        from bomber.framework.dataprep.replay_inputs import ReplayInputs, artifact_context
+        frame_module = import_module("demos.08_option_vega.feature.backtest")
+        replay_context = artifact_context(prepared_dataset, plan, bar_specs, index_identity,
+            {"wait_ns": int(args.frame_wait_seconds*1e9), "max_age_ns": int(args.max_market_age_seconds*1e9),
+             "index_key": args.index_code}, frame_module.frame_preparation_identity())
+        if replay_root is not None:
+            replay_inputs = ReplayInputs(replay_root, replay_context, verify=args.prepared_verify)
+    bundle = prepare_option_chain(
+        {"option": args.opt_dir, "future": args.fut_dir}, plan,
+        specs=bar_specs, copy_frames=False, prepared_dataset=prepared_dataset,
+        products={"option": args.option_product, "future": args.future_product},
+        frame_format="arrow" if native_batch else "pandas",
+        replay_inputs=replay_inputs,
+    )
+    prepared = {(source.result.key.trading_day, source.result.key.symbol): source.result for source in bundle.sources}
+    frames = {identity: source.frame for identity, source in prepared.items()}
+    _finish_phase("期权与期货行情加载校验", phase)
+    phase = _start_phase("开仓同步与末日清仓时钟检查")
+    # 指数提供最终清仓的信号时钟。候选合约可能未交易或已提前平仓，
+    # 不应要求每个候选都有收盘行情；实际持仓的新鲜报价由策略逐分钟检查。
+    final_cutoff = pd.Timestamp(f"{days[-1]} {config.flatten_slot}", tz="Asia/Shanghai")
+    if max(index_minutes[days[-1]]) < final_cutoff + pd.Timedelta(minutes=2):
+        raise ValueError(f"{days[-1]}/{args.index_code}: 指数在最终清仓时点后不足两分钟行情，调早--flatten-slot")
+    for day in days:
+        minutes = index_minutes[day]
+        available = any(entry_quotes_available(config, day, minutes,
+            frames[(day, key)].datetime, frames[(day, contracts[key].future)].datetime)
+            for key in options_by_day[day])
+        if not available:
+            raise ValueError(f"{day}: --option-slot={config.option_slot}没有满足"
+                f"entry_quote_policy={config.entry_quote_policy}的已完成三腿行情"
+                f"（期权{bar_specs['option'].bar_spec}、期货1-MINUTE、指数1-MINUTE）")
+
+    if skipped_hedges:
+        print(f"已排除不可用的同月对冲期货（日期/合约/原因）: {skipped_hedges}")
+    print(f"行情覆盖: 请求={args.start_day}..{args.end_day} 实际={days[0]}..{days[-1]} "
+          f"交易日={len(days)} 认购合约={len(contracts)} 同月期货={len(future_rows)}")
+    _finish_phase("开仓同步与末日清仓时钟检查", phase)
+    phase = _start_phase("期权到期与最终结算资料准备")
+    # 公共资料读取器消费标准条款last_trade；不从代码月份猜测到期日。
+    settlement_path = getattr(args, "option_settlements", None)
+    settlements = (load_option_settlements(settlement_path,
+        {key: SimpleNamespace(last_trade=info.last_day) for key, info in contracts.items()},
+        start_day=args.start_day, end_day=args.end_day,
+        available_time=getattr(args, "settlement_available_time", "16:00"),
+        fee_per_contract=getattr(args, "exercise_fee_per_contract", Decimal(0)))
+        if settlement_path else {})
+    future_settlement_path = getattr(args, "future_settlements", None)
+    future_settlements = (load_future_settlements(future_settlement_path,
+        {key: SimpleNamespace(last_trade=row["lastTradeDate"]) for key, row in future_rows.items()},
+        start_day=args.start_day, end_day=args.end_day,
+        available_time=getattr(args, "settlement_available_time", "16:00"),
+        fee_per_contract=getattr(args, "future_settlement_fee_per_contract", Decimal(0)))
+        if future_settlement_path else {})
+    period_end_ns = day_ns(args.end_day + timedelta(days=1)) - 1
+    if any(item.available_ns > period_end_ns for item in (*settlements.values(), *future_settlements.values())):
+        raise ValueError("结算可用时刻超过回测结束；请延长 --end-day")
+    last_trade_times = {key: day_ns(info.last_day, "15:00") for key, info in contracts.items()}
+    future_last_trade_times = {key: day_ns(row["lastTradeDate"], "15:00") for key, row in future_rows.items()}
+    print(f"到期结算资料: option_source={settlement_path} loaded={len(settlements)} "
+          f"future_source={future_settlement_path} loaded={len(future_settlements)}", flush=True)
+    _finish_phase("期权到期与最终结算资料准备", phase)
+    phase = _start_phase("模拟账户与真实合约注册")
+    backend = NautilusSimExecutionBackend("option-vega-sim", BacktestEngineConfig(
+        trader_id=TraderId("OPTION-VEGA-001"), logging=LoggingConfig(log_level=args.log_level), run_analysis=True),
+        execution_timing=getattr(args, "execution_timing", "native"), performance=performance)
+    engine_module = import_module("bomber.backtest.engine")
+    engine_identity = {"module_file": getattr(engine_module, "__file__", None),
+        "streaming_validation_revision": getattr(engine_module, "STREAMING_VALIDATION_REVISION", None),
+        "run_profiling_revision": getattr(engine_module, "RUN_PROFILING_REVISION", None),
+        "streaming_execution_revision": getattr(engine_module, "STREAMING_EXECUTION_REVISION", None),
+        "python_version": sys.version.split()[0]}
+    print("回测内核: " + json.dumps(engine_identity, ensure_ascii=False), flush=True)
+    instruments = {}
+    multipliers = {}
+    output = None
+    engine_run_profiling = False
+    try:
+        if getattr(args, "profile_engine_run", False):
+            from bomber.framework.performance import enable_engine_run_profiling
+            enable_engine_run_profiling(backend.engine)
+            engine_run_profiling = True
+            print("[内核计时] 已开启：子项互斥且包含回调；总计包含子项；计时自身有额外开销", flush=True)
+        profile = CtpFuturesBasicProfile(profile_id="option-vega-basic", venue=Venue("CFFEX"),
+            starting_balance=args.starting_balance, commission_per_contract=args.commission,
+            **commission_config_from_args(args).profile_kwargs())
+        feed = create_market_feed(getattr(args, "market_source_config", None) or MarketSourceConfig(source="file"), "OPTION_VEGA_REPLAY")
+        feed.performance = performance
+        backend.add_profile(profile,
+            option_settlements={item.instrument_id: item for item in settlements.values()},
+            option_last_trade_times={key + ".CFFEX": stamp for key, stamp in last_trade_times.items()},
+            future_settlements={item.instrument_id: item for item in future_settlements.values()},
+            future_last_trade_times={key + ".CFFEX": stamp for key, stamp in future_last_trade_times.items()},
+            settlement_end_ns=period_end_ns)
+        for key, info in contracts.items():
+            contract = make_option(info, args.option_margin_init, args.option_margin_maint, args.index_code,
+                expiry_policy="CASH_SETTLEMENT")
+            instruments[key] = contract.id
+            multipliers[contract.id] = info.multiplier
+            backend.add_instrument(contract)
+            feed.register_instrument(instrument_meta(contract))
+        for key, row in future_rows.items():
+            contract = make_future(key, row, args.margin_init, args.margin_maint, expiry_policy="CASH_SETTLEMENT")
+            instruments[key] = contract.id
+            multipliers[contract.id] = row["contMultNum"]
+            backend.add_instrument(contract)
+            feed.register_instrument(instrument_meta(contract))
+        # 指数是信号数据，只有Feed订阅，不伪造期货或创建执行路由。
+        index_id = InstrumentId.from_str(args.index_code + ".XSHG")
+        feed.register_instrument(InstrumentMeta(index_id, price_precision=args.index_precision,
+            size_precision=0, price_increment=Decimal(1).scaleb(-args.index_precision), exchange="XSHG"))
+        all_ids = {**instruments, args.index_code: index_id}
+        bar_specs_by_key = {key: bar_specs["option" if key in contracts else "future"].bar_spec
+            for key in instruments}
+        bar_specs_by_key[args.index_code] = "1-MINUTE"
+        _finish_phase("模拟账户与真实合约注册", phase)
+        phase = _start_phase("已准备行情注册到回放源")
+        for identity in sorted(frames):
+            # This run owns these frames and does not mutate them after validation.
+            if native_batch:
+                from bomber.framework.market.replay.native_batch import add_arrow_bar_source
+                add_arrow_bar_source(feed, prepared[identity], all_ids[identity[1]])
+            else:
+                add_prepared_bar_source(feed, prepared[identity], all_ids[identity[1]], copy_frame=False,
+                    fast_parse=getattr(args, "bar_parser", "prepared") == "prepared")
+        performance.count("option_bar_files", sum(key in contracts for _, key in frames))
+        performance.count("future_bar_files", sum(key in future_rows for _, key in frames))
+        _finish_phase("已准备行情注册到回放源", phase)
+        if preparation_output is not None:
+            from bomber.framework.dataprep.replay_inputs import publish_replay_inputs
+            frame_module = import_module("demos.08_option_vega.feature.backtest")
+            phase = _start_phase("原生精度认证与分钟帧前置准备")
+            with publish_replay_inputs(preparation_output, replay_context, parent_root=args.prepared_root) as writer:
+                with performance.measure("native_inputs_certification"):
+                    events = writer.write_native(bundle.sources, instruments, feed.get_instrument_meta,
+                                                 progress=lambda message: print(message, flush=True))
+                with performance.measure("decision_frames_preparation"):
+                    outcomes, deadlines = frame_module.prepare_feature_frames(events, index_bundle, index_binding,
+                        index_records, args.index_code, int(args.frame_wait_seconds*1e9), int(args.max_market_age_seconds*1e9))
+                if not outcomes or not any(row.status == "READY" for row in outcomes):
+                    raise ValueError("本区间没有可用READY分钟帧，拒绝发布回放输入产物")
+                writer.write_frames(outcomes, deadlines, index_records, index_binding)
+            _finish_phase("原生精度认证与分钟帧前置准备", phase)
+            print(json.dumps({"status": "passed", "output": str(Path(preparation_output).resolve()),
+                "requested": [str(args.start_day), str(args.end_day)], "sources": len(bundle.sources),
+                "native_rows_certified": len(events), "decision_frames_prepared": len(outcomes)},
+                ensure_ascii=False, indent=2), flush=True)
+            return Path(preparation_output).resolve()
+        phase = _start_phase("策略、执行路由与风控装配")
+        from bomber.framework.trader.execution.builders import build_simulation_execution
+        risk_limits = _signal.risk_limits
+        execution = build_simulation_execution(backend, instrument_limits=risk_limits(
+            config, contracts, instruments, multipliers, args.max_notional))
+        positions, prices, client = execution.positions, execution.prices, execution.client
+        runner_type = import_module("demos.08_option_vega.feature.backtest").build_backtest_runner
+        runner = runner_type(positions=positions, feed=feed, backend=backend,
+            bundle=index_bundle, binding=index_binding, records=index_records,
+            index_key=args.index_code, wait_seconds=args.frame_wait_seconds,
+            max_market_age_seconds=args.max_market_age_seconds,
+            index_value_field=getattr(args, "index_value_field", None), performance=performance,
+            replay_inputs=replay_inputs)
+        strategy = OptionVegaStrategy("option-vega", config, contracts, future_rows, instruments,
+            args.index_code, calendar, days[-1], options_by_day, option_last_trade_times=last_trade_times,
+            future_last_trade_times=future_last_trade_times)
+        strategy.performance = performance
+        assemble_strategy(runner, strategy, feeds={"option-bars": feed}, execution=execution,
+            bindings=StrategyBindings(
+                data=tuple(DataBinding(key, "option-bars", item, DataType.BAR, bar_specs_by_key[key])
+                    for key, item in all_ids.items()),
+                execution=tuple(ExecutionRoute(str(item), client.client_id, item) for item in instruments.values())))
+        runner.strategy = strategy
+        adapter = NautilusMarketFeedAdapter("option-vega-clock", feed, backend,
+            tuple(MarketStreamBinding(item, DataType.BAR, bar_specs_by_key[key])
+                for key, item in instruments.items()), manage_lifecycle=False, performance=performance)
+        runtime = UnifiedHistoricalRuntime("option-vega-runtime", runner, adapter,
+            batch_same_timestamp=getattr(args, "replay_batch_mode", "event") == "same_init")
+        _finish_phase("策略、执行路由与风控装配", phase)
+        try:
+            phase = _start_phase("运行回测")
+            result = runtime.run()
+            _finish_phase("运行回测", phase)
+            phase = _start_phase("交易报表与残留持仓检查资料生成")
+            trader = backend.engine.trader
+            orders, fills = trader.generate_orders_report(), trader.generate_fills_report()
+            position_report = trader.generate_positions_report()
+            account_report = trader.generate_account_report(Venue("CFFEX"))
+            performance.count("orders", len(orders))
+            performance.count("fills", len(fills))
+            _finish_phase("交易报表与残留持仓检查资料生成", phase)
+            phase = _start_phase("报表写出与最终结果校验")
+            output = (Path(args.report_dir) / args.option_product /
+                f"{args.start_day:%Y%m%d}-{args.end_day:%Y%m%d}" / str(result.backend_result.run_id))
+            output.mkdir(parents=True, exist_ok=True)
+            write_input_reports(output)
+            backend.write_commission_report(output)
+            orders.to_csv(output / "orders.csv")
+            fills.to_csv(output / "fills.csv")
+            position_report.to_csv(output / "positions.csv")
+            account_report.to_csv(output / "account.csv")
+            pd.DataFrame(strategy.signals).to_csv(output / "signals.csv", index=False)
+            pd.DataFrame(backend.option_settlement_records, columns=("instrument_id", "quantity", "side",
+                "price", "commission", "ts_event", "available_ns", "last_trade_ns", "client_order_id",
+                "source")).to_csv(output / "settlements.csv", index=False)
+            pd.DataFrame(backend.future_settlement_records, columns=("instrument_id", "quantity", "side",
+                "price", "commission", "ts_event", "available_ns", "last_trade_ns", "client_order_id",
+                "source")).to_csv(output / "future_settlements.csv", index=False)
+            remaining = {key: str(strategy.position(str(item))) for key, item in instruments.items()
+                         if strategy.position(str(item)) or strategy.strategy_working_quantity(str(item))}
+            errors = [str(value) for value in client.report_errors]
+            summary = {"market_source": "file", "market_config":
+                (getattr(args, "market_source_config", None) or MarketSourceConfig(source="file")).identity,
+                "requested": [str(args.start_day), str(args.end_day)],
+                "actual": [str(days[0]), str(days[-1])], "trading_days": len(days),
+                "calendar_source": calendar_source,
+                "parameter_config": ({"file": str(args.config_file), "id": args.config_id}
+                    if getattr(args, "config_file", None) is not None else None),
+                "strategy_config": str(args.strategy_config) if getattr(args, "strategy_config", None) else None,
+                "skipped_unavailable_hedges": skipped_hedges,
+                "calendar_range": [str(calendar[0]), str(calendar[-1])],
+                "option_product": args.option_product, "future_product": args.future_product,
+                "index": args.index_code, "bar_timestamp": args.bar_timestamp,
+                "bar_specs": {kind: {"bar_spec": spec.bar_spec, "timestamp_label": spec.timestamp_label}
+                    for kind, spec in bar_specs.items()},
+                "option_ohlc_policy": bar_specs["option"].ohlc_policy,
+                "execution_timing": getattr(args, "execution_timing", "native"),
+                "replay_batch_mode": getattr(args, "replay_batch_mode", "event"),
+                "bar_parser": getattr(args, "bar_parser", "prepared"),
+                "data_mode": getattr(args, "data_mode", "raw"),
+                "prepared_dataset": None if prepared_dataset is None else prepared_dataset.identity,
+                "replay_inputs": None if replay_inputs is None else replay_inputs.identity,
+                "index_feature": index_identity, "frame_wait_seconds": args.frame_wait_seconds,
+                "skipped_index_frames": sum(row["status"] == "SKIPPED" for row in runner.frame_audit),
+                "pending_scheduled_hedges": strategy._pending_scheduled_hedges,
+                "bars": result.replay_summary.bars, "frames": strategy.frames,
+                "entry_decisions": strategy.entry_decisions, "submissions": strategy.submissions,
+                "option_settlements": str(settlement_path) if settlement_path else None,
+                "settlement_prices_loaded": len(settlements),
+                "settlements": len(backend.option_settlement_records),
+                "future_settlements": str(future_settlement_path) if future_settlement_path else None,
+                "future_settlement_prices_loaded": len(future_settlements),
+                "future_settlement_count": len(backend.future_settlement_records),
+                "orders": len(orders), "fills": len(fills), "remaining_positions_or_working": remaining,
+                "performance_report": "performance.json",
+                "report_errors": errors, "config": vars(config),
+                "engine_identity": engine_identity,
+                "simulation": "NETTING/BAR/CONFIGURED_FEE/PREMIUM_PERCENT_MARGIN; OPTION_AND_INDEX_FUTURE_CASH_SETTLEMENT",
+                "backend": str(result.backend_result)}
+            (output / "feature_frames.json").write_text(json.dumps(runner.frame_audit, ensure_ascii=False, indent=2) + "\n")
+            parameters = import_module("demos.08_option_vega.vega_signal").effective_parameters(args, config)
+            (output / "strategy_parameters.json").write_text(
+                json.dumps(parameters, ensure_ascii=False, indent=2, default=str) + "\n", encoding="utf-8")
+            (output / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2, default=str) + "\n")
+            print(f"frames={strategy.frames} entries={strategy.entry_decisions} orders={len(orders)} fills={len(fills)} 报表={output}")
+            if remaining or errors or not strategy.flatten_requested:
+                raise RuntimeError(f"回测未安全结束：残留仓位/订单={remaining} 回报异常={errors}")
+            if args.require_fills and fills.empty:
+                raise RuntimeError("要求成交，但没有成交；检查Vega预算、价格和选约条件")
+            _finish_phase("报表写出与最终结果校验", phase)
+            phase = _start_phase("可选绩效图生成")
+            if not args.no_tearsheet:
+                try:
+                    from bomber.analysis.tearsheet import create_tearsheet
+                    create_tearsheet(engine=backend.engine, output_path=str(output / "tearsheet.html"), title="Option Vega Backtest")
+                except ImportError as exc:
+                    print(f"绩效图依赖不可用: {exc}；CSV/JSON已保存")
+            _finish_phase("可选绩效图生成", phase)
+            return output
+        finally:
+            phase = _start_phase("运行器清理")
+            runtime.stop()
+            _finish_phase("运行器清理", phase)
+    finally:
+        # 配置阶段失败时也释放Backend；正常runtime.stop后不会重复释放。
+        if not backend.is_disposed:
+            backend.stop()
+        performance.add("run_case", perf_counter() - started)
+        performance.count("option_contracts", len(contracts))
+        performance.count("future_contracts", len(future_rows))
+        performance.count("trading_days", len(days))
+        performance.count("directory_scans", current_session().counters["directory_scans"])
+        report = performance.snapshot()
+        report["engine_identity"] = engine_identity
+        report["replay_batch_mode"] = getattr(args, "replay_batch_mode", "event")
+        if engine_run_profiling:
+            try:
+                native_profile = backend.engine.get_run_profile()
+            except Exception as exc:
+                # Preserve any original strategy/matching failure during cleanup.
+                report["engine_run_profile_error"] = str(exc)
+                print(f"[内核计时] 汇总读取失败: {exc}", flush=True)
+            else:
+                report["engine_run_profile"] = native_profile
+                print("[内核计时] 数量=" + json.dumps(native_profile["counters"], ensure_ascii=False), flush=True)
+                for name, row in native_profile["timings"].items():
+                    print(f"[内核计时] {name}: seconds={row['seconds']:.6f} calls={row['calls']}", flush=True)
+                print(f"[内核计时] 未分配及统计开销: seconds={native_profile['unattributed_seconds']:.6f}", flush=True)
+        if output is not None:
+            try:
+                (output / "performance.json").write_text(
+                    json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            except OSError as exc:
+                # Diagnostics must not mask a strategy/execution failure during cleanup.
+                print(f"[性能统计] 最终性能文件写入失败: {exc}", flush=True)
+        print("[性能统计] 数量=" + json.dumps(report["counters"], ensure_ascii=False), flush=True)
+        for name, row in report["timings"].items():
+            if not name.startswith("phase:"):
+                print(f"[性能统计] {name}: seconds={row['seconds']:.6f} calls={row['calls']}", flush=True)
+        print(f"[耗时] run_case 总耗时={perf_counter() - started:.3f}s", flush=True)
+
+
+@input_session
+def main():
+    """解析期权组合、数据路径及风险限制后启动回测。"""
+    parser = ConfigArgumentParser(description="认购期权卖方Vega预算与同月期货Delta对冲")
+    import_module("demos.08_option_vega.vega_signal").add_strategy_config_argument(parser)
+    add_commission_arguments(parser)
+    add_option_settlement_arguments(parser)
+    add_future_settlement_arguments(parser)
+    add_market_source_arguments(parser, backtest=True)
+    parser.add_argument("--start-day", type=date.fromisoformat, required=True)
+    parser.add_argument("--end-day", type=date.fromisoformat, required=True)
+    parser.add_argument("--data-root", type=Path,
+        help="显式文件根目录；或逐项指定交易腿和基础资料路径，不从环境变量补齐")
+    parser.add_argument("--data-mode", choices=("raw", "prepared"), default="raw",
+        help="raw现场标准化；prepared读取离线校验的版本化Feather分区")
+    parser.add_argument("--prepared-root", type=Path, help="包含manifest.json的prepared版本目录")
+    parser.add_argument("--prepared-verify", choices=("metadata", "full"), default="metadata",
+        help="metadata核对版本/索引/分区结构；full另校验本次读取分区的SHA256")
+    replay_group = parser.add_mutually_exclusive_group()
+    replay_group.add_argument("--replay-inputs", type=Path,
+        help="读取已认证原生数组和分钟帧产物；须prepared+native_batch，版本不符明确拒绝")
+    replay_group.add_argument("--prepare-replay-inputs", type=Path,
+        help="只发布新的原生精度认证及分钟帧产物，不运行策略和撮合")
+    for name in ("fut-dir", "fut-basic", "opt-basic"):
+        parser.add_argument("--" + name, type=Path)
+    parser.add_argument("--opt-dir", type=Path,
+        help="仅用于期权M5的自定义目录；期权M1固定读取data-root/kline/opt")
+    import_module("demos.08_option_vega.feature").add_index_feature_arguments(parser)
+    parser.add_argument("--index-feature-file", type=Path, required=True,
+        help="标准指数特征CSV/Parquet及同名.manifest.json；保留版本和可见时间")
+    parser.add_argument("--index-value-field",
+        help="回测使用的非空数值特征字段，如ma20；省略沿用Bar投影的close")
+    parser.add_argument("--frame-wait-seconds", type=float, default=2,
+        help="与Live相同的分钟等待预算，范围[0,30]秒")
+    calendar_group = parser.add_mutually_exclusive_group()
+    calendar_group.add_argument("--calendar", type=Path, help="交易日历文件；与--calendar-id互斥")
+    calendar_group.add_argument("--calendar-id",
+        help="直接调用原生日历，如china.cffex；保留回测结束后的已维护日期用于到期判断；两项均省略时由行情推导")
+    parser.add_argument("--option-product", default="MO")
+    parser.add_argument("--future-product", default="IM")
+    parser.add_argument("--index-code", default="000852")
+    parser.add_argument("--bar-timestamp", choices=("start", "end"), default="end",
+                        help="源分钟标签，默认 end；开始标签数据需显式选择 start")
+    parser.add_argument("--option-bar-minutes", type=int, choices=(1, 5), default=1,
+        help="真实期权Bar周期；M1使用data-root默认目录，M5须指定opt-dir；期货和指数保持M1")
+    parser.add_argument("--options-bar-timestamp", choices=("start", "end"),
+        help="单独指定期权源时间标签；省略时沿用--bar-timestamp，M5开始标签按5分钟右移")
+    parser.add_argument("--option-ohlc-policy", choices=("reject", "expand_range"), default="reject",
+        help="期权OHLC异常默认拒绝；expand_range仅在读取时扩展高低价并记录警告，可能影响撮合")
+    parser.add_argument("--execution-timing", choices=("native", "next_market"), default="native",
+        help="默认保留原生撮合；next_market等待本合约下一根真实Bar，期权M5不会阻塞期货M1")
+    parser.add_argument("--bar-parser", choices=("generic", "prepared", "native_batch"), default="prepared",
+        help="prepared沿用逐行转换；native_batch从prepared Arrow列调用已有原生批量接口；generic为通用对照")
+    parser.add_argument("--index-precision", type=int, default=4)
+    parser.add_argument("--starting-balance", type=Decimal, default=Decimal("40000000"))
+    parser.add_argument("--nav", type=Decimal)
+    parser.add_argument("--vega-budget", type=float, default=1.25)
+    parser.add_argument("--delta-targets", default="0.2,0.25,0.3,0.35")
+    parser.add_argument("--option-slot", default="13:58")
+    parser.add_argument("--entry-quote-policy", choices=("synchronized", "latest"), default="synchronized",
+        help="synchronized要求三腿同帧；latest允许13:58使用当时已完成的13:55期权M5，保留报价时效检查")
+    parser.add_argument("--index-signal-minutes", type=int, choices=(1, 5), default=1,
+        help="选约指数close采样周期；5表示13:58使用13:55已完成收盘，分钟决策时钟不变")
+    parser.add_argument("--hedge-slots", default="10:00,11:00,13:30,14:00,14:55")
+    parser.add_argument("--flatten-slot", default="14:50")
+    parser.add_argument("--min-remaining-days", type=int, default=5)
+    parser.add_argument("--close-remaining-days", type=int, default=2,
+        help="旧检查点兼容参数；源策略按交易时点时间价值退出，不使用此阈值")
+    parser.add_argument("--rate", type=float, default=0.02)
+    parser.add_argument("--min-time-value", type=float, default=5)
+    parser.add_argument("--max-market-age-seconds", type=int, default=300)
+    parser.add_argument("--max-iv-age-seconds", type=int, default=300,
+        help="旧配置兼容参数，不再限制IV缓存年龄；报价时效仍由max-market-age-seconds控制")
+    parser.add_argument("--max-option-lots", type=int, default=100, help="单期权手数上限；0不设限")
+    parser.add_argument("--max-total-option-lots", type=int, default=200, help="期权累计总手数上限；0不设限")
+    parser.add_argument("--max-future-lots", type=int, default=100, help="单期货手数上限；0不设限，不截断必要对冲")
+    parser.add_argument("--max-notional", type=Decimal, default=Decimal("100000000"))
+    parser.add_argument("--commission", type=Decimal, default=Decimal(1))
+    parser.add_argument("--margin-init", type=Decimal, default=Decimal("0.15"))
+    parser.add_argument("--margin-maint", type=Decimal, default=Decimal("0.12"))
+    parser.add_argument("--option-margin-init", type=Decimal, default=Decimal(1))
+    parser.add_argument("--option-margin-maint", type=Decimal, default=Decimal(1))
+    parser.add_argument("--log-level", choices=("ERROR", "WARNING", "INFO", "DEBUG"), default="WARNING")
+    parser.add_argument("--profile-engine-run", action="store_true",
+        help="开启原生run内部累计计时；需要支持run-phase-timing-v1的已编译Bomber内核")
+    parser.add_argument("--replay-batch-mode", choices=("event", "same_init"), default="event",
+        help="event保留逐条对照；same_init为L1行情按相同接收时间合批，仍逐条完成撮合/回报/策略发布")
+    parser.add_argument("--report-dir", type=Path, default=DEFAULT_REPORT_DIR)
+    parser.add_argument("--no-tearsheet", action="store_true")
+    parser.add_argument("--require-fills", action="store_true")
+    args = parser.parse_args()
+    if not math.isfinite(args.frame_wait_seconds) or not 0 <= args.frame_wait_seconds <= min(30, args.max_market_age_seconds):
+        parser.error("frame-wait-seconds须在[0,min(30,max-market-age-seconds)]秒")
+    try:
+        market_config_from_args(args)
+        backtest_bar_specs(args)
+    except (ValueError, TypeError, OSError) as error:
+        parser.error(str(error))
+    started = perf_counter()
+    args.option_product = args.option_product.strip().upper()
+    args.future_product = args.future_product.strip().upper()
+    if not args.option_product.isalpha() or not args.future_product.isalpha() or not args.index_code.isdigit():
+        parser.error("品种须为字母，指数代码须为六位数字")
+    args.index_code = args.index_code.zfill(6)
+    if len(args.index_code) != 6 or args.end_day < args.start_day or not 0 <= args.index_precision <= 12:
+        parser.error("日期、指数代码或指数精度无效")
+    try:
+        run_case(args)
+    except (ValueError, FileNotFoundError) as exc:
+        parser.error(str(exc))
+    print(f"[耗时] main 总耗时={perf_counter() - started:.3f}s", flush=True)
+
+
+if __name__ == "__main__":
+    main()
