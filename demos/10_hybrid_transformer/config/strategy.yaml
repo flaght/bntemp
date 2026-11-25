@@ -21,6 +21,9 @@ experiment_setups:
     execution_algorithm: limit_reprice
     algo_wait_seconds: 10
     algo_max_attempts: 3
+    algo_retry_step_ticks: 1
+    # 执行报价需要独立CTP Tick时启用；策略继续使用原Bar。
+    # execution_tick_source: ctp
     prepare_seconds: 600
     run_forever: true
     connect: true

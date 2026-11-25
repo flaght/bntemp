@@ -21,6 +21,7 @@ log = logging.getLogger("NTAlgoExecution")
 class NTAlgoConfig:
     wait_seconds: float = 10
     max_attempts: int = 3
+    retry_step_ticks: int = 1
 
     def __post_init__(self):
         if (isinstance(self.wait_seconds, bool) or not isinstance(self.wait_seconds, (int, float))
@@ -28,6 +29,8 @@ class NTAlgoConfig:
             raise ValueError("NT算法等待秒数须为有限正数")
         if type(self.max_attempts) is not int or not 1 <= self.max_attempts <= 1000:
             raise ValueError("NT算法max_attempts须为1至1000整数，包含首次报单")
+        if type(self.retry_step_ticks) is not int or self.retry_step_ticks not in (0, 1):
+            raise ValueError("NT算法retry_step_ticks须为0或1")
 
 
 def encode_order(order):
@@ -211,6 +214,7 @@ class NTAlgoRuntime:
             if task["stopped"] or task["active"] is not None:
                 raise RuntimeError("NT任务已停止或仍存在活动委托")
             task["active"], task["submitted_ns"] = identity, self.clock_ns()
+            task["last_price"] = str(order.price)
             self._schedule(task_id, task)
 
     def unsent(self, identity):
@@ -338,7 +342,8 @@ class NTAlgoRuntime:
                         self._finish(key, "deadline")
                 self.adapter.save()
                 continue
-            candidate = self.adapter.reprice(replace(order, quantity=remaining))
+            candidate = self.adapter.reprice(replace(order, quantity=remaining,
+                price=Decimal(task["last_price"])), step_ticks=self.config.retry_step_ticks)
             if candidate is None or not self.adapter.can_execute(order):
                 with self._lock:
                     if key in self._tasks:
@@ -367,7 +372,8 @@ class NTAlgoRuntime:
     def snapshot_state(self):
         with self._lock:
             return deepcopy(dict(version=1, config=dict(wait_seconds=self.config.wait_seconds,
-                max_attempts=self.config.max_attempts), tasks=self._tasks, stops=list(self._stops)))
+                max_attempts=self.config.max_attempts, retry_step_ticks=self.config.retry_step_ticks),
+                tasks=self._tasks, stops=list(self._stops)))
 
     def active_instruments(self):
         with self._lock:
@@ -385,6 +391,11 @@ class NTAlgoRuntime:
                 filled = Decimal(task["filled"])
                 if not 0 <= filled <= order.quantity or not 1 <= task["attempts"] <= self.config.max_attempts:
                     raise ValueError("NT任务成交数量或报单次数无效")
+                if "last_price" not in task:
+                    raise ValueError("NT任务缺少上次实际委托价格，须先由旧版本完成恢复和停机")
+                last_price = Decimal(task["last_price"])
+                if not last_price.is_finite() or last_price <= 0:
+                    raise ValueError("NT任务缺少有效的上次实际委托价格")
             self.close()
             self._tasks, self._commands = tasks, deque()
             self._stops = deque(deepcopy(state.get("stops", [])))

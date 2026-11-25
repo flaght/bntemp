@@ -30,6 +30,8 @@ def main():
         assert len(transport.sent) == 2, '原生NT定时器未产生撤单及重报闭环'
         assert transport.canceled == [first]
         assert transport.sent[-1]['VolumeTotalOriginal'] == 1
+        assert transport.sent[-1]['LimitPrice'] == transport.sent[0]['LimitPrice'] + 1
+        assert runtime.snapshot_state()['tasks'][task_id]['last_price'] == '3001'
         ref = transport.sent[-1]['OrderRef']
         intent = account.driver._orders[ref][1]
         assert intent.metadata['nt_algo_child_id'].endswith('-E2')

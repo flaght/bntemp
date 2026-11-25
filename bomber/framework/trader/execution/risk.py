@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from enum import Enum
 import threading
+import time
 from types import MappingProxyType
 from typing import Any, Mapping, Sequence
 
@@ -92,12 +93,73 @@ class ReferencePrice:
     ts_event: int
 
 
+@dataclass(frozen=True)
+class ExecutionQuote:
+    last_price: Decimal | None
+    bid_price: Decimal | None
+    ask_price: Decimal | None
+    ts_event: int
+    received_ns: int
+
+
 class MarketReferencePriceStore:
     """从标准行情事件维护风控使用的最新参考价和事件时间。"""
 
     def __init__(self) -> None:
         self._prices: dict[InstrumentId, ReferencePrice] = {}
+        self._tick_instruments: set[InstrumentId] = set()
+        self._quotes: dict[InstrumentId, tuple] = {}
         self._lock = threading.RLock()
+
+    def enable_tick_quotes(self, instruments) -> None:
+        """显式配置的Tick合约不回退到Bar；Bar仍单独保存。"""
+        with self._lock:
+            self._tick_instruments.update(instruments)
+
+    def uses_tick_quotes(self, instrument_id) -> bool:
+        with self._lock:
+            return instrument_id in self._tick_instruments
+
+    def update_tick(self, instrument_id, *, last_price, bid_price, ask_price,
+                    ts_event, received_ns=None) -> None:
+        # 网络回调只交接最新快照，不转换Decimal、不排历史队列、不触发策略。
+        received_ns = time.time_ns() if received_ns is None else received_ns
+        with self._lock:
+            if instrument_id not in self._tick_instruments:
+                return
+            previous = self._quotes.get(instrument_id)
+            if previous is not None and ts_event < previous[0]:
+                return
+            self._quotes[instrument_id] = (ts_event, received_ns, last_price, bid_price, ask_price)
+
+    def on_depth_market_data(self, instrument_id, ts_event, data) -> None:
+        self.update_tick(instrument_id, last_price=data.get("LastPrice"),
+            bid_price=data.get("BidPrice1"), ask_price=data.get("AskPrice1"), ts_event=ts_event)
+
+    def get_quote(self, instrument_id) -> ExecutionQuote | None:
+        with self._lock:
+            raw = self._quotes.get(instrument_id)
+        if raw is None:
+            return None
+        def number(value):
+            try:
+                price = _decimal(value)
+                # CTP未设置的价格可能以DBL_MAX表示。
+                return price if price.is_finite() and 0 < price < Decimal("1e100") else None
+            except (ValueError, ArithmeticError):
+                return None
+        return ExecutionQuote(*(number(value) for value in raw[2:]), raw[0], raw[1])
+
+    def get_for_order(self, instrument_id, side) -> ReferencePrice | None:
+        if not self.uses_tick_quotes(instrument_id):
+            with self._lock:
+                return self._prices.get(instrument_id)
+        quote = self.get_quote(instrument_id)
+        if (quote is None or quote.bid_price is None or quote.ask_price is None
+                or quote.bid_price > quote.ask_price):
+            return None
+        price = quote.ask_price if side is OrderSide.BUY else quote.bid_price
+        return ReferencePrice(price, quote.ts_event)
 
     def update(
         self,
@@ -117,15 +179,25 @@ class MarketReferencePriceStore:
             self._prices[instrument_id] = ReferencePrice(normalized, ts_event)
 
     def get(self, instrument_id: InstrumentId) -> ReferencePrice | None:
+        if self.uses_tick_quotes(instrument_id):
+            quote = self.get_quote(instrument_id)
+            if (quote is None or quote.bid_price is None or quote.ask_price is None
+                    or quote.bid_price > quote.ask_price):
+                return None
+            return ReferencePrice((quote.bid_price + quote.ask_price) / 2, quote.ts_event)
         with self._lock:
             return self._prices.get(instrument_id)
 
     def snapshot(self) -> Mapping[InstrumentId, ReferencePrice]:
         with self._lock:
-            return MappingProxyType(dict(self._prices))
+            instruments = self._prices.keys() | self._tick_instruments
+        return MappingProxyType({key: value for key in instruments if (value := self.get(key)) is not None})
 
     def on_market_event(self, event: Any) -> None:
         """供UnifiedStrategyRunner注册；只消费统一标准行情对象。"""
+        if isinstance(event, (QuoteTick, TradeTick)) and self.uses_tick_quotes(event.instrument_id):
+            # 执行快照由原始深度回调交接；派生事件可能去重或排队，不能覆盖它。
+            return
         if isinstance(event, QuoteTick):
             price = (_decimal(event.bid_price) + _decimal(event.ask_price)) / 2
             instrument_id = event.instrument_id

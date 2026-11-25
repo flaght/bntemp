@@ -45,12 +45,12 @@ class NTAlgoCtpTests(unittest.TestCase):
     client = fixture.SharedAccountTests.client
 
     def make_account(self, path=None, *, max_attempts=3, start=True,
-                     host_factory=ManualNTHost, wait_seconds=10):
+                     host_factory=ManualNTHost, wait_seconds=10, retry_step_ticks=1):
         modules = self.native_modules()
         from bomber.framework.trader.execution.nt_algo import build_nt_algo_runtime, NTAlgoConfig
         from bomber.framework.trader.execution.ctp.nt_algo import NTAlgoCtpDriver
         from bomber.framework.trader.runtime.live.channels.ctp_independent import IndependentCtpLifecycle
-        runtime = build_nt_algo_runtime('limit_reprice', NTAlgoConfig(wait_seconds, max_attempts),
+        runtime = build_nt_algo_runtime('limit_reprice', NTAlgoConfig(wait_seconds, max_attempts, retry_step_ticks),
                                        host_factory=host_factory, clock_ns=lambda: self.now)
         factory = lambda *args, **kwargs: NTAlgoCtpDriver(*args, algo_runtime=runtime, **kwargs)
         self.enterContext(patch.object(modules.driver, 'CtpNativeTraderDriver', factory))
@@ -155,7 +155,7 @@ class NTAlgoCtpTests(unittest.TestCase):
         service.poll()
         second = transport.sent[-1]
         self.assertEqual(second['VolumeTotalOriginal'], 1)
-        self.assertEqual(second['LimitPrice'], 3007)
+        self.assertEqual(second['LimitPrice'], 3001)
         self.assertNotEqual(second['OrderRef'], first)
         self.assertEqual(account.driver.order_budget['submitted'], 2)
         transport.fill(second['OrderRef'])
@@ -236,7 +236,7 @@ class NTAlgoCtpTests(unittest.TestCase):
         self.assertEqual(len(transport.sent), 1)
         service.prices.update(self.instrument, 3010, self.now)
         service.poll()
-        self.assertEqual(transport.sent[-1]['LimitPrice'], 3010)
+        self.assertEqual(transport.sent[-1]['LimitPrice'], 3001)
         transport.fill(transport.sent[-1]['OrderRef'])
 
     def test_replacement_obeys_original_risk_limit(self):

@@ -39,7 +39,7 @@ class CtpLimitPlanner:
                 continue
             if order.position_effect is PositionEffect.OPEN and order.instrument_id in closing:
                 continue
-            reference = self._prices.get(order.instrument_id)
+            reference = self._prices.get_for_order(order.instrument_id, order.side)
             if reference is None:
                 raise RuntimeError("CTP缺少行情参考价，拒绝报单")
             tick = (self._tick_size.get(order.instrument_id)

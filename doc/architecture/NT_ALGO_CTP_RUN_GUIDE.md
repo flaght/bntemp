@@ -4,7 +4,7 @@
 
 ## 实现边界
 
-策略及原订单规划器决定合约、方向、数量、开平和退出。算法只执行这笔明确订单：等待指定秒数，未完成则撤单；柜台终态和已声明成交全部入账后，用有效参考价重报剩余量。
+策略及原订单规划器决定合约、方向、数量、开平和退出。算法只执行这笔明确订单：等待指定秒数，未完成则撤单；柜台终态和已声明成交全部入账后，在行情仍有效的前提下，按上次实际委托价调整后重报剩余量。
 
 公共宿主真正使用 Bomber SDK 中的 NT `ExecAlgorithm`、`LiveClock`、`Cache`、`MessageBus` 和 `spawn_limit`。采用轻量算法托管模式，不另起 TradingNode，不创建第二套账户资金、仓位或成交账本。每次实际委托继续经过原受控客户端的授权、资金查询等待、风控、预算、归属冻结和写前保存。没有自动切回普通 Driver 的兜底发送。
 
@@ -38,6 +38,9 @@ execution_driver: nt_algo_ctp
 execution_algorithm: limit_reprice
 algo_wait_seconds: 10
 algo_max_attempts: 3
+algo_retry_step_ticks: 1
+# 可选：策略用DolphinDB Bar，同时单独订阅CTP Tick供执行报价。
+# execution_tick_source: ctp
 ```
 
 `execution_driver: nt_algo_ctp` 表示选择NT算法CTP执行积木，`execution_algorithm: limit_reprice` 才表示采用项目自定义的限价超时撤单重报规则。对应命令行参数为 `--execution-algorithm limit_reprice`。
@@ -55,11 +58,23 @@ PYTHONPATH=.:/workspace/worker/pj/KiChaos IMPLUSE_VERSION=all \
 
 此配置用于 `run_direct.py`；原 `workers_hybrid` 配置仍对应 `run_shared.py`。显式命令行参数优先于 YAML，可临时覆盖等待时间或尝试次数。
 
-`execution_driver` 默认为 `ctp`；`max_attempts` 包含首次报单，默认每个任务最多3次实际报单。重报价格继续使用原 `limit_offset_ticks` 保护限价，不是市价单，也不保证成交。
+`execution_driver` 默认为 `ctp`；`max_attempts` 包含首次报单，默认每个任务最多3次实际报单。首次偏移沿用账户JSON的 `account.limit_offset_ticks`；重报步长使用 `algo_retry_step_ticks`，仅接受0或1。仍为显式限价单，不保证成交。
+
+## 执行报价与逐次跳价
+
+NT直连装配时复用已配置的CTP Tick源；没有Tick源的合约继续使用现有Bar close。策略用DolphinDB分钟Bar时，可在启动YAML加入 `execution_tick_source: ctp`（CLI：`--execution-tick-source ctp`），通过现有CTP行情工厂增加一个执行报价源，连接参数取当前环境的 `CTP_MD_ADDRESS`、账户及密码。该源只订阅当前执行路由里的合约，不改变08/10的Bar信号、选约和持仓期限。已有对应CTP Tick源时复用，不再为相同合约创建第二条报价订阅。
+
+每合约独立保留Bar参考价和最新Tick快照（last/bid/ask、行情时间、接收时间）。原始深度回调只覆盖最新快照，Decimal转换与价格计算在读取时完成，不累计历史Tick，不扫描执行任务、不写文件或逐Tick日志。价格和数量未变化的深度推送仍刷新快照时间；去重或排队后的QuoteTick不会覆盖原始执行快照。
+
+首次定价：配置Tick的合约，买入基准为ask1、卖出基准为bid1；未配置Tick的合约以Bar close为基准。首次买入加 `limit_offset_ticks` 跳、卖出减相同跳数，并按合约最小报价单位对齐。Tick配置后尚未收到、盘口无效或过期时阻止报单/重报，不静默改用Last或Bar。风控使用同一报价缓存中的Tick中间价与行情时间，继续执行原时效和预算检查。
+
+算法重报：买价 = 上次实际委托价 + `algo_retry_step_ticks × tick_size`；卖价 = 上次实际委托价 - 同等步长。重报前仍要求有效行情，但不按新行情重新起算阶梯。步长为0时维持上次委托价；步长为1时每次主动前进一跳。首次偏移1跳、最多3次报单时，相对首次基准依次为1、2、3跳；从首笔实际委托价计算则最多再前进2跳。行情移动较大时仍可能不成交，本模式不是每次追随最新盘口。
+
+上次实际委托价随任务一起写入原联合检查点。配置Tick不表示录制历史Tick；执行快照与行情录制相互独立。本地验证不代表远程满订阅负载已验证，远程需观察报价时效和分钟策略耗时。
 
 达到次数上限、执行到期或收到拒单后，未完成任务结束，原策略贡献冻结在已成交归属，等待新的策略目标版本。避免 Runner 为相同旧目标立即重建任务，绕过次数上限。策略主动取消或目标变化会停止原任务；持仓周期仍由策略控制。
 
-同账户共享配置在装配内部使用 `execution_driver`、`execution_algorithm` 和 `nt_algo: {wait_seconds: 10, max_attempts: 3}`。本期仅在 `run_direct` 的独立归属路径装配，不支持旧独立账户服务入口或净额共享模式。
+同账户共享配置在装配内部使用 `execution_driver`、`execution_algorithm` 和 `nt_algo: {wait_seconds: 10, max_attempts: 3, retry_step_ticks: 1}`。本期仅在 `run_direct` 的独立归属路径装配，不支持旧独立账户服务入口或净额共享模式。
 
 代码装配直接选择 `IndependentCtpDriver(...)` 或 `NTAlgoCtpDriver(..., algo_runtime=NTAlgoRuntime(...))`。随后沿用 `build_ctp_portfolio_execution`、`SharedAccountExecutionService` 和 `IndependentCtpLifecycle`；算法 Driver 不能省略原服务和持久化绑定。
 
@@ -81,7 +96,7 @@ PYTHONPATH=.:/workspace/worker/pj/KiChaos IMPLUSE_VERSION=all \
   --connect --enable-orders --confirm-simnow --run-forever
 ```
 
-保留已有持仓、成交归属、信号进度和每日报单计数；每次真实重报照常消耗原每日额度。没有删除或重建原检查点。任务状态版本仍为1，新增撤单状态字段可选，旧任务格式继续可读。完整SDK验证通过后再启用，10原启动方式不需要改变。
+保留已有持仓、成交归属、信号进度和每日报单计数；每次真实重报照常消耗原每日额度。没有删除或重建原检查点。升级前须使用旧版本正常停止，确认没有未决算法任务；旧任务未记录上次实际委托价，不能猜测恢复。无未决任务时，原生命周期会更新算法参数状态，保留账户及策略的其他账本。完整SDK验证通过后再启用。
 
 ## 远程服务器验证
 
@@ -95,7 +110,7 @@ PYTHONPATH=. /workspace/worker/env/chs-live/bin/python -B -m tests.run_nt_algo_n
 
 # 第二项：任务状态、撤单、成交归属、恢复和普通执行回归，不连接柜台。
 PYTHONPATH=. /workspace/worker/env/chs-live/bin/python -B -m unittest \
-  tests.test_option_nt_algo tests.test_nt_algo_ctp \
+  tests.test_execution_quotes tests.test_option_nt_algo tests.test_nt_algo_ctp \
   tests.test_order_cancellation tests.test_shared_account -v
 ```
 

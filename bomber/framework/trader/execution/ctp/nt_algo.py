@@ -87,9 +87,9 @@ class NTAlgoCtpDriver(IndependentCtpDriver):
                               service.budget, service.clock_ns())
         return True
 
-    def reprice(self, order):
+    def reprice(self, order, *, step_ticks):
         service = self._algo_service
-        reference = service.prices.get(order.instrument_id)
+        reference = service.prices.get_for_order(order.instrument_id, order.side)
         limits = service.instrument_limits[order.instrument_id]
         if reference is None or not 0 <= service.clock_ns() - reference.ts_event <= (
                 limits.max_market_age_ns or 120_000_000_000):
@@ -97,9 +97,11 @@ class NTAlgoCtpDriver(IndependentCtpDriver):
         planner = service.client.planner.planner
         tick = planner._tick_size
         tick = tick[order.instrument_id] if isinstance(tick, dict) else tick
-        raw = reference.price + tick * planner._offset_ticks * (1 if order.side is OrderSide.BUY else -1)
+        raw = order.price + tick * step_ticks * (1 if order.side is OrderSide.BUY else -1)
         rounding = ROUND_CEILING if order.side is OrderSide.BUY else ROUND_FLOOR
         price = (raw / tick).to_integral_value(rounding=rounding) * tick
+        if not price.is_finite() or price <= 0:
+            raise ValueError("NT算法重报价无效")
         reducing = (service._ports[order.strategy_id].reduce_only_check()
             or service._sources[order.strategy_id].get('metadata', {}).get('market_health_mode') == 'REDUCE_ONLY'
             or order.metadata.get('market_health_mode') == 'REDUCE_ONLY')

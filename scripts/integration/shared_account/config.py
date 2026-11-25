@@ -75,7 +75,7 @@ def resolve_config(config, path):
         "account_state_file", "report_dir", "account", "strategies", "position_scope", "execution_mode",
         "existing_position_policy", "ctp_instrument_max_age_seconds", "history_missing_policy",
         "strategy_history_minutes", "env_file", "account_env_file", "strategy_env_files",
-        "execution_driver", "execution_algorithm", "nt_algo"}
+        "execution_driver", "execution_algorithm", "nt_algo", "execution_tick_source"}
     if set(config) - allowed or config.get("version") != 1:
         raise ValueError("共享配置版本无效或存在未知字段")
     driver_kind = config.get('execution_driver', 'ctp')
@@ -89,14 +89,19 @@ def resolve_config(config, path):
         if config.get('execution_mode') != 'independent':
             raise ValueError('NT算法CTP首期仅支持independent模式')
         policy = config.get('nt_algo', {})
-        if not isinstance(policy, dict) or set(policy) - {'wait_seconds', 'max_attempts'}:
-            raise ValueError('nt_algo只接受wait_seconds和max_attempts')
+        if not isinstance(policy, dict) or set(policy) - {'wait_seconds', 'max_attempts', 'retry_step_ticks'}:
+            raise ValueError('nt_algo只接受wait_seconds、max_attempts和retry_step_ticks')
         wait, attempts = policy.get('wait_seconds', 10), policy.get('max_attempts', 3)
         if isinstance(wait, bool) or not isinstance(wait, (int, float)) or not math.isfinite(wait) or wait <= 0:
             raise ValueError('nt_algo.wait_seconds须为有限正数')
         if type(attempts) is not int or not 1 <= attempts <= 1000:
             raise ValueError('nt_algo.max_attempts须为1至1000整数')
-    elif 'nt_algo' in config or 'execution_algorithm' in config:
+        step = policy.get('retry_step_ticks', 1)
+        if type(step) is not int or step not in (0, 1):
+            raise ValueError('nt_algo.retry_step_ticks须为0或1')
+        if config.get('execution_tick_source') not in (None, 'ctp'):
+            raise ValueError('execution_tick_source当前仅支持ctp')
+    elif 'nt_algo' in config or 'execution_algorithm' in config or 'execution_tick_source' in config:
         raise ValueError('execution_algorithm及nt_algo参数仅用于nt_algo_ctp执行积木')
     paths_by_id = config.get('strategy_env_files', {})
     if not isinstance(paths_by_id, dict) or set(paths_by_id)-{r['strategy_id'] for r in config['strategies']}:
