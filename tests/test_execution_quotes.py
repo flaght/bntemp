@@ -8,7 +8,14 @@ from types import SimpleNamespace as NS
 from unittest.mock import Mock, patch
 import unittest
 
+# 本机缺完整SDK时复用既有行情实体夹具；Feed、转换、缓存和执行规则仍为实际实现。
+from tests import test_direct_ctp as sdk_fixture
 from tests import test_nt_algo_ctp as fixture
+from tests.run_hybrid_live_offline import base as market_base
+from bomber.framework.market.stream.dolphin import DolphinDbLiveDataFeed, DolphinDbConfig, DolphinDbStreamSpec
+from bomber.framework.market.native.dolphin.driver import OfficialDolphinDbDriver
+from bomber.framework.trader.execution.risk import MarketReferencePriceStore as LivePriceStore
+from bomber.framework.trader.execution.contracts import OrderSide as LiveSide
 
 
 class ExecutionQuoteTests(unittest.TestCase):
@@ -22,7 +29,7 @@ class ExecutionQuoteTests(unittest.TestCase):
     tick = fixture.NTAlgoCtpTests.tick
 
     def quote(self, service, *, bid=2998, ask=3002, last=3000):
-        service.prices.on_depth_market_data(self.instrument, self.now,
+        service.prices.on_tick_snapshot(self.instrument, self.now,
             {'BidPrice1': bid, 'AskPrice1': ask, 'LastPrice': last})
 
     def test_bar_is_used_without_tick_configuration(self):
@@ -123,7 +130,7 @@ class ExecutionQuoteTests(unittest.TestCase):
         old = self.now
         self.now += 121_000_000_000
         self.quote(service)  # 没有价格变化，仍收到新的原始快照。
-        prices.on_depth_market_data(self.instrument, old,
+        prices.on_tick_snapshot(self.instrument, old,
             {'BidPrice1': 1, 'AskPrice1': 2, 'LastPrice': 1})
         quote = prices.get_quote(self.instrument)
         self.assertEqual((quote.bid_price, quote.ask_price, quote.last_price), (2998, 3002, 3000))
@@ -167,53 +174,198 @@ class ExecutionQuoteTests(unittest.TestCase):
         self.assertEqual(broker2.sent[-1]['LimitPrice'], 3002)
         self.assertEqual(broker2.sent[-1]['VolumeTotalOriginal'], 1)
 
-    def test_quote_configuration_reuses_existing_ctp_feed(self):
+    def test_no_tick_table_does_not_implicitly_use_ctp_quotes(self):
         from demos.direct_ctp import configure_execution_quotes
         _, service, _, _, _ = self.make_account()
-        feed = NS(get_instrument_meta=lambda instrument: object(),
-            register_depth_handler=Mock(), subscribe=Mock())
-        host = NS(service=service, strategies={'one': NS(session=NS(upstream=feed)),
-                                              'two': NS(session=NS(upstream=feed))})
+        feed = NS(register_depth_handler=Mock(), subscribe=Mock())
+        host = NS(service=service, strategies={'one': NS(session=NS(upstream=feed))})
         configure_execution_quotes(host, {'execution_driver': 'nt_algo_ctp'})
-        feed.register_depth_handler.assert_called_once()
-        feed.subscribe.assert_called_once()
-        self.assertTrue(service.prices.uses_tick_quotes(self.instrument))
+        feed.register_depth_handler.assert_not_called()
+        self.assertFalse(service.prices.uses_tick_quotes(self.instrument))
 
-    def test_separate_tick_feed_uses_resource_cleanup_without_strategy_callbacks(self):
+    def test_dolphin_tick_uses_bar_connection_and_stays_out_of_strategy_callbacks(self):
         from demos.direct_ctp import configure_execution_quotes
-        _, service, _, _, _ = self.make_account()
+        from bomber.framework.market.sources import MarketSourceConfig
+        _, service, broker, ports, _ = self.make_account()
+        connection = NS(host='market.test', port=8848, username='market-user', password='fixture',
+            streaming_port=0, keep_alive_seconds=60)
+        source = MarketSourceConfig(source='dolphindb', table='bars', timestamp_label='end',
+            volume_mode='cumulative', tick_table='ticks')
+        bar = NS(config=connection, market_source_config=source,
+            get_instrument_meta=lambda instrument: NS(instrument_id=instrument))
         runner = NS(add_data_feed=Mock())
-        feed = NS(register_instrument=Mock(), subscribe=Mock(), register_depth_handler=Mock(),
+        feed = NS(register_instrument=Mock(), subscribe=Mock(), register_tick_snapshot_handler=Mock(),
             connect=Mock(), disconnect=Mock())
-        transport = NS(broker_id='9999', investor_id='demo', password='test',
-            production_mode=True, client_id='account')
-        from bomber.framework.market.basic import base
-        with ExitStack() as resources, patch.dict('os.environ', {'CTP_MD_ADDRESS': 'tcp://example.invalid:1'}), \
-                patch.object(base, 'InstrumentMeta', lambda instrument, **kwargs: NS(instrument_id=instrument, **kwargs), create=True), \
-                patch('bomber.framework.market.sources.create_market_feed', return_value=feed) as factory:
-            host = NS(service=service, account=NS(transport=transport), resources=resources,
-                strategies={'one': NS(session=NS(upstream=None, runner=runner))})
-            configure_execution_quotes(host, {'execution_driver': 'nt_algo_ctp', 'execution_tick_source': 'ctp'})
-            factory.assert_called_once()
+        with ExitStack() as resources, \
+                patch('bomber.framework.market.sources.create_dolphin_tick_feed', return_value=feed) as factory:
+            host = NS(service=service, resources=resources, strategies={str(index): NS(session=NS(
+                upstream=None, feeds={'market-bars': bar}, client=port, runner=runner))
+                for index, port in enumerate(ports)})
+            configure_execution_quotes(host, {'execution_driver': 'nt_algo_ctp'})
+            factory.assert_called_once_with(['ticks'], 'execution-quotes-0',
+                market_config=connection, max_age_seconds=10)
+            feed.subscribe.assert_called_once()
             runner.add_data_feed.assert_not_called()
-            feed.connect.assert_called_once()
-            feed.register_depth_handler.assert_called_once()
-            self.assertTrue(service.prices.uses_tick_quotes(self.instrument))
+            callback = feed.register_tick_snapshot_handler.call_args.args[0]
+            callback(self.instrument, self.now, {'LastPrice': 3000, 'BidPrice1': 2998, 'AskPrice1': 3002})
+            self.submit(ports[0], 1)
+            self.assertEqual(broker.sent[-1]['LimitPrice'], 3002)
         feed.disconnect.assert_called_once()
+
+    def test_future_venues_merge_tables_on_same_dolphin_connection(self):
+        from demos.direct_ctp import configure_execution_quotes
+        from bomber.framework.market.sources import MarketSourceConfig
+        _, service, _, ports, _ = self.make_account()
+        other = type(self.instrument).from_str('p2701.DCE')
+        service.instrument_limits[other] = service.instrument_limits[self.instrument]
+        ports[1].routes = {'main': other}
+        connection = NS(host='market.test', port=8848, username='market-user', password='fixture',
+            streaming_port=0, keep_alive_seconds=60)
+        sessions = {}
+        for port, instrument, table in zip(ports, (self.instrument, other), ('shfe_ticks', 'dce_ticks')):
+            bar = NS(config=connection, market_source_config=MarketSourceConfig(source='dolphindb',
+                table='bars', timestamp_label='start', volume_mode='per-bar', tick_table=table),
+                get_instrument_meta=lambda key: NS(instrument_id=key))
+            sessions[port.strategy_id] = NS(session=NS(upstream=bar, client=port))
+        feed = NS(register_instrument=Mock(), subscribe=Mock(), register_tick_snapshot_handler=Mock(),
+            connect=Mock(), disconnect=Mock())
+        with ExitStack() as resources, \
+                patch('bomber.framework.market.sources.create_dolphin_tick_feed', return_value=feed) as factory:
+            configure_execution_quotes(NS(service=service, resources=resources, strategies=sessions),
+                {'execution_driver': 'nt_algo_ctp'})
+            factory.assert_called_once_with(['dce_ticks', 'shfe_ticks'], 'execution-quotes-0',
+                market_config=connection, max_age_seconds=10)
+            self.assertEqual(feed.subscribe.call_count, 2)
+            self.assertTrue(service.prices.uses_tick_quotes(other))
+
+    def test_configured_tick_cannot_silently_fall_back_when_instrument_metadata_is_missing(self):
+        from demos.direct_ctp import configure_execution_quotes
+        _, service, _, (port, _), _ = self.make_account()
+        bar = NS(config=NS(host='ddb', port=8848, username='user', password='fixture',
+            streaming_port=0, keep_alive_seconds=60),
+            market_source_config=NS(tick_table='ticks', tick_max_age_seconds=10),
+            get_instrument_meta=lambda instrument: None)
+        host = NS(service=service, strategies={'one': NS(session=NS(upstream=bar, client=port))})
+        with self.assertRaisesRegex(ValueError, '未注册到对应Bar行情源'):
+            configure_execution_quotes(host, {'execution_driver': 'nt_algo_ctp'})
 
 
 class ExecutionQuoteConfigTests(unittest.TestCase):
     check_direct = fixture.NTAlgoConfigurationTests.check_direct
-    def test_cli_accepts_tick_source_and_zero_or_one_step(self):
+
+    def test_old_ctp_source_is_rejected_before_connection(self):
+        from contextlib import redirect_stderr
+        from io import StringIO
+        with redirect_stderr(StringIO()) as output, self.assertRaises(SystemExit):
+            self.check_direct(['--execution-driver', 'nt_algo_ctp', '--execution-tick-source', 'ctp'])
+        self.assertIn('market_dolphindb.json', output.getvalue())
+
+    def test_tick_fields_stay_in_original_market_json_without_changing_bar_identity(self):
+        from bomber.framework.market.sources import MarketSourceConfig, market_config_from_args
+        import json
+        original = dict(source='dolphindb', table='bars', timestamp_label='end', volume_mode='cumulative')
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / 'market_dolphindb.json'
+            path.write_text(json.dumps({**original, 'tick_table': 'ticks', 'tick_max_age_seconds': 10}))
+            config = market_config_from_args(NS(market_config=path), domestic_contracts=True)
+        self.assertEqual(config.tick_table, 'ticks')
+        self.assertEqual(config.tick_max_age_seconds, 10)
+        self.assertEqual(config.identity, MarketSourceConfig(**original).identity)
+        self.assertIsNone(MarketSourceConfig(**original).tick_table)
+        for values in ({'tick_table': 'dfs://ticks/tick'}, {'tick_table': ''},
+                {'tick_max_age_seconds': 0}, {'tick_max_age_seconds': float('nan')},
+                {'tick_max_age_seconds': True}):
+            with self.subTest(values=values), self.assertRaises(ValueError):
+                MarketSourceConfig(**original, **values)
+
+    def test_zero_or_one_step_is_still_configurable(self):
         for step in (0, 1):
-            result = self.check_direct(['--execution-driver', 'nt_algo_ctp', '--execution-tick-source', 'ctp',
-                '--algo-retry-step-ticks', str(step)])
-            self.assertEqual(result['execution_tick_source'], 'ctp')
+            result = self.check_direct(['--execution-driver', 'nt_algo_ctp', '--algo-retry-step-ticks', str(step)])
             self.assertEqual(result['nt_algo']['retry_step_ticks'], step)
-            self.assertFalse(result['orders_enabled'])
 
     def test_runtime_rejects_invalid_step(self):
         from bomber.framework.trader.execution.nt_algo import NTAlgoConfig
         for step in (-1, 2, .1, True):
             with self.subTest(step=step), self.assertRaises(ValueError):
                 NTAlgoConfig(retry_step_ticks=step)
+
+
+class DolphinExecutionTickTests(unittest.TestCase):
+    class Session:
+        def __init__(self, columns):
+            self.columns, self.subscriptions = columns, []
+        def connect(self, *args): return True
+        def enableStreaming(self, *args): pass
+        def run(self, query): return self.columns
+        def subscribe(self, **kwargs): self.subscriptions.append(kwargs)
+        def unsubscribe(self, *args): pass
+        def close(self): pass
+
+    def setUp(self):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        self.now = [int(datetime(2026, 11, 25, 13, 30, tzinfo=ZoneInfo('Asia/Shanghai')).timestamp() * 1e9)]
+        self.enterContext(patch('time.time_ns', side_effect=lambda: self.now[0]))
+        self.instrument = market_base.InstrumentId.from_str('MO2612-C-6000.CFFEX')
+        self.meta = market_base.InstrumentMeta(self.instrument, price_precision=1, price_increment=D('.2'))
+
+    def make_feed(self, columns=None):
+        columns = columns or ('Code', 'AskPrice1', 'LastPrice', 'BidPrice1', 'ActionDay',
+            'UpdateTime', 'UpdateMillisec', 'Volume', 'BidVolume1', 'AskVolume1', 'extra')
+        session = self.Session(columns)
+        driver = OfficialDolphinDbDriver(session_factory=lambda **kwargs: session)
+        spec = DolphinDbStreamSpec.tick('ticks', auto_schema=True)
+        feed = DolphinDbLiveDataFeed(DolphinDbConfig('ddb.test', 8848, 'user', 'fixture', streams=(spec,)),
+            driver_factory=lambda: driver)
+        feed.register_instrument(self.meta)
+        feed.subscribe(self.instrument, market_base.DataType.QUOTE_TICK)
+        self.addCleanup(feed.disconnect)
+        return feed, session
+
+    def row(self, seconds=0, **values):
+        return dict(Code='MO2612-C-6000', ActionDay='20261125', UpdateTime=f'13:30:{seconds:02d}',
+            UpdateMillisec=0, LastPrice=118.3, BidPrice1=118.2, AskPrice1=118.4,
+            Volume=100, BidVolume1=2, AskVolume1=3, extra='unused', **values)
+
+    def publish(self, session, row):
+        session.subscriptions[0]['handler']([row.get(column) for column in session.columns])
+
+    def test_reordered_server_schema_delivers_unchanged_tick_and_respects_quote_expiry(self):
+        feed, session = self.make_feed()
+        prices = LivePriceStore()
+        prices.update(self.instrument, 99, self.now[0])
+        prices.enable_tick_quotes((self.instrument,), max_age_ns=10_000_000_000)
+        feed.register_tick_snapshot_handler(prices.on_tick_snapshot)
+        feed.connect()
+        self.assertEqual(session.subscriptions[0]['offset'], -1)
+        self.publish(session, self.row())
+        self.assertEqual(prices.get_for_order(self.instrument, LiveSide.BUY).price, D('118.4'))
+        self.assertEqual(prices.get_for_order(self.instrument, LiveSide.SELL).price, D('118.2'))
+        self.now[0] += 9_000_000_000
+        self.publish(session, self.row(9))  # 报价和累计成交量不变，派生事件会被去重。
+        self.assertEqual(prices.get(self.instrument).ts_event, self.now[0])
+        self.assertEqual(feed.manifest['received_ticks'], 2)
+        self.assertEqual(prices.get_quote(self.instrument).last_price, D('118.3'))
+        self.now[0] += 11_000_000_000
+        prices.update(self.instrument, 123, self.now[0])
+        self.assertIsNone(prices.get_for_order(self.instrument, LiveSide.BUY))
+        self.publish(session, self.row(20))
+        self.assertEqual(prices.get_for_order(self.instrument, LiveSide.BUY).price, D('118.4'))
+
+    def test_missing_bid_ask_schema_fails_before_subscribing(self):
+        feed, session = self.make_feed(('Code', 'LastPrice', 'BidPrice1', 'ActionDay', 'UpdateTime'))
+        with self.assertRaisesRegex(ValueError, 'AskPrice1'):
+            feed.connect()
+        self.assertEqual(session.subscriptions, [])
+
+    def test_tick_factory_reuses_exact_bar_connection_without_reading_another_environment(self):
+        from bomber.framework.market.sources import create_dolphin_tick_feed
+        config = DolphinDbConfig('bar-host', 8849, 'bar-user', 'fixture', streaming_port=8899,
+            streams=(DolphinDbStreamSpec.bar('bars', auto_schema=True),))
+        with patch.dict('os.environ', {'DDB_MARKET_HOST': 'other-host'}, clear=True):
+            feed = create_dolphin_tick_feed(('shfe_ticks', 'dce_ticks'), 'execution-quotes',
+                market_config=config, max_age_seconds=10)
+        self.assertEqual((feed.config.host, feed.config.port, feed.config.username, feed.config.password,
+            feed.config.streaming_port), ('bar-host', 8849, 'bar-user', 'fixture', 8899))
+        self.assertEqual([stream.table_name for stream in feed.config.streams], ['shfe_ticks', 'dce_ticks'])
+        self.assertTrue(all(stream.auto_schema and not stream.columns for stream in feed.config.streams))

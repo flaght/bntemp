@@ -22,8 +22,7 @@ experiment_setups:
     algo_wait_seconds: 10
     algo_max_attempts: 3
     algo_retry_step_ticks: 1
-    # 执行报价需要独立CTP Tick时启用；策略继续使用原Bar。
-    # execution_tick_source: ctp
+    # RB/P执行Tick分别在原行情JSON的tick_table中配置；null沿用Bar close。
     prepare_seconds: 600
     run_forever: true
     connect: true

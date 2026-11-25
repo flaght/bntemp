@@ -3,5 +3,7 @@
   "table": "stream_cffex_1min",
   "timestamp_label": "end",
   "volume_mode": "cumulative",
-  "max_age_seconds": 120
+  "max_age_seconds": 120,
+  "tick_table": null,
+  "tick_max_age_seconds": 10
 }

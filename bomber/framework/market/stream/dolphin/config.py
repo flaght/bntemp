@@ -37,6 +37,7 @@ TICK_COLUMNS = (
     "receivedTime",
     "perPenetrationTime",
 )
+TICK_REQUIRED_COLUMNS = ("Code", "LastPrice", "BidPrice1", "AskPrice1")
 
 BAR_COLUMNS = (
     "minTime",
@@ -85,8 +86,8 @@ class DolphinDbStreamSpec:
         if re.fullmatch(r"[A-Za-z0-9_]+", self.action_name) is None:
             raise ValueError("DolphinDB action_name只能包含字母、数字和下划线")
         expected = TICK_COLUMNS if self.kind == "tick" else BAR_COLUMNS
-        if self.auto_schema and (self.kind != "bar" or self.columns):
-            raise ValueError("auto_schema requires a Bar stream with server-resolved columns")
+        if self.auto_schema and self.columns:
+            raise ValueError("auto_schema requires server-resolved columns")
         if not self.auto_schema and self.columns != expected:
             raise ValueError(
                 f"{self.kind} columns do not match the exp5 schema; "
@@ -111,7 +112,8 @@ class DolphinDbStreamSpec:
         action_name: str = "bomberTick",
         **options: Any,
     ) -> "DolphinDbStreamSpec":
-        return cls("tick", table_name, action_name, TICK_COLUMNS, **options)
+        return cls("tick", table_name, action_name,
+                   () if options.get("auto_schema", False) else TICK_COLUMNS, **options)
 
     @classmethod
     def bar(

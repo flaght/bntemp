@@ -346,50 +346,55 @@ def prepare_payload(account, payload):
 
 
 def configure_execution_quotes(host, config):
-    """复用已配置CTP Tick；可另配一个只供执行报价的CTP行情源。"""
+    """从各策略原market_config取Tick流表；连接直接复用对应Bar的DDB配置。"""
     if config.get('execution_driver', 'ctp') != 'nt_algo_ctp':
         return
+    if config.get('execution_tick_source') is not None:
+        raise ValueError('请移除execution_tick_source，在market_dolphindb.json中配置tick_table')
     from bomber.framework.market.basic.base import DataType
-    prices = host.service.prices
-    remaining = set(host.service.instrument_limits)
-    # 一个来源只挂一次回调，同合约不重复订阅。
-    seen = set()
+    from bomber.framework.market.sources import create_dolphin_tick_feed
+    groups, assignments = {}, {}
     for item in host.strategies.values():
-        feed = getattr(item.session, 'upstream', None)
-        if feed is None or id(feed) in seen or not callable(getattr(feed, 'register_depth_handler', None)):
+        session = item.session
+        feeds = (getattr(session, 'upstream', None), *getattr(session, 'feeds', {}).values())
+        for bar in feeds:
+            source = getattr(bar, 'market_source_config', None)
+            if source is None or source.tick_table is None:
+                continue
+            connection = bar.config
+            key = (connection.host, connection.port, connection.username, connection.password,
+                connection.streaming_port, connection.keep_alive_seconds, source.tick_max_age_seconds)
+            group = groups.setdefault(key, dict(connection=connection, tables=set(), instruments={},
+                max_age_seconds=source.tick_max_age_seconds))
+            group['tables'].add(source.tick_table)
+            for instrument in set(session.client.routes.values()):
+                if instrument not in host.service.instrument_limits:
+                    continue
+                meta = bar.get_instrument_meta(instrument)
+                if meta is None:
+                    raise ValueError(f'Tick配置的执行合约未注册到对应Bar行情源: {instrument}')
+                previous = assignments.setdefault(instrument, (key, source.tick_table))
+                if previous != (key, source.tick_table):
+                    raise ValueError(f'同一合约配置了不同Tick流表或连接: {instrument}')
+                group['instruments'][instrument] = meta
+    if not groups:
+        logging.getLogger('ExecutionQuotes').info('执行报价使用Bar close: market_config.tick_table未配置')
+    for index, group in enumerate(groups.values()):
+        if not group['instruments']:
             continue
-        seen.add(id(feed))
-        instruments = {instrument for instrument in remaining if feed.get_instrument_meta(instrument) is not None}
-        if instruments:
-            prices.enable_tick_quotes(instruments)
-            feed.register_depth_handler(prices.on_depth_market_data)
-            for instrument in instruments:
-                feed.subscribe(instrument, DataType.QUOTE_TICK)
-            remaining.difference_update(instruments)
-    if config.get('execution_tick_source') != 'ctp' or not remaining:
-        return
-    from bomber.framework.market.basic.base import InstrumentMeta
-    from bomber.framework.market.sources import MarketSourceConfig, create_market_feed
-    from bomber.framework.trader.runtime.live.channels.ctp import required
-    from bomber.framework.trader.runtime.live.channels.ctp_market import CtpMarketCredentials
-    transport = host.account.transport
-    lifecycle = SimpleNamespace(md_front=required('CTP_MD_ADDRESS'), md_credentials=CtpMarketCredentials(
-        transport.broker_id, transport.investor_id, transport.password, transport.production_mode))
-    feed = create_market_feed(MarketSourceConfig(source='ctp'), 'execution-quotes', lifecycle=lifecycle,
-        flow_path=f'/tmp/{transport.client_id}-execution-md-{os.getpid()}', environment='realtime')
-    planner = host.service.client.planner.planner
-    for instrument in remaining:
-        tick = planner._tick_size[instrument] if isinstance(planner._tick_size, dict) else planner._tick_size
-        feed.register_instrument(InstrumentMeta(instrument,
-            price_precision=max(0, -tick.normalize().as_tuple().exponent), price_increment=tick,
-            multiplier=host.service.instrument_limits[instrument].contract_multiplier,
-            exchange=str(instrument).rsplit('.', 1)[-1]))
-        feed.subscribe(instrument, DataType.QUOTE_TICK)
-    prices.enable_tick_quotes(remaining)
-    feed.register_depth_handler(prices.on_depth_market_data)
-    # 与账户装配同阶段连接，由原ExitStack关闭；不把Tick接入Runner策略回调。
-    host.resources.callback(feed.disconnect)
-    feed.connect()
+        tables = sorted(group['tables'])
+        feed = create_dolphin_tick_feed(tables, f'execution-quotes-{index}',
+            market_config=group['connection'], max_age_seconds=group['max_age_seconds'])
+        for instrument, meta in group['instruments'].items():
+            feed.register_instrument(meta)
+            feed.subscribe(instrument, DataType.QUOTE_TICK)
+        host.service.prices.enable_tick_quotes(group['instruments'],
+            max_age_ns=max(1, int(group['max_age_seconds'] * 1e9)))
+        feed.register_tick_snapshot_handler(host.service.prices.on_tick_snapshot)
+        host.resources.callback(feed.disconnect)
+        feed.connect()  # 不把执行Tick接入Runner策略回调。
+        logging.getLogger('ExecutionQuotes').info('执行报价已订阅DolphinDB Tick: tables=%s max_age_seconds=%s',
+            tables, group['max_age_seconds'])
 
 
 def build_direct_host(config, *, import_state=None, counter_file=None):
@@ -552,8 +557,8 @@ def main(kind, argv=None):
         help='每个NT任务的最大实际报单次数，包含首次')
     parser.add_argument('--algo-retry-step-ticks', type=int, choices=(0, 1), default=1,
         help='每次重报相对上次实际委托价买加/卖减的跳数；首次沿用账户limit_offset_ticks')
-    parser.add_argument('--execution-tick-source', choices=('ctp',),
-        help='额外配置CTP Tick供执行报价；未配置且没有现成CTP Tick时沿用Bar close')
+    parser.add_argument('--execution-tick-source',
+        help='旧字段已停用；请在策略market_dolphindb.json配置tick_table')
     if kind == 'hybrid_transformer':
         alignment_entry = import_module('demos.10_hybrid_transformer.reconcile_direct_positions')
         parser.add_argument('--config',type=Path,default=demo/'config/instances_rb_p.json')
@@ -577,6 +582,8 @@ def main(kind, argv=None):
         parser.error('prepare-seconds须为非负整数')
     if options.stop_before_close_seconds < 0:
         parser.error('stop-before-close-seconds须为非负整数')
+    if options.execution_tick_source is not None:
+        parser.error('请移除execution_tick_source，在策略market_dolphindb.json中配置tick_table；Tick与Bar统一从DolphinDB订阅')
     account = read_account_config(options.account_config)
     if options.execution_driver == 'nt_algo_ctp':
         from math import isfinite
@@ -588,8 +595,6 @@ def main(kind, argv=None):
             execution_algorithm=options.execution_algorithm or 'limit_reprice', nt_algo=dict(
             wait_seconds=options.algo_wait_seconds, max_attempts=options.algo_max_attempts,
             retry_step_ticks=options.algo_retry_step_ticks))
-        if options.execution_tick_source is not None:
-            account['execution_tick_source'] = options.execution_tick_source
     elif (options.execution_algorithm is not None
             or options.algo_wait_seconds != 10 or options.algo_max_attempts != 3
             or options.algo_retry_step_ticks != 1 or options.execution_tick_source is not None):
@@ -631,7 +636,7 @@ def main(kind, argv=None):
             report_dir=config['report_dir'], counter_file=str(options.counter_file.resolve()),
             env_file=str(options.env_file.resolve()),
             execution_driver=options.execution_driver, execution_algorithm=config.get('execution_algorithm'),
-            nt_algo=config.get('nt_algo'), execution_tick_source=config.get('execution_tick_source'),
+            nt_algo=config.get('nt_algo'),
             orders_enabled=False),ensure_ascii=False))
         return
     if not (options.enable_orders and options.confirm_simnow):

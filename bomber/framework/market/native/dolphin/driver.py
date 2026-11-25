@@ -112,7 +112,7 @@ class OfficialDolphinDbDriver:
             self.resolved_columns[subscription.table_name] = columns
             missing = set(subscription.required_columns) - set(columns)
             if not columns or len(set(columns)) != len(columns) or missing:
-                raise ValueError(f"DolphinDB分钟流缺少必需列或结构无效: {sorted(missing)}; actual_columns={columns}")
+                raise ValueError(f"DolphinDB流表缺少必需列或结构无效: {sorted(missing)}; actual_columns={columns}")
         callback = _make_callback(columns, handler)
         session.subscribe(
             host=self._host,

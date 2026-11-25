@@ -99,8 +99,8 @@ def resolve_config(config, path):
         step = policy.get('retry_step_ticks', 1)
         if type(step) is not int or step not in (0, 1):
             raise ValueError('nt_algo.retry_step_ticks须为0或1')
-        if config.get('execution_tick_source') not in (None, 'ctp'):
-            raise ValueError('execution_tick_source当前仅支持ctp')
+        if config.get('execution_tick_source') is not None:
+            raise ValueError('请移除execution_tick_source，在策略market_dolphindb.json中配置tick_table')
     elif 'nt_algo' in config or 'execution_algorithm' in config or 'execution_tick_source' in config:
         raise ValueError('execution_algorithm及nt_algo参数仅用于nt_algo_ctp执行积木')
     paths_by_id = config.get('strategy_env_files', {})

@@ -108,13 +108,17 @@ class MarketReferencePriceStore:
     def __init__(self) -> None:
         self._prices: dict[InstrumentId, ReferencePrice] = {}
         self._tick_instruments: set[InstrumentId] = set()
+        self._tick_max_age_ns: dict[InstrumentId, int] = {}
         self._quotes: dict[InstrumentId, tuple] = {}
         self._lock = threading.RLock()
 
-    def enable_tick_quotes(self, instruments) -> None:
+    def enable_tick_quotes(self, instruments, *, max_age_ns=None) -> None:
         """显式配置的Tick合约不回退到Bar；Bar仍单独保存。"""
+        instruments = tuple(instruments)
         with self._lock:
             self._tick_instruments.update(instruments)
+            if max_age_ns is not None:
+                self._tick_max_age_ns.update({instrument: max_age_ns for instrument in instruments})
 
     def uses_tick_quotes(self, instrument_id) -> bool:
         with self._lock:
@@ -132,7 +136,7 @@ class MarketReferencePriceStore:
                 return
             self._quotes[instrument_id] = (ts_event, received_ns, last_price, bid_price, ask_price)
 
-    def on_depth_market_data(self, instrument_id, ts_event, data) -> None:
+    def on_tick_snapshot(self, instrument_id, ts_event, data) -> None:
         self.update_tick(instrument_id, last_price=data.get("LastPrice"),
             bid_price=data.get("BidPrice1"), ask_price=data.get("AskPrice1"), ts_event=ts_event)
 
@@ -150,16 +154,23 @@ class MarketReferencePriceStore:
                 return None
         return ExecutionQuote(*(number(value) for value in raw[2:]), raw[0], raw[1])
 
+    def _tick_reference(self, instrument_id, side=None):
+        quote = self.get_quote(instrument_id)
+        with self._lock:
+            max_age = self._tick_max_age_ns.get(instrument_id)
+        if (quote is None or quote.bid_price is None or quote.ask_price is None
+                or quote.bid_price > quote.ask_price
+                or max_age is not None and not 0 <= time.time_ns() - quote.ts_event <= max_age):
+            return None
+        price = (quote.ask_price if side is OrderSide.BUY else quote.bid_price
+                 if side is OrderSide.SELL else (quote.bid_price + quote.ask_price) / 2)
+        return ReferencePrice(price, quote.ts_event)
+
     def get_for_order(self, instrument_id, side) -> ReferencePrice | None:
         if not self.uses_tick_quotes(instrument_id):
             with self._lock:
                 return self._prices.get(instrument_id)
-        quote = self.get_quote(instrument_id)
-        if (quote is None or quote.bid_price is None or quote.ask_price is None
-                or quote.bid_price > quote.ask_price):
-            return None
-        price = quote.ask_price if side is OrderSide.BUY else quote.bid_price
-        return ReferencePrice(price, quote.ts_event)
+        return self._tick_reference(instrument_id, side)
 
     def update(
         self,
@@ -180,11 +191,7 @@ class MarketReferencePriceStore:
 
     def get(self, instrument_id: InstrumentId) -> ReferencePrice | None:
         if self.uses_tick_quotes(instrument_id):
-            quote = self.get_quote(instrument_id)
-            if (quote is None or quote.bid_price is None or quote.ask_price is None
-                    or quote.bid_price > quote.ask_price):
-                return None
-            return ReferencePrice((quote.bid_price + quote.ask_price) / 2, quote.ts_event)
+            return self._tick_reference(instrument_id)
         with self._lock:
             return self._prices.get(instrument_id)
 

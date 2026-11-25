@@ -51,18 +51,23 @@ class DolphinDbMarketConverter:
         self._bar_keys.clear()
         self._bar_volumes.clear()
 
-    def convert_tick(
-        self,
-        row: Mapping[str, Any],
-        instrument_id: InstrumentId,
-        meta: InstrumentMeta,
-    ) -> list[ConvertedEvent]:
-        ts_event = _combine_ns(
+    def tick_timestamp_ns(self, row: Mapping[str, Any]) -> int:
+        return _combine_ns(
             row.get("ActionDay") or row.get("date") or row.get("TradingDay"),
             row.get("UpdateTime") or row.get("tradeTime"),
             _integer(row.get("UpdateMillisec", 0), "UpdateMillisec", minimum=0, maximum=999),
             self.timezone,
         )
+
+    def convert_tick(
+        self,
+        row: Mapping[str, Any],
+        instrument_id: InstrumentId,
+        meta: InstrumentMeta,
+        *, ts_event: int | None = None,
+    ) -> list[ConvertedEvent]:
+        if ts_event is None:
+            ts_event = self.tick_timestamp_ns(row)
         ts_init = _timestamp_ns(row.get("receivedTime"), self.timezone) or time.time_ns()
         state = self._tick_states.setdefault(instrument_id, _TickState())
         events: list[ConvertedEvent] = []

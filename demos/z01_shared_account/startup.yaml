@@ -15,8 +15,7 @@ experiment_setups:
     algo_wait_seconds: 10
     algo_max_attempts: 3
     algo_retry_step_ticks: 1
-    # 取消注释后，执行买入使用ask、卖出使用bid；策略仍由DDB Bar驱动。
-    # execution_tick_source: ctp
+    # 执行Tick在原market_dolphindb.json的tick_table中配置；null沿用Bar close。
     prepare_seconds: 600
     run_forever: true
     connect: false

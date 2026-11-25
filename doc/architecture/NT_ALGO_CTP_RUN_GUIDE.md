@@ -39,13 +39,12 @@ execution_algorithm: limit_reprice
 algo_wait_seconds: 10
 algo_max_attempts: 3
 algo_retry_step_ticks: 1
-# 可选：策略用DolphinDB Bar，同时单独订阅CTP Tick供执行报价。
-# execution_tick_source: ctp
+# Tick流表在原market_dolphindb.json中配置tick_table。
 ```
 
 `execution_driver: nt_algo_ctp` 表示选择NT算法CTP执行积木，`execution_algorithm: limit_reprice` 才表示采用项目自定义的限价超时撤单重报规则。对应命令行参数为 `--execution-algorithm limit_reprice`。
 
-当前只实现 `limit_reprice`；TWAP及组合算法尚未接入，填写其他算法名会在启动前明确报错。旧NT配置省略算法名时，仍默认 `limit_reprice`；普通 `ctp` Driver不接受算法名称。此改动保持原检查点格式，已有任务和持仓沿用原恢复流程。
+当前只实现 `limit_reprice`；TWAP及组合算法尚未接入，填写其他算法名会在启动前明确报错。旧NT配置省略算法名时，仍默认 `limit_reprice`；普通 `ctp` Driver不接受算法名称。算法任务及持仓按下文的切换与恢复条件核验。
 
 `demos/10_hybrid_transformer/config/strategy.yaml` 已提供 `direct_nt_algo` 启动配置，沿用原直连账本和策略文件，包含常驻、连接及 SimNow 报单授权开关。在远程项目根目录执行：
 
@@ -62,9 +61,27 @@ PYTHONPATH=.:/workspace/worker/pj/KiChaos IMPLUSE_VERSION=all \
 
 ## 执行报价与逐次跳价
 
-NT直连装配时复用已配置的CTP Tick源；没有Tick源的合约继续使用现有Bar close。策略用DolphinDB分钟Bar时，可在启动YAML加入 `execution_tick_source: ctp`（CLI：`--execution-tick-source ctp`），通过现有CTP行情工厂增加一个执行报价源，连接参数取当前环境的 `CTP_MD_ADDRESS`、账户及密码。该源只订阅当前执行路由里的合约，不改变08/10的Bar信号、选约和持仓期限。已有对应CTP Tick源时复用，不再为相同合约创建第二条报价订阅。
+NT直连执行Tick与策略Bar统一从DolphinDB订阅。请移除旧启动YAML中的 `execution_tick_source: ctp`；不再为执行报价直连CTP MD。Tick配置预留在原 `market_dolphindb.json` 中，不另建配置文件：
 
-每合约独立保留Bar参考价和最新Tick快照（last/bid/ask、行情时间、接收时间）。原始深度回调只覆盖最新快照，Decimal转换与价格计算在读取时完成，不累计历史Tick，不扫描执行任务、不写文件或逐Tick日志。价格和数量未变化的深度推送仍刷新快照时间；去重或排队后的QuoteTick不会覆盖原始执行快照。
+```json
+{
+  "source": "dolphindb",
+  "table": "stream_cffex_1min",
+  "timestamp_label": "end",
+  "volume_mode": "cumulative",
+  "max_age_seconds": 120,
+  "tick_table": null,
+  "tick_max_age_seconds": 10
+}
+```
+
+`table`仍是原Bar流表；`tick_table`填实际共享Tick流表名后启用执行报价，`null`或省略则沿用Bar close。仓库已在08、z01/08及10的RB/P原行情JSON中预留这两个字段，未猜测服务器表名。08的MO期权和IM期货使用同一行情JSON；10的RB、P分别填写 `market_dolphindb_rb.json`、`market_dolphindb_p.json`。Tick表须为实时共享流表，不能填DFS历史Tick路径。
+
+执行Tick直接复用对应Bar Feed已经解析好的DDB服务器、账号、端口、streaming_port等连接配置，使用同一官方DDB驱动和原生订阅接口，不读取另一组CTP MD连接。同连接及有效期的Tick表合并到一个执行Feed，同表同合约不重复订阅。仅注册本次策略执行路由的合约；没有策略绑定到执行Tick Feed。Bar和模型检查点身份不包含这两个执行报价字段，不改变原信号、选约和持仓期限。
+
+流表字段顺序与Bar一样由服务端schema解析。报价需要 `Code`、`LastPrice`、`BidPrice1`、`AskPrice1`；时间沿用现有标准Tick转换器的 `ActionDay/date/TradingDay` 与 `UpdateTime/tradeTime`，可带 `UpdateMillisec`。使用与项目现有标准Tick流一致的字段命名，不要求固定26列顺序。
+
+每合约独立保留Bar参考价和最新Tick快照（last/bid/ask、行情时间、接收时间）。DDB原始Tick行回调只覆盖最新快照，缓存的Decimal转换与价格计算在读取时完成，不累计历史Tick，不扫描执行任务、不写文件或逐Tick日志。价格和累计成交量未变化的Tick行仍刷新快照时间；去重或排队后的QuoteTick不会覆盖原始执行快照。`tick_max_age_seconds`须为(0,120]内有限数，报价按行情时间检查有效期。
 
 首次定价：配置Tick的合约，买入基准为ask1、卖出基准为bid1；未配置Tick的合约以Bar close为基准。首次买入加 `limit_offset_ticks` 跳、卖出减相同跳数，并按合约最小报价单位对齐。Tick配置后尚未收到、盘口无效或过期时阻止报单/重报，不静默改用Last或Bar。风控使用同一报价缓存中的Tick中间价与行情时间，继续执行原时效和预算检查。
 

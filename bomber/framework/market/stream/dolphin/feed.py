@@ -17,7 +17,7 @@ from bomber.framework.market.native.dolphin import (
     NativeDolphinSubscription,
     create_native_driver,
 )
-from bomber.framework.market.stream.dolphin.config import DolphinDbConfig, DolphinDbStreamSpec, BAR_REQUIRED_COLUMNS, BAR_STATE_REQUIRED_COLUMNS
+from bomber.framework.market.stream.dolphin.config import DolphinDbConfig, DolphinDbStreamSpec, BAR_REQUIRED_COLUMNS, BAR_STATE_REQUIRED_COLUMNS, TICK_REQUIRED_COLUMNS
 from bomber.framework.market.stream.dolphin.converter import ConvertedEvent, DolphinDbMarketConverter, DolphinDbMinuteStateBuffer
 
 
@@ -54,6 +54,12 @@ class DolphinDbLiveDataFeed(StreamDataFeed):
         self._received_bars = self._conversion_errors = 0
         self._last_conversion_error = None
         self._resolved_columns = {}
+        self._tick_snapshot_handlers = []
+        self._received_ticks = 0
+
+    def register_tick_snapshot_handler(self, handler) -> None:
+        """原始Tick快照交接；回调只覆盖缓存，不在订阅线程计算策略或报单。"""
+        self._tick_snapshot_handlers.append(handler)
 
     @property
     def latest_received_ns(self):
@@ -74,6 +80,7 @@ class DolphinDbLiveDataFeed(StreamDataFeed):
     def manifest(self):
         with self._observation_lock:
             return {"source_id": self.source_id, "received_bars": self._received_bars,
+                "received_ticks": self._received_ticks,
                 "latest_received_ns": self._latest_received_ns, "latest_event_ns": self._latest_event_ns,
                 "conversion_errors": self._conversion_errors, "last_conversion_error": self._last_conversion_error,
                 "resolved_columns": dict(getattr(self._driver, "resolved_columns", self._resolved_columns))}
@@ -132,7 +139,8 @@ class DolphinDbLiveDataFeed(StreamDataFeed):
                     batch_size=spec.batch_size,
                     throttle=spec.throttle,
                     filter=spec.filter,
-                    required_columns=(BAR_STATE_REQUIRED_COLUMNS if spec.bar_mode == "state" else BAR_REQUIRED_COLUMNS)
+                    required_columns=(TICK_REQUIRED_COLUMNS if spec.kind == "tick" else
+                        BAR_STATE_REQUIRED_COLUMNS if spec.bar_mode == "state" else BAR_REQUIRED_COLUMNS)
                         if spec.auto_schema else (),
                 )
                 driver.subscribe(
@@ -188,7 +196,17 @@ class DolphinDbLiveDataFeed(StreamDataFeed):
                 raise ValueError(f"missing InstrumentMeta: {instrument_id}")
 
             if spec.kind == "tick":
-                converted = self._converter.convert_tick(row, instrument_id, meta)
+                ts_event = self._converter.tick_timestamp_ns(row)
+                with self._observation_lock:
+                    self._latest_received_ns = time.time_ns()
+                    self._latest_event_ns = max(self._latest_event_ns or 0, ts_event)
+                    self._received_ticks += 1
+                if not self._health_monitor.on_observation(ts_event, str(instrument_id), kind="dolphindb-tick"):
+                    return
+                # 在QuoteTick去重/队列前更新执行快照；价格不变也刷新行情时间。
+                for handler in tuple(self._tick_snapshot_handlers):
+                    handler(instrument_id, ts_event, row)
+                converted = self._converter.convert_tick(row, instrument_id, meta, ts_event=ts_event)
             else:
                 with self._observation_lock:
                     received = time.time_ns()

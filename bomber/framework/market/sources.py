@@ -4,6 +4,7 @@ from dataclasses import dataclass, asdict
 import json
 import math
 import os
+import re
 from pathlib import Path
 import time
 
@@ -18,6 +19,8 @@ class MarketSourceConfig:
     ws_base_url: str | None = None
     market_type: str = "spot"
     bar_mode: str = "completed"
+    tick_table: str | None = None
+    tick_max_age_seconds: float = 10
 
     def __post_init__(self):
         if self.source not in {"file", "ctp", "bn-ws", "dolphindb"}:
@@ -30,6 +33,13 @@ class MarketSourceConfig:
                 raise ValueError("DolphinDB行情须配置共享分钟流表market-bar-table；禁止猜测表名")
             if self.timestamp_label not in {"start", "end"} or self.volume_mode not in {"per-bar", "cumulative"}:
                 raise ValueError("DolphinDB分钟推送须明确market-bar-timestamp及market-volume-mode")
+        if self.tick_table is not None and (self.source != "dolphindb"
+                or not isinstance(self.tick_table, str)
+                or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", self.tick_table) is None):
+            raise ValueError("tick_table须为DolphinDB共享流表名；不启用Tick请填null")
+        age = self.tick_max_age_seconds
+        if isinstance(age, bool) or not isinstance(age, (int, float)) or not math.isfinite(age) or not 0 < age <= 120:
+            raise ValueError("tick_max_age_seconds须为(0,120]内有限数")
         if self.market_type not in {"spot", "futures"}:
             raise ValueError("BN market_type须为spot/futures")
 
@@ -42,6 +52,9 @@ class MarketSourceConfig:
     @property
     def identity(self):
         values = asdict(self)
+        # 执行报价设置不改变策略Bar/模型身份，旧持仓和信号检查点继续核验。
+        values.pop("tick_table")
+        values.pop("tick_max_age_seconds")
         if self.bar_mode == "completed":
             values.pop("bar_mode")  # 保持已有CTP/完成分钟检查点身份不变。
         return values
@@ -116,6 +129,20 @@ def create_dolphin_bar_feed(table, source_id, *, max_age_seconds=120, volume_mod
             action_name=f"{source_id.replace('-', '_')}_{os.getpid()}_{time.time_ns()}",
             auto_schema=True, volume_mode=volume_mode, local_receipt_time=True, bar_mode=bar_mode),)),
         source_id=source_id, health_config=StreamHealthConfig(startup_grace_seconds=max_age_seconds,
+            stale_after_seconds=max_age_seconds))
+
+
+def create_dolphin_tick_feed(table, source_id, *, market_config, max_age_seconds=10):
+    """Tick复用对应Bar的DDB连接配置，实际字段顺序由服务端schema解析。"""
+    from dataclasses import replace
+    from bomber.framework.market.stream.dolphin import DolphinDbLiveDataFeed, DolphinDbStreamSpec
+    from bomber.framework.market.stream.health import StreamHealthConfig
+    tables = (table,) if isinstance(table, str) else tuple(table)
+    streams = tuple(DolphinDbStreamSpec.tick(name,
+        action_name=f"{source_id.replace('-', '_')}_{index}_{os.getpid()}_{time.time_ns()}",
+        auto_schema=True) for index, name in enumerate(tables))
+    return DolphinDbLiveDataFeed(replace(market_config, streams=streams), source_id=source_id,
+        health_config=StreamHealthConfig(startup_grace_seconds=max_age_seconds,
             stale_after_seconds=max_age_seconds))
 
 
