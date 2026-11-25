@@ -142,6 +142,7 @@ class DolphinDbLiveDataFeed(StreamDataFeed):
                     required_columns=(TICK_REQUIRED_COLUMNS if spec.kind == "tick" else
                         BAR_STATE_REQUIRED_COLUMNS if spec.bar_mode == "state" else BAR_REQUIRED_COLUMNS)
                         if spec.auto_schema else (),
+                    required_any_columns=("Code", "InstrumentID") if spec.auto_schema and spec.kind == "tick" else (),
                 )
                 driver.subscribe(
                     native,
@@ -184,9 +185,10 @@ class DolphinDbLiveDataFeed(StreamDataFeed):
         row: Mapping[str, Any],
     ) -> None:
         try:
-            symbol = str(row.get("Code") or "").strip()
+            symbol = str(row.get("Code") or (row.get("InstrumentID") if spec.kind == "tick" else "") or "").strip()
             if not symbol:
-                raise ValueError("DolphinDB row has no Code")
+                required = "Code or InstrumentID" if spec.kind == "tick" else "Code"
+                raise ValueError(f"DolphinDB row has no {required}")
             instrument_id = self._symbol_to_instrument.get(symbol.casefold())
             if instrument_id is None:
                 logger.debug("ignore unregistered DolphinDB instrument: %s", symbol)

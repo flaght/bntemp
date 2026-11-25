@@ -37,7 +37,7 @@ TICK_COLUMNS = (
     "receivedTime",
     "perPenetrationTime",
 )
-TICK_REQUIRED_COLUMNS = ("Code", "LastPrice", "BidPrice1", "AskPrice1")
+TICK_REQUIRED_COLUMNS = ("LastPrice", "BidPrice1", "AskPrice1")
 
 BAR_COLUMNS = (
     "minTime",

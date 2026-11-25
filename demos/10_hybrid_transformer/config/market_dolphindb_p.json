@@ -5,6 +5,6 @@
   "volume_mode": "per-bar",
   "bar_mode": "state",
   "max_age_seconds": 120,
-  "tick_table": null,
+  "tick_table": "ctp_market",
   "tick_max_age_seconds": 10
 }

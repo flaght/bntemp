@@ -52,9 +52,12 @@ class DolphinDbMarketConverter:
         self._bar_volumes.clear()
 
     def tick_timestamp_ns(self, row: Mapping[str, Any]) -> int:
+        clock = row.get("UpdateTime")
+        if clock is None or isinstance(clock, str) and not clock.strip():
+            clock = row.get("tradeTime")
         return _combine_ns(
             row.get("ActionDay") or row.get("date") or row.get("TradingDay"),
-            row.get("UpdateTime") or row.get("tradeTime"),
+            clock,
             _integer(row.get("UpdateMillisec", 0), "UpdateMillisec", minimum=0, maximum=999),
             self.timezone,
         )
@@ -328,7 +331,7 @@ def _time_text(value: Any) -> str:
         return value.time().replace(tzinfo=None).isoformat()
     if isinstance(value, datetime_time):
         return value.replace(tzinfo=None).isoformat()
-    text = str(value or "").strip()
+    text = str(value if value is not None else "").strip()
     if "T" in text:
         text = text.split("T", 1)[1]
     elif " " in text:

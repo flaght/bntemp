@@ -25,6 +25,7 @@ class NativeDolphinSubscription:
     throttle: float = 0.01
     filter: Any = field(default=None, compare=False, hash=False, repr=False)
     required_columns: tuple[str, ...] = ()
+    required_any_columns: tuple[str, ...] = ()
 
     def __post_init__(self):
         if not isinstance(self.action_name, str) or re.fullmatch(r"[A-Za-z0-9_]+", self.action_name) is None:
@@ -104,15 +105,19 @@ class OfficialDolphinDbDriver:
         if key in self._subscriptions:
             return
         columns = subscription.columns
-        if subscription.required_columns:
+        if subscription.required_columns or subscription.required_any_columns:
             if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", subscription.table_name) is None:
                 raise ValueError("DolphinDB推送须为共享流表名，不能填写DFS路径或查询表达式")
             columns = tuple(map(str, session.run(
                 f"schema(objByName({json.dumps(subscription.table_name)}, true)).colDefs.name")))
             self.resolved_columns[subscription.table_name] = columns
             missing = set(subscription.required_columns) - set(columns)
-            if not columns or len(set(columns)) != len(columns) or missing:
-                raise ValueError(f"DolphinDB流表缺少必需列或结构无效: {sorted(missing)}; actual_columns={columns}")
+            missing_any = (subscription.required_any_columns
+                if subscription.required_any_columns and not set(subscription.required_any_columns).intersection(columns)
+                else ())
+            if not columns or len(set(columns)) != len(columns) or missing or missing_any:
+                raise ValueError(f"DolphinDB流表缺少必需列或结构无效: {sorted(missing)}; "
+                    f"required_any={missing_any}; actual_columns={columns}")
         callback = _make_callback(columns, handler)
         session.subscribe(
             host=self._host,

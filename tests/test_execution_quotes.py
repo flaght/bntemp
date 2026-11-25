@@ -309,12 +309,12 @@ class DolphinExecutionTickTests(unittest.TestCase):
         self.instrument = market_base.InstrumentId.from_str('MO2612-C-6000.CFFEX')
         self.meta = market_base.InstrumentMeta(self.instrument, price_precision=1, price_increment=D('.2'))
 
-    def make_feed(self, columns=None):
+    def make_feed(self, columns=None, table='ticks'):
         columns = columns or ('Code', 'AskPrice1', 'LastPrice', 'BidPrice1', 'ActionDay',
             'UpdateTime', 'UpdateMillisec', 'Volume', 'BidVolume1', 'AskVolume1', 'extra')
         session = self.Session(columns)
         driver = OfficialDolphinDbDriver(session_factory=lambda **kwargs: session)
-        spec = DolphinDbStreamSpec.tick('ticks', auto_schema=True)
+        spec = DolphinDbStreamSpec.tick(table, auto_schema=True)
         feed = DolphinDbLiveDataFeed(DolphinDbConfig('ddb.test', 8848, 'user', 'fixture', streams=(spec,)),
             driver_factory=lambda: driver)
         feed.register_instrument(self.meta)
@@ -357,6 +357,61 @@ class DolphinExecutionTickTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'AskPrice1'):
             feed.connect()
         self.assertEqual(session.subscriptions, [])
+
+    def test_raw_ctp_market_49_columns_and_night_date_route_rb_and_p(self):
+        import numpy as np
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        self.instrument = market_base.InstrumentId.from_str('rb2701.SHFE')
+        self.meta = market_base.InstrumentMeta(self.instrument, price_precision=0, price_increment=D(1))
+        columns = ('TradingDay', 'ExchangeID', 'LastPrice', 'UpdateTime', 'UpdateMillisec',
+            'BidPrice1', 'AskPrice1', 'ActionDay', 'InstrumentID', 'BidVolume1', 'AskVolume1', 'Volume')
+        columns += tuple(f'extra_{index}' for index in range(37))
+        feed, session = self.make_feed(columns, table='ctp_market')
+        other = market_base.InstrumentId.from_str('p2701.DCE')
+        feed.register_instrument(market_base.InstrumentMeta(other, price_precision=0, price_increment=D(2)))
+        feed.subscribe(other, market_base.DataType.QUOTE_TICK)
+        prices = LivePriceStore()
+        prices.enable_tick_quotes((self.instrument, other), max_age_ns=10_000_000_000)
+        feed.register_tick_snapshot_handler(prices.on_tick_snapshot)
+        self.now[0] = int(datetime(2026, 11, 25, 21, tzinfo=ZoneInfo('Asia/Shanghai')).timestamp()) * 10**9 + 125_000_000
+        feed.connect()
+        self.assertEqual(session.subscriptions[0]['tableName'], 'ctp_market')
+        for symbol, exchange, bid, ask in (('RB2701', 'SHFE', 3000, 3001), ('p2701', 'DCE', 8000, 8002)):
+            row = dict(TradingDay=np.datetime64('2026-11-26', 'D'),
+                ActionDay=np.datetime64('2026-11-25', 'D'),
+                UpdateTime=np.datetime64('1970-01-01T21:00:00', 's'), UpdateMillisec=np.int32(125),
+                InstrumentID=symbol, ExchangeID=exchange, LastPrice=bid,
+                BidPrice1=bid, AskPrice1=ask, BidVolume1=2, AskVolume1=3, Volume=100)
+            self.publish(session, row)
+        self.assertEqual(prices.get_for_order(self.instrument, LiveSide.BUY).price, 3001)
+        self.assertEqual(prices.get_for_order(other, LiveSide.SELL).price, 8000)
+        self.assertEqual(prices.get(self.instrument).ts_event, self.now[0])
+        self.assertEqual(prices.get(other).ts_event, self.now[0])
+        self.assertIsNone(feed.conversion_failure)
+
+    def test_tick_schema_without_either_identifier_is_rejected_before_subscribing(self):
+        feed, session = self.make_feed(('LastPrice', 'BidPrice1', 'AskPrice1', 'ActionDay', 'UpdateTime'))
+        with self.assertRaisesRegex(ValueError, 'Code.*InstrumentID'):
+            feed.connect()
+        self.assertEqual(session.subscriptions, [])
+
+    def test_second_type_midnight_is_not_treated_as_missing_time(self):
+        import numpy as np
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        feed, session = self.make_feed()
+        prices = LivePriceStore()
+        prices.enable_tick_quotes((self.instrument,), max_age_ns=10_000_000_000)
+        feed.register_tick_snapshot_handler(prices.on_tick_snapshot)
+        self.now[0] = int(datetime(2026, 11, 25, tzinfo=ZoneInfo('Asia/Shanghai')).timestamp()) * 10**9
+        row = self.row()
+        row.update(ActionDay=np.datetime64('2026-11-25', 'D'),
+            UpdateTime=np.datetime64('1970-01-01T00:00:00', 's'))
+        feed.connect()
+        self.publish(session, row)
+        self.assertEqual(prices.get(self.instrument).ts_event, self.now[0])
+        self.assertIsNone(feed.conversion_failure)
 
     def test_tick_factory_reuses_exact_bar_connection_without_reading_another_environment(self):
         from bomber.framework.market.sources import create_dolphin_tick_feed

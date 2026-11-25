@@ -75,11 +75,11 @@ NT直连执行Tick与策略Bar统一从DolphinDB订阅。请移除旧启动YAML�
 }
 ```
 
-`table`仍是原Bar流表；`tick_table`填实际共享Tick流表名后启用执行报价，`null`或省略则沿用Bar close。仓库已在08、z01/08及10的RB/P原行情JSON中预留这两个字段，未猜测服务器表名。08的MO期权和IM期货使用同一行情JSON；10的RB、P分别填写 `market_dolphindb_rb.json`、`market_dolphindb_p.json`。Tick表须为实时共享流表，不能填DFS历史Tick路径。
+`table`仍是原Bar流表；`tick_table`填实际共享Tick流表名后启用执行报价，`null`或省略则沿用Bar close。10的RB、P已按服务器发布状态及schema截图共同配置为 `ctp_market`，分别保留各自原Bar流表。08、z01/08仍预留为null，按对应DDB服务器实际流表填写。Tick表须为实时共享流表，不能填DFS历史Tick路径。
 
 执行Tick直接复用对应Bar Feed已经解析好的DDB服务器、账号、端口、streaming_port等连接配置，使用同一官方DDB驱动和原生订阅接口，不读取另一组CTP MD连接。同连接及有效期的Tick表合并到一个执行Feed，同表同合约不重复订阅。仅注册本次策略执行路由的合约；没有策略绑定到执行Tick Feed。Bar和模型检查点身份不包含这两个执行报价字段，不改变原信号、选约和持仓期限。
 
-流表字段顺序与Bar一样由服务端schema解析。报价需要 `Code`、`LastPrice`、`BidPrice1`、`AskPrice1`；时间沿用现有标准Tick转换器的 `ActionDay/date/TradingDay` 与 `UpdateTime/tradeTime`，可带 `UpdateMillisec`。使用与项目现有标准Tick流一致的字段命名，不要求固定26列顺序。
+流表字段顺序与Bar一样由服务端schema解析。Tick合约标识支持标准流的 `Code` 或原始CTP流的 `InstrumentID`，报价需要 `LastPrice`、`BidPrice1`、`AskPrice1`。缺少这两个标识字段时在订阅前报错；Bar仍使用原Code规则。`ctp_market`的49列可以直接按实际schema解析，无需另建标准化流表。时间沿用 `ActionDay/date/TradingDay` 与 `UpdateTime/tradeTime`，可带 `UpdateMillisec`；已覆盖DATE、SECOND及INT毫秒，夜盘优先使用ActionDay组合自然时间，不将TradingDay误当作夜盘自然日期。
 
 每合约独立保留Bar参考价和最新Tick快照（last/bid/ask、行情时间、接收时间）。DDB原始Tick行回调只覆盖最新快照，缓存的Decimal转换与价格计算在读取时完成，不累计历史Tick，不扫描执行任务、不写文件或逐Tick日志。价格和累计成交量未变化的Tick行仍刷新快照时间；去重或排队后的QuoteTick不会覆盖原始执行快照。`tick_max_age_seconds`须为(0,120]内有限数，报价按行情时间检查有效期。
 
