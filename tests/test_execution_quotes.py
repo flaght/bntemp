@@ -67,6 +67,82 @@ class ExecutionQuoteTests(unittest.TestCase):
         service.poll()
         self.assertEqual([row['LimitPrice'] for row in broker.sent], [3000, 3000])
 
+    def test_tick_updated_during_planning_is_not_future_relative_to_actual_risk_read(self):
+        _, service, broker, (port, _), _ = self.make_account()
+        service.prices.enable_tick_quotes((self.instrument,), max_age_ns=10_000_000_000)
+        self.quote(service)
+        request_ns = self.now
+        original = service.client.planner.plan
+        def plan(request):
+            self.now += 10_000_000
+            service.prices.on_tick_snapshot(self.instrument, request_ns + 7_801_781,
+                {'LastPrice': 3000, 'BidPrice1': 2998, 'AskPrice1': 3002})
+            return original(request)
+        self.enterContext(patch.object(service.client.planner, 'plan', side_effect=plan))
+        self.submit(port, 1)
+        self.assertEqual(len(broker.sent), 1)
+        self.assertEqual(broker.sent[-1]['LimitPrice'], 3002)
+        self.assertEqual(service._sources[port.strategy_id]['ts_event'], request_ns)
+        self.assertFalse(service._failed)
+        self.assertFalse(service._pending)
+        broker.fill(broker.sent[-1]['OrderRef'])
+        self.assertEqual(service.position_manager.position(port.strategy_id, 'main'), 1)
+
+    def test_budget_check_uses_quote_read_time_after_async_tick_update(self):
+        _, service, _, (port, _), _ = self.make_account()
+        service.prices.enable_tick_quotes((self.instrument,), max_age_ns=10_000_000_000)
+        request_ns = self.now
+        self.now += 10_000_000
+        service.prices.on_tick_snapshot(self.instrument, request_ns + 7_801_781,
+            {'LastPrice': 3000, 'BidPrice1': 2998, 'AskPrice1': 3002})
+        rows = (dict(strategy_id=port.strategy_id, target_key='main',
+            instrument_id=str(self.instrument), quantity='1'),)
+        service._check_budget(rows, port.budget, request_ns)
+
+    def risk_order(self):
+        return self.contracts.OrderIntent('one', 'account', self.instrument,
+            'BUY', 1, order_type='LIMIT', price=3002, position_effect='OPEN')
+
+    def test_tick_ahead_of_actual_local_clock_is_still_rejected(self):
+        _, service, broker, _, _ = self.make_account()
+        service.prices.enable_tick_quotes((self.instrument,), max_age_ns=10_000_000_000)
+        service.prices.on_tick_snapshot(self.instrument, self.now + 1_000_000,
+            {'LastPrice': 3000, 'BidPrice1': 2998, 'AskPrice1': 3002})
+        with self.assertRaises(self.risk.RiskRejected):
+            service.client.risk_manager.check((self.risk_order(),), now_ns=self.now)
+        self.assertEqual(broker.sent, [])
+
+    def test_old_request_time_cannot_rescue_expired_tick(self):
+        _, service, broker, _, _ = self.make_account()
+        service.prices.enable_tick_quotes((self.instrument,), max_age_ns=10_000_000_000)
+        self.quote(service)
+        request_ns = self.now
+        self.now += 11_000_000_000
+        with self.assertRaises(self.risk.RiskRejected):
+            service.client.risk_manager.check((self.risk_order(),), now_ns=request_ns)
+        self.assertEqual(broker.sent, [])
+
+    def test_read_snapshot_still_expires_at_later_risk_check(self):
+        _, service, broker, _, _ = self.make_account()
+        service.prices.enable_tick_quotes((self.instrument,), max_age_ns=10_000_000_000)
+        self.quote(service)
+        snapshot = service.prices.get(self.instrument)
+        self.now += 121_000_000_000
+        with patch.object(service.prices, 'get', return_value=snapshot), \
+                self.assertRaises(self.risk.RiskRejected):
+            service.client.risk_manager.check((self.risk_order(),), now_ns=self.now)
+        self.assertEqual(broker.sent, [])
+
+    def test_bar_risk_check_keeps_explicit_time_and_rejects_future_bar(self):
+        _, service, broker, _, _ = self.make_account()
+        request_ns = self.now
+        self.now += 10_000_000
+        service.prices.update(self.instrument, 3000, request_ns + 7_801_781)
+        with self.assertRaises(self.risk.RiskRejected) as caught:
+            service.client.risk_manager.check((self.risk_order(),), now_ns=request_ns)
+        self.assertIn(self.risk.RiskViolationCode.MARKET_STALE, {row.code for row in caught.exception.violations})
+        self.assertEqual(broker.sent, [])
+
     def test_option_fractional_tick_is_applied_without_float_accumulation(self):
         _, service, broker, (port, _), runtime = self.make_account()
         planner = service.client.planner.planner

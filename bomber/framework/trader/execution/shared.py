@@ -209,7 +209,7 @@ class SharedAccountExecutionService(AccountExecutionService):
             reference = self.prices.get(instrument)
             limits = self.instrument_limits[instrument]
             max_age = limits.max_market_age_ns or 120_000_000_000
-            age = None if reference is None else now_ns - reference.ts_event
+            age = None if reference is None else reference.age_ns(now_ns)
             if age is None or not 0 <= age <= max_age:
                 reason = "missing" if age is None else "future" if age < 0 else "stale"
                 raise RuntimeError("共享执行预算缺少当前有效参考价: "

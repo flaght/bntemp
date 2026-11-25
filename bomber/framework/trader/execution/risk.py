@@ -91,6 +91,12 @@ class RiskLimits:
 class ReferencePrice:
     price: Decimal
     ts_event: int
+    ts_read_ns: int | None = None
+
+    def age_ns(self, now_ns: int) -> int:
+        # 实时Tick可能在请求时刻之后到达；检查时刻不能早于读取该报价的时刻。
+        checked_ns = now_ns if self.ts_read_ns is None else max(now_ns, self.ts_read_ns)
+        return checked_ns - self.ts_event
 
 
 @dataclass(frozen=True)
@@ -158,13 +164,14 @@ class MarketReferencePriceStore:
         quote = self.get_quote(instrument_id)
         with self._lock:
             max_age = self._tick_max_age_ns.get(instrument_id)
+        read_ns = time.time_ns()
         if (quote is None or quote.bid_price is None or quote.ask_price is None
                 or quote.bid_price > quote.ask_price
-                or max_age is not None and not 0 <= time.time_ns() - quote.ts_event <= max_age):
+                or max_age is not None and not 0 <= read_ns - quote.ts_event <= max_age):
             return None
         price = (quote.ask_price if side is OrderSide.BUY else quote.bid_price
                  if side is OrderSide.SELL else (quote.bid_price + quote.ask_price) / 2)
-        return ReferencePrice(price, quote.ts_event)
+        return ReferencePrice(price, quote.ts_event, ts_read_ns=read_ns)
 
     def get_for_order(self, instrument_id, side) -> ReferencePrice | None:
         if not self.uses_tick_quotes(instrument_id):
@@ -339,7 +346,7 @@ class PreTradeRiskManager:
         if reference is None:
             return violations
         if limits.max_market_age_ns is not None:
-            age = now_ns - reference.ts_event
+            age = reference.age_ns(now_ns)
             if age < 0 or age > limits.max_market_age_ns:
                 violations.append(self._violation(order, RiskViolationCode.MARKET_STALE, f"行情时间差{age}ns超出允许范围{limits.max_market_age_ns}ns"))
         valuation_price = order.price if order.price is not None else reference.price
