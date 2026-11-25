@@ -362,10 +362,11 @@ def configure_execution_quotes(host, config):
             if source is None or source.tick_table is None:
                 continue
             connection = bar.config
+            dce_receive_date = getattr(source, 'tick_dce_use_receive_date', False)
             key = (connection.host, connection.port, connection.username, connection.password,
-                connection.streaming_port, connection.keep_alive_seconds, source.tick_max_age_seconds)
+                connection.streaming_port, connection.keep_alive_seconds, source.tick_max_age_seconds, dce_receive_date)
             group = groups.setdefault(key, dict(connection=connection, tables=set(), instruments={},
-                max_age_seconds=source.tick_max_age_seconds))
+                max_age_seconds=source.tick_max_age_seconds, dce_use_receive_date=dce_receive_date))
             group['tables'].add(source.tick_table)
             for instrument in set(session.client.routes.values()):
                 if instrument not in host.service.instrument_limits:
@@ -384,7 +385,8 @@ def configure_execution_quotes(host, config):
             continue
         tables = sorted(group['tables'])
         feed = create_dolphin_tick_feed(tables, f'execution-quotes-{index}',
-            market_config=group['connection'], max_age_seconds=group['max_age_seconds'])
+            market_config=group['connection'], max_age_seconds=group['max_age_seconds'],
+            dce_use_receive_date=group['dce_use_receive_date'])
         for instrument, meta in group['instruments'].items():
             feed.register_instrument(meta)
             feed.subscribe(instrument, DataType.QUOTE_TICK)
@@ -393,8 +395,8 @@ def configure_execution_quotes(host, config):
         feed.register_tick_snapshot_handler(host.service.prices.on_tick_snapshot)
         host.resources.callback(feed.disconnect)
         feed.connect()  # 不把执行Tick接入Runner策略回调。
-        logging.getLogger('ExecutionQuotes').info('执行报价已订阅DolphinDB Tick: tables=%s max_age_seconds=%s',
-            tables, group['max_age_seconds'])
+        logging.getLogger('ExecutionQuotes').info('执行报价已订阅DolphinDB Tick: tables=%s max_age_seconds=%s dce_use_receive_date=%s',
+            tables, group['max_age_seconds'], group['dce_use_receive_date'])
 
 
 def build_direct_host(config, *, import_state=None, counter_file=None):

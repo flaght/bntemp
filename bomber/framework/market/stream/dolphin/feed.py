@@ -198,9 +198,11 @@ class DolphinDbLiveDataFeed(StreamDataFeed):
                 raise ValueError(f"missing InstrumentMeta: {instrument_id}")
 
             if spec.kind == "tick":
-                ts_event = self._converter.tick_timestamp_ns(row)
+                received_ns = time.time_ns()
+                ts_event = self._converter.tick_timestamp_ns(row, exchange=meta.exchange,
+                    received_ns=received_ns, dce_use_receive_date=spec.dce_use_receive_date)
                 with self._observation_lock:
-                    self._latest_received_ns = time.time_ns()
+                    self._latest_received_ns = received_ns
                     self._latest_event_ns = max(self._latest_event_ns or 0, ts_event)
                     self._received_ticks += 1
                 if not self._health_monitor.on_observation(ts_event, str(instrument_id), kind="dolphindb-tick"):

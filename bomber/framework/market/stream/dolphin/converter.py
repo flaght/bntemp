@@ -51,16 +51,33 @@ class DolphinDbMarketConverter:
         self._bar_keys.clear()
         self._bar_volumes.clear()
 
-    def tick_timestamp_ns(self, row: Mapping[str, Any]) -> int:
+    def tick_timestamp_ns(self, row: Mapping[str, Any], *, exchange="", received_ns=None,
+                          dce_use_receive_date=False) -> int:
         clock = row.get("UpdateTime")
         if clock is None or isinstance(clock, str) and not clock.strip():
             clock = row.get("tradeTime")
-        return _combine_ns(
-            row.get("ActionDay") or row.get("date") or row.get("TradingDay"),
+        day = row.get("ActionDay") or row.get("date") or row.get("TradingDay")
+        millisec = _integer(row.get("UpdateMillisec", 0), "UpdateMillisec", minimum=0, maximum=999)
+        source_ns = _combine_ns(
+            day,
             clock,
-            _integer(row.get("UpdateMillisec", 0), "UpdateMillisec", minimum=0, maximum=999),
+            millisec,
             self.timezone,
         )
+        if dce_use_receive_date and str(exchange).upper() in {"DCE", "XDCE"}:
+            received_ns = time.time_ns() if received_ns is None else received_ns
+            received_day = datetime.fromtimestamp(received_ns // 1_000_000_000, self.timezone).date()
+            trading_day = row.get("TradingDay")
+            declared_day = _date_text(day)
+            # DCE可能把交易日同时填入ActionDay。明确的旧日期仍按源时间拒绝，
+            # 已正确声明的自然日也不覆盖；仅在显式实时模式下处理交易日型日期。
+            if (trading_day is not None and declared_day == _date_text(trading_day)
+                    and declared_day >= received_day.isoformat()):
+                anchor = _combine_ns(received_day, clock, millisec, self.timezone)
+                day_ns = 86_400_000_000_000
+                return min((anchor + offset * day_ns for offset in (-1, 0, 1)),
+                           key=lambda candidate: abs(candidate - received_ns))
+        return source_ns
 
     def convert_tick(
         self,

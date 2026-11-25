@@ -6,5 +6,6 @@
   "bar_mode": "state",
   "max_age_seconds": 120,
   "tick_table": "ctp_market",
-  "tick_max_age_seconds": 10
+  "tick_max_age_seconds": 10,
+  "tick_dce_use_receive_date": true
 }

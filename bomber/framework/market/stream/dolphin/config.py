@@ -77,10 +77,13 @@ class DolphinDbStreamSpec:
     volume_mode: Literal["per-bar", "cumulative"] = "per-bar"
     local_receipt_time: bool = False
     bar_mode: str = "completed"
+    dce_use_receive_date: bool = False
 
     def __post_init__(self) -> None:
         if self.kind not in {"tick", "bar"}:
             raise ValueError(f"unsupported DolphinDB stream kind: {self.kind}")
+        if type(self.dce_use_receive_date) is not bool or (self.dce_use_receive_date and self.kind != "tick"):
+            raise ValueError("dce_use_receive_date仅用于实时Tick且须为布尔值")
         if not self.table_name or not self.action_name:
             raise ValueError("table_name and action_name are required")
         if re.fullmatch(r"[A-Za-z0-9_]+", self.action_name) is None:

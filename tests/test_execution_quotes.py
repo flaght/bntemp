@@ -279,7 +279,7 @@ class ExecutionQuoteTests(unittest.TestCase):
                 for index, port in enumerate(ports)})
             configure_execution_quotes(host, {'execution_driver': 'nt_algo_ctp'})
             factory.assert_called_once_with(['ticks'], 'execution-quotes-0',
-                market_config=connection, max_age_seconds=10)
+                market_config=connection, max_age_seconds=10, dce_use_receive_date=False)
             feed.subscribe.assert_called_once()
             runner.add_data_feed.assert_not_called()
             callback = feed.register_tick_snapshot_handler.call_args.args[0]
@@ -310,7 +310,7 @@ class ExecutionQuoteTests(unittest.TestCase):
             configure_execution_quotes(NS(service=service, resources=resources, strategies=sessions),
                 {'execution_driver': 'nt_algo_ctp'})
             factory.assert_called_once_with(['dce_ticks', 'shfe_ticks'], 'execution-quotes-0',
-                market_config=connection, max_age_seconds=10)
+                market_config=connection, max_age_seconds=10, dce_use_receive_date=False)
             self.assertEqual(feed.subscribe.call_count, 2)
             self.assertTrue(service.prices.uses_tick_quotes(other))
 
@@ -342,15 +342,17 @@ class ExecutionQuoteConfigTests(unittest.TestCase):
         original = dict(source='dolphindb', table='bars', timestamp_label='end', volume_mode='cumulative')
         with TemporaryDirectory() as directory:
             path = Path(directory) / 'market_dolphindb.json'
-            path.write_text(json.dumps({**original, 'tick_table': 'ticks', 'tick_max_age_seconds': 10}))
+            path.write_text(json.dumps({**original, 'tick_table': 'ticks', 'tick_max_age_seconds': 10,
+                'tick_dce_use_receive_date': True}))
             config = market_config_from_args(NS(market_config=path), domestic_contracts=True)
         self.assertEqual(config.tick_table, 'ticks')
         self.assertEqual(config.tick_max_age_seconds, 10)
+        self.assertTrue(config.tick_dce_use_receive_date)
         self.assertEqual(config.identity, MarketSourceConfig(**original).identity)
         self.assertIsNone(MarketSourceConfig(**original).tick_table)
         for values in ({'tick_table': 'dfs://ticks/tick'}, {'tick_table': ''},
                 {'tick_max_age_seconds': 0}, {'tick_max_age_seconds': float('nan')},
-                {'tick_max_age_seconds': True}):
+                {'tick_max_age_seconds': True}, {'tick_dce_use_receive_date': 'true'}):
             with self.subTest(values=values), self.assertRaises(ValueError):
                 MarketSourceConfig(**original, **values)
 
@@ -385,12 +387,12 @@ class DolphinExecutionTickTests(unittest.TestCase):
         self.instrument = market_base.InstrumentId.from_str('MO2612-C-6000.CFFEX')
         self.meta = market_base.InstrumentMeta(self.instrument, price_precision=1, price_increment=D('.2'))
 
-    def make_feed(self, columns=None, table='ticks'):
+    def make_feed(self, columns=None, table='ticks', *, dce_use_receive_date=False):
         columns = columns or ('Code', 'AskPrice1', 'LastPrice', 'BidPrice1', 'ActionDay',
             'UpdateTime', 'UpdateMillisec', 'Volume', 'BidVolume1', 'AskVolume1', 'extra')
         session = self.Session(columns)
         driver = OfficialDolphinDbDriver(session_factory=lambda **kwargs: session)
-        spec = DolphinDbStreamSpec.tick(table, auto_schema=True)
+        spec = DolphinDbStreamSpec.tick(table, auto_schema=True, dce_use_receive_date=dce_use_receive_date)
         feed = DolphinDbLiveDataFeed(DolphinDbConfig('ddb.test', 8848, 'user', 'fixture', streams=(spec,)),
             driver_factory=lambda: driver)
         feed.register_instrument(self.meta)
@@ -489,14 +491,57 @@ class DolphinExecutionTickTests(unittest.TestCase):
         self.assertEqual(prices.get(self.instrument).ts_event, self.now[0])
         self.assertIsNone(feed.conversion_failure)
 
+    def test_dce_trading_date_policy_matches_live_night_rows_without_masking_stale_data(self):
+        import numpy as np
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        cases = (
+            # enabled, venue, receive time, ActionDay/TradingDay, clock, expected natural timestamp, valid
+            (False, 'DCE', '2026-11-25T21:55:57.934', '2026-11-26', '21:55:57', '2026-11-26T21:55:57.934', False),
+            (True, 'DCE', '2026-11-25T21:55:57.934', '2026-11-26', '21:55:57', '2026-11-25T21:55:57.934', True),
+            (True, 'SHFE', '2026-11-25T21:55:57.934', '2026-11-26', '21:55:57', '2026-11-26T21:55:57.934', False),
+            (True, 'DCE', '2026-11-25T21:55:57.934', '2026-11-24', '21:55:57', '2026-11-24T21:55:57.934', False),
+            (True, 'DCE', '2026-11-25T21:55:57.934', '2026-11-26', '21:54:00', '2026-11-25T21:54:00.934', False),
+            (True, 'DCE', '2026-11-26T00:00:00.100', '2026-11-26', '23:59:59', '2026-11-25T23:59:59.934', True),
+        )
+        zone = ZoneInfo('Asia/Shanghai')
+        def ns(value):
+            point = datetime.fromisoformat(value).replace(tzinfo=zone)
+            return int(point.timestamp()) * 10**9 + point.microsecond * 1000
+        for enabled, venue, received, declared, clock, expected, valid in cases:
+            with self.subTest(enabled=enabled, venue=venue, received=received, declared=declared, clock=clock):
+                self.now[0] = ns(received)
+                symbol = 'p2701' if venue == 'DCE' else 'rb2701'
+                self.instrument = market_base.InstrumentId.from_str(f'{symbol}.{venue}')
+                self.meta = market_base.InstrumentMeta(self.instrument, price_precision=0,
+                    price_increment=D(1), exchange=venue)
+                columns = ('InstrumentID', 'TradingDay', 'ActionDay', 'UpdateTime', 'UpdateMillisec',
+                    'LastPrice', 'BidPrice1', 'AskPrice1', 'Volume', 'BidVolume1', 'AskVolume1')
+                feed, session = self.make_feed(columns, table='ctp_market', dce_use_receive_date=enabled)
+                prices = LivePriceStore()
+                prices.enable_tick_quotes((self.instrument,), max_age_ns=10_000_000_000)
+                feed.register_tick_snapshot_handler(prices.on_tick_snapshot)
+                row = dict(InstrumentID=symbol, TradingDay=np.datetime64(declared, 'D'),
+                    ActionDay=np.datetime64(declared, 'D'),
+                    UpdateTime=np.datetime64(f'1970-01-01T{clock}', 's'), UpdateMillisec=np.int32(934),
+                    LastPrice=8303, BidPrice1=8303, AskPrice1=8304, Volume=100, BidVolume1=2, AskVolume1=3)
+                feed.connect()
+                self.publish(session, row)
+                self.assertEqual(prices.get_quote(self.instrument).ts_event, ns(expected))
+                self.assertEqual(prices.get(self.instrument) is not None, valid)
+                self.assertEqual(str(row['TradingDay']), declared)
+                self.assertIsNone(feed.conversion_failure)
+                feed.disconnect()
+
     def test_tick_factory_reuses_exact_bar_connection_without_reading_another_environment(self):
         from bomber.framework.market.sources import create_dolphin_tick_feed
         config = DolphinDbConfig('bar-host', 8849, 'bar-user', 'fixture', streaming_port=8899,
             streams=(DolphinDbStreamSpec.bar('bars', auto_schema=True),))
         with patch.dict('os.environ', {'DDB_MARKET_HOST': 'other-host'}, clear=True):
             feed = create_dolphin_tick_feed(('shfe_ticks', 'dce_ticks'), 'execution-quotes',
-                market_config=config, max_age_seconds=10)
+                market_config=config, max_age_seconds=10, dce_use_receive_date=True)
         self.assertEqual((feed.config.host, feed.config.port, feed.config.username, feed.config.password,
             feed.config.streaming_port), ('bar-host', 8849, 'bar-user', 'fixture', 8899))
         self.assertEqual([stream.table_name for stream in feed.config.streams], ['shfe_ticks', 'dce_ticks'])
         self.assertTrue(all(stream.auto_schema and not stream.columns for stream in feed.config.streams))
+        self.assertTrue(all(stream.dce_use_receive_date for stream in feed.config.streams))

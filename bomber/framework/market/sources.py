@@ -21,6 +21,7 @@ class MarketSourceConfig:
     bar_mode: str = "completed"
     tick_table: str | None = None
     tick_max_age_seconds: float = 10
+    tick_dce_use_receive_date: bool = False
 
     def __post_init__(self):
         if self.source not in {"file", "ctp", "bn-ws", "dolphindb"}:
@@ -40,6 +41,8 @@ class MarketSourceConfig:
         age = self.tick_max_age_seconds
         if isinstance(age, bool) or not isinstance(age, (int, float)) or not math.isfinite(age) or not 0 < age <= 120:
             raise ValueError("tick_max_age_seconds须为(0,120]内有限数")
+        if type(self.tick_dce_use_receive_date) is not bool or (self.tick_dce_use_receive_date and self.source != "dolphindb"):
+            raise ValueError("tick_dce_use_receive_date须为布尔值，仅用于DolphinDB实时Tick")
         if self.market_type not in {"spot", "futures"}:
             raise ValueError("BN market_type须为spot/futures")
 
@@ -55,6 +58,7 @@ class MarketSourceConfig:
         # 执行报价设置不改变策略Bar/模型身份，旧持仓和信号检查点继续核验。
         values.pop("tick_table")
         values.pop("tick_max_age_seconds")
+        values.pop("tick_dce_use_receive_date")
         if self.bar_mode == "completed":
             values.pop("bar_mode")  # 保持已有CTP/完成分钟检查点身份不变。
         return values
@@ -132,7 +136,7 @@ def create_dolphin_bar_feed(table, source_id, *, max_age_seconds=120, volume_mod
             stale_after_seconds=max_age_seconds))
 
 
-def create_dolphin_tick_feed(table, source_id, *, market_config, max_age_seconds=10):
+def create_dolphin_tick_feed(table, source_id, *, market_config, max_age_seconds=10, dce_use_receive_date=False):
     """Tick复用对应Bar的DDB连接配置，实际字段顺序由服务端schema解析。"""
     from dataclasses import replace
     from bomber.framework.market.stream.dolphin import DolphinDbLiveDataFeed, DolphinDbStreamSpec
@@ -140,7 +144,7 @@ def create_dolphin_tick_feed(table, source_id, *, market_config, max_age_seconds
     tables = (table,) if isinstance(table, str) else tuple(table)
     streams = tuple(DolphinDbStreamSpec.tick(name,
         action_name=f"{source_id.replace('-', '_')}_{index}_{os.getpid()}_{time.time_ns()}",
-        auto_schema=True) for index, name in enumerate(tables))
+        auto_schema=True, dce_use_receive_date=dce_use_receive_date) for index, name in enumerate(tables))
     return DolphinDbLiveDataFeed(replace(market_config, streams=streams), source_id=source_id,
         health_config=StreamHealthConfig(startup_grace_seconds=max_age_seconds,
             stale_after_seconds=max_age_seconds))

@@ -81,6 +81,10 @@ NT直连执行Tick与策略Bar统一从DolphinDB订阅。请移除旧启动YAML�
 
 流表字段顺序与Bar一样由服务端schema解析。Tick合约标识支持标准流的 `Code` 或原始CTP流的 `InstrumentID`，报价需要 `LastPrice`、`BidPrice1`、`AskPrice1`。缺少这两个标识字段时在订阅前报错；Bar仍使用原Code规则。`ctp_market`的49列可以直接按实际schema解析，无需另建标准化流表。时间沿用 `ActionDay/date/TradingDay` 与 `UpdateTime/tradeTime`，可带 `UpdateMillisec`；已覆盖DATE、SECOND及INT毫秒，夜盘优先使用ActionDay组合自然时间，不将TradingDay误当作夜盘自然日期。
 
+10的P实流样本显示：11月25日晚21:55的Tick，其ActionDay和TradingDay都填为11月26日。为此，10的两份行情JSON已显式启用 `tick_dce_use_receive_date: true`。该选项仅对DCE/XDCE生效：当声明日期等于交易日且不早于接收自然日时，用北京时间接收日前后最近的自然日组合原时分秒和毫秒。TradingDay原值保留；明确的旧日期仍按源日期处理，旧时分秒仍受10秒有效期限制。SHFE按源日期处理。RB配置相同选项是为了与P共用同一Tick订阅，不会改写RB的时间。
+
+此选项默认false，仅用于已核实存在上述日期语义的实时流，不用于历史重放。08、z01/08尚未核验，不自动启用。它不改变原Bar解析、策略身份或持仓期限。启动日志会输出 `dce_use_receive_date=True`，生效需要重建进程内行情Feed。
+
 每合约独立保留Bar参考价和最新Tick快照（last/bid/ask、行情时间、接收时间）。DDB原始Tick行回调只覆盖最新快照，缓存的Decimal转换与价格计算在读取时完成，不累计历史Tick，不扫描执行任务、不写文件或逐Tick日志。价格和累计成交量未变化的Tick行仍刷新快照时间；去重或排队后的QuoteTick不会覆盖原始执行快照。`tick_max_age_seconds`须为(0,120]内有限数，报价按行情时间检查有效期。
 
 Tick参考价同时记录本次读取的本地时间；风控及预算检查使用不早于该读取时间的检查时刻。避免请求已创建、最新Tick随后到达时，用较早请求时间误判有效Tick“来自未来”。真实超前于本地读取时钟的Tick和过期Tick仍被拒绝；Bar保留原显式事件时间语义。读取时间仅属于内存报价，不改变策略目标时间、期限或恢复账本格式。
