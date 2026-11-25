@@ -35,30 +35,49 @@ class ExecutionQuoteTests(unittest.TestCase):
     def test_bar_is_used_without_tick_configuration(self):
         _, service, broker, (port, _), _ = self.make_account()
         self.quote(service, bid=2900, ask=3100)  # 未配置的Tick不会改变执行基准。
-        self.submit(port, 1)
+        with self.assertLogs('NTAlgoExecution', level='INFO') as captured:
+            self.submit(port, 1)
+            service.prices.update(self.instrument, 3100, self.now)
+            broker.fill(broker.sent[-1]['OrderRef'])
         self.assertEqual(broker.sent[-1]['LimitPrice'], 3000)
+        self.assertIn('price_source=bar_close reference_price=3000 offset_ticks=0 tick_size=1 '
+                      'order_price=3000', captured.output[0])
+        self.assertIn('initial_price_source=bar_close initial_reference_price=3000 '
+                      'last_order_price=3000', captured.output[-1])
 
-    def check_three_prices(self, target, expected):
+    def check_three_prices(self, target, expected, source, reference):
         _, service, broker, (port, _), runtime = self.make_account()
         service.prices.enable_tick_quotes((self.instrument,))
         service.client.planner.planner._offset_ticks = 1
         self.quote(service)
-        self.submit(port, target)
-        for _ in range(2):
-            # 新Tick和Bar大幅变化也不重置步进基准。
-            self.now += 1_000_000_000
-            self.quote(service, bid=3100, ask=3102, last=3101)
-            self.tick(service, runtime)
-            service.poll()
+        with self.assertLogs('NTAlgoExecution', level='INFO') as captured:
+            self.submit(port, target)
+            for _ in range(2):
+                # 新Tick和Bar大幅变化也不重置步进基准，日志须保留实际定价依据。
+                self.now += 1_000_000_000
+                self.quote(service, bid=3100, ask=3102, last=3101)
+                self.tick(service, runtime)
+                service.poll()
+            broker.fill(broker.sent[-1]['OrderRef'])
         self.assertEqual([row['LimitPrice'] for row in broker.sent], expected)
-        broker.fill(broker.sent[-1]['OrderRef'])
         self.assertFalse(runtime.snapshot_state()['tasks'])
+        attempts = [line for line in captured.output if 'NT算法报单准备:' in line]
+        self.assertEqual(len(attempts), 3)
+        self.assertIn(f'price_source={source} reference_price={reference} offset_ticks=1 '
+                      f'tick_size=1 order_price={expected[0]}', attempts[0])
+        for index in (1, 2):
+            self.assertIn(f'attempt={index + 1}', attempts[index])
+            self.assertIn(f'price_source=previous_order reference_price={expected[index - 1]} '
+                          f'offset_ticks=1 tick_size=1 order_price={expected[index]}', attempts[index])
+        self.assertIn(f'strategy={port.strategy_id} instrument={self.instrument}', captured.output[-1])
+        self.assertIn(f'initial_price_source={source} initial_reference_price={reference} '
+                      f'last_order_price={expected[-1]}', captured.output[-1])
 
     def test_buy_starts_at_ask_plus_one_and_steps_from_actual_previous_price(self):
-        self.check_three_prices(1, [3003, 3004, 3005])
+        self.check_three_prices(1, [3003, 3004, 3005], 'ask', 3002)
 
     def test_sell_starts_at_bid_minus_one_and_steps_from_actual_previous_price(self):
-        self.check_three_prices(-1, [2997, 2996, 2995])
+        self.check_three_prices(-1, [2997, 2996, 2995], 'bid', 2998)
 
     def test_zero_retry_step_keeps_last_order_price(self):
         _, service, broker, (port, _), runtime = self.make_account(retry_step_ticks=0)
@@ -245,10 +264,16 @@ class ExecutionQuoteTests(unittest.TestCase):
             item.start()
         account2.authorize()
         self.submit(ports2[0], 2, revision=2)  # 原恢复闸门要求新的策略目标版本。
-        self.tick(service2, runtime2)
-        service2.poll()
+        with self.assertLogs('NTAlgoExecution', level='INFO') as captured:
+            self.tick(service2, runtime2)
+            service2.poll()
+            broker2.fill(broker2.sent[-1]['OrderRef'])
         self.assertEqual(broker2.sent[-1]['LimitPrice'], 3002)
         self.assertEqual(broker2.sent[-1]['VolumeTotalOriginal'], 1)
+        self.assertIn('price_source=previous_order reference_price=3001 offset_ticks=1 '
+                      'tick_size=1 order_price=3002', captured.output[0])
+        self.assertIn('initial_price_source=bar_close initial_reference_price=3000 '
+                      'last_order_price=3002', captured.output[-1])
 
     def test_no_tick_table_does_not_implicitly_use_ctp_quotes(self):
         from demos.direct_ctp import configure_execution_quotes

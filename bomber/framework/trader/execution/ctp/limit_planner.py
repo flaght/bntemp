@@ -52,7 +52,14 @@ class CtpLimitPlanner:
             price = (raw / tick).to_integral_value(rounding=rounding) * tick
             if not price.is_finite() or price <= 0:
                 raise RuntimeError("CTP限价无效")
-            result.append(replace(order, order_type=OrderType.LIMIT, price=price))
+            # 留下本次计算实际使用的快照，日志不能重新读取可能已变化的行情。
+            source = "bar_close"
+            if self._prices.uses_tick_quotes(order.instrument_id):
+                source = "ask" if order.side is OrderSide.BUY else "bid"
+            pricing = dict(source=source, reference_price=str(reference.price),
+                           offset_ticks=self._offset_ticks, tick_size=str(tick))
+            result.append(replace(order, order_type=OrderType.LIMIT, price=price,
+                metadata={**order.metadata, "execution_pricing": pricing}))
         return tuple(result)
 
 

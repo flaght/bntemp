@@ -216,6 +216,14 @@ class NTAlgoRuntime:
             task["active"], task["submitted_ns"] = identity, self.clock_ns()
             task["last_price"] = str(order.price)
             self._schedule(task_id, task)
+            pricing = order.metadata.get("execution_pricing", {})
+            log.info("NT算法报单准备: algorithm=%s task=%s attempt=%s strategy=%s instrument=%s "
+                     "side=%s price_source=%s reference_price=%s offset_ticks=%s tick_size=%s "
+                     "order_price=%s quantity=%s client_order_id=%s",
+                     self.algorithm_name, task_id, task["attempts"], order.strategy_id,
+                     order.instrument_id, order.side.value, pricing.get("source", "unknown"),
+                     pricing.get("reference_price", "unknown"), pricing.get("offset_ticks", "unknown"),
+                     pricing.get("tick_size", "unknown"), order.price, order.quantity, identity)
 
     def unsent(self, identity):
         with self._lock:
@@ -366,8 +374,15 @@ class NTAlgoRuntime:
             self._stops.append(dict(order=task["order"], reason=reason))
         if self._host is not None:
             self._host.cancel_alarm(key)
-        log.info("NT算法执行结束: algorithm=%s task=%s reason=%s filled=%s quantity=%s attempts=%s",
-                 self.algorithm_name, key, reason, task["filled"], task["order"]["quantity"], task["attempts"])
+        order = task["order"]
+        pricing = order["metadata"].get("execution_pricing", {})
+        log.info("NT算法执行结束: algorithm=%s task=%s reason=%s filled=%s quantity=%s attempts=%s "
+                 "strategy=%s instrument=%s side=%s initial_price_source=%s initial_reference_price=%s "
+                 "last_order_price=%s",
+                 self.algorithm_name, key, reason, task["filled"], order["quantity"], task["attempts"],
+                 order["strategy_id"], order["instrument_id"], order["side"],
+                 pricing.get("source", "unknown"), pricing.get("reference_price", "unknown"),
+                 task.get("last_price", "unknown"))
 
     def snapshot_state(self):
         with self._lock:

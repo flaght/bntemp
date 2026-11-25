@@ -106,6 +106,8 @@ class NTAlgoCtpDriver(IndependentCtpDriver):
             or service._sources[order.strategy_id].get('metadata', {}).get('market_health_mode') == 'REDUCE_ONLY'
             or order.metadata.get('market_health_mode') == 'REDUCE_ONLY')
         return replace(order, price=price, metadata={**order.metadata,
+            "execution_pricing": dict(source="previous_order", reference_price=str(order.price),
+                                      offset_ticks=step_ticks, tick_size=str(tick)),
             "actual_send_ts_ns": service.clock_ns(),
             "market_health_mode": "REDUCE_ONLY" if reducing else "NORMAL"})
 
