@@ -789,7 +789,7 @@ class OptionVegaStrategy(StrategyTemplate):
 
         REJECTED始终报错；仅放行算法已核验的追价/目标更新撤单，其余正常运行中
         CANCELED/EXPIRED仍报错，避免组合只成交一部分而继续运行。
-        跨日恢复后，旧任务次数耗尽且目标已回归真实仓位、没有在途时，仅记录历史结果。
+        跨日恢复后，旧任务次数耗尽/策略停止撤单且目标已回归真实仓位、没有在途时，仅记录历史结果。
         外部已设置stopping时允许停机撤单；声明到期截止之后
         的期权/期货取消或过期同样允许，因为由公共结算生命周期接管。其余状态只计数。
         """
@@ -800,8 +800,8 @@ class OptionVegaStrategy(StrategyTemplate):
                 and metadata.get(CANCEL_REASON_KEY) in ("retry", "target_update")):
             return
         if (status == "CANCELED" and metadata.get(TASK_KEY)
-                and metadata.get(CANCEL_REASON_KEY) == "attempt_limit"
-                and self._consume_historical_attempt_limit(event)):
+                and metadata.get(CANCEL_REASON_KEY) in ("attempt_limit", "strategy_cancel")
+                and self._consume_historical_algo_cancel(event)):
             return
         cutoff = next((stamp for key, stamp in {**self.option_last_trade_times, **self.future_last_trade_times}.items()
                        if str(self.instruments[key]) == event.identity.instrument_id), None)
@@ -813,7 +813,7 @@ class OptionVegaStrategy(StrategyTemplate):
                 f"task={metadata.get(TASK_KEY)} attempt={metadata.get('nt_algo_attempt')} "
                 f"order_id={getattr(event.identity, 'client_order_id', None)}")
 
-    def _consume_historical_attempt_limit(self, event):
+    def _consume_historical_algo_cancel(self, event):
         """只接纳已恢复归属和目标的旧日CTP任务结果；不改仓位、不提交或补报订单。"""
         if self.execution_trading_day is None:
             return False
@@ -836,13 +836,17 @@ class OptionVegaStrategy(StrategyTemplate):
         if goal != position or self.strategy_working_quantity(target):
             return False
         metadata = event.metadata
-        self.signals.append({"action": "HISTORICAL_EXECUTION_FAILURE", "reason": "attempt_limit",
+        reason = metadata[CANCEL_REASON_KEY]
+        action = ("HISTORICAL_EXECUTION_FAILURE" if reason == "attempt_limit"
+                  else "HISTORICAL_ORDER_CANCELED")
+        self.signals.append({"action": action, "reason": reason,
             "instrument": key, "task": metadata[TASK_KEY], "order_id": event.identity.client_order_id,
             "event_id": event.event_id, "signal_ns": event.ts_event,
             "request_ns": max(event.ts_event, self._last_request_ns), "position": str(position)})
         logging.getLogger("OptionExecutionRecovery").warning(
-            "历史NT任务次数耗尽已按恢复持仓接续: strategy=%s instrument=%s task=%s "
-            "order_id=%s order_day=%s current_day=%s position=%s；不重发旧任务",
+            "历史NT任务%s已按恢复持仓接续: strategy=%s instrument=%s task=%s "
+            "order_id=%s order_day=%s current_day=%s reason=%s position=%s；不重发旧任务",
+            "次数耗尽" if reason == "attempt_limit" else "停机撤单",
             self.strategy_id, event.identity.instrument_id, metadata[TASK_KEY],
-            event.identity.client_order_id, order_day, self.execution_trading_day, position)
+            event.identity.client_order_id, order_day, self.execution_trading_day, reason, position)
         return True

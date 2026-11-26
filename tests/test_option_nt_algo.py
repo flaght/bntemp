@@ -134,8 +134,9 @@ class OptionNTAlgoTests(unittest.TestCase):
         self.assertEqual(reasons, ['target_update'])
 
     def test_external_cancel_still_fails_08(self):
-        _, _, broker, port, _, _, _, _ = self.setup_strategy()
+        _, _, broker, port, _, strategy, _, _ = self.setup_strategy(execution_trading_day='20261014')
         broker.cancel_order(broker.sent[-1]['OrderRef'])
+        strategy.option_goals['MO2612-C-6000'] = D(0)
         with self.assertRaisesRegex(RuntimeError, '订单CANCELED'):
             port.drain_events()
 
@@ -149,13 +150,23 @@ class OptionNTAlgoTests(unittest.TestCase):
         self.assertEqual(account.driver.order_budget['submitted'], 1)
 
     def test_previous_day_attempt_limit_consumes_one_event_and_preserves_partial_fills(self):
+        self.check_historical_cancel_preserves_partial_fills('attempt_limit')
+
+    def test_previous_day_strategy_cancel_preserves_partial_fills_without_resending(self):
+        self.check_historical_cancel_preserves_partial_fills('strategy_cancel')
+
+    def check_historical_cancel_preserves_partial_fills(self, reason):
         account, service, broker, port, runtime, strategy, future, _ = self.setup_strategy(
             max_attempts=1, execution_trading_day='20261014')
         broker.fill(broker.sent[-1]['OrderRef'], 4)
         port.drain_events()  # 已入账的4手期权正常产生真实期货对冲。
         broker.fill(broker.sent[-1]['OrderRef'])
         port.drain_events()
-        self.tick(service, runtime)
+        if reason == 'attempt_limit':
+            self.tick(service, runtime)
+        else:
+            service.suspend_strategy('one')
+            service.poll_stopping()
         # 与首个恢复帧一致：以真实归属持仓接续，不继续旧的8手目标。
         strategy.option_goals['MO2612-C-6000'] = D(-4)
         strategy.future_goals['IM2612'] = D(1)
@@ -166,7 +177,7 @@ class OptionNTAlgoTests(unittest.TestCase):
         before_submissions = strategy.submissions
         with self.assertLogs('OptionExecutionRecovery', level='WARNING') as captured:
             self.assertEqual(port.drain_events(), 1)
-        self.assertIn('历史NT任务次数耗尽', captured.output[0])
+        self.assertIn('reason=' + reason, captured.output[0])
         self.assertEqual(port._journal_cursor, before_cursor + 1)
         self.assertEqual(service.event_journal.ack['one'], before_ack)  # 仍由信号保存后确认。
         self.assertEqual(service.position_manager.state(), before_positions)
@@ -179,10 +190,62 @@ class OptionNTAlgoTests(unittest.TestCase):
         self.assertFalse(runtime.snapshot_state()['tasks'])
         self.assertFalse(service._failed)
         audit = strategy.signals[-1]
-        self.assertEqual(audit['action'], 'HISTORICAL_EXECUTION_FAILURE')
-        self.assertEqual(audit['reason'], 'attempt_limit')
+        self.assertEqual(audit['action'], 'HISTORICAL_EXECUTION_FAILURE'
+            if reason == 'attempt_limit' else 'HISTORICAL_ORDER_CANCELED')
+        self.assertEqual(audit['reason'], reason)
         self.assertEqual(audit['position'], '-4')
         account._validate_account()
+
+    def test_previous_day_failed_task_and_following_stop_cancel_are_consumed_in_sequence(self):
+        account, service, broker, port, runtime, strategy, future, events = self.setup_strategy(
+            max_attempts=1, execution_trading_day='20261014')
+        strategy.future_goals['IM2612'] = D(1)
+        strategy._submit({str(self.instrument): D(-8), str(future): D(1)}, self.now, self.now, 'HEDGE')
+        port.drain_events()
+        option_task = next(key for key, task in runtime._tasks.items()
+            if task['order']['instrument_id'] == str(self.instrument))
+        self.now += 10_000_000_000
+        service.prices.update(self.instrument, 3000, self.now)
+        service.prices.update(future, 3000, self.now)
+        # 只触发期权任务期限；其失败停止策略，另一个活动任务由停机撤单结束。
+        runtime._host.alarms.pop(option_task)[1]()
+        service.poll()
+        strategy.option_goals['MO2612-C-6000'] = D(0)
+        strategy.future_goals['IM2612'] = D(0)
+        before_cursor = port._journal_cursor
+        before_ack = service.event_journal.ack['one']
+        before_budget = dict(account.driver.order_budget)
+        with self.assertLogs('OptionExecutionRecovery', level='WARNING') as captured:
+            self.assertEqual(port.drain_events(), 2)
+        self.assertEqual(len(captured.output), 2)
+        canceled = [event for event in events if getattr(getattr(event, 'status', None), 'value', None) == 'CANCELED']
+        self.assertEqual([event.metadata['nt_algo_cancel_reason'] for event in canceled],
+                         ['attempt_limit', 'strategy_cancel'])
+        self.assertEqual([row['reason'] for row in strategy.signals[-2:]],
+                         ['attempt_limit', 'strategy_cancel'])
+        self.assertEqual(port._journal_cursor, before_cursor + 2)
+        self.assertEqual(service.event_journal.ack['one'], before_ack)
+        self.assertEqual(account.driver.order_budget, before_budget)
+        self.assertEqual(len(broker.sent), 2)
+        self.assertFalse(broker.active)
+        self.assertFalse(runtime.snapshot_state()['tasks'])
+        self.assertFalse(service._failed)
+        account._validate_account()
+
+    def test_same_day_strategy_cancel_is_not_treated_as_historical(self):
+        _, service, _, port, _, strategy, _, _ = self.setup_strategy(execution_trading_day='20261013')
+        service.suspend_strategy('one')
+        strategy.option_goals['MO2612-C-6000'] = D(0)
+        with self.assertRaisesRegex(RuntimeError, 'algo_cancel_reason=strategy_cancel'):
+            port.drain_events()
+        self.assertTrue(service._failed)
+
+    def test_previous_day_strategy_cancel_with_unfinished_goal_still_fails(self):
+        _, service, _, port, _, _, _, _ = self.setup_strategy(execution_trading_day='20261014')
+        service.suspend_strategy('one')
+        with self.assertRaisesRegex(RuntimeError, 'algo_cancel_reason=strategy_cancel'):
+            port.drain_events()
+        self.assertTrue(service._failed)
 
     def test_previous_day_attempt_limit_with_unfinished_goal_still_fails(self):
         _, service, _, port, runtime, _, _, _ = self.setup_strategy(
