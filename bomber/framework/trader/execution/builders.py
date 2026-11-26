@@ -130,6 +130,9 @@ def build_ctp_portfolio_execution(driver, *, trading_day, price_increments,
     positions = PositionManager() if positions is None else positions
     prices = MarketReferencePriceStore() if prices is None else prices
     ledger = CtpPositionLedger(trading_day)
+    algo_runtime = getattr(driver, "algo_runtime", None)
+    if algo_runtime is not None and algo_runtime.config.initial_offset_ticks is not None:
+        limit_offset_ticks = algo_runtime.config.initial_offset_ticks
     planner = CtpLimitPlanner(ledger, positions, prices, price_increments, limit_offset_ticks,
         generic_close_venues=generic_close_venues)
     if not orders:

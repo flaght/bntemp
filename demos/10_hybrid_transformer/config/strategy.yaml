@@ -21,6 +21,7 @@ experiment_setups:
     execution_algorithm: limit_reprice
     algo_wait_seconds: 10
     algo_max_attempts: 3
+    algo_initial_offset_ticks: 0  # 首次直接使用对手价；无Tick时使用Bar close。
     algo_retry_step_ticks: 1
     # RB/P执行Tick分别在原行情JSON的tick_table中配置；null沿用Bar close。
     prepare_seconds: 600

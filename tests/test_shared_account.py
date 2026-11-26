@@ -569,7 +569,7 @@ class SharedAccountTests(unittest.TestCase):
             events=import_module("bomber.framework.trader.execution.events"))
 
     def native_account(self, path, modules, *, scoped=False, execution_mode="netted", preserve_external=False,
-                       extra_instruments=(), generic_close_venues=()):
+                       extra_instruments=(), generic_close_venues=(), limit_offset_ticks=0):
         owner = self
         self.timestamp = time.time_ns()
         self.now = self.timestamp
@@ -646,7 +646,7 @@ class SharedAccountTests(unittest.TestCase):
         ledger = modules.ledger.CtpPositionLedger("20261013")
         backend = modules.backend.NautilusLiveExecutionBackend("account", driver)
         client = modules.controlled.ControlledLiveExecutionClient("account",
-            modules.planner.CtpLimitPlanner(ledger, positions, prices, 1, 0), backend, positions,
+            modules.planner.CtpLimitPlanner(ledger, positions, prices, 1, limit_offset_ticks), backend, positions,
             self.risk.PreTradeRiskManager("account", positions, prices, instrument_limits=limits),
             account_id="demo", demo_environment_check=lambda: driver.is_simnow_session)
         backend.register_report_handler(modules.accounting.CtpExecutionAccounting(ledger, {self.instrument: 1}).on_report)
@@ -666,7 +666,7 @@ class SharedAccountTests(unittest.TestCase):
             execution = import_module("bomber.framework.trader.execution.builders").build_ctp_portfolio_execution(
                 driver, trading_day="20261013", price_increments={i: 1 for i in limits}, multipliers={i: 1 for i in limits},
                 instrument_limits=limits, session_check=lambda: driver.is_simnow_session, orders=True,
-                positions=positions, prices=prices, instrument_scope=scope, limit_offset_ticks=0,
+                positions=positions, prices=prices, instrument_scope=scope, limit_offset_ticks=limit_offset_ticks,
                 generic_close_venues=generic_close_venues,
                 account_reconciliation="observe" if preserve_external else "strict")
             client, backend, ledger = execution.client, execution.backend, execution.ledger

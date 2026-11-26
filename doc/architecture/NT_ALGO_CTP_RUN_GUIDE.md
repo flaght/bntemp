@@ -38,6 +38,7 @@ execution_driver: nt_algo_ctp
 execution_algorithm: limit_reprice
 algo_wait_seconds: 10
 algo_max_attempts: 3
+algo_initial_offset_ticks: 0
 algo_retry_step_ticks: 1
 # Tick流表在原market_dolphindb.json中配置tick_table。
 ```
@@ -57,7 +58,7 @@ PYTHONPATH=.:/workspace/worker/pj/KiChaos IMPLUSE_VERSION=all \
 
 此配置用于 `run_direct.py`；原 `workers_hybrid` 配置仍对应 `run_shared.py`。显式命令行参数优先于 YAML，可临时覆盖等待时间或尝试次数。
 
-`execution_driver` 默认为 `ctp`；`max_attempts` 包含首次报单，默认每个任务最多3次实际报单。首次偏移沿用账户JSON的 `account.limit_offset_ticks`；重报步长使用 `algo_retry_step_ticks`，仅接受0或1。仍为显式限价单，不保证成交。
+`execution_driver` 默认为 `ctp`；`max_attempts` 包含首次报单，默认每个任务最多3次实际报单。首次偏移可用 `algo_initial_offset_ticks` 显式配置为0或1；省略时沿用账户JSON的 `account.limit_offset_ticks`。重报步长单独使用 `algo_retry_step_ticks`，仅接受0或1。10的 `direct_nt_algo` 已配置为首次0跳、重报1跳，无需修改共用账户JSON。对应命令行参数为 `--algo-initial-offset-ticks 0`。仍为显式限价单，不保证成交。
 
 ## 执行报价与逐次跳价
 
@@ -89,9 +90,9 @@ NT直连执行Tick与策略Bar统一从DolphinDB订阅。请移除旧启动YAML�
 
 Tick参考价同时记录本次读取的本地时间；风控及预算检查使用不早于该读取时间的检查时刻。避免请求已创建、最新Tick随后到达时，用较早请求时间误判有效Tick“来自未来”。真实超前于本地读取时钟的Tick和过期Tick仍被拒绝；Bar保留原显式事件时间语义。读取时间仅属于内存报价，不改变策略目标时间、期限或恢复账本格式。
 
-首次定价：配置Tick的合约，买入基准为ask1、卖出基准为bid1；未配置Tick的合约以Bar close为基准。首次买入加 `limit_offset_ticks` 跳、卖出减相同跳数，并按合约最小报价单位对齐。Tick配置后尚未收到、盘口无效或过期时阻止报单/重报，不静默改用Last或Bar。风控使用同一报价缓存中的Tick中间价与行情时间，继续执行原时效和预算检查。
+首次定价：配置Tick的合约，买入基准为ask1、卖出基准为bid1；未配置Tick的合约以Bar close为基准。首次买入加 `algo_initial_offset_ticks` 跳、卖出减相同跳数，并按合约最小报价单位对齐；该参数省略时才使用账户的 `limit_offset_ticks`。设置为0时，首次直接使用对手价或Bar close，不额外加减一跳。Tick配置后尚未收到、盘口无效或过期时阻止报单/重报，不静默改用Last或Bar。风控使用同一报价缓存中的Tick中间价与行情时间，继续执行原时效和预算检查。
 
-算法重报：买价 = 上次实际委托价 + `algo_retry_step_ticks × tick_size`；卖价 = 上次实际委托价 - 同等步长。重报前仍要求有效行情，但不按新行情重新起算阶梯。步长为0时维持上次委托价；步长为1时每次主动前进一跳。首次偏移1跳、最多3次报单时，相对首次基准依次为1、2、3跳；从首笔实际委托价计算则最多再前进2跳。行情移动较大时仍可能不成交，本模式不是每次追随最新盘口。
+算法重报：买价 = 上次实际委托价 + `algo_retry_step_ticks × tick_size`；卖价 = 上次实际委托价 - 同等步长。重报前仍要求有效行情，但不按新行情重新起算阶梯。步长为0时维持上次委托价；步长为1时每次主动前进一跳。首次偏移0跳、重报1跳、最多3次报单时，相对首次基准依次为0、1、2跳；首次偏移1跳时则为1、2、3跳。行情移动较大时仍可能不成交，本模式不是每次追随最新盘口。
 
 每次实际委托在柜台发送前输出 `NT算法报单准备`：`price_source=ask/bid/bar_close` 表示首次使用的卖一/买一/Bar收盘价，`reference_price` 是当时实际用于计算的基准价，`offset_ticks` 是偏移跳数，`tick_size` 是合约最小报价单位，`order_price` 是本次委托限价。重报记录 `price_source=previous_order`，其 `reference_price` 为上次委托价。日志同时带策略、合约、买卖方向、任务及真实委托标识；它表示发送准备，是否成交仍看真实回报。价格依据随订单保存，记录时不重新读取行情。
 
@@ -101,7 +102,7 @@ Tick参考价同时记录本次读取的本地时间；风控及预算检查使�
 
 达到次数上限、执行到期或收到拒单后，未完成任务结束，原策略贡献冻结在已成交归属，等待新的策略目标版本。避免 Runner 为相同旧目标立即重建任务，绕过次数上限。策略主动取消或目标变化会停止原任务；持仓周期仍由策略控制。
 
-同账户共享配置在装配内部使用 `execution_driver`、`execution_algorithm` 和 `nt_algo: {wait_seconds: 10, max_attempts: 3, retry_step_ticks: 1}`。本期仅在 `run_direct` 的独立归属路径装配，不支持旧独立账户服务入口或净额共享模式。
+同账户共享配置在装配内部使用 `execution_driver`、`execution_algorithm` 和 `nt_algo: {wait_seconds: 10, max_attempts: 3, initial_offset_ticks: 0, retry_step_ticks: 1}`；其中 `initial_offset_ticks` 可省略，沿用账户配置。本期仅在 `run_direct` 的独立归属路径装配，不支持旧独立账户服务入口或净额共享模式。
 
 代码装配直接选择 `IndependentCtpDriver(...)` 或 `NTAlgoCtpDriver(..., algo_runtime=NTAlgoRuntime(...))`。随后沿用 `build_ctp_portfolio_execution`、`SharedAccountExecutionService` 和 `IndependentCtpLifecycle`；算法 Driver 不能省略原服务和持久化绑定。
 
@@ -111,15 +112,17 @@ Tick参考价同时记录本次读取的本地时间；风控及预算检查使�
 
 真实撤单回报仍先经过原订单状态机、冻结释放、归属账本和事件日志。算法额外写入`nt_algo_cancel_reason`：`retry`表示算法已实际发出追价撤单，`target_update`表示策略已更新该合约目标。08仅放行这两种有算法任务关联的取消；外部撤单、拒单、过期以及次数耗尽仍保留原报错处理。定时器仅排队、尚未发撤单时收到的外部取消，不标为内部追价。
 
-无需修改08策略JSON、交易参数或10配置。正常停止08并满足下文的切换条件后，沿用原v4账户和信号检查点，在远程项目根目录启动：
+原08的 `config/strategy.yaml` 已增加 `direct_nt_algo`，z01的 `demos/z01_shared_account/startup.yaml` 中 `option_z01` 也已配置首次0跳、重报1跳、等待10秒、最多3次报单。原08启动项仅声明算法参数，账户、信号及执行检查点路径仍由原参数或入口默认值决定；z01沿用自己的全部路径和授权开关。
+
+正常停止08并满足下文的切换条件后，沿用原v4账户和信号检查点，在远程项目根目录启动：
 
 ```bash
 PYTHONPATH=.:/workspace/worker/pj/KiChaos IMPLUSE_VERSION=all \
 /workspace/worker/env/chs-live/bin/python -u demos/08_option_vega/run_direct.py \
+  --config-file demos/08_option_vega/config/strategy.yaml \
+  --config-id direct_nt_algo \
   --account-state-file demos/08_option_vega/results/direct/v4/state.json \
   --state-file demos/08_option_vega/results/direct/v4/signal.json \
-  --execution-driver nt_algo_ctp --execution-algorithm limit_reprice \
-  --algo-wait-seconds 10 --algo-max-attempts 3 \
   --connect --enable-orders --confirm-simnow --run-forever
 ```
 

@@ -45,19 +45,21 @@ class NTAlgoCtpTests(unittest.TestCase):
     client = fixture.SharedAccountTests.client
 
     def make_account(self, path=None, *, max_attempts=3, start=True,
-                     host_factory=ManualNTHost, wait_seconds=10, retry_step_ticks=1):
+                     host_factory=ManualNTHost, wait_seconds=10, retry_step_ticks=1,
+                     initial_offset_ticks=None, scoped=False, limit_offset_ticks=0):
         modules = self.native_modules()
         from bomber.framework.trader.execution.nt_algo import build_nt_algo_runtime, NTAlgoConfig
         from bomber.framework.trader.execution.ctp.nt_algo import NTAlgoCtpDriver
         from bomber.framework.trader.runtime.live.channels.ctp_independent import IndependentCtpLifecycle
-        runtime = build_nt_algo_runtime('limit_reprice', NTAlgoConfig(wait_seconds, max_attempts, retry_step_ticks),
-                                       host_factory=host_factory, clock_ns=lambda: self.now)
+        runtime = build_nt_algo_runtime('limit_reprice', NTAlgoConfig(wait_seconds, max_attempts,
+            retry_step_ticks, initial_offset_ticks), host_factory=host_factory, clock_ns=lambda: self.now)
         factory = lambda *args, **kwargs: NTAlgoCtpDriver(*args, algo_runtime=runtime, **kwargs)
         self.enterContext(patch.object(modules.driver, 'CtpNativeTraderDriver', factory))
         self.enterContext(patch.object(modules.lifecycle, 'CtpSharedAccountLifecycle', IndependentCtpLifecycle))
         if path is None:
             path = Path(self.enterContext(TemporaryDirectory())) / 'account.json'
-        account, service, transport, ports, _ = self.native_account(path, modules, execution_mode='independent')
+        account, service, transport, ports, _ = self.native_account(path, modules, execution_mode='independent',
+            scoped=scoped, limit_offset_ticks=limit_offset_ticks)
         connect = transport.connect
         transport.connect = lambda *args: replace(connect(*args), front_id=1, session_id=2)
         raw = transport.raw
@@ -405,6 +407,31 @@ class NTAlgoCtpTests(unittest.TestCase):
         result = account._adapt_algorithm_checkpoint(result)
         self.assertEqual(result['component_states']['nt_algo'], runtime.snapshot_state())
 
+    def test_initial_offset_change_requires_finished_tasks_and_preserves_other_state(self):
+        from copy import deepcopy
+        from bomber.framework.trader.execution.nt_algo import build_nt_algo_runtime, NTAlgoConfig
+        account, _, transport, (one, _), runtime = self.make_account(initial_offset_ticks=1)
+        self.submit(one, 2)
+        replacement = build_nt_algo_runtime(config=NTAlgoConfig(initial_offset_ticks=0),
+                                            host_factory=ManualNTHost)
+        def adapt(payload):
+            account.driver.algo_runtime = replacement
+            try:
+                return account._adapt_algorithm_checkpoint(payload)
+            finally:
+                account.driver.algo_runtime = runtime
+        pending = account.manager.repository.load().payload
+        before = deepcopy(pending)
+        with self.assertRaisesRegex(ValueError, '禁止切换'):
+            adapt(pending)
+        self.assertEqual(pending, before)
+        transport.fill(transport.sent[-1]['OrderRef'])
+        completed = account.manager.repository.load().payload
+        original = deepcopy(completed)
+        result = adapt(completed)
+        original['component_states']['nt_algo'] = replacement.snapshot_state()
+        self.assertEqual(result, original)  # 仓位、归属、策略进度及每日报单计数全部保留。
+
 
 class NTAlgoConfigurationTests(unittest.TestCase):
     def test_configuration_validates_without_loading_native_nt(self):
@@ -414,7 +441,11 @@ class NTAlgoConfigurationTests(unittest.TestCase):
         config = json.loads(path.read_text())
         config.update(execution_driver='nt_algo_ctp', nt_algo={'wait_seconds': 10, 'max_attempts': 3})
         self.assertEqual(resolve_config(config, path)['execution_driver'], 'nt_algo_ctp')
-        for policy in ({'wait_seconds': float('nan')}, {'max_attempts': True}, {'unknown': 1}):
+        for initial in (0, 1):
+            resolved = resolve_config({**config, 'nt_algo': {'initial_offset_ticks': initial}}, path)
+            self.assertEqual(resolved['nt_algo']['initial_offset_ticks'], initial)
+        for policy in ({'wait_seconds': float('nan')}, {'max_attempts': True}, {'unknown': 1},
+                       *({'initial_offset_ticks': value} for value in (-1, 2, .1, True))):
             with self.subTest(policy=policy), self.assertRaises(ValueError):
                 resolve_config({**config, 'nt_algo': policy}, path)
         with self.assertRaisesRegex(ValueError, 'independent'):
@@ -479,13 +510,19 @@ class NTAlgoConfigurationTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         profile = load_config(root / 'demos/10_hybrid_transformer/config/strategy.yaml', 'direct_nt_algo')
         self.assertEqual(profile['execution_algorithm'], 'limit_reprice')
+        self.assertEqual(profile['algo_initial_offset_ticks'], 0)
         # 使用真实启动配置，但校验期间显式关闭连接/报单，入口会在建连前返回。
         profile.update(connect=False, enable_orders=False, confirm_simnow=False)
         with TemporaryDirectory() as directory:
             path = Path(directory) / 'launch.yaml'
             args = ['--config-file', str(path), '--config-id', 'check']
             path.write_text(yaml.safe_dump({'experiment_setups': {'check': profile}}))
-            self.assertEqual(self.check_direct(args)['execution_algorithm'], 'limit_reprice')
+            result = self.check_direct(args)
+            self.assertEqual(result['execution_algorithm'], 'limit_reprice')
+            self.assertEqual(result['nt_algo']['initial_offset_ticks'], 0)
+            self.assertEqual(result['nt_algo']['retry_step_ticks'], 1)
+            override = self.check_direct(args + ['--algo-initial-offset-ticks', '1'])
+            self.assertEqual(override['nt_algo']['initial_offset_ticks'], 1)
             profile['execution_algorithm'] = 'twap'
             path.write_text(yaml.safe_dump({'experiment_setups': {'check': profile}}))
             with redirect_stderr(StringIO()), self.assertRaises(SystemExit):

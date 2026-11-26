@@ -33,7 +33,8 @@ class ExecutionQuoteTests(unittest.TestCase):
             {'BidPrice1': bid, 'AskPrice1': ask, 'LastPrice': last})
 
     def test_bar_is_used_without_tick_configuration(self):
-        _, service, broker, (port, _), _ = self.make_account()
+        _, service, broker, (port, _), _ = self.make_account(
+            scoped=True, limit_offset_ticks=1, initial_offset_ticks=0)
         self.quote(service, bid=2900, ask=3100)  # 未配置的Tick不会改变执行基准。
         with self.assertLogs('NTAlgoExecution', level='INFO') as captured:
             self.submit(port, 1)
@@ -45,10 +46,10 @@ class ExecutionQuoteTests(unittest.TestCase):
         self.assertIn('initial_price_source=bar_close initial_reference_price=3000 '
                       'last_order_price=3000', captured.output[-1])
 
-    def check_three_prices(self, target, expected, source, reference):
-        _, service, broker, (port, _), runtime = self.make_account()
+    def check_three_prices(self, target, expected, source, reference, initial_offset_ticks=1):
+        _, service, broker, (port, _), runtime = self.make_account(
+            scoped=True, limit_offset_ticks=1, initial_offset_ticks=initial_offset_ticks)
         service.prices.enable_tick_quotes((self.instrument,))
-        service.client.planner.planner._offset_ticks = 1
         self.quote(service)
         with self.assertLogs('NTAlgoExecution', level='INFO') as captured:
             self.submit(port, target)
@@ -63,7 +64,7 @@ class ExecutionQuoteTests(unittest.TestCase):
         self.assertFalse(runtime.snapshot_state()['tasks'])
         attempts = [line for line in captured.output if 'NT算法报单准备:' in line]
         self.assertEqual(len(attempts), 3)
-        self.assertIn(f'price_source={source} reference_price={reference} offset_ticks=1 '
+        self.assertIn(f'price_source={source} reference_price={reference} offset_ticks={initial_offset_ticks} '
                       f'tick_size=1 order_price={expected[0]}', attempts[0])
         for index in (1, 2):
             self.assertIn(f'attempt={index + 1}', attempts[index])
@@ -78,6 +79,18 @@ class ExecutionQuoteTests(unittest.TestCase):
 
     def test_sell_starts_at_bid_minus_one_and_steps_from_actual_previous_price(self):
         self.check_three_prices(-1, [2997, 2996, 2995], 'bid', 2998)
+
+    def test_first_buy_can_use_ask_without_offset_and_retries_still_add_one_tick(self):
+        self.check_three_prices(1, [3002, 3003, 3004], 'ask', 3002, initial_offset_ticks=0)
+
+    def test_first_sell_can_use_bid_without_offset_and_retries_still_subtract_one_tick(self):
+        self.check_three_prices(-1, [2998, 2997, 2996], 'bid', 2998, initial_offset_ticks=0)
+
+    def test_omitted_initial_offset_keeps_account_pricing_and_old_checkpoint_config(self):
+        _, _, broker, (port, _), runtime = self.make_account(scoped=True, limit_offset_ticks=1)
+        self.submit(port, 1)
+        self.assertEqual(broker.sent[-1]['LimitPrice'], 3001)
+        self.assertNotIn('initial_offset_ticks', runtime.snapshot_state()['config'])
 
     def test_zero_retry_step_keeps_last_order_price(self):
         _, service, broker, (port, _), runtime = self.make_account(retry_step_ticks=0)
@@ -247,7 +260,8 @@ class ExecutionQuoteTests(unittest.TestCase):
 
     def test_restart_keeps_last_actual_price_after_second_attempt(self):
         path = Path(self.enterContext(TemporaryDirectory())) / 'account.json'
-        account, service, broker, (port, _), runtime = self.make_account(path)
+        account, service, broker, (port, _), runtime = self.make_account(path,
+            scoped=True, limit_offset_ticks=1, initial_offset_ticks=0)
         self.submit(port, 2)
         self.tick(service, runtime)
         service.poll()
@@ -255,7 +269,8 @@ class ExecutionQuoteTests(unittest.TestCase):
         task_id = next(iter(runtime._tasks))
         self.assertEqual(D(runtime._tasks[task_id]['last_price']), 3001)
         account.driver.stop()
-        account2, service2, broker2, ports2, runtime2 = self.make_account(path, start=False)
+        account2, service2, broker2, ports2, runtime2 = self.make_account(path, start=False,
+            scoped=True, limit_offset_ticks=1, initial_offset_ticks=0)
         broker2.active = {key: dict(value) for key, value in broker.active.items()}
         broker2.gross = dict(broker.gross)
         account2.start(resume=True)
@@ -391,6 +406,20 @@ class ExecutionQuoteConfigTests(unittest.TestCase):
         for step in (-1, 2, .1, True):
             with self.subTest(step=step), self.assertRaises(ValueError):
                 NTAlgoConfig(retry_step_ticks=step)
+
+    def test_initial_offset_validates_before_connection_and_requires_algo_driver(self):
+        from contextlib import redirect_stderr
+        from io import StringIO
+        from bomber.framework.trader.execution.nt_algo import NTAlgoConfig
+        for initial in (-1, 2, .1, True):
+            with self.subTest(initial=initial), self.assertRaises(ValueError):
+                NTAlgoConfig(initial_offset_ticks=initial)
+        for args in (['--algo-initial-offset-ticks', '0'],
+                ['--execution-driver', 'nt_algo_ctp', '--algo-initial-offset-ticks', '-1'],
+                ['--execution-driver', 'nt_algo_ctp', '--algo-initial-offset-ticks', '2']):
+            with self.subTest(args=args), redirect_stderr(StringIO()), self.assertRaises(SystemExit) as raised:
+                self.check_direct(args)
+            self.assertEqual(raised.exception.code, 2)
 
 
 class DolphinExecutionTickTests(unittest.TestCase):

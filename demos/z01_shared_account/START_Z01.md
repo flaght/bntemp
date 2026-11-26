@@ -49,7 +49,9 @@ PYTHONPATH=.:/workspace/worker/pj/KiChaos IMPLUSE_VERSION=all \
   --connect --enable-orders --confirm-simnow --run-forever
 ```
 
-默认采用`limit_reprice`：等待10秒，最多3次实际报单（包含首次）。
+默认采用`limit_reprice`：首次偏移0跳，超时重报每次前进1跳；等待10秒，最多3次实际报单（包含首次）。
+这两个偏移分别在`startup.yaml`使用`algo_initial_offset_ticks: 0`和`algo_retry_step_ticks: 1`配置。
+配置Tick时首次买入用ask、卖出用bid；未配置Tick时首次使用Bar close。
 同日重启继续用原命令和本账号检查点；真实委托/成交恢复须通过柜台核验。
 
 ## 状态及报告

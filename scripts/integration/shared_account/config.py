@@ -89,8 +89,9 @@ def resolve_config(config, path):
         if config.get('execution_mode') != 'independent':
             raise ValueError('NT算法CTP首期仅支持independent模式')
         policy = config.get('nt_algo', {})
-        if not isinstance(policy, dict) or set(policy) - {'wait_seconds', 'max_attempts', 'retry_step_ticks'}:
-            raise ValueError('nt_algo只接受wait_seconds、max_attempts和retry_step_ticks')
+        if not isinstance(policy, dict) or set(policy) - {
+                'wait_seconds', 'max_attempts', 'retry_step_ticks', 'initial_offset_ticks'}:
+            raise ValueError('nt_algo只接受wait_seconds、max_attempts、initial_offset_ticks和retry_step_ticks')
         wait, attempts = policy.get('wait_seconds', 10), policy.get('max_attempts', 3)
         if isinstance(wait, bool) or not isinstance(wait, (int, float)) or not math.isfinite(wait) or wait <= 0:
             raise ValueError('nt_algo.wait_seconds须为有限正数')
@@ -99,6 +100,9 @@ def resolve_config(config, path):
         step = policy.get('retry_step_ticks', 1)
         if type(step) is not int or step not in (0, 1):
             raise ValueError('nt_algo.retry_step_ticks须为0或1')
+        initial = policy.get('initial_offset_ticks')
+        if initial is not None and (type(initial) is not int or initial not in (0, 1)):
+            raise ValueError('nt_algo.initial_offset_ticks须为0或1')
         if config.get('execution_tick_source') is not None:
             raise ValueError('请移除execution_tick_source，在策略market_dolphindb.json中配置tick_table')
     elif 'nt_algo' in config or 'execution_algorithm' in config or 'execution_tick_source' in config:

@@ -22,6 +22,7 @@ class NTAlgoConfig:
     wait_seconds: float = 10
     max_attempts: int = 3
     retry_step_ticks: int = 1
+    initial_offset_ticks: int | None = None  # 省略时沿用原订单规划器的账户配置。
 
     def __post_init__(self):
         if (isinstance(self.wait_seconds, bool) or not isinstance(self.wait_seconds, (int, float))
@@ -31,6 +32,9 @@ class NTAlgoConfig:
             raise ValueError("NT算法max_attempts须为1至1000整数，包含首次报单")
         if type(self.retry_step_ticks) is not int or self.retry_step_ticks not in (0, 1):
             raise ValueError("NT算法retry_step_ticks须为0或1")
+        if self.initial_offset_ticks is not None and (
+                type(self.initial_offset_ticks) is not int or self.initial_offset_ticks not in (0, 1)):
+            raise ValueError("NT算法initial_offset_ticks须为0或1")
 
 
 def encode_order(order):
@@ -386,8 +390,11 @@ class NTAlgoRuntime:
 
     def snapshot_state(self):
         with self._lock:
-            return deepcopy(dict(version=1, config=dict(wait_seconds=self.config.wait_seconds,
-                max_attempts=self.config.max_attempts, retry_step_ticks=self.config.retry_step_ticks),
+            config = dict(wait_seconds=self.config.wait_seconds,
+                max_attempts=self.config.max_attempts, retry_step_ticks=self.config.retry_step_ticks)
+            if self.config.initial_offset_ticks is not None:
+                config["initial_offset_ticks"] = self.config.initial_offset_ticks
+            return deepcopy(dict(version=1, config=config,
                 tasks=self._tasks, stops=list(self._stops)))
 
     def active_instruments(self):

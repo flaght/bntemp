@@ -13,6 +13,15 @@ experiment_setups:
       connect: true
       enable_orders: true
       confirm_simnow: true
+
+    direct_nt_algo:
+      description: "run_direct入口的NT算法参数；账户及状态路径沿用原参数"
+      execution_driver: nt_algo_ctp
+      execution_algorithm: limit_reprice
+      algo_wait_seconds: 10
+      algo_max_attempts: 3
+      algo_initial_offset_ticks: 0
+      algo_retry_step_ticks: 1
   
     # 回测与Live共用此文件，各入口只加载所选ID，不合并其他配置。
     m5_index_blend:

@@ -557,8 +557,10 @@ def main(kind, argv=None):
         help='NT限价委托等待秒数，撤单确认后才按有效报价重报')
     parser.add_argument('--algo-max-attempts', type=int, default=3,
         help='每个NT任务的最大实际报单次数，包含首次')
+    parser.add_argument('--algo-initial-offset-ticks', type=int, choices=(0, 1),
+        help='首次委托相对对手价或Bar close买加/卖减的跳数；省略沿用账户limit_offset_ticks')
     parser.add_argument('--algo-retry-step-ticks', type=int, choices=(0, 1), default=1,
-        help='每次重报相对上次实际委托价买加/卖减的跳数；首次沿用账户limit_offset_ticks')
+        help='每次重报相对上次实际委托价买加/卖减的跳数，与首次偏移独立')
     parser.add_argument('--execution-tick-source',
         help='旧字段已停用；请在策略market_dolphindb.json配置tick_table')
     if kind == 'hybrid_transformer':
@@ -597,8 +599,11 @@ def main(kind, argv=None):
             execution_algorithm=options.execution_algorithm or 'limit_reprice', nt_algo=dict(
             wait_seconds=options.algo_wait_seconds, max_attempts=options.algo_max_attempts,
             retry_step_ticks=options.algo_retry_step_ticks))
+        if options.algo_initial_offset_ticks is not None:
+            account['nt_algo']['initial_offset_ticks'] = options.algo_initial_offset_ticks
     elif (options.execution_algorithm is not None
             or options.algo_wait_seconds != 10 or options.algo_max_attempts != 3
+            or options.algo_initial_offset_ticks is not None
             or options.algo_retry_step_ticks != 1 or options.execution_tick_source is not None):
         parser.error('算法参数须配合execution-driver=nt_algo_ctp')
     if account['environment'] != 'realtime' or account['execution_mode'] != 'independent':
