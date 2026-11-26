@@ -19,10 +19,78 @@ from .vega_signal import OptionVegaConfig
 
 DEMO = Path(__file__).resolve().parent
 TERMINAL = {'FILLED', 'CANCELED', 'REJECTED', 'EXPIRED'}
+REARM_REVISION = 'zero-fill-baseline-v2'
+
+
+def align_unfilled_targets(account, business, *, strategy_id, today, orders):
+    """撤销已结束零成交委托对应的旧意图；实际仓位和历史订单不变。"""
+    shared = account['component_states']['shared_account']
+    source = shared['sources'][strategy_id]
+    routes = shared['shared']['routes'][strategy_id]['routes']
+    positions = {}
+    for row in account['positions']['attribution']['owned']:
+        if row['strategy_id'] == strategy_id:
+            key = row['instrument_id']
+            positions[key] = positions.get(key, Decimal(0)) + Decimal(row['quantity'])
+    goals = {key + '.CFFEX': Decimal(value) for name in ('option_goals', 'future_goals')
+             for key, value in business[name].items()}
+    source_rows, contributions = {}, {}
+    for row in source['rows']:
+        key = row['instrument_id']
+        if key in source_rows:
+            raise ValueError('08同一合约存在重复执行目标行，不能猜测分配')
+        source_rows[key] = Decimal(row['quantity'])
+    for row in account['portfolio']['contributions'][strategy_id]:
+        key = row['key']['instrument_id']
+        contributions[key] = contributions.get(key, Decimal(0)) + Decimal(row['quantity'])
+    differences = {}
+    for name, targets in (('business', goals), ('source', source['targets']),
+                          ('source_rows', source_rows), ('portfolio', contributions)):
+        changes = {key: {'before': str(targets.get(key, 0)), 'after': str(positions.get(key, 0))}
+                   for key in sorted(set(targets) | set(positions))
+                   if Decimal(targets.get(key, 0)) != positions.get(key, 0)}
+        if changes:
+            differences[name] = changes
+    changed = {key for values in differences.values() for key in values}
+    if (changed | {key for key, quantity in positions.items() if quantity}) - set(routes.values()):
+        raise ValueError('差额或非零仓位超出原08路由，不能调整')
+    proven = {row['instrument_id'] for row in today
+              if row['terminal'] is True and not row['trades']
+              and row['client_order_id'] in orders
+              and orders[row['client_order_id']]['status'] in {'CANCELED', 'REJECTED', 'EXPIRED'}
+              and not Decimal(orders[row['client_order_id']]['filled_quantity'])}
+    if not changed <= proven:
+        raise ValueError('原目标差额缺少今天已结束零成交委托的依据；差异='
+                         + json.dumps(differences, ensure_ascii=False, sort_keys=True))
+    execution_changed = any(name in differences for name in ('source', 'source_rows', 'portfolio'))
+    if execution_changed and any(key not in source_rows or key not in contributions for key in changed):
+        raise ValueError('差额合约缺少原执行行或组合贡献，不能猜测重建')
+    for name in ('option_goals', 'future_goals'):
+        for key in business[name]:
+            if key + '.CFFEX' in changed:
+                business[name][key] = str(positions.get(key + '.CFFEX', 0))
+    if execution_changed:
+        for key in changed:
+            source['targets'][key] = str(positions.get(key, 0))
+        for row in source['rows']:
+            if row['instrument_id'] in changed:
+                row['quantity'] = str(positions.get(row['instrument_id'], 0))
+        for row in account['portfolio']['contributions'][strategy_id]:
+            if row['key']['instrument_id'] in changed:
+                row['quantity'] = str(positions.get(row['key']['instrument_id'], 0))
+        # 与正常算法结束/停机冻结相同：源信号版本保留，内部组合版本单调推进。
+        portfolio = account['portfolio']
+        portfolio['revision'] += 1
+        portfolio['strategy_revisions'][strategy_id] += 1
+        shared['portfolio_revision'] = portfolio['revision']
+        shared['strategy_revisions'][strategy_id] = portfolio['strategy_revisions'][strategy_id]
+        source['deadline_ns'] = None
+        source.setdefault('metadata', {})['position_attribution'] = deepcopy(source['rows'])
+    return differences
 
 
 def prepare_rearm(account, signal, config, *, strategy_id, trading_day, option_slot, now):
-    """仅生成候选；必须同日、零成交、无待执行差额及未消费回报。"""
+    """仅生成候选；同日零成交、无未决委托，撤销有终态依据的旧目标差额。"""
     day = date.fromisoformat(trading_day)
     stamp = datetime.combine(day, datetime.strptime(option_slot, '%H:%M').time(), ZoneInfo('Asia/Shanghai'))
     if stamp.strftime('%H:%M') != option_slot or now.tzinfo is None:
@@ -82,6 +150,8 @@ def prepare_rearm(account, signal, config, *, strategy_id, trading_day, option_s
         raise ValueError('订单状态机仍有未结束委托')
     if any(key not in orders or Decimal(orders[key]['filled_quantity']) for key in today_ids):
         raise ValueError('今天委托状态缺失或累计成交不为零')
+    if any(orders[row['client_order_id']]['instrument_id'] != row['instrument_id'] for row in today):
+        raise ValueError('今天订单状态与归属记录合约不一致')
     journal = state['event_journal']
     events = journal['events'][strategy_id]
     cursor = revised['cursor']
@@ -92,7 +162,7 @@ def prepare_rearm(account, signal, config, *, strategy_id, trading_day, option_s
         if row['type'] != 'FillEvent':
             continue
         event = row['event']
-        event_day = datetime.fromtimestamp(event['ts_event'] / 1e9, ZoneInfo('Asia/Shanghai')).date()
+        event_day = datetime.fromtimestamp(event['ts_event'] // 1_000_000_000, ZoneInfo('Asia/Shanghai')).date()
         if event_day == day or event['identity'].get('client_order_id') in today_ids:
             raise ValueError('事件日志记录了今天成交，不能恢复零成交机会')
     source = shared['sources'][strategy_id]
@@ -101,26 +171,8 @@ def prepare_rearm(account, signal, config, *, strategy_id, trading_day, option_s
     business = revised['signal']
     if trading_day not in business['sent_days'] or business['flatten_requested']:
         raise ValueError('今天尚未标记为已选约，或已请求清仓；无需此维护')
-    routes = state['routes'][strategy_id]['routes']
-    positions = {}
-    for row in updated['positions']['attribution']['owned']:
-        if row['strategy_id'] == strategy_id:
-            key = row['instrument_id']
-            positions[key] = positions.get(key, Decimal(0)) + Decimal(row['quantity'])
-    goals = {key + '.CFFEX': Decimal(value) for name in ('option_goals', 'future_goals')
-             for key, value in business[name].items()}
-    source_rows, contributions = {}, {}
-    for row in source['rows']:
-        key = row['instrument_id']
-        source_rows[key] = source_rows.get(key, Decimal(0)) + Decimal(row['quantity'])
-    for row in updated['portfolio']['contributions'][strategy_id]:
-        key = row['key']['instrument_id']
-        contributions[key] = contributions.get(key, Decimal(0)) + Decimal(row['quantity'])
-    for targets in (goals, source['targets'], source_rows, contributions):
-        keys = set(targets) | set(positions)
-        if (not keys <= set(routes.values()) or
-                any(Decimal(targets.get(key, 0)) != positions.get(key, 0) for key in keys)):
-            raise ValueError('原目标仍有未完成差额；先处理原目标，不能重新选约叠加')
+    adjustments = align_unfilled_targets(updated, business,
+        strategy_id=strategy_id, today=today, orders=orders)
     # 同代且内容一致的维护副本同步同一字段。信号版本已与账户相等，恢复不会
     # 使用旧alignment/bootstrap；这些历史副本保持原样，不猜测或重建其业务状态。
     copies = [business]
@@ -132,13 +184,17 @@ def prepare_rearm(account, signal, config, *, strategy_id, trading_day, option_s
     if bootstrap == signal['signal']:
         copies.append(bootstrap)
     for item in copies:
+        for name in ('option_goals', 'future_goals'):
+            item[name] = deepcopy(business[name])
         item['sent_days'] = [value for value in item['sent_days'] if value != trading_day]
     for item in (reference, revised['identity']['reference']):
         item['config']['option_slot'] = option_slot
     evidence = dict(strategy_id=strategy_id, trading_day=trading_day, option_slot=option_slot,
+        maintenance_revision=REARM_REVISION,
         previous_slot=signal['identity']['reference']['config']['option_slot'],
         previous_order_count=len(today), previous_order_ids=sorted(today_ids),
-        fills_today=0, orders_submitted=0, positions_preserved=True, daily_counts_preserved=True)
+        fills_today=0, orders_submitted=0, positions_preserved=True, daily_counts_preserved=True,
+        target_adjustments=adjustments)
     return updated, revised, parameters, evidence
 
 
@@ -216,6 +272,7 @@ def rearm(*, account_state_file, signal_file, strategy_config, strategy_id,
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--version', action='version', version=REARM_REVISION)
     parser.add_argument('--account-state-file', type=Path, default=DEMO/'results/direct/v4/state.json')
     parser.add_argument('--signal-file', type=Path, default=DEMO/'results/direct/v4/signal.json')
     parser.add_argument('--strategy-config', type=Path, default=DEMO/'config/vega_live.json')

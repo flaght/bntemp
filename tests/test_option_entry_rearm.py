@@ -43,7 +43,8 @@ class EntryRearmTests(unittest.TestCase):
             order = f'CTP-20261126-{index}'
             records[str(index)] = dict(strategy_id=SID, day='20261126', client_order_id=order,
                 instrument_id=instrument, terminal=True, trades=[])
-            orders.append(dict(client_order_id=order, status='CANCELED', filled_quantity='0'))
+            orders.append(dict(client_order_id=order, instrument_id=instrument,
+                status='CANCELED', filled_quantity='0'))
             events.append(dict(type='OrderUpdateEvent', sequence=index+1,
                 event=dict(identity={'client_order_id': order}, status='CANCELED')))
         # 已有仓位来自前一交易日成交；维护不能删除它或把它视为今天新增成交。
@@ -56,13 +57,15 @@ class EntryRearmTests(unittest.TestCase):
             dict(strategy_id=SID, instrument_id=key, quantity=value)
             for key, value in targets.items() if value != '0'])),
             orders={'client': orders}, ctp_drivers={'client': {'trading_day': '20261126', 'orders': []}},
-            portfolio={'contributions': {SID: [{'key': {'client_id': 'client', 'instrument_id': key},
+            portfolio={'revision': 6, 'strategy_revisions': {SID: 6},
+                'contributions': {SID: [{'key': {'client_id': 'client', 'instrument_id': key},
                 'quantity': value} for key, value in targets.items()]}}, order_budget={'submitted': 12, 'limit': 200},
             component_states=dict(
                 session_identity={'identity': {'trading_day': '20261126', 'strategies': {SID: identity}}},
                 ctp_order_owners={'records': records}, strategy_buckets={'frozen': {}},
                 nt_algo={'tasks': {}, 'stops': [], 'config': {'max_attempts': 3}},
-                shared_account=dict(pending=False, failed=False, sources={SID: dict(revision=6,
+                shared_account=dict(pending=False, failed=False, portfolio_revision=6,
+                    strategy_revisions={SID: 6}, sources={SID: dict(revision=6,
                     targets=targets, rows=[dict(strategy_id=SID, target_key=key,
                         instrument_id=key, quantity=value) for key, value in targets.items()],
                     metadata={'checkpoint_alignment': {'revision': 6, 'signal': deepcopy(business)}})},
@@ -138,10 +141,11 @@ class EntryRearmTests(unittest.TestCase):
             if name == 'cursor': signal['cursor'] -= 1
             if name == 'ack': shared['shared']['event_journal']['ack'][SID] -= 1
             if name == 'revision': signal['revision'] -= 1
-            if name == 'goal': signal['signal']['option_goals']['MO2612-C-6000'] = '-8'
-            if name == 'source_goal': shared['sources'][SID]['targets']['MO2612-C-6000.CFFEX'] = '-8'
-            if name == 'source_row': shared['sources'][SID]['rows'][0]['quantity'] = '-1'
-            if name == 'contribution': account['portfolio']['contributions'][SID][0]['quantity'] = '-1'
+            if name == 'goal': signal['signal']['future_goals']['IM2612'] = '3'
+            if name == 'source_goal': shared['sources'][SID]['targets']['IM2612.CFFEX'] = '3'
+            if name == 'source_row': shared['sources'][SID]['rows'][-1]['quantity'] = '3'
+            if name == 'contribution': account['portfolio']['contributions'][SID][-1]['quantity'] = '3'
+            if name == 'order_contract': account['orders']['client'][0]['instrument_id'] = 'other.CFFEX'
             if name == 'risk': config['vega_budget'] += 1
             if name == 'notional': config['max_notional'] = '1'
             if name == 'offset': config['limit_offset_ticks'] = 0
@@ -152,7 +156,7 @@ class EntryRearmTests(unittest.TestCase):
         for name in ('trade', 'filled', 'fill_event', 'nonterminal', 'order_state', 'missing_order',
                      'frozen', 'task', 'stop', 'working', 'driver_order', 'driver_day', 'pending',
                      'failed', 'budget', 'cursor', 'ack', 'revision', 'goal', 'source_goal', 'source_row',
-                     'contribution', 'risk', 'notional', 'offset', 'flat', 'not_consumed', 'identity', 'other_strategy'):
+                     'contribution', 'order_contract', 'risk', 'notional', 'offset', 'flat', 'not_consumed', 'identity', 'other_strategy'):
             case = self.fixtures()
             modify(case, name)
             original = deepcopy(case)
@@ -169,6 +173,80 @@ class EntryRearmTests(unittest.TestCase):
         updated, revised, _, _ = self.prepare(account, signal, config)
         self.assertNotIn('2026-11-26', revised['signal']['sent_days'])
         self.assertEqual(updated['component_states']['shared_account'], original)
+
+    def test_closed_zero_fill_targets_are_rebased_before_reselection(self):
+        account, signal, config = self.fixtures()
+        instrument = 'MO2612-C-6000.CFFEX'
+        signal['signal']['option_goals']['MO2612-C-6000'] = '-8'
+        source = account['component_states']['shared_account']
+        source['sources'][SID]['targets'][instrument] = '-8'
+        for row in source['sources'][SID]['rows']:
+            if row['instrument_id'] == instrument:
+                row['quantity'] = '-8'
+        for row in account['portfolio']['contributions'][SID]:
+            if row['key']['instrument_id'] == instrument:
+                row['quantity'] = '-8'
+        source['sources'][SID]['metadata']['checkpoint_alignment']['signal'] = deepcopy(signal['signal'])
+        source['shared']['bootstrap_signals'][SID] = deepcopy(signal['signal'])
+        original = deepcopy(account)
+        updated, revised, _, evidence = self.prepare(account, signal, config)
+        self.assertEqual(revised['signal']['option_goals']['MO2612-C-6000'], '-4')
+        self.assertNotIn('2026-11-26', revised['signal']['sent_days'])
+        shared = updated['component_states']['shared_account']
+        self.assertEqual(shared['sources'][SID]['targets'][instrument], '-4')
+        self.assertEqual(shared['sources'][SID]['metadata']['checkpoint_alignment']['signal'], revised['signal'])
+        self.assertEqual(shared['shared']['bootstrap_signals'][SID], revised['signal'])
+        self.assertEqual(shared['portfolio_revision'], updated['portfolio']['revision'])
+        self.assertEqual(shared['strategy_revisions'], updated['portfolio']['strategy_revisions'])
+        self.assertEqual(updated['portfolio']['revision'], original['portfolio']['revision'] + 1)
+        self.assertEqual(revised['revision'], signal['revision'])
+        for name in ('positions', 'orders', 'ctp_drivers', 'order_budget'):
+            self.assertEqual(updated[name], original[name])
+        self.assertEqual(updated['component_states']['ctp_order_owners'], original['component_states']['ctp_order_owners'])
+        self.assertEqual(evidence['target_adjustments']['business'][instrument], {'before': '-8', 'after': '-4'})
+        self.assertEqual(set(evidence['target_adjustments']), {'business', 'source', 'source_rows', 'portfolio'})
+
+    def test_real_three_attempt_stop_leaves_business_goal_but_can_rearm_zero_fill(self):
+        from tests.test_option_nt_algo import OptionNTAlgoTests
+        case = OptionNTAlgoTests()
+        case.setUp()
+        self.addCleanup(case.doCleanups)
+        account, service, broker, port, runtime, strategy, _, _ = case.setup_strategy()
+        for _ in range(10):
+            if len(broker.sent) == 3:
+                break
+            case.tick(service, runtime)
+            port.drain_events()
+        strategy.stopping = True
+        service.suspend_strategy('one')
+        service.poll_stopping()
+        port.drain_events()
+        account.manager.save()
+        payload = account.manager.repository.load().payload
+        original = deepcopy(payload)
+        business = import_module('demos.08_option_vega.vega_signal').OptionVegaCheckpoint(strategy).snapshot_state()
+        self.assertEqual(len(broker.sent), 3)
+        self.assertEqual(business['option_goals']['MO2612-C-6000'], '-8')
+        self.assertFalse(payload['component_states']['nt_algo']['tasks'])
+        self.assertFalse(payload['component_states']['strategy_buckets']['frozen'])
+        self.assertEqual(payload['component_states']['shared_account']['sources']['one']['targets']['MO2612-C-6000.CFFEX'], '0')
+        today = [row for row in payload['component_states']['ctp_order_owners']['records'].values()
+                 if row['strategy_id'] == 'one' and row['day'] == '20261013']
+        orders = {row['client_order_id']: row for rows in payload['orders'].values() for row in rows}
+        changes = app.align_unfilled_targets(payload, business, strategy_id='one', today=today, orders=orders)
+        self.assertEqual(business['option_goals']['MO2612-C-6000'], '0')
+        self.assertEqual(changes, {'business': {'MO2612-C-6000.CFFEX': {'before': '-8', 'after': '0'}}})
+        self.assertEqual(payload, original)  # 执行层已冻结；此路径仅调整业务目标。
+
+    def test_unproven_target_mismatch_reports_layer_and_quantities(self):
+        account, signal, config = self.fixtures()
+        signal['signal']['future_goals']['IM2612'] = '3'
+        with self.assertRaisesRegex(ValueError, '缺少今天已结束零成交委托的依据') as caught:
+            self.prepare(account, signal, config)
+        self.assertIn('business', str(caught.exception))
+        self.assertIn('IM2612.CFFEX', str(caught.exception))
+        self.assertIn('"before": "3"', str(caught.exception))
+        self.assertIn('"after": "2"', str(caught.exception))
 
     def test_future_time_and_current_day_are_required(self):
         for kwargs in ({'now': NOW.replace(hour=14)}, {'now': NOW.replace(day=25)},
