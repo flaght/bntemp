@@ -71,13 +71,13 @@ NT直连执行Tick与策略Bar统一从DolphinDB订阅。请移除旧启动YAML�
   "timestamp_label": "end",
   "volume_mode": "cumulative",
   "max_age_seconds": 120,
-  "tick_table": "mCFFEX",
+  "tick_table": "CFFEX",
   "tick_source": "tick",
   "tick_max_age_seconds": 10
 }
 ```
 
-`table`仍是原Bar流表；`tick_table`填实际共享Tick流表名后启用执行报价，`null`或省略则沿用Bar close。08、z01/08按部署提供的实时表名配置为 `mCFFEX`，`tick_source: "tick"`选择独立Tick节点。10的RB、P仍使用原配置 `ctp_market`，分别保留各自原Bar流表及连接。Tick表须为目标节点上已发布的实时共享流表，不能填DFS历史Tick路径。`CFFEX`与`mCFFEX`是不同名称，须与服务端完全一致。
+`table`仍是原Bar流表；`tick_table`填实际共享Tick流表名后启用执行报价，`null`或省略则沿用Bar close。原08按部署确认使用 `CFFEX`，z01/08保留其独立配置 `mCFFEX`；`tick_source: "tick"`选择独立Tick节点，不能填`ctp`。10的RB、P仍使用原配置 `ctp_market`，分别保留各自原Bar流表及连接。Tick表须为目标节点上已发布的实时共享流表，不能填DFS历史Tick路径。`CFFEX`与`mCFFEX`是不同名称，须与服务端完全一致。
 
 `tick_source`省略、null或`market`时，执行Tick复用对应Bar Feed已经解析好的连接；填`tick`时，读取该策略原`.env`中的独立连接：
 

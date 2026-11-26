@@ -4,7 +4,7 @@
   "timestamp_label": "end",
   "volume_mode": "cumulative",
   "max_age_seconds": 120,
-  "tick_table": "mCFFEX",
+  "tick_table": "CFFEX",
   "tick_source": "tick",
   "tick_max_age_seconds": 10
 }
