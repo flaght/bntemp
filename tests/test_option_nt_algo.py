@@ -18,12 +18,20 @@ class OptionNTAlgoTests(unittest.TestCase):
     make_account = fixture.NTAlgoCtpTests.make_account
     tick = fixture.NTAlgoCtpTests.tick
 
-    def setup_strategy(self, *, max_attempts=3, execution_trading_day=None):
+    def setup_strategy(self, *, max_attempts=3, execution_trading_day=None,
+                       strategy_id='one', strategy_config=None):
         self.instrument = type(self.instrument).from_str('MO2612-C-6000.CFFEX')
         future = type(self.instrument).from_str('IM2612.CFFEX')
         original = self.native_account
+        def native_account(path, modules, **kwargs):
+            from bomber.framework.trader.execution.shared import SharedAccountExecutionService
+            register = SharedAccountExecutionService.strategy_client
+            def strategy_client(service, sid, **options):
+                return register(service, strategy_id if sid == 'one' else sid, **options)
+            with patch.object(SharedAccountExecutionService, 'strategy_client', new=strategy_client):
+                return original(path, modules, extra_instruments=(future,), **kwargs)
         with patch.object(self, 'native_account', side_effect=lambda path, modules, **kwargs:
-                original(path, modules, extra_instruments=(future,), **kwargs)):
+                native_account(path, modules, **kwargs)):
             account, service, broker, (port, other), runtime = self.make_account(
                 start=False, max_attempts=max_attempts)
         port.routes = {str(self.instrument): self.instrument, str(future): future}
@@ -35,7 +43,7 @@ class OptionNTAlgoTests(unittest.TestCase):
         service.prices.update(future, 3000, self.now)
         signal = import_module('demos.08_option_vega.vega_signal')
         strategy = import_module('demos.08_option_vega.strategy').OptionVegaStrategy(
-            'one', signal.OptionVegaConfig(),
+            strategy_id, strategy_config or signal.OptionVegaConfig(),
             {'MO2612-C-6000': signal.Contract('MO2612-C-6000', 'IM2612', 6000, D(100),
                 date(2026, 1, 1), date(2026, 12, 18), date(2026, 12, 18), D('.2'))},
             {'IM2612': {'contMultNum': 200}},
@@ -53,9 +61,9 @@ class OptionNTAlgoTests(unittest.TestCase):
                 'DIRECT', metadata={'position_attribution': rows}))
 
         strategy._bind(NS(submit=submit,
-            position=lambda key: service.position_manager.position('one', key),
+            position=lambda key: service.position_manager.position(strategy_id, key),
             strategy_working_quantity=lambda key: service.position_manager.attribution.working_quantity(
-                port.client_id, port.routes[key], 'one', key)))
+                port.client_id, port.routes[key], strategy_id, key)))
         events = []
         def receive(event):
             events.append(event)

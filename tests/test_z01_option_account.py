@@ -1,5 +1,8 @@
 """08和z01统一启动配置，保留独立账号/状态及旧命令兼容；全程离线。"""
 from contextlib import redirect_stdout
+from copy import deepcopy
+from datetime import date
+from decimal import Decimal
 from importlib import import_module
 from io import StringIO
 import json
@@ -9,6 +12,7 @@ from unittest.mock import patch
 import unittest
 
 from tests import test_direct_ctp as fixture
+from tests import test_option_nt_algo as option_fixture
 
 
 class Z01OptionAccountTests(unittest.TestCase):
@@ -143,8 +147,7 @@ class Z01OptionAccountTests(unittest.TestCase):
         self.assertNotEqual(original['account']['client_id'], copied['account']['client_id'])
         self.assertNotEqual(original['account_state_file'], copied['account_state_file'])
         self.assertEqual(copied['account']['max_session_orders'], 200)
-        self.assertEqual(json.loads((path/'config/vega_live.json').read_text()),
-            json.loads((app.PROJECT/'demos/08_option_vega/config/vega_live.json').read_text()))
+        own_parameters = json.loads((path/'config/vega_live.json').read_text())
         entry = import_module('demos.08_option_vega.run_live')
         with patch('dotenv.load_dotenv', return_value=False):
             args = entry.shared_arguments(dict(state_file=str(path/'results/direct/signal.json'),
@@ -154,6 +157,9 @@ class Z01OptionAccountTests(unittest.TestCase):
         self.assertEqual(args.index_feature_config.resolve(), path/'feature/index.json')
         self.assertEqual(args.market_bar_max_age_seconds, 300)
         self.assertEqual(args.config.index_signal_minutes, 1)
+        self.assertEqual(args.config.option_slot, own_parameters['option_slot'])
+        self.assertEqual(tuple(args.config.hedge_slots), tuple(own_parameters['hedge_slots']))
+        self.assertEqual(args.config.flatten_slot, own_parameters['flatten_slot'])
 
     def test_daily_order_counters_separate_accounts_even_with_same_database_and_order_identity(self):
         from bomber.framework.trader.execution.ctp.independent import DailyOrderCounter
@@ -170,6 +176,101 @@ class Z01OptionAccountTests(unittest.TestCase):
             second.reserve('20261125', 'same-session-ref')
             DailyOrderCounter(path, '9999:z01', 2).check('20261125')
             first.check('20261126')
+
+
+class Z01CancellationTests(unittest.TestCase):
+    """使用z01真实参数和策略ID跑实际执行链；只替换柜台和原生时钟。"""
+    native_modules = option_fixture.OptionNTAlgoTests.native_modules
+    native_account = option_fixture.OptionNTAlgoTests.native_account
+    make_account = option_fixture.OptionNTAlgoTests.make_account
+    tick = option_fixture.OptionNTAlgoTests.tick
+    setup_strategy = option_fixture.OptionNTAlgoTests.setup_strategy
+
+    def setUp(self):
+        option_fixture.OptionNTAlgoTests.setUp(self)
+        self.sid = 'option-vega-z01'
+        self.config_file = Path(__file__).resolve().parents[1]/'demos/z01_08_option_vega/config/vega_live.json'
+        self.original_config = self.config_file.read_bytes()
+        values = json.loads(self.original_config)
+        signal = import_module('demos.08_option_vega.vega_signal')
+        from dataclasses import fields
+        names = {field.name for field in fields(signal.OptionVegaConfig)}
+        self.config = signal.OptionVegaConfig(**{key: value for key, value in values.items() if key in names})
+        self.addCleanup(lambda: self.assertEqual(self.config_file.read_bytes(), self.original_config))
+
+    def episode(self, **kwargs):
+        return self.setup_strategy(strategy_id=self.sid, strategy_config=self.config, **kwargs)
+
+    def test_z01_three_limit_attempts_finish_without_aborting_or_resetting_entry_time(self):
+        account, service, broker, port, runtime, strategy, _, events = self.episode(
+            execution_trading_day='20261013')
+        strategy.sent_days.add(date(2026, 10, 13))
+        for _ in range(12):
+            self.tick(service, runtime)
+            port.drain_events()
+            if not runtime.snapshot_state()['tasks']:
+                break
+        self.assertEqual(len(broker.sent), 3)
+        self.assertEqual(account.driver.order_budget['submitted'], 3)
+        self.assertEqual(strategy.fills_received, 0)
+        self.assertEqual(strategy.option_goals['MO2612-C-6000'], 0)
+        self.assertEqual(strategy.config, self.config)
+        self.assertEqual(strategy.sent_days, {date(2026, 10, 13)})
+        self.assertTrue(service.client.is_armed)
+        self.assertFalse(service._failed)
+        self.assertNotIn(self.sid, service._suspended)
+        self.assertFalse(runtime.snapshot_state()['tasks'])
+        canceled = [event for event in events if getattr(getattr(event, 'status', None), 'value', '') == 'CANCELED']
+        self.assertEqual([event.metadata['nt_algo_cancel_reason'] for event in canceled],
+            ['retry', 'retry', 'attempt_limit'])
+        self.assertTrue(all(event.identity.strategy_id == self.sid for event in events))
+
+    def check_previous_day_cancel(self, reason):
+        account, service, broker, port, runtime, strategy, future, _ = self.episode(
+            max_attempts=1, execution_trading_day='20261014')
+        broker.fill(broker.sent[-1]['OrderRef'], 4)
+        port.drain_events()
+        broker.fill(broker.sent[-1]['OrderRef'])
+        port.drain_events()
+        strategy.sent_days.add(date(2026, 10, 13))
+        if reason == 'attempt_limit':
+            self.tick(service, runtime)
+        else:
+            service.suspend_strategy(self.sid)
+            service.poll_stopping()
+        # 恢复入口以原真实归属接续目标；不恢复未成交的8手意图。
+        strategy.option_goals['MO2612-C-6000'] = Decimal(-4)
+        strategy.future_goals['IM2612'] = Decimal(1)
+        before = (service.position_manager.state(), deepcopy(account.driver.order_budget),
+                  strategy.submissions, port._journal_cursor, service.event_journal.ack[self.sid])
+        with self.assertLogs('OptionExecutionRecovery', level='WARNING'):
+            self.assertEqual(port.drain_events(), 1)
+        self.assertEqual(service.position_manager.state(), before[0])
+        self.assertEqual(account.driver.order_budget, before[1])
+        self.assertEqual(strategy.submissions, before[2])
+        self.assertEqual(port._journal_cursor, before[3]+1)
+        self.assertEqual(service.event_journal.ack[self.sid], before[4])
+        self.assertEqual(service.position_manager.position(self.sid, str(self.instrument)), -4)
+        self.assertEqual(service.position_manager.position(self.sid, str(future)), 1)
+        self.assertEqual(strategy.sent_days, {date(2026, 10, 13)})
+        self.assertEqual(strategy.config, self.config)
+        self.assertFalse(service._failed)
+        self.assertFalse(runtime.snapshot_state()['tasks'])
+        self.assertEqual(len(broker.sent), 2)
+
+    def test_z01_yesterday_attempt_limit_preserves_partial_fills_and_order_count(self):
+        self.check_previous_day_cancel('attempt_limit')
+
+    def test_z01_yesterday_stop_cancel_is_consumed_without_reopening_old_orders(self):
+        self.check_previous_day_cancel('strategy_cancel')
+
+    def test_z01_external_cancel_still_closes_gate(self):
+        _, service, broker, port, _, strategy, _, _ = self.episode(execution_trading_day='20261014')
+        broker.cancel_order(broker.sent[-1]['OrderRef'])
+        with self.assertRaisesRegex(RuntimeError, '订单CANCELED'):
+            port.drain_events()
+        self.assertTrue(service._failed)
+        self.assertEqual(strategy.config, self.config)
 
 
 if __name__ == '__main__':

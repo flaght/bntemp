@@ -9,7 +9,7 @@
 - `account.json`：新账号总控，`client_id=option-vega-z01`，每交易日报单上限200。
 - `../z01_08_option_vega/config/strategy.yaml`：`direct_nt_algo`维护本账号直连启动路径、策略ID和算法参数，`live_simnow`维护Live行情来源。
 - `startup.yaml`：仅兼容旧命令，直连入口不再默认读取；新配置统一维护上面的`direct_nt_algo`。
-- `../z01_08_option_vega/config/vega_live.json`：新账号策略风险参数，初值与原08一致。
+- `../z01_08_option_vega/config/vega_live.json`：本账号独立维护的策略风险参数与交易时点。
 - `../z01_08_option_vega/config/.env`：本入口真正加载的CTP、DolphinDB环境文件。
 
 先在服务器创建新`.env`（已有文件时不要覆盖）：从`.env.example`填写新账号的CTP字段，
@@ -64,6 +64,30 @@ PYTHONPATH=.:/workspace/worker/pj/KiChaos IMPLUSE_VERSION=all \
 配置Tick时首次买入用ask、卖出用bid；未配置Tick时首次使用Bar close。
 同日重启继续用原命令和本账号检查点；真实委托/成交恢复须通过柜台核验。
 旧的z01短命令仍兼容，省略配置参数时自动选用本账号的`direct_nt_algo`。
+
+### 恢复昨日撤单异常
+
+z01直连实际加载原`demos/08_option_vega/strategy.py`及公共NT执行层，
+不会加载复制目录中遗留的`strategy.py`。同步原08及公共执行层的最新修复后，
+算法追价的`retry`、目标变化的`target_update`撤单正常处理；三次尝试耗尽的
+`attempt_limit`只结束该合约本次执行，保留已成交持仓和已用报单额度，继续等待后续信号。
+昨日尚未消费的算法结果按原检查点及真实归属恢复，不重发旧任务。
+未知/外部撤单、拒单、在途或持仓不一致仍保留原保护，不能一律忽略CANCELED。
+
+本账号JSON/YAML、开仓/对冲/清仓时点、state.json、signal.json及计数数据库继续使用原值。
+原08的13:40单次重选维护不用于本次z01恢复。先正常停止z01原进程，
+再使用上面的z01启动命令恢复；无需删除检查点或清除选约标记。
+
+可在原环境执行以下离线回归，不连接柜台：
+
+```bash
+PYTHONPATH=.:/workspace/worker/pj/KiChaos IMPLUSE_VERSION=all \
+/workspace/worker/env/chs-live/bin/python -B -m unittest \
+  tests.test_z01_option_account tests.test_option_nt_algo -v
+```
+
+测试使用z01自己的JSON时点及`option-vega-z01`身份，覆盖三次撤单结束、昨日结果消费、
+部分成交保留、计数与回报游标保留，以及外部异常撤单仍闭闸。
 
 原08使用完全相同的参数形式，只替换入口和配置目录：
 
