@@ -1,4 +1,4 @@
-"""应用层共享会话跨日身份核对；算法参数及非08固定参考不能隐式改变。"""
+"""应用层共享会话同日/跨日身份核对；策略、风险及固定参考不能隐式改变。"""
 from copy import deepcopy
 from decimal import Decimal
 import logging
@@ -26,10 +26,13 @@ def validate_strategy_identity(old, new):
                     or not Decimal(str(value)).is_finite() or not 60 < value <= limit):
                 raise ValueError("恢复行情时效须大于60秒且不超过策略max_market_age_seconds")
             before["max_age_seconds"] = value
-        if previous["trading_day"] == current["trading_day"] and old != new and previous == current:
-            return  # 仅运行时效或缺失默认字段兼容；不改写原检查点。
-    if not previous["trading_day"] < current["trading_day"] or current["environment"] != "realtime":
+    if previous["trading_day"] > current["trading_day"] or current["environment"] != "realtime":
         raise ValueError("共享跨日恢复仅支持向前的realtime交易日")
+    if previous["trading_day"] == current["trading_day"]:
+        if previous != current:
+            raise ValueError("共享同日恢复配置不一致；差异字段="
+                + ", ".join(identity_difference_paths(previous, current)))
+        return  # 完全相同或仅已许可的默认字段/行情时效兼容，不改写原检查点。
     previous["trading_day"] = current["trading_day"]
     if new["kind"] == "option_vega" and "reference" in new:
         from importlib import import_module
@@ -44,7 +47,8 @@ def validate_strategy_identity(old, new):
             raise ValueError("08跨日不能改变策略名义预算")
         previous["routes"] = current["routes"]
     if previous != current:
-        raise ValueError("共享跨日不能更改策略身份、路由、预算、参数或固定参考")
+        raise ValueError("共享跨日不能更改策略身份、路由、预算、参数或固定参考；差异字段="
+            + ", ".join(identity_difference_paths(previous, current)))
 
 
 def payload_for_day(account, payload):

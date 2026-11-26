@@ -656,6 +656,48 @@ class DirectCtpTests(unittest.TestCase):
             self.assertFalse(broker.sent)
             one.stop();two.stop();account.stop()
 
+    def test_same_day_identity_check_accepts_exact_identity_and_keeps_date_environment_guards(self):
+        from scripts.integration.shared_account.rollover import validate_strategy_identity
+        for kind in ('option_vega', 'hybrid_transformer'):
+            old = dict(strategy_id='one', kind=kind, trading_day='20261126',
+                environment='realtime', argv=[], routes={}, reference={'config': {}})
+            before = deepcopy(old)
+            validate_strategy_identity(old, deepcopy(old))
+            self.assertEqual(old, before)
+            for change in ({'trading_day': '20261125'}, {'environment': 'replay'}):
+                with self.subTest(kind=kind, change=change), self.assertRaises(ValueError):
+                    validate_strategy_identity(old, {**old, **change})
+
+    def test_same_day_reference_mismatch_reports_paths_and_preserves_saved_book(self):
+        with TemporaryDirectory() as directory:
+            case = self.option_scope_recovery(directory)
+            original = deepcopy(case.payload)
+            base = deepcopy(original['component_states']['session_identity']['identity'])
+            case.account.expected_day = base['trading_day']
+            for field, path in (
+                    ('fingerprint', 'session.reference.reference_fingerprint'),
+                    ('config', 'session.reference.config.max_market_age_seconds'),
+                    ('source', 'session.reference.sources.market.table'),
+                    ('routes', 'session.routes.limits'),
+                    ('argv', 'session.argv')):
+                identity = deepcopy(base)
+                row = identity['strategies']['one']
+                secret = 'value-must-not-appear-in-error'
+                if field == 'fingerprint': row['reference']['reference_fingerprint'] = secret
+                elif field == 'config': row['reference']['config']['max_market_age_seconds'] = 299
+                elif field == 'source': row['reference']['sources']['market']['table'] = secret
+                elif field == 'routes': row['routes']['limits'] = {secret: {}}
+                else: row['argv'] = [secret]
+                case.account.manager.state_components['session_identity'].identity = identity
+                with self.subTest(field=field), self.assertRaisesRegex(
+                        ValueError, '共享同日恢复配置不一致') as caught:
+                    case.app.prepare_payload(case.account, case.payload)
+                self.assertIn(path, str(caught.exception))
+                if field != 'routes': self.assertNotIn(secret, str(caught.exception))
+                self.assertEqual(case.payload, original)
+                self.assertEqual(case.path.read_bytes(), case.original)
+                self.assertFalse(case.transport.sent or case.transport.canceled)
+
     def test_cross_day_option_scope_additions_restore_owners_zero_targets_and_keep_daily_count(self):
         with TemporaryDirectory() as directory:
             case=self.option_scope_recovery(directory)
