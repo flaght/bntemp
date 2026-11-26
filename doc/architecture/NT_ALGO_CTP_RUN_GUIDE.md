@@ -40,7 +40,7 @@ algo_wait_seconds: 10
 algo_max_attempts: 3
 algo_initial_offset_ticks: 0
 algo_retry_step_ticks: 1
-# Tick流表在原market_dolphindb.json中配置tick_table。
+# Tick流表及连接用途在原market_dolphindb.json中配置tick_table、tick_source。
 ```
 
 `execution_driver: nt_algo_ctp` 表示选择NT算法CTP执行积木，`execution_algorithm: limit_reprice` 才表示采用项目自定义的限价超时撤单重报规则。对应命令行参数为 `--execution-algorithm limit_reprice`。
@@ -71,14 +71,27 @@ NT直连执行Tick与策略Bar统一从DolphinDB订阅。请移除旧启动YAML�
   "timestamp_label": "end",
   "volume_mode": "cumulative",
   "max_age_seconds": 120,
-  "tick_table": null,
+  "tick_table": "mCFFEX",
+  "tick_source": "tick",
   "tick_max_age_seconds": 10
 }
 ```
 
-`table`仍是原Bar流表；`tick_table`填实际共享Tick流表名后启用执行报价，`null`或省略则沿用Bar close。10的RB、P已按服务器发布状态及schema截图共同配置为 `ctp_market`，分别保留各自原Bar流表。08、z01/08仍预留为null，按对应DDB服务器实际流表填写。Tick表须为实时共享流表，不能填DFS历史Tick路径。
+`table`仍是原Bar流表；`tick_table`填实际共享Tick流表名后启用执行报价，`null`或省略则沿用Bar close。08、z01/08按部署提供的实时表名配置为 `mCFFEX`，`tick_source: "tick"`选择独立Tick节点。10的RB、P仍使用原配置 `ctp_market`，分别保留各自原Bar流表及连接。Tick表须为目标节点上已发布的实时共享流表，不能填DFS历史Tick路径。`CFFEX`与`mCFFEX`是不同名称，须与服务端完全一致。
 
-执行Tick直接复用对应Bar Feed已经解析好的DDB服务器、账号、端口、streaming_port等连接配置，使用同一官方DDB驱动和原生订阅接口，不读取另一组CTP MD连接。同连接及有效期的Tick表合并到一个执行Feed，同表同合约不重复订阅。仅注册本次策略执行路由的合约；没有策略绑定到执行Tick Feed。Bar和模型检查点身份不包含这两个执行报价字段，不改变原信号、选约和持仓期限。
+`tick_source`省略、null或`market`时，执行Tick复用对应Bar Feed已经解析好的连接；填`tick`时，读取该策略原`.env`中的独立连接：
+
+```dotenv
+DDB_TICK_HOST=实际Tick节点地址
+DDB_TICK_PORT=8848
+DDB_TICK_USERNAME=实际用户名
+DDB_TICK_PASSWORD=实际密码
+DDB_TICK_STREAMING_PORT=0
+```
+
+端口按部署填写；`STREAMING_PORT`省略时为0，由SDK选择本地订阅端口。原08填写 `demos/08_option_vega/config/.env`，z01填写自己的 `demos/z01_08_option_vega/config/.env`。独立Tick连接不回退`DDB_*`、`DDB_MARKET_*`或Bar的streaming_port；缺少地址或凭据时在订阅前明确报错。若Tick恰好在参考资料节点，也可显式填`reference`，沿用现有`DDB_REFERENCE_*`连接规则。
+
+使用同一官方DDB驱动和原生订阅接口，不读取另一组CTP MD连接。按实际解析的连接及有效期合并Tick表，同表同合约不重复订阅；相同表名位于不同节点时分别订阅。启动先输出 `执行Tick连接: host=... port=... tables=...`，不输出账号或密码。仅注册本次策略执行路由的合约；没有策略绑定到执行Tick Feed。Bar和模型检查点身份不包含执行报价字段，包括新增的`tick_source`；原持仓、信号、每日计数及检查点继续恢复，无需重建Bomber wheel。同步Python文件和配置后使用原启动命令重启即可。
 
 流表字段顺序与Bar一样由服务端schema解析。Tick合约标识支持标准流的 `Code` 或原始CTP流的 `InstrumentID`，报价需要 `LastPrice`、`BidPrice1`、`AskPrice1`。缺少这两个标识字段时在订阅前报错；Bar仍使用原Code规则。`ctp_market`的49列可以直接按实际schema解析，无需另建标准化流表。时间沿用 `ActionDay/date/TradingDay` 与 `UpdateTime/tradeTime`，可带 `UpdateMillisec`；已覆盖DATE、SECOND及INT毫秒，夜盘优先使用ActionDay组合自然时间，不将TradingDay误当作夜盘自然日期。
 
@@ -100,7 +113,9 @@ Tick参考价同时记录本次读取的本地时间；风控及预算检查使�
 
 上次实际委托价随任务一起写入原联合检查点。配置Tick不表示录制历史Tick；执行快照与行情录制相互独立。本地验证不代表远程满订阅负载已验证，远程需观察报价时效和分钟策略耗时。
 
-达到次数上限、执行到期或收到拒单后，未完成任务结束，原策略贡献冻结在已成交归属，等待新的策略目标版本。避免 Runner 为相同旧目标立即重建任务，绕过次数上限。策略主动取消或目标变化会停止原任务；持仓周期仍由策略控制。
+达到次数上限（`attempt_limit`）是本次交易点的执行结果，不暂停策略或停止程序。只将耗尽任务所属合约的剩余目标收回到实际已成交归属，其他合约任务继续执行，等待后续新信号。原交易点不自动开启新一轮三次报单；已成交仓位继续保留和管理，不记为全部成交。执行服务在原目标元数据中保存每合约的结束时间，恢复后仍阻止旧信号及排队中的旧成交回调重开该任务，后续新信号可以再次提交同一数量。
+
+执行到期或收到拒单仍沿用原停止保护。策略主动取消或目标变化会停止原任务；持仓周期仍由策略控制。
 
 同账户共享配置在装配内部使用 `execution_driver`、`execution_algorithm` 和 `nt_algo: {wait_seconds: 10, max_attempts: 3, initial_offset_ticks: 0, retry_step_ticks: 1}`；其中 `initial_offset_ticks` 可省略，沿用账户配置。本期仅在 `run_direct` 的独立归属路径装配，不支持旧独立账户服务入口或净额共享模式。
 
@@ -110,9 +125,11 @@ Tick参考价同时记录本次读取的本地时间；风控及预算检查使�
 
 08继续提交完整目标组合。选用算法Driver时，只停止目标发生变化的合约任务；期权部分成交触发期货对冲，不会撤掉数量未变的期权任务，也不会重置其累计成交和尝试次数。重报前同样只核对该任务合约的目标，其他交易腿的更新不阻塞它。普通CTP路径保持原行为。
 
-真实撤单回报仍先经过原订单状态机、冻结释放、归属账本和事件日志。算法额外写入`nt_algo_cancel_reason`：`retry`表示算法已实际发出追价撤单，`target_update`表示策略已更新该合约目标。08正常运行时放行这两种有算法任务关联的取消；外部撤单、拒单、过期以及当日次数耗尽仍保留原报错处理。定时器仅排队、尚未发撤单时收到的外部取消，不标为内部追价。
+真实撤单回报仍先经过原订单状态机、冻结释放、归属账本和事件日志。算法额外写入`nt_algo_cancel_reason`：`retry`表示算法已实际发出追价撤单，`target_update`表示策略已更新该合约目标。08正常运行时放行这两种有算法任务关联的取消；外部撤单、拒单和过期仍保留原报错处理。定时器仅排队、尚未发撤单时收到的外部取消，不标为内部追价。
 
-跨日恢复可能保留上一交易日尚未消费的 `attempt_limit`（次数耗尽）或 `strategy_cancel`（策略停止撤单）事件。账户先核验归属与真实订单，首个恢复帧按已成交持仓接续目标；若旧任务的CTP订单交易日早于本次明确的执行交易日，该合约当前目标等于真实归属持仓且没有在途委托，08记录 `OptionExecutionRecovery` 警告后正常消费该历史结果，不重发旧任务。审计动作分别为 `HISTORICAL_EXECUTION_FAILURE` 和 `HISTORICAL_ORDER_CANCELED`，保留实际取消原因。游标仍逐条推进，并由信号检查点保存后确认；成交事件沿用原补交和对冲路径。没有当前交易日、目标仍有缺口、仍有在途、当日失败、外部或未知取消原因时不使用此规则。
+08收到有关联任务的 `attempt_limit` 撤单结果后，将该合约业务目标接续到真实仓位，记录 `EXECUTION_ATTEMPTS_EXHAUSTED` 和警告“NT算法次数耗尽，本交易点已执行，等待后续信号”。不清除已执行开仓日或对冲时点标记；期货任务耗尽时同步清理该月旧的待补对冲目标。部分成交仍按真实期权仓位计算对冲，其他月份任务继续执行。若回调消费前已有更新信号，不覆盖新目标。
+
+恢复可能保留旧会话尚未消费的 `strategy_cancel`（策略停止撤单）事件。账户先核验归属与真实订单，首个恢复帧按已成交持仓接续目标；若该事件属于较早交易日，或同交易日但发生在本次执行会话开始之前，并且该合约当前目标等于真实归属持仓、没有在途委托，08记录 `HISTORICAL_ORDER_CANCELED` 后消费历史结果，不重发旧任务。没有明确执行交易日、目标仍有缺口、仍有在途、本次会话的异常撤单、外部或未知取消原因时不使用此规则。游标仍逐条推进，并由信号检查点保存后确认；不清空账本、事件或报单计数。
 
 原08和z01统一使用各自 `config/strategy.yaml` 中的 `direct_nt_algo`，均配置首次0跳、重报1跳、等待10秒、最多3次报单。每份启动项完整声明自己的账户、env、信号、执行检查点、报告和计数路径；原08沿用v4检查点，z01沿用自己的results/direct检查点。CLI仍可覆盖部署实际使用的原路径，连接/报单授权开关默认关闭。z01入口省略配置参数时也读取本账号strategy.yaml，不再隐式读取z01_shared_account/startup.yaml；旧startup.yaml保留供显式旧命令兼容。
 

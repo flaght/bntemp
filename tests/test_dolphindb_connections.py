@@ -23,6 +23,25 @@ SPLIT = dict(DDB_MARKET_HOST="market", DDB_MARKET_PORT="8850",
 
 
 class DolphinDbConnectionTests(unittest.TestCase):
+    def test_tick_uses_dedicated_node_and_does_not_fall_back_to_legacy(self):
+        environment = {**LEGACY, **SPLIT, 'DDB_TICK_HOST': 'tick',
+            'DDB_TICK_PORT': '8852', 'DDB_TICK_USERNAME': 'tick-user',
+            'DDB_TICK_PASSWORD': 'tick-secret'}
+        with patch.dict(os.environ, environment, clear=True):
+            tick = DolphinDbConnectionConfig.from_env(purpose='tick')
+            market = DolphinDbConnectionConfig.from_env(purpose='market')
+        self.assertEqual((tick.host, tick.port, tick.username, tick.password),
+            ('tick', 8852, 'tick-user', 'tick-secret'))
+        self.assertFalse(tick.enable_ssl)  # 不继承旧节点的SSL设置。
+        self.assertEqual((market.host, market.port), ('market', 8850))
+        for name, value in (('HOST', ''), ('USERNAME', ''), ('PASSWORD', ''), ('PORT', 'invalid')):
+            with self.subTest(name=name), patch.dict(os.environ,
+                    {**environment, f'DDB_TICK_{name}': value}, clear=True), self.assertRaises(ValueError):
+                DolphinDbConnectionConfig.from_env(purpose='tick')
+        with patch.dict(os.environ, {**LEGACY, **SPLIT}, clear=True):
+            with self.assertRaisesRegex(ValueError, 'DDB_TICK_HOST'):
+                DolphinDbConnectionConfig.from_env(purpose='tick')
+
     def test_market_history_and_daily_static_references_connect_to_separate_servers(self):
         with patch.dict(os.environ, {**LEGACY, **SPLIT}, clear=True):
             market = DolphinDbConnectionConfig.from_env(purpose="market", read_timeout_seconds=7)

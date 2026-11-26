@@ -25,6 +25,11 @@ CTP_MD_FLOW_PATH=/tmp/bomber-z01-option-vega-md
 `account.env.example`是旧账户服务入口模板，不是本次直连入口的凭据来源。
 新账号不用复制原账号的`state.json`、`signal.json`、`results`或计数数据库。
 
+执行Tick使用本账号 `market_dolphindb.json` 的 `tick_table: "mCFFEX"`、
+`tick_source: "tick"`；在本账号`.env`填写 `DDB_TICK_HOST`、`DDB_TICK_PORT`、
+`DDB_TICK_USERNAME`、`DDB_TICK_PASSWORD`。Tick与Bar可以来自不同DolphinDB节点，
+完整配置及订阅日志见[执行报价说明](../../doc/architecture/NT_ALGO_CTP_RUN_GUIDE.md#执行报价与逐次跳价)。
+
 ## 离线验证
 
 不加载凭据、不连接柜台、不生成检查点：

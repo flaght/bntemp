@@ -215,7 +215,7 @@ class NTAlgoCtpTests(unittest.TestCase):
         transport.fill(transport.sent[-1]['OrderRef'])
         self.assertEqual(service.position_manager.position('one', 'main'), -1)
 
-    def test_max_attempts_stops_after_last_cancel(self):
+    def test_max_attempts_ends_only_task_and_waits_for_new_signal(self):
         _, service, transport, (one, _), runtime = self.make_account(max_attempts=2)
         self.submit(one, 2)
         self.tick(service, runtime)
@@ -225,9 +225,48 @@ class NTAlgoCtpTests(unittest.TestCase):
         self.assertEqual(len(transport.sent), 2)
         self.assertEqual(len(transport.canceled), 2)
         self.assertFalse(runtime.snapshot_state()['tasks'])
-        self.assertIn('one', service._suspended)
+        self.assertNotIn('one', service._suspended)
+        self.assertFalse(service._failed)
         service.continue_targets('one', self.instrument, self.now)
         self.assertEqual(len(transport.sent), 2)
+        self.now += 1
+        self.submit(one, 2, revision=2)
+        self.assertEqual(len(transport.sent), 3)
+
+    def test_exhausted_strategy_does_not_stop_another_strategy(self):
+        account, service, transport, (one, two), runtime = self.make_account(max_attempts=1)
+        self.submit(one, 2)
+        self.submit(two, -1)
+        self.assertEqual(len(transport.sent), 1)
+        self.tick(service, runtime)
+        service.continue_targets('two', self.instrument, self.now)
+        self.assertEqual(len(transport.sent), 2)
+        self.assertFalse(service._suspended)
+        transport.fill(transport.sent[-1]['OrderRef'])
+        self.assertEqual(service.position_manager.position('one', 'main'), 0)
+        self.assertEqual(service.position_manager.position('two', 'main'), -1)
+        account._validate_account()
+
+    def test_attempt_limit_waits_for_declared_late_fill_before_freezing_target(self):
+        account, service, transport, (one, _), runtime = self.make_account(max_attempts=1)
+        transport.cancel_order = lambda ref: transport.canceled.append(ref)
+        self.submit(one, 2)
+        first = transport.sent[-1]['OrderRef']
+        self.tick(service, runtime)
+        transport.on_order({**transport.raw(first), 'OrderStatus': '5', 'VolumeTraded': 1})
+        service.poll()
+        self.assertTrue(runtime.snapshot_state()['tasks'])
+        self.assertNotIn('nt_algo_completed_ns', service._sources['one']['metadata'])
+        transport.fill(first, 1)
+        transport.active.pop(first)
+        service.poll()
+        self.assertFalse(runtime.snapshot_state()['tasks'])
+        self.assertEqual(service.position_manager.position('one', 'main'), 1)
+        self.assertEqual(service._sources['one']['rows'][0]['quantity'], '1')
+        service.continue_targets('one', self.instrument, self.now)
+        self.assertEqual(len(transport.sent), 1)
+        self.assertTrue(service.client.is_armed)
+        account._validate_account()
 
     def test_missing_fresh_quote_waits_and_does_not_send_blindly(self):
         _, service, transport, (one, _), runtime = self.make_account()
@@ -334,6 +373,40 @@ class NTAlgoCtpTests(unittest.TestCase):
                          f'CTP-9999-demo-20261013-{first}')
         self.assertFalse(transport2.sent)
         self.assertNotEqual(path.read_bytes(), b'')
+
+    def test_exhausted_partial_target_survives_restart_and_accepts_only_a_later_signal(self):
+        path = Path(self.enterContext(TemporaryDirectory())) / 'account.json'
+        account, service, transport, (one, _), runtime = self.make_account(path, max_attempts=1)
+        self.submit(one, 2)
+        transport.fill(transport.sent[-1]['OrderRef'], 1)
+        self.tick(service, runtime)
+        finished_ns = self.now
+        account.driver.stop()
+
+        account2, service2, transport2, (one2, two2), runtime2 = self.make_account(
+            path, max_attempts=1, start=False)
+        transport2.gross = dict(transport.gross)
+        account2.start(resume=True)
+        service2.start()
+        for port in (one2, two2):
+            port.register_execution_event_handler(lambda event: None)
+            port.start()
+        account2.authorize()
+        self.assertFalse(runtime2.snapshot_state()['tasks'])
+        self.assertEqual(service2.position_manager.position('one', 'main'), 1)
+        self.assertEqual(service2._sources['one']['metadata']['nt_algo_completed_ns'],
+                         {str(self.instrument): finished_ns})
+        # 恢复后的旧信号不能把已放弃的余量重新发出。
+        self.submit(one2, 2, revision=2, ts_event=finished_ns)
+        service2.continue_targets('one', self.instrument, self.now)
+        self.assertFalse(transport2.sent)
+        self.now += 1
+        self.submit(one2, 2, revision=3)
+        self.assertEqual(transport2.sent[-1]['VolumeTotalOriginal'], 1)
+        transport2.fill(transport2.sent[-1]['OrderRef'])
+        self.assertEqual(service2.position_manager.position('one', 'main'), 2)
+        self.assertEqual(account2.driver.order_budget['submitted'], 2)
+        account2._validate_account()
 
     def test_switching_driver_with_active_task_is_rejected(self):
         account, _, _, (one, _), runtime = self.make_account()

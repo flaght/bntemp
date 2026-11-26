@@ -463,6 +463,8 @@ def assemble(args, inputs, driver=None, *, account_routes=(), shared_service=Non
     strategy = OptionVegaStrategy(sid, args.config, refs.contracts, refs.futures, ids,
         args.index_code, refs.calendar, args.flatten_day, refs.options_by_day,
         execution_trading_day=args.expected_trading_day
+            if args.mode == "simnow" and args.simnow_environment == "realtime" else None,
+        execution_started_ns=runner.clock_ns()
             if args.mode == "simnow" and args.simnow_environment == "realtime" else None)
     assemble_strategy(runner, strategy, feeds=feeds, execution=execution, bindings=StrategyBindings(
         data=tuple(DataBinding(key, inputs.sources[key], item, DataType.BAR, "1-MINUTE")

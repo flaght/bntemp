@@ -14,6 +14,7 @@ from .contracts import OrderIntent, OrderType, ExecutionReportType
 
 TASK_KEY = "nt_algo_task_id"
 CANCEL_REASON_KEY = "nt_algo_cancel_reason"
+FINISHED_NS_KEY = "nt_algo_finished_ns"
 log = logging.getLogger("NTAlgoExecution")
 
 
@@ -299,7 +300,7 @@ class NTAlgoRuntime:
                     reason = (task.get("stop_reason", "strategy_cancel") if task["stopped"] else
                               "attempt_limit" if report.report_type is ExecutionReportType.CANCELED
                               and task["attempts"] >= self.config.max_attempts else report.report_type.value)
-                    self._finish(key, reason)
+                    self._finish(key, reason, finished_ns=report.ts_event)
                 elif task.get("cancel_sent", False):
                     self._commands.append(("submit", key, None))
                 else:
@@ -372,10 +373,12 @@ class NTAlgoRuntime:
                 row = self._stops.popleft()
             self.adapter.execution_stopped(decode_order(row["order"]), row["reason"])
 
-    def _finish(self, key, reason):
+    def _finish(self, key, reason, *, finished_ns=None):
         task = self._tasks.pop(key)
         if not task["stopped"] and Decimal(task["filled"]) < Decimal(task["order"]["quantity"]):
-            self._stops.append(dict(order=task["order"], reason=reason))
+            order = {**task["order"], "metadata": {**task["order"]["metadata"], TASK_KEY: key,
+                FINISHED_NS_KEY: self.clock_ns() if finished_ns is None else finished_ns}}
+            self._stops.append(dict(order=order, reason=reason))
         if self._host is not None:
             self._host.cancel_alarm(key)
         order = task["order"]

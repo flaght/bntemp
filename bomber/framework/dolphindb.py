@@ -4,9 +4,12 @@ import os
 
 
 def connection_env(purpose, name, default=None):
-    """用途专属变量优先；仅未设置时回退旧 DDB_*，不跨用途回退。"""
-    if purpose not in {"market", "reference"}:
-        raise ValueError("DolphinDB连接用途须为market或reference")
+    """用途专属变量优先；market/reference兼容旧DDB_*，独立tick须明确配置。"""
+    if purpose not in {"market", "reference", "tick"}:
+        raise ValueError("DolphinDB连接用途须为market、reference或tick")
+    if purpose == "tick":
+        # 显式选用独立Tick节点后，不能因漏配而订阅旧DDB_*指向的Bar节点。
+        return os.getenv(f"DDB_TICK_{name}", default)
     return os.getenv(f"DDB_{purpose.upper()}_{name}", os.getenv(f"DDB_{name}", default))
 
 
@@ -32,7 +35,8 @@ class DolphinDbConnectionConfig:
         def required(name):
             value = connection_env(purpose, name, "").strip()
             if not value:
-                raise ValueError(f"缺少环境变量: DDB_{purpose.upper()}_{name}（兼容DDB_{name}）")
+                fallback = f"（兼容DDB_{name}）" if purpose != "tick" else ""
+                raise ValueError(f"缺少环境变量: DDB_{purpose.upper()}_{name}{fallback}")
             return value
 
         return cls(host=required("HOST"), port=int(connection_env(purpose, "PORT", "8848")),

@@ -13,6 +13,8 @@ from bomber.framework.trader.portfolio import AccountTargetKey
 from .account import AccountExecutionService
 from .events import FillEvent
 
+_ALGO_COMPLETED_NS = "nt_algo_completed_ns"
+
 
 @dataclass(frozen=True)
 class SharedRiskBudget:
@@ -249,13 +251,30 @@ class SharedAccountExecutionService(AccountExecutionService):
                     row["strategy_id"] != port.strategy_id or
                     row["instrument_id"] != str(port.routes[row["target_key"]]) for row in rows):
                 raise ValueError("策略贡献须覆盖自己的完整声明路由")
-            self._check_budget(rows, port.budget, now)
             totals = {}
             for row in rows:
                 instrument = port.routes[row["target_key"]]
-                totals[instrument] = totals.get(instrument, Decimal(0)) + Decimal(row["quantity"])
+                quantity = Decimal(row["quantity"])
+                if not quantity.is_finite():
+                    raise ValueError("策略目标数量须有限")
+                totals[instrument] = totals.get(instrument, Decimal(0)) + quantity
             if len(rows) != len(port.routes) or totals != dict(request.targets):
                 raise ValueError("策略归属与完整目标不一致")
+            previous = self._sources.get(request.strategy_id)
+            completed = deepcopy(previous.get('metadata', {}).get(_ALGO_COMPLETED_NS, {})) if previous else {}
+            # 成交回调可能先于耗尽回调消费；其旧组合不能重开已耗尽的那一腿。
+            rows = tuple({**row, 'quantity': str(self.position_manager.position(
+                request.strategy_id, row['target_key']))}
+                if request.ts_event <= completed.get(row['instrument_id'], -1) else row for row in rows)
+            totals = {}
+            for row in rows:
+                instrument = port.routes[row['target_key']]
+                totals[instrument] = totals.get(instrument, Decimal(0)) + Decimal(row['quantity'])
+            metadata = {key: value for key, value in request.metadata.items() if key != _ALGO_COMPLETED_NS}
+            if completed:
+                metadata[_ALGO_COMPLETED_NS] = completed
+            request = replace(request, targets=totals, metadata=metadata)
+            self._check_budget(rows, port.budget, now)
             for instrument, quantity in totals.items():
                 limits = port.instrument_limits[instrument]
                 reference = self.prices.get(instrument)
@@ -437,6 +456,32 @@ class SharedAccountExecutionService(AccountExecutionService):
             return
         self.client.submit_targets(replace(request, targets=targets, ts_event=now,
             metadata=metadata, deadline_ns=deadline))
+
+    def finish_algorithm_target(self, order, *, finished_ns):
+        """次数耗尽只结束本合约的旧目标，其他腿及策略继续等待后续信号。"""
+        with self._dispatch_lock, self._lock:
+            source = self._sources.get(order.strategy_id)
+            if source is None:
+                raise ValueError('算法结束缺少原策略贡献')
+            metadata = source.setdefault('metadata', {})
+            completed = metadata.setdefault(_ALGO_COMPLETED_NS, {})
+            instrument = str(order.instrument_id)
+            completed[instrument] = max(finished_ns, completed.get(instrument, 0))
+            if source['ts_event'] <= finished_ns:
+                source['rows'] = tuple({**row, 'quantity': str(self.position_manager.position(
+                    order.strategy_id, row['target_key']))} if row['instrument_id'] == instrument else row
+                    for row in source['rows'])
+                port = self._ports[order.strategy_id]
+                targets = {}
+                for row in source['rows']:
+                    key = AccountTargetKey(self.client_id, port.routes[row['target_key']])
+                    targets[key] = targets.get(key, Decimal(0)) + Decimal(row['quantity'])
+                source['targets'] = targets
+                metadata['position_attribution'] = source['rows']
+                revision = self.coordinator.state().strategy_revisions.get(order.strategy_id, 0) + 1
+                self.coordinator.update(strategy_id=order.strategy_id, revision=revision,
+                    ts_event=self.clock_ns(), targets=targets)
+            self._save()
 
     def suspend_strategy(self, strategy_id):
         """停止新增风险，撤销涉及本策略的母单，等待回报后冻结在实际归属量。"""
@@ -676,6 +721,10 @@ class SharedAccountExecutionService(AccountExecutionService):
             routes = self._ports[sid].routes
             rows = source["rows"]
             deadline = source.get("deadline_ns")
+            completed = source.get('metadata', {}).get(_ALGO_COMPLETED_NS, {})
+            if (not isinstance(completed, dict) or set(completed) - set(map(str, routes.values()))
+                    or any(type(stamp) is not int or stamp < 0 for stamp in completed.values())):
+                raise ValueError('恢复算法已完成目标的时间界限无效')
             if (len(rows) != len(routes) or {row["target_key"] for row in rows} != set(routes)
                     or any(row["instrument_id"] != str(routes[row["target_key"]]) for row in rows)
                     or source.get("execution_policy", "DIRECT") != "DIRECT"

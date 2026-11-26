@@ -22,6 +22,7 @@ class MarketSourceConfig:
     tick_table: str | None = None
     tick_max_age_seconds: float = 10
     tick_dce_use_receive_date: bool = False
+    tick_source: str | None = None
 
     def __post_init__(self):
         if self.source not in {"file", "ctp", "bn-ws", "dolphindb"}:
@@ -38,6 +39,10 @@ class MarketSourceConfig:
                 or not isinstance(self.tick_table, str)
                 or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", self.tick_table) is None):
             raise ValueError("tick_table须为DolphinDB共享流表名；不启用Tick请填null")
+        if self.tick_source is not None and (self.source != "dolphindb"
+                or not isinstance(self.tick_source, str)
+                or self.tick_source not in {"market", "reference", "tick"}):
+            raise ValueError("tick_source须为market、reference、tick或null；null复用Bar连接")
         age = self.tick_max_age_seconds
         if isinstance(age, bool) or not isinstance(age, (int, float)) or not math.isfinite(age) or not 0 < age <= 120:
             raise ValueError("tick_max_age_seconds须为(0,120]内有限数")
@@ -57,6 +62,7 @@ class MarketSourceConfig:
         values = asdict(self)
         # 执行报价设置不改变策略Bar/模型身份，旧持仓和信号检查点继续核验。
         values.pop("tick_table")
+        values.pop("tick_source")
         values.pop("tick_max_age_seconds")
         values.pop("tick_dce_use_receive_date")
         if self.bar_mode == "completed":
@@ -136,8 +142,20 @@ def create_dolphin_bar_feed(table, source_id, *, max_age_seconds=120, volume_mod
             stale_after_seconds=max_age_seconds))
 
 
+def dolphin_tick_connection(market_config, *, tick_source=None):
+    """默认复用Bar；显式用途从独立环境变量读取，保持Bar配置不变。"""
+    if tick_source is None or tick_source == "market":
+        return market_config
+    from dataclasses import replace
+    from bomber.framework.dolphindb import DolphinDbConnectionConfig, connection_env
+    connection = DolphinDbConnectionConfig.from_env(purpose=tick_source)
+    return replace(market_config, host=connection.host, port=connection.port,
+        username=connection.username, password=connection.password,
+        streaming_port=int(connection_env(tick_source, "STREAMING_PORT", "0")))
+
+
 def create_dolphin_tick_feed(table, source_id, *, market_config, max_age_seconds=10, dce_use_receive_date=False):
-    """Tick复用对应Bar的DDB连接配置，实际字段顺序由服务端schema解析。"""
+    """按已解析的Tick节点连接订阅，实际字段顺序由服务端schema解析。"""
     from dataclasses import replace
     from bomber.framework.market.stream.dolphin import DolphinDbLiveDataFeed, DolphinDbStreamSpec
     from bomber.framework.market.stream.health import StreamHealthConfig

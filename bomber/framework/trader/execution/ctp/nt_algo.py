@@ -3,7 +3,7 @@ from dataclasses import replace
 from decimal import ROUND_CEILING, ROUND_FLOOR
 
 from ..contracts import OrderSide
-from ..nt_algo import NTAlgoRuntime, TASK_KEY
+from ..nt_algo import NTAlgoRuntime, TASK_KEY, FINISHED_NS_KEY
 from .independent import IndependentCtpDriver
 from .native_driver import _serialized_transition
 
@@ -125,6 +125,10 @@ class NTAlgoCtpDriver(IndependentCtpDriver):
                 raise
 
     def execution_stopped(self, order, reason):
+        if reason == 'attempt_limit':
+            self._algo_service.finish_algorithm_target(order,
+                finished_ns=order.metadata.get(FINISHED_NS_KEY, self._algo_service.clock_ns()))
+            return
         # 原目标冻结在已成交归属；只有后续新版本策略决策才能恢复，避免Runner无限重开任务。
         service = self._algo_service
         if order.strategy_id not in service._suspended:

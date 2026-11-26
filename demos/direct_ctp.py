@@ -346,13 +346,13 @@ def prepare_payload(account, payload):
 
 
 def configure_execution_quotes(host, config):
-    """从各策略原market_config取Tick流表；连接直接复用对应Bar的DDB配置。"""
+    """从各策略market_config取Tick流表，可用tick_source选择独立DDB节点。"""
     if config.get('execution_driver', 'ctp') != 'nt_algo_ctp':
         return
     if config.get('execution_tick_source') is not None:
         raise ValueError('请移除execution_tick_source，在market_dolphindb.json中配置tick_table')
     from bomber.framework.market.basic.base import DataType
-    from bomber.framework.market.sources import create_dolphin_tick_feed
+    from bomber.framework.market.sources import create_dolphin_tick_feed, dolphin_tick_connection
     groups, assignments = {}, {}
     for item in host.strategies.values():
         session = item.session
@@ -361,7 +361,8 @@ def configure_execution_quotes(host, config):
             source = getattr(bar, 'market_source_config', None)
             if source is None or source.tick_table is None:
                 continue
-            connection = bar.config
+            connection = dolphin_tick_connection(bar.config,
+                tick_source=getattr(source, 'tick_source', None))
             dce_receive_date = getattr(source, 'tick_dce_use_receive_date', False)
             key = (connection.host, connection.port, connection.username, connection.password,
                 connection.streaming_port, connection.keep_alive_seconds, source.tick_max_age_seconds, dce_receive_date)
@@ -384,6 +385,9 @@ def configure_execution_quotes(host, config):
         if not group['instruments']:
             continue
         tables = sorted(group['tables'])
+        connection = group['connection']
+        logging.getLogger('ExecutionQuotes').info(
+            '执行Tick连接: host=%s port=%s tables=%s', connection.host, connection.port, tables)
         feed = create_dolphin_tick_feed(tables, f'execution-quotes-{index}',
             market_config=group['connection'], max_age_seconds=group['max_age_seconds'],
             dce_use_receive_date=group['dce_use_receive_date'])
