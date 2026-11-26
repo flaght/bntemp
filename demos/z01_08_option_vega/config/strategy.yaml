@@ -1,5 +1,5 @@
 experiment_setups:
-    # 这里只维护08启动参数；公共账户及10的启动参数分别放各自目录。
+    # z01账号08启动参数；直连方式与原08相同，账号和状态路径独立。
     workers_option:
       description: "原生run_live入口；本进程运行Vega，连接独立账户服务"
       execution_channel: shared
@@ -13,6 +13,29 @@ experiment_setups:
       connect: true
       enable_orders: true
       confirm_simnow: true
+
+    direct_nt_algo:
+      description: "z01账号08直连；与原08使用相同启动项，沿用本账号检查点"
+      account_config: demos/z01_shared_account/account.json
+      env_file: demos/z01_08_option_vega/config/.env
+      strategy_id: option-vega-z01
+      live_config_file: demos/z01_08_option_vega/config/strategy.yaml
+      live_config_id: live_simnow
+      account_state_file: demos/z01_08_option_vega/results/direct/state.json
+      state_file: demos/z01_08_option_vega/results/direct/signal.json
+      report_dir: demos/z01_08_option_vega/results/direct
+      counter_file: demos/z01_shared_account/results/daily_orders.sqlite3
+      execution_driver: nt_algo_ctp
+      execution_algorithm: limit_reprice
+      algo_wait_seconds: 10
+      algo_max_attempts: 3
+      algo_initial_offset_ticks: 0
+      algo_retry_step_ticks: 1
+      prepare_seconds: 600
+      run_forever: true
+      connect: false
+      enable_orders: false
+      confirm_simnow: false
   
     # 回测与Live共用此文件，各入口只加载所选ID，不合并其他配置。
     m5_index_blend:

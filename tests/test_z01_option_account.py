@@ -1,4 +1,4 @@
-"""z01账号使用独立配置/状态，原08和10默认入口保持不变；全程离线。"""
+"""08和z01统一启动配置，保留独立账号/状态及旧命令兼容；全程离线。"""
 from contextlib import redirect_stdout
 from importlib import import_module
 from io import StringIO
@@ -41,6 +41,78 @@ class Z01OptionAccountTests(unittest.TestCase):
         self.assertFalse(result['orders_enabled'])
         self.assertEqual({str(path) for root in (account, demo) for path in root.rglob('results/*')}, before)
 
+    def test_wrapper_defaults_to_own_strategy_yaml_instead_of_account_startup(self):
+        from bomber.framework import cli
+        app = import_module('demos.direct_ctp')
+        with patch.object(cli, 'load_config', wraps=cli.load_config) as loader:
+            result = self.check()
+        loader.assert_called_once()
+        self.assertEqual(Path(loader.call_args.args[0]),
+            app.PROJECT/'demos/z01_08_option_vega/config/strategy.yaml')
+        self.assertEqual(loader.call_args.args[1], 'direct_nt_algo')
+        self.assertEqual(result['strategies'], ['option-vega-z01'])
+
+    def test_matching_profiles_preserve_each_accounts_identity_paths_and_algorithm(self):
+        from bomber.framework.cli import load_config
+        app = import_module('demos.direct_ctp')
+        profiles = []
+        for folder, sid, account_folder, state_subdir in (
+                ('08_option_vega', 'option-vega-direct', 'shared_account', 'v4/'),
+                ('z01_08_option_vega', 'option-vega-z01', 'z01_shared_account', '')):
+            with self.subTest(folder=folder):
+                demo = app.PROJECT/'demos'/folder
+                config_file = demo/'config/strategy.yaml'
+                profile = load_config(config_file, 'direct_nt_algo')
+                profiles.append(profile)
+                self.assertEqual(profile['strategy_id'], sid)
+                self.assertEqual(profile['live_config_file'], f'demos/{folder}/config/strategy.yaml')
+                self.assertEqual(profile['live_config_id'], 'live_simnow')
+                self.assertEqual(profile['account_config'], f'demos/{account_folder}/account.json')
+                self.assertEqual(profile['account_state_file'],
+                    f'demos/{folder}/results/direct/{state_subdir}state.json')
+                self.assertEqual(profile['state_file'],
+                    f'demos/{folder}/results/direct/{state_subdir}signal.json')
+                self.assertEqual(profile['counter_file'], f'demos/{account_folder}/results/daily_orders.sqlite3')
+                self.assertTrue(profile['run_forever'])
+                self.assertTrue(all(profile[key] is False
+                    for key in ('connect', 'enable_orders', 'confirm_simnow')))
+                output = StringIO()
+                with patch.object(app, 'build_direct_host', side_effect=AssertionError('离线禁止连接')), \
+                        patch('scripts.integration.shared_account.config.load_environment',
+                              side_effect=AssertionError('离线不能加载凭据')), redirect_stdout(output):
+                    app.main('option_vega', ['--config-file', str(config_file),
+                                             '--config-id', 'direct_nt_algo'])
+                result = json.loads(output.getvalue())
+                self.assertEqual(result['strategies'], [sid])
+                for key in ('state_file', 'report_dir', 'counter_file', 'env_file'):
+                    source_key = 'account_state_file' if key == 'state_file' else key
+                    self.assertEqual(result[key], str((app.PROJECT/profile[source_key]).resolve()))
+                self.assertFalse(result['orders_enabled'])
+                self.assertEqual(result['nt_algo'], dict(wait_seconds=10.0, max_attempts=3,
+                    initial_offset_ticks=0, retry_step_ticks=1))
+        self.assertEqual(set(profiles[0]), set(profiles[1]))
+        for key in ('execution_driver', 'execution_algorithm', 'algo_wait_seconds',
+                    'algo_max_attempts', 'algo_initial_offset_ticks', 'algo_retry_step_ticks'):
+            self.assertEqual(profiles[0][key], profiles[1][key], key)
+
+    def test_offline_cli_overrides_preserve_existing_checkpoints_and_counter_bytes(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            account_state, signal_state, counter = (root/name
+                for name in ('state.json', 'signal.json', 'daily_orders.sqlite3'))
+            account_state.write_text(json.dumps({'generation': 23, 'payload': {'positions': {'quantity': '-2'}}}))
+            signal_state.write_text(json.dumps({'generation': 17, 'payload': {'revision': 9, 'cursor': 15}}))
+            counter.write_bytes(b'unchanged daily counter')
+            before = {path: path.read_bytes() for path in (account_state, signal_state, counter)}
+            result = self.check(['--account-state-file', str(account_state),
+                '--state-file', str(signal_state), '--counter-file', str(counter),
+                '--algo-retry-step-ticks', '0'])
+            self.assertEqual(result['state_file'], str(account_state.resolve()))
+            self.assertEqual(result['counter_file'], str(counter.resolve()))
+            self.assertEqual(result['nt_algo']['retry_step_ticks'], 0)
+            self.assertEqual({path: path.read_bytes() for path in before}, before)
+            self.assertEqual(set(root.iterdir()), set(before))
+
     def test_cli_overrides_profile_and_explicit_alternative_profile_is_supported(self):
         with TemporaryDirectory() as directory:
             root = Path(directory)
@@ -50,9 +122,11 @@ class Z01OptionAccountTests(unittest.TestCase):
             self.assertEqual(result['state_file'], str((root/'state.json').resolve()))
             self.assertFalse(tuple(root.iterdir()))
         app = import_module('demos.direct_ctp')
-        result = self.check(['--config-file='+str(app.PROJECT/'demos/z01_shared_account/startup.yaml'),
-                             '--config-id', 'option_z01'])
-        self.assertEqual(result['strategies'], ['option-vega-z01'])
+        for config_flag, id_flag in (('--config-file', '--config-id'), ('--config_file', '--config_id')):
+            with self.subTest(config_flag=config_flag):
+                result = self.check([config_flag+'='+str(app.PROJECT/'demos/z01_shared_account/startup.yaml'),
+                                     id_flag, 'option_z01'])
+                self.assertEqual(result['strategies'], ['option-vega-z01'])
 
     def test_z01_live_inputs_reference_only_its_copied_configuration(self):
         from bomber.framework.cli import load_config

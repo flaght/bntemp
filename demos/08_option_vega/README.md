@@ -31,10 +31,12 @@ SHFE/INE使用明确平昨/平今；DCE/CZCE/CFFEX发送通用平仓，逻辑归
 不带三个连接授权参数运行同一文件，可离线检查配置。
 现有 `run_live.py` 及其原运行方式保留。
 
-使用NT算法直连时，在原`run_direct.py`命令中增加
-`--config-file demos/08_option_vega/config/strategy.yaml --config-id direct_nt_algo`，
-并保留原来的账户及状态路径参数。该配置首次偏移0跳、重报每次前进1跳，
-等待10秒、最多报单3次；参数在该YAML的`direct_nt_algo`中维护。
+08与z01的NT直连统一使用各自`config/strategy.yaml`中的`direct_nt_algo`启动项。
+原08使用`--config-file demos/08_option_vega/config/strategy.yaml --config-id direct_nt_algo`，
+z01使用`--config-file demos/z01_08_option_vega/config/strategy.yaml --config-id direct_nt_algo`。
+两份启动项完整声明各自账户、env、报告、计数和检查点路径：原08沿用`results/direct/v4`，
+z01沿用本账号的`results/direct`。若部署实际使用其他检查点，保留原路径并用CLI覆盖。
+两者首次偏移0跳、重报每次前进1跳，等待10秒、最多报单3次；连接与报单仍须显式授权。
 
 以**回测、Live、自定义特征**为三条主线。两个入口使用相同的策略、风险校验机制和特征契约，执行与仓位由`bomber/framework`负责。默认MO认购、同月IM和000852指数；IV与Delta使用同月期货价格，选约/增仓/退出/对冲保持原strategy1逻辑。
 

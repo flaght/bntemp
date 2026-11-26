@@ -1,4 +1,4 @@
-"""z01账号直连入口；只提供独立启动配置，策略实现复用原08。"""
+"""z01账号直连入口；使用本目录的strategy.yaml，策略实现复用原08。"""
 from pathlib import Path
 import sys
 
@@ -10,9 +10,9 @@ from demos.direct_ctp import main as direct_main
 
 def main(argv=None):
     args = list(sys.argv[1:] if argv is None else argv)
-    if not any(arg.split('=', 1)[0] == '--config-file' for arg in args):
-        startup = Path(__file__).resolve().parent.parent / 'z01_shared_account/startup.yaml'
-        args = ['--config-file', str(startup), '--config-id', 'option_z01', *args]
+    if not any(arg.split('=', 1)[0] in {'--config-file', '--config_file'} for arg in args):
+        config = Path(__file__).resolve().parent / 'config/strategy.yaml'
+        args = ['--config-file', str(config), '--config-id', 'direct_nt_algo', *args]
     return direct_main('option_vega', args)
 
 if __name__ == '__main__':

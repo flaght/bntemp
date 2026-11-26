@@ -1,4 +1,4 @@
-> 新账号08直连使用 [START_Z01.md](START_Z01.md) 和 `startup.yaml`，无需启动本目录`account.py`。
+> 新账号08直连使用 [START_Z01.md](START_Z01.md) 和 `../z01_08_option_vega/config/strategy.yaml` 的 `direct_nt_algo`；本目录的 `startup.yaml` 仅兼容旧命令，无需启动 `account.py`。
 > 本目录以下内容是复制保留的原账户服务说明，不是本次直连启动步骤。
 
 # 公共账户运行

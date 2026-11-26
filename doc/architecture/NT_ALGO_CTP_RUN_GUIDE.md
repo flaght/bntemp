@@ -112,7 +112,7 @@ Tick参考价同时记录本次读取的本地时间；风控及预算检查使�
 
 真实撤单回报仍先经过原订单状态机、冻结释放、归属账本和事件日志。算法额外写入`nt_algo_cancel_reason`：`retry`表示算法已实际发出追价撤单，`target_update`表示策略已更新该合约目标。08仅放行这两种有算法任务关联的取消；外部撤单、拒单、过期以及次数耗尽仍保留原报错处理。定时器仅排队、尚未发撤单时收到的外部取消，不标为内部追价。
 
-原08的 `config/strategy.yaml` 已增加 `direct_nt_algo`，z01的 `demos/z01_shared_account/startup.yaml` 中 `option_z01` 也已配置首次0跳、重报1跳、等待10秒、最多3次报单。原08启动项仅声明算法参数，账户、信号及执行检查点路径仍由原参数或入口默认值决定；z01沿用自己的全部路径和授权开关。
+原08和z01统一使用各自 `config/strategy.yaml` 中的 `direct_nt_algo`，均配置首次0跳、重报1跳、等待10秒、最多3次报单。每份启动项完整声明自己的账户、env、信号、执行检查点、报告和计数路径；原08沿用v4检查点，z01沿用自己的results/direct检查点。CLI仍可覆盖部署实际使用的原路径，连接/报单授权开关默认关闭。z01入口省略配置参数时也读取本账号strategy.yaml，不再隐式读取z01_shared_account/startup.yaml；旧startup.yaml保留供显式旧命令兼容。
 
 正常停止08并满足下文的切换条件后，沿用原v4账户和信号检查点，在远程项目根目录启动：
 
@@ -121,8 +121,16 @@ PYTHONPATH=.:/workspace/worker/pj/KiChaos IMPLUSE_VERSION=all \
 /workspace/worker/env/chs-live/bin/python -u demos/08_option_vega/run_direct.py \
   --config-file demos/08_option_vega/config/strategy.yaml \
   --config-id direct_nt_algo \
-  --account-state-file demos/08_option_vega/results/direct/v4/state.json \
-  --state-file demos/08_option_vega/results/direct/v4/signal.json \
+  --connect --enable-orders --confirm-simnow --run-forever
+```
+
+z01在另一个终端使用同样的启动形式：
+
+```bash
+PYTHONPATH=.:/workspace/worker/pj/KiChaos IMPLUSE_VERSION=all \
+/workspace/worker/env/chs-live/bin/python -u demos/z01_08_option_vega/run_direct.py \
+  --config-file demos/z01_08_option_vega/config/strategy.yaml \
+  --config-id direct_nt_algo \
   --connect --enable-orders --confirm-simnow --run-forever
 ```
 

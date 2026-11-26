@@ -1,3 +1,5 @@
+# 旧命令兼容配置；统一启动项请维护demos/z01_08_option_vega/config/strategy.yaml的direct_nt_algo。
+# z01的run_direct.py默认不再读取本文件。
 experiment_setups:
   option_z01:
     description: "z01账号08直连；配置及运行状态独立，策略实现复用原08"
