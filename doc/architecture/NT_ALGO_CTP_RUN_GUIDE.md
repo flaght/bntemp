@@ -190,3 +190,39 @@ PYTHONPATH=.:/workspace/worker/pj/KiChaos IMPLUSE_VERSION=all \
 切换 Driver 或改变算法参数前，先正常停机，备份原账本，并确认没有活动委托、待执行任务及待处理结束通知。程序仅在这些状态清空时增删 NT 状态组件，保留原持仓、归属、目标版本和策略批次。已有持仓不要求强制平仓。有未决状态时拒绝切换，应使用原模式完成核验和处理。
 
 跨交易日的活动委托和未决任务继续受原跨日恢复限制，不能将本期同日恢复视为跨日未知订单自动接管。
+
+## 同日零成交后的一次重新选约
+
+当今天已选约、报单全部结束且零成交时，可由操作者明确指定新的未来时点。
+这不是算法自动重试，也不删除旧报单或重新计算每日额度。重新选约仍按新时点行情
+生成新增数量，原持仓继续保留。普通同日重启仍保留`sent_days`，不会自动重复选约。
+
+先正常停止原08，保留10和z01。维护入口默认只处理原08的
+`results/direct/v4/state.json`、`results/direct/v4/signal.json`及`config/vega_live.json`，
+也可显式传入`--account-state-file`、`--signal-file`、`--strategy-config`。
+以下示例只适用于北京时间2026-11-26的13:40之前：
+
+```bash
+cd /workspace/worker/pj/Chrono/nautilus_trader_demo/pro || exit 1
+
+# 只读预检，不加载凭据、不连接柜台、不修改文件。
+PYTHONPATH=. /workspace/worker/env/chs-live/bin/python -B \
+  -m demos.08_option_vega.rearm_entry --trading-day 2026-11-26 --option-slot 13:40
+
+# 预检通过后，备份三份原文件并保存；程序会再次执行全部检查。
+PYTHONPATH=. /workspace/worker/env/chs-live/bin/python -B \
+  -m demos.08_option_vega.rearm_entry --trading-day 2026-11-26 --option-slot 13:40 --apply
+```
+
+维护要求今天零成交、全部原委托终态、无冻结/在途/算法任务、无未消费回报，
+信号版本与账户一致，且业务、执行源和组合贡献的目标均已等于原归属持仓。
+有成交、未完成目标、执行停止或其他策略身份时拒绝维护，不把原未成交目标叠加一遍。
+维护只删除业务状态中指定当天的`sent_days`标记，将两份检查点恢复身份及策略JSON的
+`option_slot`同步为13:40；其他参数、原持仓、订单/成交历史、目标版本、游标、业务计数、
+对冲进度及每日额度均保留。JSON时点会保留为13:40，后续启动仍沿用该参数。
+
+备份名为原文件名加`.before-entry-rearm-<操作编号>.bak`，
+审计记录为`signal.json.entry-rearm-2026-11-26.json`，同一天不允许再次应用此维护。
+写入失败会回滚已写文件；中断或失败留下的prepared审计须先核对备份，不能直接重复应用。
+维护自身不报单，随后使用本指南原08的`direct_nt_algo`启动命令，仍经过正常柜台、行情和风控核验。
+若已错过13:40，维护明确拒绝，不立即补开、不自行顺延。
