@@ -18,7 +18,7 @@ class OptionNTAlgoTests(unittest.TestCase):
     make_account = fixture.NTAlgoCtpTests.make_account
     tick = fixture.NTAlgoCtpTests.tick
 
-    def setup_strategy(self, *, max_attempts=3):
+    def setup_strategy(self, *, max_attempts=3, execution_trading_day=None):
         self.instrument = type(self.instrument).from_str('MO2612-C-6000.CFFEX')
         future = type(self.instrument).from_str('IM2612.CFFEX')
         original = self.native_account
@@ -39,7 +39,8 @@ class OptionNTAlgoTests(unittest.TestCase):
             {'MO2612-C-6000': signal.Contract('MO2612-C-6000', 'IM2612', 6000, D(100),
                 date(2026, 1, 1), date(2026, 12, 18), date(2026, 12, 18), D('.2'))},
             {'IM2612': {'contMultNum': 200}},
-            {'MO2612-C-6000': self.instrument, 'IM2612': future}, '000852', ())
+            {'MO2612-C-6000': self.instrument, 'IM2612': future}, '000852', (),
+            execution_trading_day=execution_trading_day)
         self.enterContext(patch.object(strategy, '_greeks', return_value=NS(delta=.5)))
 
         def submit(intent):
@@ -139,11 +140,67 @@ class OptionNTAlgoTests(unittest.TestCase):
             port.drain_events()
 
     def test_attempt_limit_still_fails_08_and_counts_actual_orders(self):
-        account, service, _, port, runtime, _, _, _ = self.setup_strategy(max_attempts=1)
+        account, service, _, port, runtime, strategy, _, _ = self.setup_strategy(
+            max_attempts=1, execution_trading_day='20261013')
         self.tick(service, runtime)
+        strategy.option_goals['MO2612-C-6000'] = D(0)  # 即使目标已归零，当日失败仍保留硬错误。
         with self.assertRaisesRegex(RuntimeError, '订单CANCELED'):
             port.drain_events()
         self.assertEqual(account.driver.order_budget['submitted'], 1)
+
+    def test_previous_day_attempt_limit_consumes_one_event_and_preserves_partial_fills(self):
+        account, service, broker, port, runtime, strategy, future, _ = self.setup_strategy(
+            max_attempts=1, execution_trading_day='20261014')
+        broker.fill(broker.sent[-1]['OrderRef'], 4)
+        port.drain_events()  # 已入账的4手期权正常产生真实期货对冲。
+        broker.fill(broker.sent[-1]['OrderRef'])
+        port.drain_events()
+        self.tick(service, runtime)
+        # 与首个恢复帧一致：以真实归属持仓接续，不继续旧的8手目标。
+        strategy.option_goals['MO2612-C-6000'] = D(-4)
+        strategy.future_goals['IM2612'] = D(1)
+        before_positions = service.position_manager.state()
+        before_budget = dict(account.driver.order_budget)
+        before_cursor = port._journal_cursor
+        before_ack = service.event_journal.ack['one']
+        before_submissions = strategy.submissions
+        with self.assertLogs('OptionExecutionRecovery', level='WARNING') as captured:
+            self.assertEqual(port.drain_events(), 1)
+        self.assertIn('历史NT任务次数耗尽', captured.output[0])
+        self.assertEqual(port._journal_cursor, before_cursor + 1)
+        self.assertEqual(service.event_journal.ack['one'], before_ack)  # 仍由信号保存后确认。
+        self.assertEqual(service.position_manager.state(), before_positions)
+        self.assertEqual(account.driver.order_budget, before_budget)
+        self.assertEqual(strategy.submissions, before_submissions)
+        self.assertEqual(strategy.fills_received, 2)
+        self.assertEqual(service.position_manager.position('one', str(self.instrument)), -4)
+        self.assertEqual(service.position_manager.position('one', str(future)), 1)
+        self.assertEqual(len(broker.sent), 2)
+        self.assertFalse(runtime.snapshot_state()['tasks'])
+        self.assertFalse(service._failed)
+        audit = strategy.signals[-1]
+        self.assertEqual(audit['action'], 'HISTORICAL_EXECUTION_FAILURE')
+        self.assertEqual(audit['reason'], 'attempt_limit')
+        self.assertEqual(audit['position'], '-4')
+        account._validate_account()
+
+    def test_previous_day_attempt_limit_with_unfinished_goal_still_fails(self):
+        _, service, _, port, runtime, _, _, _ = self.setup_strategy(
+            max_attempts=1, execution_trading_day='20261014')
+        self.tick(service, runtime)
+        with self.assertRaisesRegex(RuntimeError, 'algo_cancel_reason=attempt_limit'):
+            port.drain_events()
+        self.assertTrue(service._failed)
+
+    def test_previous_day_attempt_limit_with_working_quantity_still_fails(self):
+        _, service, _, port, runtime, strategy, _, _ = self.setup_strategy(
+            max_attempts=1, execution_trading_day='20261014')
+        self.tick(service, runtime)
+        strategy.option_goals['MO2612-C-6000'] = D(0)
+        with patch.object(strategy, 'strategy_working_quantity', return_value=D(1)), \
+                self.assertRaisesRegex(RuntimeError, 'algo_cancel_reason=attempt_limit'):
+            port.drain_events()
+        self.assertTrue(service._failed)
 
     def test_new_target_cancels_pending_retry_without_resending_old_goal(self):
         account, service, broker, port, runtime, strategy, future, _ = self.setup_strategy()
@@ -161,6 +218,7 @@ class OptionNTAlgoTests(unittest.TestCase):
 
     def test_plain_cancel_unknown_algo_cancel_rejection_and_expiry_still_fail(self):
         _, _, _, port, _, strategy, _, events = self.setup_strategy()
+        strategy.execution_trading_day = date(2026, 10, 14)
         port.drain_events()
         accepted = events[0]
         cases = (

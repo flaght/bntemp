@@ -27,6 +27,7 @@ from datetime import datetime
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 from time import perf_counter
+import logging
 
 from bomber.framework.trader.template import StrategyTemplate
 from bomber.framework.trader.execution.option_settlement import SETTLEMENT_ORIGIN, FUTURE_SETTLEMENT_ORIGIN
@@ -142,7 +143,8 @@ class OptionVegaStrategy(StrategyTemplate):
     """
     def __init__(self, strategy_id, config, contracts, futures, instruments,
                  index_id, trading_days, final_day=None, options_by_day=None, *,
-                 option_last_trade_times=None, future_last_trade_times=None):
+                 option_last_trade_times=None, future_last_trade_times=None,
+                 execution_trading_day=None):
         """接收外部准备的条款、路由和日历，不在策略内读取文件或猜测合约。
 
         contracts：symbol→Contract，含执行价、乘数、上市/最后交易日及同月future。
@@ -155,6 +157,7 @@ class OptionVegaStrategy(StrategyTemplate):
         option_last_trade_times：可选的期权停止交易纳秒时点，须覆盖全部期权；
             使用request_ns判断是否已越过截止时点，防止迟到信号产生到期后订单。
         future_last_trade_times：回测现金交割期货的停止交易时点；仅由外部装配启用。
+        execution_trading_day：实时执行装配核验的YYYYMMDD交易日；用于区分旧日任务结果。
         """
         super().__init__(strategy_id)
         self.config = config
@@ -164,6 +167,9 @@ class OptionVegaStrategy(StrategyTemplate):
         self.index_id = index_id
         self.trading_days = tuple(trading_days)
         self.final_day = final_day
+        # 由实时执行装配明确给出交易日；回测/Recording不按墙钟判断历史回报。
+        self.execution_trading_day = (datetime.strptime(execution_trading_day, "%Y%m%d").date()
+                                      if execution_trading_day is not None else None)
         self.options_by_day = options_by_day or {}
         self.option_last_trade_times = dict(option_last_trade_times or {})
         if ((option_last_trade_times is not None and set(self.option_last_trade_times) != set(self.contracts))
@@ -783,6 +789,7 @@ class OptionVegaStrategy(StrategyTemplate):
 
         REJECTED始终报错；仅放行算法已核验的追价/目标更新撤单，其余正常运行中
         CANCELED/EXPIRED仍报错，避免组合只成交一部分而继续运行。
+        跨日恢复后，旧任务次数耗尽且目标已回归真实仓位、没有在途时，仅记录历史结果。
         外部已设置stopping时允许停机撤单；声明到期截止之后
         的期权/期货取消或过期同样允许，因为由公共结算生命周期接管。其余状态只计数。
         """
@@ -792,9 +799,50 @@ class OptionVegaStrategy(StrategyTemplate):
         if (status == "CANCELED" and metadata.get(TASK_KEY)
                 and metadata.get(CANCEL_REASON_KEY) in ("retry", "target_update")):
             return
+        if (status == "CANCELED" and metadata.get(TASK_KEY)
+                and metadata.get(CANCEL_REASON_KEY) == "attempt_limit"
+                and self._consume_historical_attempt_limit(event)):
+            return
         cutoff = next((stamp for key, stamp in {**self.option_last_trade_times, **self.future_last_trade_times}.items()
                        if str(self.instruments[key]) == event.identity.instrument_id), None)
         if status in ("CANCELED", "EXPIRED") and cutoff is not None and event.ts_event >= cutoff:
             return  # 公共生命周期撤销到期余单；拒单仍是硬错误。
         if status == "REJECTED" or (not self.stopping and status in ("CANCELED", "EXPIRED")):
-            raise RuntimeError(f"订单{status}: {event.identity.instrument_id} {event.reason}")
+            raise RuntimeError(f"订单{status}: {event.identity.instrument_id} {event.reason} "
+                f"algo_cancel_reason={metadata.get(CANCEL_REASON_KEY)} "
+                f"task={metadata.get(TASK_KEY)} attempt={metadata.get('nt_algo_attempt')} "
+                f"order_id={getattr(event.identity, 'client_order_id', None)}")
+
+    def _consume_historical_attempt_limit(self, event):
+        """只接纳已恢复归属和目标的旧日CTP任务结果；不改仓位、不提交或补报订单。"""
+        if self.execution_trading_day is None:
+            return False
+        parts = getattr(event.identity, "client_order_id", "").rsplit("-", 2)
+        if len(parts) != 3 or not parts[0].startswith("CTP-"):
+            return False
+        try:
+            order_day = datetime.strptime(parts[1], "%Y%m%d").date()
+        except ValueError:
+            return False
+        if order_day >= self.execution_trading_day:
+            return False
+        keys = self._target_keys()
+        key = self._identity_reverse.get(event.identity.instrument_id)
+        if key is None:
+            return False
+        target = keys[key]
+        position = self.position(target)
+        goal = {**self.option_goals, **self.future_goals}.get(key)
+        if goal != position or self.strategy_working_quantity(target):
+            return False
+        metadata = event.metadata
+        self.signals.append({"action": "HISTORICAL_EXECUTION_FAILURE", "reason": "attempt_limit",
+            "instrument": key, "task": metadata[TASK_KEY], "order_id": event.identity.client_order_id,
+            "event_id": event.event_id, "signal_ns": event.ts_event,
+            "request_ns": max(event.ts_event, self._last_request_ns), "position": str(position)})
+        logging.getLogger("OptionExecutionRecovery").warning(
+            "历史NT任务次数耗尽已按恢复持仓接续: strategy=%s instrument=%s task=%s "
+            "order_id=%s order_day=%s current_day=%s position=%s；不重发旧任务",
+            self.strategy_id, event.identity.instrument_id, metadata[TASK_KEY],
+            event.identity.client_order_id, order_day, self.execution_trading_day, position)
+        return True
