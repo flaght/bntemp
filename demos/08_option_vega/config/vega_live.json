@@ -3,7 +3,7 @@
   "nav": "40000000",
   "vega_budget": 1.25,
   "delta_targets": [0.2, 0.25, 0.3, 0.35],
-  "option_slot": "13:58",
+  "option_slot": "09:45",
   "entry_quote_policy": "latest",
   "index_signal_minutes": 1,
   "hedge_slots": ["10:00", "11:00", "13:30", "14:00", "14:55"],
