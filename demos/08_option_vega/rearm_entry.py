@@ -10,6 +10,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import tempfile
 import time
 
@@ -19,7 +20,7 @@ from .vega_signal import OptionVegaConfig
 
 DEMO = Path(__file__).resolve().parent
 TERMINAL = {'FILLED', 'CANCELED', 'REJECTED', 'EXPIRED'}
-REARM_REVISION = 'missed-entry-v3'
+REARM_REVISION = 'option-entry-with-hedges-v4'
 
 
 def align_unfilled_targets(account, business, *, strategy_id, today, orders):
@@ -114,7 +115,9 @@ def prepare_rearm(account, signal, config, *, strategy_id, trading_day, option_s
         raise ValueError('维护仅支持实时SimNow直连08')
     business = revised['signal']
     selected = trading_day in business['sent_days']
-    missed_entry = not selected and allow_missed_entry
+    # sent_days只证明选约被处理，不证明期权报单/成交。显式补选允许今天已处理
+    # 但无期权报单的场景，IM对冲成交不能使这一天被误判为期权已经成交。
+    missed_entry = bool(allow_missed_entry)
     if business['flatten_requested'] or (not selected and not allow_missed_entry):
         raise ValueError('今天尚未标记为已选约，或已请求清仓；错过时点请显式使用allow-missed-entry')
     parameters['option_slot'] = option_slot
@@ -147,11 +150,16 @@ def prepare_rearm(account, signal, config, *, strategy_id, trading_day, option_s
     owned = [row for row in records.values() if row['strategy_id'] == strategy_id]
     today = [row for row in owned if row['day'] == compact_day]
     def is_hedge(instrument):
-        return isinstance(instrument, str) and instrument.startswith('IM') and instrument.endswith('.CFFEX')
+        return (isinstance(instrument, str) and re.fullmatch(r'IM[0-9]{4}\.CFFEX', instrument) is not None
+                and instrument in state['routes'][strategy_id]['routes'].values())
+    def is_option(instrument):
+        return (isinstance(instrument, str) and re.fullmatch(r'MO[0-9]{4}-[CP]-[0-9]+\.CFFEX', instrument) is not None
+                and instrument in state['routes'][strategy_id]['routes'].values())
     if any(row['terminal'] is not True for row in owned):
         raise ValueError('原委托尚未结束')
-    if missed_entry and any(not is_hedge(row['instrument_id']) for row in today):
-        raise ValueError('今天已有期权或非IM报单记录，不能按错过选约时点处理')
+    if missed_entry and any(not (is_hedge(row['instrument_id'])
+            or selected and is_option(row['instrument_id'])) for row in today):
+        raise ValueError('今天报单与选约标记或原MO/IM路由不符，不能按错过选约时点处理')
     if any(row['trades'] and not (missed_entry and is_hedge(row['instrument_id'])) for row in today):
         raise ValueError('今天已有成交，不能按零成交方式恢复选约')
     today_ids = {row['client_order_id'] for row in today}
@@ -204,7 +212,8 @@ def prepare_rearm(account, signal, config, *, strategy_id, trading_day, option_s
         item['config']['option_slot'] = option_slot
     evidence = dict(strategy_id=strategy_id, trading_day=trading_day, option_slot=option_slot,
         maintenance_revision=REARM_REVISION,
-        operation='reschedule_missed_entry' if missed_entry else 'rearm_zero_fill',
+        operation=('rearm_unfilled_option_entry' if selected else 'reschedule_missed_entry')
+            if missed_entry else 'rearm_zero_fill',
         previously_selected=selected,
         previous_slot=signal['identity']['reference']['config']['option_slot'],
         previous_order_count=len(today), previous_order_ids=sorted(today_ids),
@@ -296,7 +305,7 @@ def main(argv=None):
     parser.add_argument('--trading-day', required=True, help='YYYY-MM-DD，须为北京时间今天')
     parser.add_argument('--option-slot', required=True, help='HH:MM，须为今天未来时点')
     parser.add_argument('--allow-missed-entry', action='store_true',
-        help='也允许今天尚未选约且无期权报单时调整时点；保留已完成的IM对冲记录')
+        help='允许今天期权零成交时补选/调整时点，已选约时可有终态零成交期权单；保留IM对冲成交')
     parser.add_argument('--apply', action='store_true', help='通过全部核验后备份并保存；省略则只读预检')
     options = vars(parser.parse_args(argv))
     print(json.dumps(rearm(**options), ensure_ascii=False, indent=2))
