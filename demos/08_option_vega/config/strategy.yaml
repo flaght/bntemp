@@ -29,6 +29,7 @@ experiment_setups:
       execution_algorithm: limit_reprice
       algo_wait_seconds: 10
       algo_max_attempts: 3
+      algo_cooldown_seconds: 180
       algo_initial_offset_ticks: 0
       algo_retry_step_ticks: 1
       prepare_seconds: 600

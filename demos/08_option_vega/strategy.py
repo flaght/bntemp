@@ -183,6 +183,7 @@ class OptionVegaStrategy(StrategyTemplate):
             raise ValueError("现金结算生命周期须覆盖全部期货，时间须为非负整数纳秒")
         # 生命周期标记由外部恢复/停机流程维护；restored在首个帧中消费一次。
         self.restored = False
+        self._restored_execution_targets = None
         self.stopping = False
         self.order_updates_received = 0
         self.fills_received = 0
@@ -257,9 +258,13 @@ class OptionVegaStrategy(StrategyTemplate):
         if self.last_event_ns >= 0 and timestamp - self.last_event_ns > self.config.max_market_age_seconds * 1_000_000_000:
             self.resume_ns = timestamp
         if self.restored:
-            # 恢复已成交事实，不继续旧会话尚未完成的开仓目标。
-            self.option_goals = {key: self.position(str(self.instruments[key])) for key in self.contracts}
-            self.future_goals = {key: self.position(str(self.instruments[key])) for key in self.futures}
+            # 仅续接执行端已恢复核验的活动任务；其他旧目标接续实际成交仓位。
+            goals = self._restored_execution_targets() if self._restored_execution_targets is not None else {}
+            self._restored_execution_targets = None
+            self.option_goals = {key: goals.get(str(self.instruments[key]),
+                self.position(str(self.instruments[key]))) for key in self.contracts}
+            self.future_goals = {key: goals.get(str(self.instruments[key]),
+                self.position(str(self.instruments[key]))) for key in self.futures}
             self.resume_ns = timestamp
             self.restored = False
         self.last_event_ns = timestamp
@@ -789,8 +794,9 @@ class OptionVegaStrategy(StrategyTemplate):
     def on_order_update(self, event):
         """根据归属订单回报决定是否报错，由外部生命周期执行停机处理。
 
-        次数耗尽是执行结果：该交易点已消费，未完成目标回到已成交数量，等待新信号。
-        REJECTED及外部CANCELED/EXPIRED仍报错；算法内部追价/目标更新取消正常接纳。
+        算法内部追价、轮次冷却及目标更新取消正常接纳，不收回仍有效的执行目标。
+        旧版attempt_limit终态仍按已成交仓位消费；新版每轮次数耗尽由算法冷却继续。
+        REJECTED及外部CANCELED/EXPIRED仍报错。
         恢复后旧会话停机撤单且目标已回归真实仓位、没有在途时，仅记录历史结果。
         外部已设置stopping时允许停机撤单；声明到期截止之后
         的期权/期货取消或过期同样允许，因为由公共结算生命周期接管。其余状态只计数。
@@ -799,7 +805,7 @@ class OptionVegaStrategy(StrategyTemplate):
         status = getattr(event.status, "value", str(event.status))
         metadata = getattr(event, "metadata", {})
         if (status == "CANCELED" and metadata.get(TASK_KEY)
-                and metadata.get(CANCEL_REASON_KEY) in ("retry", "target_update")):
+                and metadata.get(CANCEL_REASON_KEY) in ("retry", "cooldown", "target_update")):
             return
         if (status == "CANCELED" and metadata.get(TASK_KEY)
                 and metadata.get(CANCEL_REASON_KEY) == "attempt_limit"):

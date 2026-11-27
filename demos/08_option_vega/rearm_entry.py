@@ -1,4 +1,4 @@
-"""直连08零成交后的单次选约维护；不连接柜台、不报单、不修改持仓或额度。"""
+"""直连08错过时点或零成交后的单次选约维护；不连接柜台、不报单、不修改持仓或额度。"""
 from contextlib import ExitStack
 from copy import deepcopy
 from dataclasses import asdict, fields
@@ -19,7 +19,7 @@ from .vega_signal import OptionVegaConfig
 
 DEMO = Path(__file__).resolve().parent
 TERMINAL = {'FILLED', 'CANCELED', 'REJECTED', 'EXPIRED'}
-REARM_REVISION = 'zero-fill-baseline-v2'
+REARM_REVISION = 'missed-entry-v3'
 
 
 def align_unfilled_targets(account, business, *, strategy_id, today, orders):
@@ -89,7 +89,8 @@ def align_unfilled_targets(account, business, *, strategy_id, today, orders):
     return differences
 
 
-def prepare_rearm(account, signal, config, *, strategy_id, trading_day, option_slot, now):
+def prepare_rearm(account, signal, config, *, strategy_id, trading_day, option_slot, now,
+                  allow_missed_entry=False):
     """仅生成候选；同日零成交、无未决委托，撤销有终态依据的旧目标差额。"""
     day = date.fromisoformat(trading_day)
     stamp = datetime.combine(day, datetime.strptime(option_slot, '%H:%M').time(), ZoneInfo('Asia/Shanghai'))
@@ -111,6 +112,11 @@ def prepare_rearm(account, signal, config, *, strategy_id, trading_day, option_s
     if (reference['mode'] != 'simnow' or reference['environment'] != 'realtime'
             or reference['td_day'] != compact_day):
         raise ValueError('维护仅支持实时SimNow直连08')
+    business = revised['signal']
+    selected = trading_day in business['sent_days']
+    missed_entry = not selected and allow_missed_entry
+    if business['flatten_requested'] or (not selected and not allow_missed_entry):
+        raise ValueError('今天尚未标记为已选约，或已请求清仓；错过时点请显式使用allow-missed-entry')
     parameters['option_slot'] = option_slot
     names = {field.name for field in fields(OptionVegaConfig)}
     effective = json.loads(json.dumps(asdict(OptionVegaConfig(**{
@@ -140,15 +146,21 @@ def prepare_rearm(account, signal, config, *, strategy_id, trading_day, option_s
     records = components['ctp_order_owners']['records']
     owned = [row for row in records.values() if row['strategy_id'] == strategy_id]
     today = [row for row in owned if row['day'] == compact_day]
+    def is_hedge(instrument):
+        return isinstance(instrument, str) and instrument.startswith('IM') and instrument.endswith('.CFFEX')
     if any(row['terminal'] is not True for row in owned):
         raise ValueError('原委托尚未结束')
-    if any(row['trades'] for row in today):
+    if missed_entry and any(not is_hedge(row['instrument_id']) for row in today):
+        raise ValueError('今天已有期权或非IM报单记录，不能按错过选约时点处理')
+    if any(row['trades'] and not (missed_entry and is_hedge(row['instrument_id'])) for row in today):
         raise ValueError('今天已有成交，不能按零成交方式恢复选约')
     today_ids = {row['client_order_id'] for row in today}
     orders = {row['client_order_id']: row for rows in updated['orders'].values() for row in rows}
     if any(row['status'] not in TERMINAL for row in orders.values()):
         raise ValueError('订单状态机仍有未结束委托')
-    if any(key not in orders or Decimal(orders[key]['filled_quantity']) for key in today_ids):
+    if any(key not in orders for key in today_ids) or any(
+            Decimal(orders[row['client_order_id']]['filled_quantity'])
+            and not (missed_entry and is_hedge(row['instrument_id'])) for row in today):
         raise ValueError('今天委托状态缺失或累计成交不为零')
     if any(orders[row['client_order_id']]['instrument_id'] != row['instrument_id'] for row in today):
         raise ValueError('今天订单状态与归属记录合约不一致')
@@ -158,19 +170,20 @@ def prepare_rearm(account, signal, config, *, strategy_id, trading_day, option_s
     if (type(cursor) is not int or cursor != len(events)
             or journal['ack'][strategy_id] != cursor):
         raise ValueError('仍有未消费回报，须先正常恢复并处理回报')
+    fills_today = 0
     for row in events:
         if row['type'] != 'FillEvent':
             continue
         event = row['event']
         event_day = datetime.fromtimestamp(event['ts_event'] // 1_000_000_000, ZoneInfo('Asia/Shanghai')).date()
         if event_day == day or event['identity'].get('client_order_id') in today_ids:
+            fills_today += 1
+            if missed_entry and is_hedge(event['identity'].get('instrument_id')):
+                continue  # 已入账的IM对冲不代表已消费今天的期权选约机会。
             raise ValueError('事件日志记录了今天成交，不能恢复零成交机会')
     source = shared['sources'][strategy_id]
     if revised['revision'] != source['revision']:
         raise ValueError('信号与账户目标版本不一致，须先正常恢复对账')
-    business = revised['signal']
-    if trading_day not in business['sent_days'] or business['flatten_requested']:
-        raise ValueError('今天尚未标记为已选约，或已请求清仓；无需此维护')
     adjustments = align_unfilled_targets(updated, business,
         strategy_id=strategy_id, today=today, orders=orders)
     # 同代且内容一致的维护副本同步同一字段。信号版本已与账户相等，恢复不会
@@ -191,9 +204,11 @@ def prepare_rearm(account, signal, config, *, strategy_id, trading_day, option_s
         item['config']['option_slot'] = option_slot
     evidence = dict(strategy_id=strategy_id, trading_day=trading_day, option_slot=option_slot,
         maintenance_revision=REARM_REVISION,
+        operation='reschedule_missed_entry' if missed_entry else 'rearm_zero_fill',
+        previously_selected=selected,
         previous_slot=signal['identity']['reference']['config']['option_slot'],
         previous_order_count=len(today), previous_order_ids=sorted(today_ids),
-        fills_today=0, orders_submitted=0, positions_preserved=True, daily_counts_preserved=True,
+        fills_today=fills_today, orders_submitted=0, positions_preserved=True, daily_counts_preserved=True,
         target_adjustments=adjustments)
     return updated, revised, parameters, evidence
 
@@ -211,7 +226,7 @@ def _atomic_write(path, data):
 
 
 def rearm(*, account_state_file, signal_file, strategy_config, strategy_id,
-          trading_day, option_slot, apply=False, now=None):
+          trading_day, option_slot, apply=False, now=None, allow_missed_entry=False):
     paths = [Path(value).resolve() for value in (account_state_file, signal_file, strategy_config)]
     if len(set(paths)) != 3:
         raise ValueError('账户、信号和策略JSON须为不同文件')
@@ -228,7 +243,8 @@ def rearm(*, account_state_file, signal_file, strategy_config, strategy_id,
         account, signal = account_store.load(), signal_store.load()
         candidate, business, config, evidence = prepare_rearm(account.payload, signal.payload,
             json.loads(originals[2]), strategy_id=strategy_id, trading_day=trading_day,
-            option_slot=option_slot, now=now or datetime.now(ZoneInfo('Asia/Shanghai')))
+            option_slot=option_slot, now=now or datetime.now(ZoneInfo('Asia/Shanghai')),
+            allow_missed_entry=allow_missed_entry)
         evidence['status'] = 'checked'
         if not apply:
             return evidence
@@ -279,6 +295,8 @@ def main(argv=None):
     parser.add_argument('--strategy-id', default='option-vega-direct')
     parser.add_argument('--trading-day', required=True, help='YYYY-MM-DD，须为北京时间今天')
     parser.add_argument('--option-slot', required=True, help='HH:MM，须为今天未来时点')
+    parser.add_argument('--allow-missed-entry', action='store_true',
+        help='也允许今天尚未选约且无期权报单时调整时点；保留已完成的IM对冲记录')
     parser.add_argument('--apply', action='store_true', help='通过全部核验后备份并保存；省略则只读预检')
     options = vars(parser.parse_args(argv))
     print(json.dumps(rearm(**options), ensure_ascii=False, indent=2))

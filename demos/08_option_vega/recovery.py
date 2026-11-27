@@ -222,6 +222,20 @@ def restore_signal(session, state):
     signal["hedge_sent"] = [token for token in signal.get("hedge_sent", ())
         if token.split("_", 1)[0] in {str(d) for d in session.strategy.trading_days}]
     session.signal_checkpoint.restore_state(signal)
+    # 账户先恢复并核验NT任务，业务首帧只保留这些合约的原执行目标。
+    service = getattr(getattr(session, 'client', None), 'service', None)
+    driver = getattr(getattr(getattr(service, 'client', None), 'backend', None), 'driver', None)
+    runtime = getattr(driver, 'algo_runtime', None)
+    def pending_targets():
+        # 准备期间也可能取消/到期，须在首帧实际消费时再读取。
+        return {row['instrument_id']: Decimal(row['quantity'])
+            for task in (runtime.snapshot_state()['tasks'].values() if runtime is not None else ())
+            if not task['stopped'] and task['order']['strategy_id'] == session.strategy.strategy_id
+            and (task['order']['metadata'].get('actual_send_deadline_ns') is None
+                 or runtime.clock_ns() < task['order']['metadata']['actual_send_deadline_ns'])
+            for row in task['order']['metadata']['position_attribution']
+            if row['instrument_id'] == task['order']['instrument_id']}
+    session.strategy._restored_execution_targets = pending_targets
 
 
 class RecordingWindowState:
